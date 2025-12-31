@@ -45,4 +45,46 @@ class Setting extends Model
             'zed' => 'Zed',
         ];
     }
+
+    public static function getSshPublicKey(): ?string
+    {
+        return static::get('ssh_public_key');
+    }
+
+    public static function setSshPublicKey(string $key): void
+    {
+        static::set('ssh_public_key', trim($key));
+    }
+
+    public static function getAvailableSshKeys(): array
+    {
+        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? $_ENV['HOME'] ?? null);
+        if (!$home) {
+            return [];
+        }
+
+        $sshDir = $home . '/.ssh';
+        if (!is_dir($sshDir)) {
+            return [];
+        }
+
+        $keys = [];
+        $patterns = ['*.pub'];
+
+        foreach ($patterns as $pattern) {
+            $files = glob($sshDir . '/' . $pattern);
+            foreach ($files as $file) {
+                $content = file_get_contents($file);
+                if ($content && str_starts_with($content, 'ssh-')) {
+                    $keys[basename($file)] = [
+                        'path' => $file,
+                        'content' => trim($content),
+                        'type' => explode(' ', $content)[0] ?? 'unknown',
+                    ];
+                }
+            }
+        }
+
+        return $keys;
+    }
 }

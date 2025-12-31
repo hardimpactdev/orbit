@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
+use App\Models\SshKey;
 use App\Services\CliUpdateService;
 use Illuminate\Http\Request;
 
@@ -17,8 +18,10 @@ class SettingsController extends Controller
         $editor = Setting::getEditor();
         $editorOptions = Setting::getEditorOptions();
         $cliStatus = $this->cliUpdate->getStatus();
+        $sshKeys = SshKey::orderBy('is_default', 'desc')->orderBy('name')->get();
+        $availableSshKeys = Setting::getAvailableSshKeys();
 
-        return view('settings.index', compact('editor', 'editorOptions', 'cliStatus'));
+        return view('settings.index', compact('editor', 'editorOptions', 'cliStatus', 'sshKeys', 'availableSshKeys'));
     }
 
     public function update(Request $request)

@@ -67,5 +67,7 @@
             @yield('content')
         </main>
     </div>
+
+    @stack('modals')
 </body>
 </html>
