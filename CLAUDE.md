@@ -68,4 +68,6 @@ php artisan native:build
 
 ## Related Projects
 
-- **launchpad** (CLI): The command-line tool this app controls, typically located at `~/projects/launchpad/` on development machines
+- **launchpad-cli** (`github.com/nckrtl/launchpad-cli`): The command-line tool this app controls
+  - Releases available at: `https://github.com/nckrtl/launchpad-cli/releases`
+  - Install locally: `curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x ~/.local/bin/launchpad`
