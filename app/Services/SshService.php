@@ -7,15 +7,14 @@ use Illuminate\Support\Facades\Process;
 
 class SshService
 {
-    protected string $controlDir;
+    // Use /tmp for control sockets to avoid path length issues
+    protected string $controlDir = '/tmp/launchpad-ssh';
+
     protected int $controlPersist = 600;
 
     public function __construct()
     {
-        // Use /tmp for control sockets to avoid path length issues
-        $this->controlDir = '/tmp/launchpad-ssh';
-
-        if (!is_dir($this->controlDir)) {
+        if (! is_dir($this->controlDir)) {
             mkdir($this->controlDir, 0700, true);
         }
     }
@@ -24,6 +23,7 @@ class SshService
     {
         // Use short hash to avoid path length limits on macOS
         $hash = substr(md5("{$server->user}@{$server->host}:{$server->port}"), 0, 12);
+
         return "{$this->controlDir}/ctrl-{$hash}";
     }
 
@@ -45,14 +45,14 @@ class SshService
         ];
     }
 
-    public function execute(Server $server, string $command): array
+    public function execute(Server $server, string $command, int $timeout = 30): array
     {
         if ($server->is_local) {
-            $result = Process::timeout(30)->run($command);
+            $result = Process::timeout($timeout)->run($command);
         } else {
             // Prepend common paths for PHP and other binaries
             $pathPrefix = 'export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH" && ';
-            $result = Process::timeout(30)->run($this->buildSshCommand($server, $pathPrefix . $command));
+            $result = Process::timeout($timeout)->run($this->buildSshCommand($server, $pathPrefix.$command));
         }
 
         return [
@@ -67,18 +67,18 @@ class SshService
     {
         $result = $this->execute($server, $command);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return $result;
         }
 
-        $decoded = json_decode($result['output'], true);
+        $decoded = json_decode((string) $result['output'], true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             return [
                 'success' => false,
                 'exit_code' => $result['exit_code'],
                 'output' => $result['output'],
-                'error' => 'Failed to parse JSON: ' . json_last_error_msg(),
+                'error' => 'Failed to parse JSON: '.json_last_error_msg(),
             ];
         }
 

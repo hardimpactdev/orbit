@@ -27,6 +27,7 @@ class SshKey extends Model
     public function getKeyTypeAttribute(): string
     {
         $parts = explode(' ', $this->public_key);
-        return $parts[0] ?? 'unknown';
+
+        return $parts[0];
     }
 }

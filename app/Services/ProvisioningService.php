@@ -2,138 +2,186 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Process;
+use App\Models\Server;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 
 class ProvisioningService
 {
-    protected string $host;
+    protected Server $server;
+
     protected string $sshPublicKey;
-    protected array $log = [];
+
+    protected int $currentStep = 0;
+
+    protected int $totalSteps = 14;
 
     protected string $cliDownloadUrl = 'https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar';
 
-    public function provision(string $host, string $sshPublicKey): array
+    protected array $steps = [
+        1 => 'Clearing old SSH host keys',
+        2 => 'Testing root SSH connection',
+        3 => 'Creating launchpad user',
+        4 => 'Setting up SSH key',
+        5 => 'Configuring passwordless sudo',
+        6 => 'Securing SSH configuration',
+        7 => 'Testing launchpad user connection',
+        8 => 'Installing Docker',
+        9 => 'Configuring DNS',
+        10 => 'Installing PHP',
+        11 => 'Installing launchpad CLI',
+        12 => 'Creating directory structure',
+        13 => 'Initializing launchpad stack',
+        14 => 'Starting launchpad services',
+    ];
+
+    public function provision(Server $server, string $sshPublicKey): bool
     {
-        $this->host = $host;
+        $this->server = $server;
         $this->sshPublicKey = trim($sshPublicKey);
-        $this->log = [];
+        $this->currentStep = 0;
+
+        // Initialize provisioning state
+        $this->server->update([
+            'status' => Server::STATUS_PROVISIONING,
+            'provisioning_log' => [],
+            'provisioning_error' => null,
+            'provisioning_step' => 0,
+            'provisioning_total_steps' => $this->totalSteps,
+        ]);
 
         try {
-            // Step 1: Test root connection
-            $this->step('Testing root SSH connection');
-            if (!$this->testRootConnection()) {
+            // Step 1: Clear old SSH host keys
+            if (! $this->runStep(1, fn (): bool => $this->clearOldHostKeys())) {
+                return false;
+            }
+
+            // Step 2: Test root connection
+            if (! $this->runStep(2, fn (): bool => $this->testRootConnection())) {
                 return $this->failure('Cannot connect as root. Ensure root SSH access is available.');
             }
 
-            // Step 2: Create launchpad user
-            $this->step('Creating launchpad user');
-            if (!$this->createUser()) {
+            // Step 3: Create launchpad user
+            if (! $this->runStep(3, fn (): bool => $this->createUser())) {
                 return $this->failure('Failed to create launchpad user');
             }
 
-            // Step 3: Setup SSH key for launchpad user
-            $this->step('Setting up SSH key for launchpad user');
-            if (!$this->setupSshKey()) {
+            // Step 4: Setup SSH key for launchpad user
+            if (! $this->runStep(4, fn (): bool => $this->setupSshKey())) {
                 return $this->failure('Failed to setup SSH key');
             }
 
-            // Step 4: Configure sudo for launchpad user
-            $this->step('Configuring passwordless sudo');
-            if (!$this->configureSudo()) {
+            // Step 5: Configure sudo for launchpad user
+            if (! $this->runStep(5, fn (): bool => $this->configureSudo())) {
                 return $this->failure('Failed to configure sudo');
             }
 
-            // Step 5: Secure SSH configuration
-            $this->step('Securing SSH configuration');
-            if (!$this->secureSsh()) {
+            // Step 6: Secure SSH configuration
+            if (! $this->runStep(6, fn (): bool => $this->secureSsh())) {
                 return $this->failure('Failed to secure SSH');
             }
 
-            // Step 6: Test launchpad user connection
-            $this->step('Testing launchpad user SSH connection');
-            if (!$this->testLaunchpadConnection()) {
+            // Step 7: Test launchpad user connection
+            if (! $this->runStep(7, fn (): bool => $this->testLaunchpadConnection())) {
                 return $this->failure('Cannot connect as launchpad user');
             }
 
-            // Step 7: Install Docker
-            $this->step('Installing Docker');
-            if (!$this->installDocker()) {
+            // Step 8: Install Docker
+            if (! $this->runStep(8, fn (): bool => $this->installDocker())) {
                 return $this->failure('Failed to install Docker');
             }
 
-            // Step 8: Disable systemd-resolved (uses port 53)
-            $this->step('Configuring DNS');
-            if (!$this->configureDns()) {
+            // Step 9: Configure DNS
+            if (! $this->runStep(9, fn (): bool => $this->configureDns())) {
                 return $this->failure('Failed to configure DNS');
             }
 
-            // Step 9: Install PHP
-            $this->step('Installing PHP');
-            if (!$this->installPhp()) {
+            // Step 10: Install PHP
+            if (! $this->runStep(10, fn (): bool => $this->installPhp())) {
                 return $this->failure('Failed to install PHP');
             }
 
-            // Step 10: Install launchpad CLI
-            $this->step('Installing launchpad CLI');
-            if (!$this->installCli()) {
+            // Step 11: Install launchpad CLI
+            if (! $this->runStep(11, fn (): bool => $this->installCli())) {
                 return $this->failure('Failed to install launchpad CLI');
             }
 
-            // Step 11: Create directory structure
-            $this->step('Creating directory structure');
-            if (!$this->createDirectories()) {
+            // Step 12: Create directory structure
+            if (! $this->runStep(12, fn (): bool => $this->createDirectories())) {
                 return $this->failure('Failed to create directories');
             }
 
-            // Step 12: Initialize launchpad
-            $this->step('Initializing launchpad stack');
-            if (!$this->initializeLaunchpad()) {
+            // Step 13: Initialize launchpad
+            if (! $this->runStep(13, fn (): bool => $this->initializeLaunchpad())) {
                 return $this->failure('Failed to initialize launchpad');
             }
 
-            // Step 13: Start launchpad
-            $this->step('Starting launchpad services');
-            if (!$this->startLaunchpad()) {
+            // Step 14: Start launchpad
+            if (! $this->runStep(14, fn (): bool => $this->startLaunchpad())) {
                 return $this->failure('Failed to start launchpad');
             }
 
-            // Step 14: Final connection test
-            $this->step('Final connection test');
-            $status = $this->getLaunchpadStatus();
+            // Success!
+            $this->server->update([
+                'status' => Server::STATUS_ACTIVE,
+                'user' => 'launchpad',
+                'port' => 22,
+            ]);
 
-            return [
-                'success' => true,
-                'message' => 'Server provisioned successfully',
-                'log' => $this->log,
-                'server' => [
-                    'host' => $this->host,
-                    'user' => 'launchpad',
-                    'port' => 22,
-                ],
-                'status' => $status,
-            ];
+            return true;
 
         } catch (\Exception $e) {
             Log::error('Provisioning failed', ['error' => $e->getMessage()]);
+
             return $this->failure($e->getMessage());
         }
     }
 
-    protected function step(string $message): void
+    protected function runStep(int $stepNumber, callable $action): bool
     {
-        $this->log[] = ['step' => $message, 'time' => now()->toIso8601String()];
-        Log::info("Provisioning: {$message}");
+        $this->currentStep = $stepNumber;
+        $stepName = $this->steps[$stepNumber] ?? "Step {$stepNumber}";
+
+        $this->logStep($stepName);
+        Log::info("Provisioning step {$stepNumber}: {$stepName}");
+
+        $this->server->update([
+            'provisioning_step' => $stepNumber,
+        ]);
+
+        return $action();
     }
 
-    protected function failure(string $message): array
+    protected function logStep(string $message): void
     {
-        $this->log[] = ['error' => $message, 'time' => now()->toIso8601String()];
-        return [
-            'success' => false,
-            'error' => $message,
-            'log' => $this->log,
-        ];
+        $log = $this->server->provisioning_log ?? [];
+        $log[] = ['step' => $message, 'time' => now()->toIso8601String()];
+        $this->server->update(['provisioning_log' => $log]);
+    }
+
+    protected function logInfo(string $message): void
+    {
+        $log = $this->server->provisioning_log ?? [];
+        $log[] = ['info' => $message, 'time' => now()->toIso8601String()];
+        $this->server->update(['provisioning_log' => $log]);
+    }
+
+    protected function logError(string $message): void
+    {
+        $log = $this->server->provisioning_log ?? [];
+        $log[] = ['error' => $message, 'time' => now()->toIso8601String()];
+        $this->server->update(['provisioning_log' => $log]);
+    }
+
+    protected function failure(string $message): bool
+    {
+        $this->logError($message);
+        $this->server->update([
+            'status' => Server::STATUS_ERROR,
+            'provisioning_error' => $message,
+        ]);
+
+        return false;
     }
 
     protected function runAsRoot(string $command, int $timeout = 120): array
@@ -166,20 +214,31 @@ class ProvisioningService
     {
         $sshOptions = [
             '-o BatchMode=yes',
-            '-o StrictHostKeyChecking=accept-new',
+            '-o StrictHostKeyChecking=no',
+            '-o UserKnownHostsFile=/dev/null',
             '-o ConnectTimeout=10',
         ];
 
         $options = implode(' ', $sshOptions);
         $escapedCommand = escapeshellarg($command);
 
-        return "ssh {$options} {$user}@{$this->host} {$escapedCommand}";
+        return "ssh {$options} {$user}@{$this->server->host} {$escapedCommand}";
+    }
+
+    protected function clearOldHostKeys(): bool
+    {
+        // Remove any existing host keys to prevent conflicts when server is reset
+        Process::run("ssh-keygen -R {$this->server->host} 2>/dev/null || true");
+        $this->logInfo('Cleared old SSH host keys');
+
+        return true;
     }
 
     protected function testRootConnection(): bool
     {
         $result = $this->runAsRoot('echo "connected"');
-        return $result['success'] && str_contains($result['output'], 'connected');
+
+        return $result['success'] && str_contains((string) $result['output'], 'connected');
     }
 
     protected function createUser(): bool
@@ -187,8 +246,9 @@ class ProvisioningService
         // Check if user exists
         $check = $this->runAsRoot('id launchpad >/dev/null 2>&1 && echo "user_exists" || echo "user_not_exists"');
 
-        if (trim($check['output']) === 'user_exists') {
-            $this->log[] = ['info' => 'User launchpad already exists'];
+        if (trim((string) $check['output']) === 'user_exists') {
+            $this->logInfo('User launchpad already exists');
+
             return true;
         }
 
@@ -197,8 +257,9 @@ class ProvisioningService
 
         // Verify user was created
         $verify = $this->runAsRoot('id launchpad >/dev/null 2>&1 && echo "success" || echo "failed"');
-        if (!str_contains(trim($verify['output']), 'success')) {
-            $this->log[] = ['error' => 'Failed to create user: ' . $result['output'] . $result['error']];
+        if (! str_contains(trim((string) $verify['output']), 'success')) {
+            $this->logError('Failed to create user: '.$result['output'].$result['error']);
+
             return false;
         }
 
@@ -221,15 +282,17 @@ BASH;
 
         $result = $this->runAsRoot($script);
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'SSH key setup error: ' . $result['error']];
+        if (! $result['success']) {
+            $this->logError('SSH key setup error: '.$result['error']);
+
             return false;
         }
 
         // Verify setup
         $verify = $this->runAsRoot('stat -c "%U" /home/launchpad/.ssh/authorized_keys');
-        if (trim($verify['output']) !== 'launchpad') {
-            $this->log[] = ['error' => 'SSH key file ownership incorrect: ' . trim($verify['output'])];
+        if (trim((string) $verify['output']) !== 'launchpad') {
+            $this->logError('SSH key file ownership incorrect: '.trim((string) $verify['output']));
+
             return false;
         }
 
@@ -246,6 +309,7 @@ BASH;
         ];
 
         $result = $this->runAsRoot(implode(' && ', $commands));
+
         return $result['success'];
     }
 
@@ -272,13 +336,15 @@ BASH;
         ];
 
         $result = $this->runAsRoot(implode(' && ', $commands));
+
         return $result['success'];
     }
 
     protected function testLaunchpadConnection(): bool
     {
         $result = $this->runAsLaunchpad('echo "connected"');
-        return $result['success'] && str_contains($result['output'], 'connected');
+
+        return $result['success'] && str_contains((string) $result['output'], 'connected');
     }
 
     protected function installDocker(): bool
@@ -286,10 +352,11 @@ BASH;
         // Check if Docker is already installed
         $check = $this->runAsLaunchpad('docker --version 2>/dev/null && echo "docker_found" || echo "docker_not_found"');
 
-        if (str_contains($check['output'], 'docker_found')) {
-            $this->log[] = ['info' => 'Docker already installed'];
+        if (str_contains((string) $check['output'], 'docker_found')) {
+            $this->logInfo('Docker already installed');
             // Ensure launchpad user is in docker group
             $this->runAsLaunchpad('sudo usermod -aG docker launchpad');
+
             return true;
         }
 
@@ -303,8 +370,9 @@ BASH;
 
         $result = $this->runAsLaunchpad(implode(' && ', $installCommands), 300);
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'Docker installation output: ' . $result['error']];
+        if (! $result['success']) {
+            $this->logError('Docker installation output: '.$result['error']);
+
             return false;
         }
 
@@ -325,8 +393,9 @@ BASH;
 
         $result = $this->runAsLaunchpad(implode(' && ', $commands));
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'DNS configuration output: ' . $result['error']];
+        if (! $result['success']) {
+            $this->logError('DNS configuration output: '.$result['error']);
+
             return false;
         }
 
@@ -335,24 +404,27 @@ BASH;
 
     protected function installPhp(): bool
     {
-        // Check if PHP is already installed
-        $check = $this->runAsLaunchpad('php --version 2>/dev/null && echo "installed" || echo "not_installed"');
+        // Check if PHP is already installed (check herd-lite path first)
+        $check = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php --version 2>/dev/null && echo "installed" || echo "not_installed"');
 
-        if (str_contains($check['output'], 'installed') && !str_contains($check['output'], 'not_installed')) {
-            $this->log[] = ['info' => 'PHP already installed'];
+        if (str_contains((string) $check['output'], 'installed') && ! str_contains((string) $check['output'], 'not_installed')) {
+            $this->logInfo('PHP already installed');
+
             return true;
         }
 
         // Install PHP using php.new (needs TERM set for the installer)
-        $result = $this->runAsLaunchpad('export TERM=xterm && /bin/bash -c "$(curl -fsSL https://php.new/install/linux)"', 300);
+        $result = $this->runAsLaunchpad('export TERM=xterm-ghostty && /bin/bash -c "$(curl -fsSL https://php.new/install/linux)"', 300);
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'PHP installation output: ' . $result['output'] . $result['error']];
+        if (! $result['success']) {
+            $this->logError('PHP installation output: '.$result['output'].$result['error']);
+
             return false;
         }
 
         // Verify installation - php.new installs to ~/.config/herd-lite/bin
         $verify = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php --version');
+
         return $verify['success'];
     }
 
@@ -366,13 +438,15 @@ BASH;
 
         $result = $this->runAsLaunchpad(implode(' && ', $commands));
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'CLI installation output: ' . $result['error']];
+        if (! $result['success']) {
+            $this->logError('CLI installation output: '.$result['error']);
+
             return false;
         }
 
         // Verify installation - use herd-lite PHP
         $verify = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php ~/.local/bin/launchpad --version');
+
         return $verify['success'];
     }
 
@@ -383,6 +457,7 @@ BASH;
         ];
 
         $result = $this->runAsLaunchpad(implode(' && ', $commands));
+
         return $result['success'];
     }
 
@@ -392,10 +467,14 @@ BASH;
         // Also set PATH for herd-lite PHP
         $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad init"', 600);
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'Launchpad init output: ' . $result['output'] . $result['error']];
+        if (! $result['success']) {
+            $this->logError('Launchpad init output: '.$result['output'].$result['error']);
+
             return false;
         }
+
+        // Create Docker network (CLI init has a bug where it doesn't persist the network)
+        $this->runAsLaunchpad('sg docker -c "docker network create launchpad 2>/dev/null || true"');
 
         return true;
     }
@@ -404,22 +483,23 @@ BASH;
     {
         $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad start"', 120);
 
-        if (!$result['success']) {
-            $this->log[] = ['error' => 'Launchpad start output: ' . $result['output'] . $result['error']];
+        if (! $result['success']) {
+            $this->logError('Launchpad start output: '.$result['output'].$result['error']);
+
             return false;
         }
 
         return true;
     }
 
-    protected function getLaunchpadStatus(): ?array
+    public function getLaunchpadStatus(): ?array
     {
         $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad status --json"');
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return null;
         }
 
-        return json_decode($result['output'], true);
+        return json_decode((string) $result['output'], true);
     }
 }

@@ -6,6 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Server extends Model
 {
+    const STATUS_PROVISIONING = 'provisioning';
+
+    const STATUS_ACTIVE = 'active';
+
+    const STATUS_ERROR = 'error';
+
     protected $fillable = [
         'name',
         'host',
@@ -15,6 +21,11 @@ class Server extends Model
         'is_default',
         'metadata',
         'last_connected_at',
+        'status',
+        'provisioning_log',
+        'provisioning_error',
+        'provisioning_step',
+        'provisioning_total_steps',
     ];
 
     protected $casts = [
@@ -22,7 +33,23 @@ class Server extends Model
         'is_default' => 'boolean',
         'metadata' => 'array',
         'last_connected_at' => 'datetime',
+        'provisioning_log' => 'array',
     ];
+
+    public function isProvisioning(): bool
+    {
+        return $this->status === self::STATUS_PROVISIONING;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
+    public function hasError(): bool
+    {
+        return $this->status === self::STATUS_ERROR;
+    }
 
     public function getSshConnectionString(): string
     {
@@ -31,6 +58,7 @@ class Server extends Model
         }
 
         $port = $this->port !== 22 ? "-p {$this->port}" : '';
+
         return trim("{$this->user}@{$this->host} {$port}");
     }
 

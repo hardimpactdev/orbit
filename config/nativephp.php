@@ -124,7 +124,7 @@ return [
                 'region' => env('AWS_DEFAULT_REGION'),
                 'bucket' => env('AWS_BUCKET'),
                 'endpoint' => env('AWS_ENDPOINT'),
-                'path' => env('NATIVEPHP_UPDATER_PATH', null),
+                'path' => env('NATIVEPHP_UPDATER_PATH'),
             ],
 
             'spaces' => [
@@ -133,7 +133,7 @@ return [
                 'secret' => env('DO_SPACES_SECRET_ACCESS_KEY'),
                 'name' => env('DO_SPACES_NAME'),
                 'region' => env('DO_SPACES_REGION'),
-                'path' => env('NATIVEPHP_UPDATER_PATH', null),
+                'path' => env('NATIVEPHP_UPDATER_PATH'),
             ],
         ],
     ],
@@ -154,7 +154,7 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        // 'npm run build',
+        'mkdir -p bin && curl -L -o bin/launchpad.phar https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x bin/launchpad.phar',
     ],
 
     'postbuild' => [
@@ -164,5 +164,5 @@ return [
     /**
      * Custom PHP binary path.
      */
-    'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH', null),
+    'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH'),
 ];

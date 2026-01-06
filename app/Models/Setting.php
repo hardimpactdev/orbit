@@ -7,7 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 class Setting extends Model
 {
     protected $primaryKey = 'key';
+
     public $incrementing = false;
+
     protected $keyType = 'string';
 
     protected $fillable = ['key', 'value'];
@@ -15,7 +17,8 @@ class Setting extends Model
     public static function get(string $key, mixed $default = null): mixed
     {
         $setting = static::find($key);
-        return $setting?->value ?? $default;
+
+        return $setting !== null ? $setting->value : $default;
     }
 
     public static function set(string $key, mixed $value): void
@@ -59,12 +62,12 @@ class Setting extends Model
     public static function getAvailableSshKeys(): array
     {
         $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? $_ENV['HOME'] ?? null);
-        if (!$home) {
+        if (! $home) {
             return [];
         }
 
-        $sshDir = $home . '/.ssh';
-        if (!is_dir($sshDir)) {
+        $sshDir = $home.'/.ssh';
+        if (! is_dir($sshDir)) {
             return [];
         }
 
@@ -72,14 +75,14 @@ class Setting extends Model
         $patterns = ['*.pub'];
 
         foreach ($patterns as $pattern) {
-            $files = glob($sshDir . '/' . $pattern);
+            $files = glob($sshDir.'/'.$pattern);
             foreach ($files as $file) {
                 $content = file_get_contents($file);
                 if ($content && str_starts_with($content, 'ssh-')) {
                     $keys[basename($file)] = [
                         'path' => $file,
                         'content' => trim($content),
-                        'type' => explode(' ', $content)[0] ?? 'unknown',
+                        'type' => explode(' ', $content)[0],
                     ];
                 }
             }

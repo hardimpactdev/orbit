@@ -6,6 +6,8 @@ use App\Models\Setting;
 use App\Models\SshKey;
 use App\Services\CliUpdateService;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class SettingsController extends Controller
 {
@@ -13,7 +15,7 @@ class SettingsController extends Controller
         protected CliUpdateService $cliUpdate,
     ) {}
 
-    public function index()
+    public function index(): Response
     {
         $editor = Setting::getEditor();
         $editorOptions = Setting::getEditorOptions();
@@ -21,13 +23,19 @@ class SettingsController extends Controller
         $sshKeys = SshKey::orderBy('is_default', 'desc')->orderBy('name')->get();
         $availableSshKeys = Setting::getAvailableSshKeys();
 
-        return view('settings.index', compact('editor', 'editorOptions', 'cliStatus', 'sshKeys', 'availableSshKeys'));
+        return Inertia::render('Settings', [
+            'editor' => $editor,
+            'editorOptions' => $editorOptions,
+            'cliStatus' => $cliStatus,
+            'sshKeys' => $sshKeys,
+            'availableSshKeys' => $availableSshKeys,
+        ]);
     }
 
     public function update(Request $request)
     {
         $validated = $request->validate([
-            'editor' => 'required|string|in:' . implode(',', array_keys(Setting::getEditorOptions())),
+            'editor' => 'required|string|in:'.implode(',', array_keys(Setting::getEditorOptions())),
         ]);
 
         $editorOptions = Setting::getEditorOptions();
@@ -44,9 +52,17 @@ class SettingsController extends Controller
         return response()->json($this->cliUpdate->getStatus());
     }
 
+    public function cliInstall()
+    {
+        $result = $this->cliUpdate->ensureInstalled();
+
+        return response()->json($result);
+    }
+
     public function cliUpdate()
     {
         $result = $this->cliUpdate->checkAndUpdate();
+
         return response()->json($result);
     }
 }

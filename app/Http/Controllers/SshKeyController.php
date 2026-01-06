@@ -16,13 +16,13 @@ class SshKeyController extends Controller
         ]);
 
         // Validate it looks like an SSH public key
-        if (!str_starts_with(trim($validated['public_key']), 'ssh-')) {
+        if (! str_starts_with(trim((string) $validated['public_key']), 'ssh-')) {
             return back()->withErrors(['public_key' => 'Invalid SSH public key format.']);
         }
 
         $key = SshKey::create([
             'name' => $validated['name'],
-            'public_key' => trim($validated['public_key']),
+            'public_key' => trim((string) $validated['public_key']),
             'is_default' => SshKey::count() === 0, // First key is default
         ]);
 
@@ -37,13 +37,13 @@ class SshKeyController extends Controller
             'public_key' => 'required|string',
         ]);
 
-        if (!str_starts_with(trim($validated['public_key']), 'ssh-')) {
+        if (! str_starts_with(trim((string) $validated['public_key']), 'ssh-')) {
             return back()->withErrors(['public_key' => 'Invalid SSH public key format.']);
         }
 
         $sshKey->update([
             'name' => $validated['name'],
-            'public_key' => trim($validated['public_key']),
+            'public_key' => trim((string) $validated['public_key']),
         ]);
 
         return redirect()->route('settings.index')

@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Server;
 use App\Services\LaunchpadService;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DashboardController extends Controller
 {
@@ -11,11 +13,14 @@ class DashboardController extends Controller
         protected LaunchpadService $launchpad,
     ) {}
 
-    public function index()
+    public function index(): Response
     {
         $servers = Server::all();
         $defaultServer = Server::getDefault();
 
-        return view('dashboard', compact('servers', 'defaultServer'));
+        return Inertia::render('Dashboard', [
+            'servers' => $servers,
+            'defaultServer' => $defaultServer,
+        ]);
     }
 }
