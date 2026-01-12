@@ -104,7 +104,7 @@
         "resources/stubs/horizon-launchd.plist.stub exists with {{USER}}, {{HOME}}, {{PHP_PATH}}, {{ARTISAN_PATH}} placeholders",
         "Stubs use correct macOS paths (/opt/homebrew/, staff group)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-8",

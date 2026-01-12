@@ -60,3 +60,8 @@ Started: 2026-01-12
 **Changes:** app/Console/Commands/StatusCommand.php (new file)
 **Learnings:** Detects architecture by checking for PHP-FPM sockets. Displays brew services status for PHP-FPM/Caddy, launchctl for Horizon, docker inspect for containers. Uses typed arrays for PHPStan compliance.
 ---
+
+## 2026-01-12 - STORY-7: Add FPM pool stub files
+**Changes:** resources/stubs/mac-fpm-pool.stub, resources/stubs/horizon-launchd.plist.stub (new files)
+**Learnings:** Stubs use {{VARIABLE}} placeholder format. macOS uses staff group. Homebrew prefix is /opt/homebrew/. plist uses XML format with PropertyList DTD.
+---
