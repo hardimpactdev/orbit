@@ -13,6 +13,7 @@ interface Environment {
     id: number;
     name: string;
     host: string;
+    is_local: boolean;
     status: string;
     provisioning_step: number | null;
     provisioning_total_steps: number | null;
@@ -48,7 +49,7 @@ const currentStepText = computed(() => {
     return steps.length > 0 ? steps[steps.length - 1].step : 'Starting...';
 });
 
-const checklistItems = [
+const remoteChecklistItems = [
     { step: 3, label: 'Launchpad user with sudo access' },
     { step: 6, label: 'Secure SSH configuration (key-only, no root login)' },
     { step: 8, label: 'Docker with containerized services' },
@@ -57,10 +58,26 @@ const checklistItems = [
     { step: 17, label: 'Launchpad stack (PostgreSQL, Redis, Mailpit)' },
 ];
 
+const localChecklistItems = [
+    { step: 2, label: 'Homebrew package manager' },
+    { step: 3, label: 'OrbStack (Docker for Mac)' },
+    { step: 5, label: 'PHP 8.4 & 8.5 via Homebrew' },
+    { step: 6, label: 'Caddy web server' },
+    { step: 9, label: 'PHP-FPM pool configuration' },
+    { step: 11, label: 'DNS resolver configuration' },
+    { step: 14, label: 'Docker services (PostgreSQL, Redis, Mailpit)' },
+    { step: 15, label: 'Horizon queue worker (launchd)' },
+];
+
+const checklistItems = computed(() => {
+    return props.server.is_local ? localChecklistItems : remoteChecklistItems;
+});
+
 const getChecklistStatus = (itemStep: number) => {
     if (currentStep.value >= itemStep) return 'completed';
     // If we're past the previous checkpoint but not at this one yet, show spinner
-    const prevItem = checklistItems.filter(i => i.step < itemStep).pop();
+    const items = checklistItems.value;
+    const prevItem = items.filter(i => i.step < itemStep).pop();
     if (prevItem && currentStep.value >= prevItem.step) return 'in-progress';
     if (currentStep.value > 0) return 'pending';
     return 'pending';
@@ -256,7 +273,9 @@ onUnmounted(() => {
 
         <!-- What's Being Installed -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">What's being installed</h3>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
+                {{ server.is_local ? 'What\'s being installed (Mac)' : 'What\'s being installed' }}
+            </h3>
             <ul class="space-y-2 text-gray-600 dark:text-gray-400">
                 <li v-for="item in checklistItems" :key="item.step" class="flex items-center">
                     <span class="mr-2">
