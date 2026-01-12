@@ -45,3 +45,8 @@ Started: 2026-01-12
 **Changes:** app/Services/CaddyfileGenerator.php (new file)
 **Learnings:** Uses php_fastcgi with unix sockets for PHP-FPM. Injects MacPhpFpmService for socket paths. setupSystemCaddyfile() imports launchpad config into Homebrew's Caddy.
 ---
+
+## 2026-01-12 - STORY-4: Create MacHorizonService for launchd management
+**Changes:** app/Services/MacHorizonService.php (new file)
+**Learnings:** launchd plist uses ProgramArguments array, WorkingDirectory, EnvironmentVariables dict. launchctl load/unload for management. Check isRunning() by parsing launchctl list output for PID.
+---

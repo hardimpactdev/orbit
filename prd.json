@@ -59,7 +59,7 @@
         "uninstall() unloads and removes plist",
         "isRunning() checks launchctl list for horizon"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-5",
