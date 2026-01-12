@@ -120,7 +120,7 @@
         "Reports missing prerequisites with install instructions",
         "Returns exit code 0 if all pass, 1 if any fail"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }

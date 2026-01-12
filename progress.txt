@@ -65,3 +65,8 @@ Started: 2026-01-12
 **Changes:** resources/stubs/mac-fpm-pool.stub, resources/stubs/horizon-launchd.plist.stub (new files)
 **Learnings:** Stubs use {{VARIABLE}} placeholder format. macOS uses staff group. Homebrew prefix is /opt/homebrew/. plist uses XML format with PropertyList DTD.
 ---
+
+## 2026-01-12 - STORY-8: Add prerequisite check command
+**Changes:** app/Console/Commands/DoctorCommand.php (new file)
+**Learnings:** Check Homebrew with `command -v brew`. PHP versions detected via MacPhpFpmService. Caddy version from `caddy version`. Docker running check via `docker info`.
+---
