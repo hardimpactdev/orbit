@@ -92,7 +92,7 @@
         "Shows Docker container status for postgres, redis, mailpit, reverb, dns",
         "JSON output includes architecture field"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-7",

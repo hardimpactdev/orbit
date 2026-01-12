@@ -55,3 +55,8 @@ Started: 2026-01-12
 **Changes:** app/Console/Commands/MigrateToFpmCommand.php (new file)
 **Learnings:** Command orchestrates all services. Uses --force flag for CI automation. Steps: check prerequisites, stop containers, install pool configs, start PHP-FPM, configure Caddy, install Horizon, cleanup old containers.
 ---
+
+## 2026-01-12 - STORY-6: Update StatusCommand for FPM architecture
+**Changes:** app/Console/Commands/StatusCommand.php (new file)
+**Learnings:** Detects architecture by checking for PHP-FPM sockets. Displays brew services status for PHP-FPM/Caddy, launchctl for Horizon, docker inspect for containers. Uses typed arrays for PHPStan compliance.
+---
