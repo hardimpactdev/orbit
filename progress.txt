@@ -50,3 +50,8 @@ Started: 2026-01-12
 **Changes:** app/Services/MacHorizonService.php (new file)
 **Learnings:** launchd plist uses ProgramArguments array, WorkingDirectory, EnvironmentVariables dict. launchctl load/unload for management. Check isRunning() by parsing launchctl list output for PID.
 ---
+
+## 2026-01-12 - STORY-5: Create MigrateToFpmCommand
+**Changes:** app/Console/Commands/MigrateToFpmCommand.php (new file)
+**Learnings:** Command orchestrates all services. Uses --force flag for CI automation. Steps: check prerequisites, stop containers, install pool configs, start PHP-FPM, configure Caddy, install Horizon, cleanup old containers.
+---

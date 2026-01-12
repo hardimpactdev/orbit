@@ -77,7 +77,7 @@
         "Removes old FrankenPHP containers",
         "--force flag skips confirmation prompts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-6",
