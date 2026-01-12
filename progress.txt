@@ -40,3 +40,8 @@ Started: 2026-01-12
 **Changes:** app/Services/MacBrewService.php (new file)
 **Learnings:** brew services list output can be parsed to check service status. The output contains "started" for running services.
 ---
+
+## 2026-01-12 - STORY-3: Update CaddyfileGenerator for host Caddy + FPM sockets
+**Changes:** app/Services/CaddyfileGenerator.php (new file)
+**Learnings:** Uses php_fastcgi with unix sockets for PHP-FPM. Injects MacPhpFpmService for socket paths. setupSystemCaddyfile() imports launchpad config into Homebrew's Caddy.
+---

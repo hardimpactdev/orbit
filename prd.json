@@ -44,7 +44,7 @@
         "setupSystemCaddyfile() creates /opt/homebrew/etc/caddy/Caddyfile that imports ~/.config/launchpad/caddy/Caddyfile",
         "reload() uses `brew services reload caddy` on macOS"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-4",
