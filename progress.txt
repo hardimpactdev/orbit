@@ -35,3 +35,8 @@ Started: 2026-01-12
 **Changes:** app/Services/MacPhpFpmService.php (fixed PHPStan type errors)
 **Learnings:** Service already existed from prior work. PHPStan requires explicit type handling for getenv() and superglobals. Use `is_string()` checks for mixed return values.
 ---
+
+## 2026-01-12 - STORY-2: Create MacBrewService for Homebrew service management
+**Changes:** app/Services/MacBrewService.php (new file)
+**Learnings:** brew services list output can be parsed to check service status. The output contains "started" for running services.
+---

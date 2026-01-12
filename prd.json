@@ -30,7 +30,7 @@
         "startCaddy(), stopCaddy(), restartCaddy() manage Caddy service",
         "isServiceRunning(string $service) checks brew services list"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "STORY-3",
