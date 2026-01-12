@@ -2,19 +2,19 @@
 
 namespace App\Services;
 
-use App\Models\Server;
+use App\Models\Environment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 class ProvisioningService
 {
-    protected Server $server;
+    protected Environment $environment;
 
     protected string $sshPublicKey;
 
     protected int $currentStep = 0;
 
-    protected int $totalSteps = 14;
+    protected int $totalSteps = 17;
 
     protected string $cliDownloadUrl = 'https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar';
 
@@ -28,22 +28,25 @@ class ProvisioningService
         7 => 'Testing launchpad user connection',
         8 => 'Installing Docker',
         9 => 'Configuring DNS',
-        10 => 'Installing PHP',
-        11 => 'Installing launchpad CLI',
-        12 => 'Creating directory structure',
-        13 => 'Initializing launchpad stack',
-        14 => 'Starting launchpad services',
+        10 => 'Adding Ondřej PPA',
+        11 => 'Installing PHP-FPM versions',
+        12 => 'Configuring PHP-FPM pools',
+        13 => 'Installing Caddy',
+        14 => 'Installing launchpad CLI',
+        15 => 'Creating directory structure',
+        16 => 'Initializing launchpad stack',
+        17 => 'Starting launchpad services',
     ];
 
-    public function provision(Server $server, string $sshPublicKey): bool
+    public function provision(Environment $environment, string $sshPublicKey): bool
     {
-        $this->server = $server;
+        $this->environment = $environment;
         $this->sshPublicKey = trim($sshPublicKey);
         $this->currentStep = 0;
 
         // Initialize provisioning state
-        $this->server->update([
-            'status' => Server::STATUS_PROVISIONING,
+        $this->environment->update([
+            'status' => Environment::STATUS_PROVISIONING,
             'provisioning_log' => [],
             'provisioning_error' => null,
             'provisioning_step' => 0,
@@ -96,36 +99,55 @@ class ProvisioningService
                 return $this->failure('Failed to configure DNS');
             }
 
-            // Step 10: Install PHP
-            if (! $this->runStep(10, fn (): bool => $this->installPhp())) {
-                return $this->failure('Failed to install PHP');
+            // Step 10: Add Ondřej PPA
+            if (! $this->runStep(10, fn (): bool => $this->addOndrejPpa())) {
+                return $this->failure('Failed to add Ondřej PPA');
             }
 
-            // Step 11: Install launchpad CLI
-            if (! $this->runStep(11, fn (): bool => $this->installCli())) {
+            // Step 11: Install PHP-FPM versions
+            if (! $this->runStep(11, fn (): bool => $this->installPhpFpm())) {
+                return $this->failure('Failed to install PHP-FPM');
+            }
+
+            // Step 12: Configure PHP-FPM pools
+            if (! $this->runStep(12, fn (): bool => $this->configurePhpFpmPools())) {
+                return $this->failure('Failed to configure PHP-FPM pools');
+            }
+
+            // Step 13: Install Caddy
+            if (! $this->runStep(13, fn (): bool => $this->installCaddy())) {
+                return $this->failure('Failed to install Caddy');
+            }
+
+            // Step 14: Install launchpad CLI
+            if (! $this->runStep(14, fn (): bool => $this->installCli())) {
                 return $this->failure('Failed to install launchpad CLI');
             }
 
-            // Step 12: Create directory structure
-            if (! $this->runStep(12, fn (): bool => $this->createDirectories())) {
+            // Step 15: Create directory structure
+            if (! $this->runStep(15, fn (): bool => $this->createDirectories())) {
                 return $this->failure('Failed to create directories');
             }
 
-            // Step 13: Initialize launchpad
-            if (! $this->runStep(13, fn (): bool => $this->initializeLaunchpad())) {
+            // Step 16: Initialize launchpad
+            if (! $this->runStep(16, fn (): bool => $this->initializeLaunchpad())) {
                 return $this->failure('Failed to initialize launchpad');
             }
 
-            // Step 14: Start launchpad
-            if (! $this->runStep(14, fn (): bool => $this->startLaunchpad())) {
+            // Step 17: Start launchpad
+            if (! $this->runStep(17, fn (): bool => $this->startLaunchpad())) {
                 return $this->failure('Failed to start launchpad');
             }
 
-            // Success!
-            $this->server->update([
-                'status' => Server::STATUS_ACTIVE,
+            // Success! Clear provisioning log since it's no longer needed
+            $this->environment->update([
+                'status' => Environment::STATUS_ACTIVE,
                 'user' => 'launchpad',
                 'port' => 22,
+                'provisioning_log' => null,
+                'provisioning_error' => null,
+                'provisioning_step' => null,
+                'provisioning_total_steps' => null,
             ]);
 
             return true;
@@ -145,7 +167,7 @@ class ProvisioningService
         $this->logStep($stepName);
         Log::info("Provisioning step {$stepNumber}: {$stepName}");
 
-        $this->server->update([
+        $this->environment->update([
             'provisioning_step' => $stepNumber,
         ]);
 
@@ -154,30 +176,30 @@ class ProvisioningService
 
     protected function logStep(string $message): void
     {
-        $log = $this->server->provisioning_log ?? [];
+        $log = $this->environment->provisioning_log ?? [];
         $log[] = ['step' => $message, 'time' => now()->toIso8601String()];
-        $this->server->update(['provisioning_log' => $log]);
+        $this->environment->update(['provisioning_log' => $log]);
     }
 
     protected function logInfo(string $message): void
     {
-        $log = $this->server->provisioning_log ?? [];
+        $log = $this->environment->provisioning_log ?? [];
         $log[] = ['info' => $message, 'time' => now()->toIso8601String()];
-        $this->server->update(['provisioning_log' => $log]);
+        $this->environment->update(['provisioning_log' => $log]);
     }
 
     protected function logError(string $message): void
     {
-        $log = $this->server->provisioning_log ?? [];
+        $log = $this->environment->provisioning_log ?? [];
         $log[] = ['error' => $message, 'time' => now()->toIso8601String()];
-        $this->server->update(['provisioning_log' => $log]);
+        $this->environment->update(['provisioning_log' => $log]);
     }
 
     protected function failure(string $message): bool
     {
         $this->logError($message);
-        $this->server->update([
-            'status' => Server::STATUS_ERROR,
+        $this->environment->update([
+            'status' => Environment::STATUS_ERROR,
             'provisioning_error' => $message,
         ]);
 
@@ -222,13 +244,13 @@ class ProvisioningService
         $options = implode(' ', $sshOptions);
         $escapedCommand = escapeshellarg($command);
 
-        return "ssh {$options} {$user}@{$this->server->host} {$escapedCommand}";
+        return "ssh {$options} {$user}@{$this->environment->host} {$escapedCommand}";
     }
 
     protected function clearOldHostKeys(): bool
     {
         // Remove any existing host keys to prevent conflicts when server is reset
-        Process::run("ssh-keygen -R {$this->server->host} 2>/dev/null || true");
+        Process::run("ssh-keygen -R {$this->environment->host} 2>/dev/null || true");
         $this->logInfo('Cleared old SSH host keys');
 
         return true;
@@ -402,28 +424,187 @@ BASH;
         return true;
     }
 
-    protected function installPhp(): bool
+    protected function addOndrejPpa(): bool
     {
-        // Check if PHP is already installed (check herd-lite path first)
-        $check = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php --version 2>/dev/null && echo "installed" || echo "not_installed"');
+        // Check if PPA is already added
+        $check = $this->runAsLaunchpad('apt-cache policy | grep -q "ondrej/php" && echo "exists" || echo "missing"');
 
-        if (str_contains((string) $check['output'], 'installed') && ! str_contains((string) $check['output'], 'not_installed')) {
-            $this->logInfo('PHP already installed');
+        if (str_contains((string) $check['output'], 'exists')) {
+            $this->logInfo('Ondřej PPA already added');
 
             return true;
         }
 
-        // Install PHP using php.new (needs TERM set for the installer)
-        $result = $this->runAsLaunchpad('export TERM=xterm-ghostty && /bin/bash -c "$(curl -fsSL https://php.new/install/linux)"', 300);
+        // Add Ondřej PPA for PHP packages
+        $commands = [
+            'sudo add-apt-repository ppa:ondrej/php -y',
+            'sudo apt update',
+        ];
+
+        $result = $this->runAsLaunchpad(implode(' && ', $commands), 120);
 
         if (! $result['success']) {
-            $this->logError('PHP installation output: '.$result['output'].$result['error']);
+            $this->logError('PPA addition output: '.$result['output'].$result['error']);
 
             return false;
         }
 
-        // Verify installation - php.new installs to ~/.config/herd-lite/bin
-        $verify = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php --version');
+        return true;
+    }
+
+    protected function installPhpFpm(): bool
+    {
+        // Install PHP-FPM versions with common extensions
+        $versions = ['8.2', '8.3', '8.4'];
+        $extensions = [
+            'fpm', 'cli', 'mbstring', 'xml', 'curl', 'zip', 'gd',
+            'pgsql', 'mysql', 'redis', 'sqlite3', 'bcmath', 'intl', 'pcntl',
+        ];
+
+        foreach ($versions as $version) {
+            // Check if already installed
+            $check = $this->runAsLaunchpad("dpkg -l | grep -q 'php{$version}-fpm' && echo 'installed' || echo 'missing'");
+
+            if (str_contains((string) $check['output'], 'installed')) {
+                $this->logInfo("PHP {$version} already installed");
+
+                continue;
+            }
+
+            // Build package list
+            $packages = [];
+            foreach ($extensions as $ext) {
+                $packages[] = "php{$version}-{$ext}";
+            }
+
+            $packageList = implode(' ', $packages);
+            $this->logInfo("Installing PHP {$version} with extensions");
+
+            // Install packages
+            $result = $this->runAsLaunchpad("sudo DEBIAN_FRONTEND=noninteractive apt install -y {$packageList}", 300);
+
+            if (! $result['success']) {
+                $this->logError("PHP {$version} installation output: ".$result['output'].$result['error']);
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function configurePhpFpmPools(): bool
+    {
+        // Create launchpad config directory for PHP-FPM pools
+        $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/php');
+
+        $versions = ['8.2', '8.3', '8.4'];
+
+        foreach ($versions as $version) {
+            $normalized = str_replace('.', '', $version); // "8.4" -> "84"
+            $socketPath = "/home/launchpad/.config/launchpad/php/php{$normalized}.sock";
+            $logPath = "/home/launchpad/.config/launchpad/logs/php{$normalized}-fpm.log";
+
+            // Create custom pool configuration
+            $poolConfig = <<<INI
+; Launchpad PHP-FPM Pool Configuration
+; Generated by launchpad-desktop provisioning
+
+[launchpad-{$normalized}]
+user = launchpad
+group = launchpad
+
+; Socket configuration
+listen = {$socketPath}
+listen.owner = launchpad
+listen.group = launchpad
+listen.mode = 0660
+
+; Process management
+pm = dynamic
+pm.max_children = 10
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+pm.max_requests = 500
+
+; Logging
+php_admin_value[error_log] = {$logPath}
+php_admin_flag[log_errors] = on
+catch_workers_output = yes
+decorate_workers_output = no
+
+; Environment variables (critical for CLI/Bun access)
+env[PATH] = /home/launchpad/.local/bin:/home/launchpad/.bun/bin:/usr/local/bin:/usr/bin:/bin
+env[HOME] = /home/launchpad
+env[USER] = launchpad
+INI;
+
+            // Escape the config for shell
+            $escapedConfig = str_replace("'", "'\\''", $poolConfig);
+            $poolConfigPath = "/home/launchpad/.config/launchpad/php/php{$normalized}-fpm.conf";
+
+            // Write pool config
+            $writeResult = $this->runAsLaunchpad("echo '{$escapedConfig}' > {$poolConfigPath}");
+
+            if (! $writeResult['success']) {
+                $this->logError("Failed to write pool config for PHP {$version}");
+
+                return false;
+            }
+
+            // Create log directory
+            $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/logs');
+
+            // Include our pool in the PHP-FPM config
+            $fpmConfDir = "/etc/php/{$version}/fpm/pool.d";
+            $symlinkCmd = "sudo ln -sf {$poolConfigPath} {$fpmConfDir}/launchpad.conf";
+            $this->runAsLaunchpad($symlinkCmd);
+
+            // Start and enable PHP-FPM service
+            $this->logInfo("Starting PHP-FPM {$version}");
+            $startResult = $this->runAsLaunchpad("sudo systemctl enable php{$version}-fpm && sudo systemctl start php{$version}-fpm");
+
+            if (! $startResult['success']) {
+                $this->logError("Failed to start PHP-FPM {$version}: ".$startResult['error']);
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function installCaddy(): bool
+    {
+        // Check if Caddy is already installed
+        $check = $this->runAsLaunchpad('command -v caddy >/dev/null 2>&1 && echo "installed" || echo "missing"');
+
+        if (str_contains((string) $check['output'], 'installed')) {
+            $this->logInfo('Caddy already installed');
+
+            return true;
+        }
+
+        // Install Caddy from official repository
+        $commands = [
+            'sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl',
+            "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
+            "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list",
+            'sudo apt update',
+            'sudo apt install -y caddy',
+        ];
+
+        $result = $this->runAsLaunchpad(implode(' && ', $commands), 180);
+
+        if (! $result['success']) {
+            $this->logError('Caddy installation output: '.$result['output'].$result['error']);
+
+            return false;
+        }
+
+        // Verify installation
+        $verify = $this->runAsLaunchpad('caddy version');
 
         return $verify['success'];
     }
@@ -444,8 +625,8 @@ BASH;
             return false;
         }
 
-        // Verify installation - use herd-lite PHP
-        $verify = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$PATH" && php ~/.local/bin/launchpad --version');
+        // Verify installation
+        $verify = $this->runAsLaunchpad('php ~/.local/bin/launchpad --version');
 
         return $verify['success'];
     }
@@ -464,8 +645,7 @@ BASH;
     protected function initializeLaunchpad(): bool
     {
         // Need to use sg (switch group) to pick up docker group membership
-        // Also set PATH for herd-lite PHP
-        $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad init"', 600);
+        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad init"', 600);
 
         if (! $result['success']) {
             $this->logError('Launchpad init output: '.$result['output'].$result['error']);
@@ -481,7 +661,7 @@ BASH;
 
     protected function startLaunchpad(): bool
     {
-        $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad start"', 120);
+        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad start"', 120);
 
         if (! $result['success']) {
             $this->logError('Launchpad start output: '.$result['output'].$result['error']);
@@ -494,12 +674,97 @@ BASH;
 
     public function getLaunchpadStatus(): ?array
     {
-        $result = $this->runAsLaunchpad('export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$PATH" && sg docker -c "php ~/.local/bin/launchpad status --json"');
+        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad status --json"');
 
         if (! $result['success']) {
             return null;
         }
 
         return json_decode((string) $result['output'], true);
+    }
+
+    /**
+     * Check if an environment already has Launchpad configured.
+     * Returns info about existing setup or null if not configured.
+     */
+    public static function checkExistingSetup(string $host, string $user = 'root'): array
+    {
+        $result = [
+            'has_launchpad' => false,
+            'has_launchpad_user' => false,
+            'launchpad_running' => false,
+            'can_connect' => false,
+            'connected_as' => null,
+            'error' => null,
+        ];
+
+        $sshOptions = [
+            '-o BatchMode=yes',
+            '-o StrictHostKeyChecking=no',
+            '-o UserKnownHostsFile=/dev/null',
+            '-o ConnectTimeout=10',
+        ];
+        $options = implode(' ', $sshOptions);
+
+        // First, try connecting as the launchpad user (in case already provisioned)
+        $launchpadCheck = Process::timeout(15)->run(
+            "ssh {$options} launchpad@{$host} 'echo connected'"
+        );
+
+        if ($launchpadCheck->successful() && str_contains($launchpadCheck->output(), 'connected')) {
+            $result['can_connect'] = true;
+            $result['connected_as'] = 'launchpad';
+            $result['has_launchpad_user'] = true;
+
+            // Check if launchpad CLI is installed and get status
+            $statusCheck = Process::timeout(30)->run(
+                "ssh {$options} launchpad@{$host} 'php ~/.local/bin/launchpad status --json 2>/dev/null'"
+            );
+
+            if ($statusCheck->successful()) {
+                $status = json_decode($statusCheck->output(), true);
+                if ($status) {
+                    $result['has_launchpad'] = true;
+                    $result['launchpad_running'] = ($status['status'] ?? '') === 'running';
+                    $result['status'] = $status;
+                }
+            } else {
+                // Check if CLI exists but maybe not running
+                $cliCheck = Process::timeout(15)->run(
+                    "ssh {$options} launchpad@{$host} 'test -f ~/.local/bin/launchpad && echo exists'"
+                );
+                if ($cliCheck->successful() && str_contains($cliCheck->output(), 'exists')) {
+                    $result['has_launchpad'] = true;
+                }
+            }
+
+            return $result;
+        }
+
+        // Try connecting as the specified user (usually root for provisioning)
+        $rootCheck = Process::timeout(15)->run(
+            "ssh {$options} {$user}@{$host} 'echo connected'"
+        );
+
+        if ($rootCheck->successful() && str_contains($rootCheck->output(), 'connected')) {
+            $result['can_connect'] = true;
+            $result['connected_as'] = $user;
+
+            // Check if launchpad user exists
+            $userCheck = Process::timeout(15)->run(
+                "ssh {$options} {$user}@{$host} 'id launchpad >/dev/null 2>&1 && echo exists || echo missing'"
+            );
+
+            if (str_contains($userCheck->output(), 'exists')) {
+                $result['has_launchpad_user'] = true;
+            }
+
+            return $result;
+        }
+
+        // Cannot connect
+        $result['error'] = 'Cannot connect to environment. Ensure SSH key is configured.';
+
+        return $result;
     }
 }

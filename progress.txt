@@ -1,0 +1,37 @@
+# Ralph Progress Log
+Started: 2026-01-12
+
+## Codebase Patterns
+
+### Services
+- Services live in `app/Services/`
+- Use Process facade for shell commands
+- ConfigManager handles ~/.config/launchpad/ paths
+
+### Commands
+- Commands in `app/Console/Commands/`
+- Laravel Artisan command structure
+- Use $this->info(), $this->error() for output
+
+### Stubs
+- Template files in `resources/stubs/`
+- Placeholders use {{VARIABLE}} format
+
+### Existing Code to Reference
+- ProvisioningService.php - Linux PHP-FPM pool config generation
+- CaddyfileGenerator.php - Caddyfile generation (currently for containers)
+- tmp/HorizonStartCommand.php - Horizon management prototype
+
+### macOS Specifics
+- Homebrew prefix: /opt/homebrew/ (Apple Silicon)
+- PHP from shivammathur/php tap
+- brew services for service management
+- launchctl for launchd services
+- Plist in ~/Library/LaunchAgents/
+
+---
+
+## 2026-01-12 - STORY-1: Create MacPhpFpmService for pool config generation
+**Changes:** app/Services/MacPhpFpmService.php (fixed PHPStan type errors)
+**Learnings:** Service already existed from prior work. PHPStan requires explicit type handling for getenv() and superglobals. Use `is_string()` checks for mixed return values.
+---

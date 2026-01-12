@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Server;
+use App\Models\Environment;
 use App\Models\Setting;
+use App\Models\SshKey;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -12,11 +13,11 @@ class ProvisioningController extends Controller
 {
     public function create(): \Inertia\Response
     {
-        $sshPublicKey = Setting::getSshPublicKey();
+        $sshKeys = SshKey::orderBy('is_default', 'desc')->orderBy('name')->get();
         $availableSshKeys = Setting::getAvailableSshKeys();
 
         return \Inertia\Inertia::render('provisioning/Create', [
-            'sshPublicKey' => $sshPublicKey,
+            'sshKeys' => $sshKeys,
             'availableSshKeys' => $availableSshKeys,
         ]);
     }
@@ -35,21 +36,21 @@ class ProvisioningController extends Controller
             Setting::setSshPublicKey($validated['ssh_public_key']);
         }
 
-        // Create the server record immediately with provisioning status
-        $server = Server::create([
+        // Create the environment record immediately with provisioning status
+        $environment = Environment::create([
             'name' => $validated['name'],
             'host' => $validated['host'],
             'user' => $validated['user'],
             'port' => 22,
             'is_local' => false,
-            'status' => Server::STATUS_PROVISIONING,
+            'status' => Environment::STATUS_PROVISIONING,
         ]);
 
-        // Redirect to the server show page immediately - provisioning runs in background
-        return redirect()->route('servers.show', $server);
+        // Redirect to the environment show page immediately - provisioning runs in background
+        return redirect()->route('environments.show', $environment);
     }
 
-    public function run(Request $request, Server $server)
+    public function run(Request $request, Environment $environment)
     {
         $validated = $request->validate([
             'ssh_public_key' => 'required|string',
@@ -57,7 +58,7 @@ class ProvisioningController extends Controller
 
         // Clear old SSH host keys BEFORE starting provisioning
         // This must happen synchronously before the background process starts
-        Process::run("ssh-keygen -R {$server->host} 2>/dev/null");
+        Process::run("ssh-keygen -R {$environment->host} 2>/dev/null");
 
         // Run provisioning in the background so the HTTP request returns immediately
         $sshKey = $validated['ssh_public_key'];
@@ -65,9 +66,9 @@ class ProvisioningController extends Controller
 
         // Spawn the artisan command in the background
         $command = sprintf(
-            'php %s server:provision %d %s > /dev/null 2>&1 &',
+            'php %s environment:provision %d %s > /dev/null 2>&1 &',
             escapeshellarg($artisanPath),
-            $server->id,
+            $environment->id,
             escapeshellarg((string) $sshKey)
         );
 
@@ -80,14 +81,29 @@ class ProvisioningController extends Controller
         ]);
     }
 
-    public function status(Server $server)
+    public function status(Environment $environment)
     {
         return response()->json([
-            'status' => $server->status,
-            'provisioning_step' => $server->provisioning_step,
-            'provisioning_total_steps' => $server->provisioning_total_steps,
-            'provisioning_log' => $server->provisioning_log,
-            'provisioning_error' => $server->provisioning_error,
+            'status' => $environment->status,
+            'provisioning_step' => $environment->provisioning_step,
+            'provisioning_total_steps' => $environment->provisioning_total_steps,
+            'provisioning_log' => $environment->provisioning_log,
+            'provisioning_error' => $environment->provisioning_error,
         ]);
+    }
+
+    public function checkServer(Request $request)
+    {
+        $validated = $request->validate([
+            'host' => 'required|string|max:255',
+            'user' => 'required|string|max:255',
+        ]);
+
+        $result = \App\Services\ProvisioningService::checkExistingSetup(
+            $validated['host'],
+            $validated['user']
+        );
+
+        return response()->json($result);
     }
 }

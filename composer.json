@@ -27,6 +27,7 @@
         "laravel/tinker": "^2.10.1",
         "laravel/wayfinder": "^0.1.2",
         "nativephp/electron": "^1.3",
+        "saloonphp/saloon": "^3.14",
         "spatie/laravel-typescript-transformer": "^2.5"
     },
     "require-dev": {
@@ -36,8 +37,12 @@
         "laravel/pint": "^1.24",
         "laravel/sail": "^1.41",
         "mockery/mockery": "^1.6",
+        "nckrtl/laravel-toolbar": "^0.1.1",
         "nunomaduro/collision": "^8.6",
-        "phpunit/phpunit": "^11.5.3",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-browser": "^4.2",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "phpunit/phpunit": "^12.0",
         "rector/rector": "^2.3"
     },
     "autoload": {
@@ -89,7 +94,7 @@
         ],
         "native:dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:serve --no-interaction\" \"npm run dev\" --names=app,vite"
+            "npx concurrently -k -c \"#93c5fd,#c4b5fd,#fb7185\" \"php artisan native:serve --no-interaction\" \"php artisan queue:listen --tries=1\" \"npm run dev\" --names=app,queue,vite"
         ]
     },
     "extra": {

@@ -2,13 +2,16 @@
 
 A NativePHP/Electron desktop application for managing local and remote [Launchpad CLI](https://github.com/nckrtl/launchpad-cli) installations.
 
+> **Note:** This is a **macOS-only** application. It relies on macOS-specific features like `/etc/resolver/` for DNS management and Touch ID for sudo authentication. Remote environments can run any Linux distribution.
+
 ## Features
 
 - **Local Environment Management**: Control your local Launchpad installation directly
 - **Remote Server Management**: Manage remote Launchpad installations via SSH
-- **Server Provisioning**: Provision new Ubuntu servers with the complete Launchpad stack
+- **Server Provisioning**: Provision new Ubuntu servers with the complete Launchpad stack (PHP-FPM, Caddy, Docker services)
 - **Automatic DNS Setup**: Configures macOS DNS resolvers with Touch ID authentication
 - **Multi-Editor Support**: Open projects in Cursor, VS Code, Windsurf, Zed, and more
+- **Real-time Status**: WebSocket-based updates for project provisioning and service status
 
 ## Requirements
 
@@ -44,9 +47,18 @@ This enables Touch ID for sudo commands, which the app uses to manage `/etc/reso
 
 ## How It Works
 
+### Architecture
+
+The Launchpad stack uses **PHP-FPM on the host** with **Caddy** as the web server:
+
+- **PHP-FPM**: Multiple pools (8.4, 8.5) with Unix sockets at `~/.config/launchpad/php/`
+- **Caddy**: Single binary on host serving sites with automatic HTTPS
+- **Horizon**: Queue worker as systemd (Linux) or launchd (macOS) service
+- **Docker**: PostgreSQL, Redis, Mailpit, Reverb, dnsmasq remain containerized
+
 ### DNS Resolution
 
-When you configure a TLD (e.g., `.test`, `.dev`) for an environment:
+When you configure a TLD (e.g., `.test`, `.ccc`) for an environment:
 
 1. **Mac Resolver**: Creates `/etc/resolver/{tld}` pointing to the server's DNS
 2. **Remote DNS Container**: Rebuilds the dnsmasq container with the correct TLD
@@ -54,8 +66,8 @@ When you configure a TLD (e.g., `.test`, `.dev`) for an environment:
 
 ### Communication
 
-- **Local servers**: Direct PHP process execution
-- **Remote servers**: SSH with ControlMaster connection pooling
+- **Local environments**: Direct PHP process execution
+- **Remote environments**: Direct API calls to `https://launchpad.{tld}/api/...` for performance, SSH for provisioning
 
 ## Development
 

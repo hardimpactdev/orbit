@@ -1,21 +1,15 @@
 <?php
 
-namespace Tests\Feature;
+test('homepage redirects to create when no environments exist', function () {
+    $response = $this->get('/');
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
+    $response->assertRedirect('/environments/create');
+});
 
-class ExampleTest extends TestCase
-{
-    use RefreshDatabase;
+test('homepage redirects to default environment when one exists', function () {
+    $environment = createEnvironment(['is_local' => true, 'host' => 'localhost']);
 
-    /**
-     * A basic test example.
-     */
-    public function test_the_application_returns_a_successful_response(): void
-    {
-        $response = $this->get('/');
+    $response = $this->get('/');
 
-        $response->assertStatus(200);
-    }
-}
+    $response->assertRedirect("/environments/{$environment->id}");
+});

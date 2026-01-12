@@ -49,6 +49,24 @@ class Setting extends Model
         ];
     }
 
+    public static function getTerminal(): string
+    {
+        return static::get('terminal', 'Terminal');
+    }
+
+    public static function getTerminalOptions(): array
+    {
+        return [
+            'Terminal' => 'Terminal',
+            'iTerm' => 'iTerm2',
+            'Ghostty' => 'Ghostty',
+            'Warp' => 'Warp',
+            'kitty' => 'Kitty',
+            'Alacritty' => 'Alacritty',
+            'Hyper' => 'Hyper',
+        ];
+    }
+
     public static function getSshPublicKey(): ?string
     {
         return static::get('ssh_public_key');
