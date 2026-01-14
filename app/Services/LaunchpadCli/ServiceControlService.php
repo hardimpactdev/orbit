@@ -280,12 +280,10 @@ class ServiceControlService
                     $logPath = '/usr/local/var/log/caddy.log';
                 }
             } elseif (str_starts_with($service, 'php')) {
-                // PHP-FPM logs
-                $version = str_replace('php-', '', $service);
-                $version = str_replace('-', '.', $version);
-                $logPath = "/opt/homebrew/var/log/php{$version}-fpm.log";
+                // PHP-FPM logs - Homebrew uses a single shared log file
+                $logPath = '/opt/homebrew/var/log/php-fpm.log';
                 if (! file_exists($logPath)) {
-                    $logPath = "/usr/local/var/log/php{$version}-fpm.log";
+                    $logPath = '/usr/local/var/log/php-fpm.log';
                 }
             } elseif ($service === 'horizon') {
                 // Horizon logs from Laravel app
