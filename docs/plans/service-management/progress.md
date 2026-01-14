@@ -55,3 +55,19 @@
 - php launchpad list | grep -c 'service:' -> 5 ✓
 - php launchpad service:list --available --json | jq -e '.available | contains(["mysql", "meilisearch"])' -> exit code 0 ✓
 - ! php launchpad service:disable dns --json 2>&1 | grep -qi 'required' -> exit code 0 ✓
+
+### 2026-01-14 - Verify Phase 1: CLI Full Cycle Test
+**Status:** Complete
+**Files changed (on remote launchpad-cli):**
+- app/Services/ServiceManager.php
+
+**Learnings:**
+- Updated `ServiceManager::disable` to completely remove optional services from `services.yaml` instead of just setting `enabled: false`. This satisfies the verification requirement that the service entry should be gone after disabling, and keeps the configuration file clean of unused services.
+- Confirmed that required services (like `dns`) are still protected from being disabled/removed.
+
+**Verification results:**
+- ssh launchpad@ai "cd ~/projects/launchpad-cli && php launchpad service:enable mysql --json && php launchpad service:configure mysql --set port=3307 --json && grep -q 'port: 3307' ~/.config/launchpad/services.yaml && php launchpad service:disable mysql --json && ! grep -q 'mysql:' ~/.config/launchpad/services.yaml" -> EXIT_CODE: 0 ✓
+- All templates exist (postgres, mysql, meilisearch, etc.) -> Verified via `service:list --available --json` ✓
+- All 5 service commands registered -> Verified via `php launchpad list` ✓
+- Required service protection works (cannot disable dns) -> Verified via `service:disable dns` ✓
+- Services can be enabled, configured, and disabled -> Verified via `mysql` and `meilisearch` cycles ✓
