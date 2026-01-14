@@ -345,7 +345,9 @@ async function fetchLogs() {
 
     logsLoading.value = true;
     try {
-        const response = await fetch(getApiUrl(`/services/${logsService.value}/logs`));
+        const type = getServiceType(logsService.value);
+        const path = type === 'host' ? `/host-services/${logsService.value}/logs` : `/services/${logsService.value}/logs`;
+        const response = await fetch(getApiUrl(path));
         const result = await response.json();
 
         if (result.success) {

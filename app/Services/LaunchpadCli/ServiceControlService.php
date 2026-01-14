@@ -252,6 +252,82 @@ class ServiceControlService
     }
 
     /**
+     * Get logs for a host service (Caddy, PHP-FPM, Horizon).
+     */
+    public function hostServiceLogs(Environment $environment, string $service, int $lines = 200): array
+    {
+        if ($environment->is_local) {
+            return $this->getLocalHostServiceLogs($service, $lines);
+        }
+
+        // For remote environments, delegate to CLI
+        return $this->command->executeCommand($environment, "host:logs {$service} --lines={$lines} --json");
+    }
+
+    /**
+     * Get logs for a local host service.
+     */
+    protected function getLocalHostServiceLogs(string $service, int $lines): array
+    {
+        $os = PHP_OS_FAMILY;
+
+        if ($os === 'Darwin') {
+            // macOS: use Homebrew log locations or journalctl equivalent
+            if ($service === 'caddy') {
+                // Caddy logs via brew services
+                $logPath = '/opt/homebrew/var/log/caddy.log';
+                if (! file_exists($logPath)) {
+                    $logPath = '/usr/local/var/log/caddy.log';
+                }
+            } elseif (str_starts_with($service, 'php')) {
+                // PHP-FPM logs
+                $version = str_replace('php-', '', $service);
+                $version = str_replace('-', '.', $version);
+                $logPath = "/opt/homebrew/var/log/php{$version}-fpm.log";
+                if (! file_exists($logPath)) {
+                    $logPath = "/usr/local/var/log/php{$version}-fpm.log";
+                }
+            } elseif ($service === 'horizon') {
+                // Horizon logs from Laravel app
+                $logPath = storage_path('logs/laravel.log');
+            } else {
+                return [
+                    'success' => false,
+                    'error' => "Unknown host service: {$service}",
+                ];
+            }
+
+            if (file_exists($logPath)) {
+                $result = Process::timeout(10)->run("tail -n {$lines} ".escapeshellarg($logPath));
+
+                return [
+                    'success' => true,
+                    'logs' => $result->output() ?: 'No logs available',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'logs' => "Log file not found: {$logPath}",
+            ];
+        } else {
+            // Linux: use journalctl
+            $unit = $service;
+            if (str_starts_with($service, 'php')) {
+                $version = str_replace('php-', '', $service);
+                $unit = "php{$version}-fpm";
+            }
+
+            $result = Process::timeout(10)->run("journalctl -u {$unit} -n {$lines} --no-pager 2>&1");
+
+            return [
+                'success' => true,
+                'logs' => $result->output() ?: 'No logs available',
+            ];
+        }
+    }
+
+    /**
      * Rebuild the DNS container with the correct TLD and HOST_IP.
      * This is needed when TLD changes on a remote server.
      * Also restarts launchpad to regenerate Caddy config with new domains.

@@ -593,6 +593,16 @@ class EnvironmentController extends Controller
     }
 
     /**
+     * Get logs for a host service (Caddy, PHP-FPM, Horizon).
+     */
+    public function hostServiceLogs(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->hostServiceLogs($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
      * Show available services.
      */
     public function availableServices(Environment $environment)
