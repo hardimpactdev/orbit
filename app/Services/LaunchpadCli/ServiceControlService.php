@@ -2,7 +2,13 @@
 
 namespace App\Services\LaunchpadCli;
 
+use App\Http\Integrations\Launchpad\Requests\ConfigureServiceRequest;
+use App\Http\Integrations\Launchpad\Requests\DisableServiceRequest;
+use App\Http\Integrations\Launchpad\Requests\EnableServiceRequest;
+use App\Http\Integrations\Launchpad\Requests\GetServiceInfoRequest;
 use App\Http\Integrations\Launchpad\Requests\GetServiceLogsRequest;
+use App\Http\Integrations\Launchpad\Requests\ListAvailableServicesRequest;
+use App\Http\Integrations\Launchpad\Requests\ListServicesRequest;
 use App\Http\Integrations\Launchpad\Requests\RestartServiceRequest;
 use App\Http\Integrations\Launchpad\Requests\RestartServicesRequest;
 use App\Http\Integrations\Launchpad\Requests\StartServiceRequest;
@@ -25,6 +31,84 @@ class ServiceControlService
         protected CommandService $command,
         protected SshService $ssh
     ) {}
+
+    /**
+     * List all services and their status.
+     */
+    public function list(Environment $environment): array
+    {
+        if ($environment->is_local) {
+            return $this->command->executeCommand($environment, 'service:list --json');
+        }
+
+        return $this->connector->sendRequest($environment, new ListServicesRequest);
+    }
+
+    /**
+     * List available services that can be enabled.
+     */
+    public function available(Environment $environment): array
+    {
+        if ($environment->is_local) {
+            return $this->command->executeCommand($environment, 'service:available --json');
+        }
+
+        return $this->connector->sendRequest($environment, new ListAvailableServicesRequest);
+    }
+
+    /**
+     * Enable a service.
+     */
+    public function enable(Environment $environment, string $service, array $options = []): array
+    {
+        if ($environment->is_local) {
+            $optionsJson = json_encode($options);
+            $escapedOptions = escapeshellarg($optionsJson);
+
+            return $this->command->executeCommand($environment, "service:enable {$service} --options={$escapedOptions} --json");
+        }
+
+        return $this->connector->sendRequest($environment, new EnableServiceRequest($service, $options));
+    }
+
+    /**
+     * Disable a service.
+     */
+    public function disable(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->command->executeCommand($environment, "service:disable {$service} --json");
+        }
+
+        return $this->connector->sendRequest($environment, new DisableServiceRequest($service));
+    }
+
+    /**
+     * Update service configuration.
+     */
+    public function configure(Environment $environment, string $service, array $config): array
+    {
+        if ($environment->is_local) {
+            $configJson = json_encode($config);
+            $escapedConfig = escapeshellarg($configJson);
+
+            return $this->command->executeCommand($environment, "service:config {$service} --config={$escapedConfig} --json");
+        }
+
+        return $this->connector->sendRequest($environment, new ConfigureServiceRequest($service, $config));
+    }
+
+    /**
+     * Get detailed info for a service.
+     */
+    public function info(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->command->executeCommand($environment, "service:info {$service} --json");
+        }
+
+        return $this->connector->sendRequest($environment, new GetServiceInfoRequest($service));
+    }
 
     /**
      * Start launchpad services.
@@ -112,6 +196,42 @@ class ServiceControlService
     }
 
     /**
+     * Start a host service (Caddy, PHP-FPM, Horizon).
+     */
+    public function startHostService(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->hostServiceAction($environment, $service, 'start');
+        }
+
+        return $this->command->executeCommand($environment, "host:start {$service} --json");
+    }
+
+    /**
+     * Stop a host service (Caddy, PHP-FPM, Horizon).
+     */
+    public function stopHostService(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->hostServiceAction($environment, $service, 'stop');
+        }
+
+        return $this->command->executeCommand($environment, "host:stop {$service} --json");
+    }
+
+    /**
+     * Restart a host service (Caddy, PHP-FPM, Horizon).
+     */
+    public function restartHostService(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->hostServiceAction($environment, $service, 'restart');
+        }
+
+        return $this->command->executeCommand($environment, "host:restart {$service} --json");
+    }
+
+    /**
      * Get logs for a single service.
      */
     public function serviceLogs(Environment $environment, string $service, int $lines = 200): array
@@ -191,6 +311,46 @@ class ServiceControlService
     }
 
     /**
+     * Execute a host service action.
+     */
+    protected function hostServiceAction(Environment $environment, string $service, string $action): array
+    {
+        $os = PHP_OS_FAMILY;
+
+        if ($os === 'Darwin') {
+            if ($service === 'horizon') {
+                $result = Process::run("launchctl {$action} com.laravel.horizon");
+            } else {
+                // For PHP-FPM and Caddy on Mac (Homebrew)
+                $brewService = $service;
+                if (str_starts_with($service, 'php')) {
+                    // php-8.3 -> php@8.3
+                    $brewService = str_replace('php-', 'php@', $service);
+                }
+                $result = Process::run("brew services {$action} {$brewService}");
+            }
+        } else {
+            // Linux: systemctl
+            $unit = $service;
+            if (str_starts_with($service, 'php')) {
+                // php-8.3 -> php8.3-fpm
+                $version = str_replace('php-', '', $service);
+                $unit = "php{$version}-fpm";
+            }
+            $result = Process::run("sudo systemctl {$action} {$unit}");
+        }
+
+        if (! $result->successful()) {
+            return [
+                'success' => false,
+                'error' => $result->errorOutput() ?: "Failed to {$action} {$service}",
+            ];
+        }
+
+        return ['success' => true];
+    }
+
+    /**
      * Execute a Docker action on a container.
      */
     protected function dockerServiceAction(Environment $environment, string $container, string $action): array
@@ -229,7 +389,6 @@ class ServiceControlService
         // Map service keys to container names
         $containerMap = [
             'dns' => 'launchpad-dns',
-            'caddy' => 'launchpad-caddy',
             'php-83' => 'launchpad-php-83',
             'php-84' => 'launchpad-php-84',
             'php-85' => 'launchpad-php-85',

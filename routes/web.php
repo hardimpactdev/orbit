@@ -68,10 +68,18 @@ Route::prefix('environments/{environment}')->name('environments.')->group(functi
     Route::post('php/reset', [EnvironmentController::class, 'resetPhp'])->name('php.reset');
 
     // Individual service routes
+    Route::get('services/available', [EnvironmentController::class, 'availableServices'])->name('services.available');
     Route::post('services/{service}/start', [EnvironmentController::class, 'startService'])->name('services.start');
     Route::post('services/{service}/stop', [EnvironmentController::class, 'stopService'])->name('services.stop');
     Route::post('services/{service}/restart', [EnvironmentController::class, 'restartService'])->name('services.restart');
+    Route::post('host-services/{service}/start', [EnvironmentController::class, 'startHostService'])->name('host-services.start');
+    Route::post('host-services/{service}/stop', [EnvironmentController::class, 'stopHostService'])->name('host-services.stop');
+    Route::post('host-services/{service}/restart', [EnvironmentController::class, 'restartHostService'])->name('host-services.restart');
     Route::get('services/{service}/logs', [EnvironmentController::class, 'serviceLogs'])->name('services.logs');
+    Route::post('services/{service}/enable', [EnvironmentController::class, 'enableService'])->name('services.enable');
+    Route::delete('services/{service}', [EnvironmentController::class, 'disableService'])->name('services.disable');
+    Route::put('services/{service}/config', [EnvironmentController::class, 'configureService'])->name('services.config');
+    Route::get('services/{service}/info', [EnvironmentController::class, 'serviceInfo'])->name('services.info');
 
     // Note: GET config and worktrees moved to routes/api.php (stateless)
     Route::post('config', [EnvironmentController::class, 'saveConfig'])->name('config.save');

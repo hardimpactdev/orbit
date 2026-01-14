@@ -2,9 +2,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
+import Modal from '@/components/Modal.vue';
+import AddServiceModal from '@/components/AddServiceModal.vue';
+import ConfigureServiceModal from '@/components/ConfigureServiceModal.vue';
 import {
     Loader2, Play, Square, RefreshCw, Server, Database, Mail, Globe,
-    Wifi, Container, FileText, X, ChevronDown, ChevronUp
+    Wifi, Container, FileText, X, Settings, Trash2, Plus
 } from 'lucide-vue-next';
 
 interface Environment {
@@ -18,14 +21,17 @@ interface Environment {
 interface Service {
     status: string;
     container: string;
+    required?: boolean;
+    can_configure?: boolean;
 }
 
 interface ServiceMeta {
     name: string;
     description: string;
-    icon: typeof Server;
+    icon: any;
     ports?: string;
     category: 'core' | 'database' | 'php' | 'utility';
+    required?: boolean;
 }
 
 const props = defineProps<{
@@ -50,6 +56,11 @@ const servicesTotal = ref(0);
 const restartingAll = ref(false);
 const actionInProgress = ref<string | null>(null);
 
+// Modals
+const showAddServiceModal = ref(false);
+const showConfigureModal = ref(false);
+const selectedService = ref<string | null>(null);
+
 // Logs
 const showLogs = ref(false);
 const logsService = ref<string | null>(null);
@@ -66,6 +77,7 @@ const serviceMeta: Record<string, ServiceMeta> = {
         icon: Globe,
         ports: '53',
         category: 'core',
+        required: true,
     },
     'caddy': {
         name: 'Caddy Web Server',
@@ -73,27 +85,7 @@ const serviceMeta: Record<string, ServiceMeta> = {
         icon: Server,
         ports: '80, 443',
         category: 'core',
-    },
-    'php-83': {
-        name: 'PHP 8.3',
-        description: 'FrankenPHP application server',
-        icon: Container,
-        ports: '8083',
-        category: 'php',
-    },
-    'php-84': {
-        name: 'PHP 8.4',
-        description: 'FrankenPHP application server',
-        icon: Container,
-        ports: '8084',
-        category: 'php',
-    },
-    'php-85': {
-        name: 'PHP 8.5',
-        description: 'FrankenPHP application server',
-        icon: Container,
-        ports: '8085',
-        category: 'php',
+        required: true,
     },
     'postgres': {
         name: 'PostgreSQL',
@@ -102,12 +94,20 @@ const serviceMeta: Record<string, ServiceMeta> = {
         ports: '5432',
         category: 'database',
     },
+    'mysql': {
+        name: 'MySQL',
+        description: 'Relational database server',
+        icon: Database,
+        ports: '3306',
+        category: 'database',
+    },
     'redis': {
         name: 'Redis',
         description: 'In-memory cache and message broker',
         icon: Database,
         ports: '6379',
         category: 'database',
+        required: true,
     },
     'mailpit': {
         name: 'Mailpit',
@@ -122,8 +122,49 @@ const serviceMeta: Record<string, ServiceMeta> = {
         icon: Wifi,
         ports: '6001',
         category: 'utility',
+        required: true,
+    },
+    'horizon': {
+        name: 'Laravel Horizon',
+        description: 'Queue worker management for Redis',
+        icon: FileText,
+        category: 'utility',
+        required: true,
     },
 };
+
+function getServiceType(key: string) {
+    if (key === 'caddy' || key.startsWith('php-') || key === 'horizon') {
+        return 'host';
+    }
+    return 'docker';
+}
+
+function getServiceMeta(key: string): ServiceMeta {
+    if (serviceMeta[key]) return serviceMeta[key];
+
+    if (key.startsWith('php-')) {
+        const version = key.replace('php-', '');
+        let displayVersion = version;
+        // Handle both '83' and '8.3' formats
+        if (version.length === 2 && !version.includes('.')) {
+            displayVersion = `${version.slice(0, 1)}.${version.slice(1)}`;
+        }
+        return {
+            name: `PHP ${displayVersion}`,
+            description: 'Native PHP-FPM service',
+            icon: Container,
+            category: 'php',
+        };
+    }
+
+    return {
+        name: key,
+        description: 'Service',
+        icon: Container,
+        category: 'utility',
+    };
+}
 
 const categories = [
     { key: 'core', label: 'Core Services' },
@@ -141,12 +182,7 @@ const servicesByCategory = computed(() => {
     };
 
     for (const [key, service] of Object.entries(services.value)) {
-        const meta = serviceMeta[key] || {
-            name: key,
-            description: 'Service',
-            icon: Container,
-            category: 'utility',
-        };
+        const meta = getServiceMeta(key);
         result[meta.category].push({ key, service, meta });
     }
 
@@ -248,8 +284,11 @@ async function restartAll() {
 
 async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'restart') {
     actionInProgress.value = `${action}-${serviceKey}`;
+    const type = getServiceType(serviceKey);
+    const path = type === 'host' ? `/host-services/${serviceKey}/${action}` : `/services/${serviceKey}/${action}`;
+
     try {
-        const response = await fetch(getApiUrl(`/services/${serviceKey}/${action}`), {
+        const response = await fetch(getApiUrl(path), {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
         });
@@ -265,6 +304,34 @@ async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'res
     } finally {
         actionInProgress.value = null;
     }
+}
+
+async function removeService(serviceKey: string) {
+    if (!confirm(`Are you sure you want to remove ${serviceKey}?`)) return;
+
+    actionInProgress.value = `remove-${serviceKey}`;
+    try {
+        const response = await fetch(getApiUrl(`/services/${serviceKey}`), {
+            method: 'DELETE',
+            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            await loadStatus(true);
+        } else {
+            alert('Failed to remove service: ' + (result.error || 'Unknown error'));
+        }
+    } catch {
+        alert('Failed to remove service');
+    } finally {
+        actionInProgress.value = null;
+    }
+}
+
+function configureService(serviceKey: string) {
+    selectedService.value = serviceKey;
+    showConfigureModal.value = true;
 }
 
 async function openLogs(serviceKey: string) {
@@ -343,6 +410,15 @@ onUnmounted(() => {
             </div>
             <div class="flex items-center gap-2">
                 <button
+                    @click="showAddServiceModal = true"
+                    class="btn btn-primary"
+                    :disabled="loading"
+                >
+                    <Plus class="w-4 h-4" />
+                    Add Service
+                </button>
+                <div class="w-px h-6 bg-zinc-800 mx-1" />
+                <button
                     v-if="!allRunning"
                     @click="startAll"
                     :disabled="loading || actionInProgress !== null"
@@ -391,7 +467,7 @@ onUnmounted(() => {
                         <div
                             v-for="{ key, service, meta } in servicesByCategory[category.key]"
                             :key="key"
-                            class="p-4 flex items-center justify-between bg-zinc-700/30"
+                            class="p-4 flex items-center justify-between bg-zinc-700/30 group"
                         >
                             <div class="flex items-center gap-4">
                                 <div
@@ -407,6 +483,20 @@ onUnmounted(() => {
                                 <div>
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-white">{{ meta.name }}</span>
+                                        <span
+                                            v-if="service.required || meta.required"
+                                            class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700"
+                                        >
+                                            Required
+                                        </span>
+                                        <span
+                                            class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded border"
+                                            :class="getServiceType(key) === 'host'
+                                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                                : 'bg-purple-500/10 text-purple-400 border-purple-500/20'"
+                                        >
+                                            {{ getServiceType(key) === 'host' ? 'Host' : 'Docker' }}
+                                        </span>
                                         <span
                                             class="w-2 h-2 rounded-full"
                                             :class="service.status === 'running' ? 'bg-lime-400' : 'bg-zinc-600'"
@@ -459,11 +549,28 @@ onUnmounted(() => {
                                         <RefreshCw v-else class="w-4 h-4" />
                                     </button>
                                     <button
+                                        @click="configureService(key)"
+                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                                        title="Configure"
+                                    >
+                                        <Settings class="w-4 h-4" />
+                                    </button>
+                                    <button
                                         @click="openLogs(key)"
                                         class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
                                         title="View Logs"
                                     >
                                         <FileText class="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        v-if="!service.required && !meta.required"
+                                        @click="removeService(key)"
+                                        :disabled="actionInProgress !== null"
+                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-red-400 disabled:opacity-50"
+                                        title="Remove Service"
+                                    >
+                                        <Loader2 v-if="actionInProgress === `remove-${key}`" class="w-4 h-4 animate-spin" />
+                                        <Trash2 v-else class="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -473,45 +580,53 @@ onUnmounted(() => {
             </template>
         </div>
 
+        <!-- Add Service Modal -->
+        <AddServiceModal
+            :show="showAddServiceModal"
+            :get-api-url="getApiUrl"
+            :csrf-token="csrfToken"
+            @close="showAddServiceModal = false"
+            @service-enabled="() => loadStatus()"
+        />
+
+        <!-- Configure Service Modal -->
+        <ConfigureServiceModal
+            :show="showConfigureModal"
+            :service-name="selectedService"
+            :get-api-url="getApiUrl"
+            :csrf-token="csrfToken"
+            @close="showConfigureModal = false"
+            @config-updated="() => loadStatus()"
+        />
+
         <!-- Logs Modal -->
-        <div
-            v-if="showLogs"
-            class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-            @click.self="closeLogs"
-        >
-            <div class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-                <div class="flex items-center justify-between p-4 border-b border-zinc-800">
-                    <div class="flex items-center gap-3">
-                        <h3 class="text-lg font-medium text-white">
-                            {{ serviceMeta[logsService!]?.name || logsService }} Logs
-                        </h3>
-                        <button
-                            @click="fetchLogs"
-                            :disabled="logsLoading"
-                            class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
-                            title="Refresh"
-                        >
-                            <Loader2 v-if="logsLoading" class="w-4 h-4 animate-spin" />
-                            <RefreshCw v-else class="w-4 h-4" />
-                        </button>
-                        <button
-                            @click="toggleAutoRefresh"
-                            class="text-xs px-2 py-1 rounded-full"
-                            :class="logsAutoRefresh
-                                ? 'bg-lime-500/10 text-lime-400'
-                                : 'bg-zinc-700/50 text-zinc-400 hover:text-white'"
-                        >
-                            {{ logsAutoRefresh ? 'Auto-refresh ON' : 'Auto-refresh' }}
-                        </button>
-                    </div>
-                    <button @click="closeLogs" class="text-zinc-400 hover:text-white">
-                        <X class="w-5 h-5" />
+        <Modal :show="showLogs" :title="`${serviceMeta[logsService!]?.name || logsService} Logs`" maxWidth="max-w-4xl" @close="closeLogs">
+            <div class="flex flex-col max-h-[70vh]">
+                <div class="flex items-center gap-3 px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
+                    <button
+                        @click="fetchLogs"
+                        :disabled="logsLoading"
+                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                        title="Refresh"
+                    >
+                        <Loader2 v-if="logsLoading" class="w-4 h-4 animate-spin" />
+                        <RefreshCw v-else class="w-4 h-4" />
+                    </button>
+                    <button
+                        @click="toggleAutoRefresh"
+                        class="text-xs px-2 py-1 rounded-full"
+                        :class="logsAutoRefresh
+                            ? 'bg-lime-500/10 text-lime-400'
+                            : 'bg-zinc-700/50 text-zinc-400 hover:text-white'"
+                    >
+                        {{ logsAutoRefresh ? 'Auto-refresh ON' : 'Auto-refresh' }}
                     </button>
                 </div>
-                <div class="flex-1 overflow-auto p-4">
+                <div class="flex-1 overflow-auto p-4 bg-black">
                     <pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap">{{ logs }}</pre>
                 </div>
             </div>
-        </div>
+        </Modal>
     </div>
 </template>
+

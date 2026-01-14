@@ -533,11 +533,31 @@ class EnvironmentController extends Controller
     }
 
     /**
+     * Start a single host service.
+     */
+    public function startHostService(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->startHostService($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
      * Stop a single service.
      */
     public function stopService(Environment $environment, string $service)
     {
         $result = $this->serviceControl->stopService($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Stop a single host service.
+     */
+    public function stopHostService(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->stopHostService($environment, $service);
 
         return response()->json($result);
     }
@@ -553,11 +573,73 @@ class EnvironmentController extends Controller
     }
 
     /**
+     * Restart a single host service.
+     */
+    public function restartHostService(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->restartHostService($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
      * Get logs for a single service.
      */
     public function serviceLogs(Environment $environment, string $service)
     {
         $result = $this->serviceControl->serviceLogs($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Show available services.
+     */
+    public function availableServices(Environment $environment)
+    {
+        $result = $this->serviceControl->available($environment);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Enable a service.
+     */
+    public function enableService(Request $request, Environment $environment, string $service)
+    {
+        $options = $request->input('options', []);
+        $result = $this->serviceControl->enable($environment, $service, $options);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Disable a service.
+     */
+    public function disableService(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->disable($environment, $service);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Update service config.
+     */
+    public function configureService(Request $request, Environment $environment, string $service)
+    {
+        $config = $request->input('config', []);
+        $result = $this->serviceControl->configure($environment, $service, $config);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get service details.
+     */
+    public function serviceInfo(Environment $environment, string $service)
+    {
+        $result = $this->serviceControl->info($environment, $service);
 
         return response()->json($result);
     }
