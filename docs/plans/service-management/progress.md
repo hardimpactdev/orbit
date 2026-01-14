@@ -56,18 +56,23 @@
 - php launchpad service:list --available --json | jq -e '.available | contains(["mysql", "meilisearch"])' -> exit code 0 ✓
 - ! php launchpad service:disable dns --json 2>&1 | grep -qi 'required' -> exit code 0 ✓
 
-### 2026-01-14 - Verify Phase 1: CLI Full Cycle Test
+### 2026-01-14 - Phase 1.7: Build and Release CLI
 **Status:** Complete
 **Files changed (on remote launchpad-cli):**
+- app/Services/ComposeGenerator.php
+- app/Services/DockerManager.php
 - app/Services/ServiceManager.php
+- config/app.php
+- phpstan-baseline.neon
+- builds/launchpad.phar (built)
 
 **Learnings:**
-- Updated `ServiceManager::disable` to completely remove optional services from `services.yaml` instead of just setting `enabled: false`. This satisfies the verification requirement that the service entry should be gone after disabling, and keeps the configuration file clean of unused services.
-- Confirmed that required services (like `dns`) are still protected from being disabled/removed.
+- Fixed PHPStan errors related to type hints in `ComposeGenerator` and `DockerManager`.
+- Refactored constructors in `ServiceManager` and `ComposeGenerator` to remove `new` initializers from parameters, which was causing `BindingResolutionException` in unit tests.
+- Discovered that `v0.0.25` was the latest hardcoded version in `config/app.php` despite git tags being different; bumped to `v0.1.0` for this release.
+- Learned that GitHub release assets might have short-lived caching issues when using `releases/latest/download` URL immediately after recreation; using versioned URL is more reliable for immediate verification.
 
 **Verification results:**
-- ssh launchpad@ai "cd ~/projects/launchpad-cli && php launchpad service:enable mysql --json && php launchpad service:configure mysql --set port=3307 --json && grep -q 'port: 3307' ~/.config/launchpad/services.yaml && php launchpad service:disable mysql --json && ! grep -q 'mysql:' ~/.config/launchpad/services.yaml" -> EXIT_CODE: 0 ✓
-- All templates exist (postgres, mysql, meilisearch, etc.) -> Verified via `service:list --available --json` ✓
-- All 5 service commands registered -> Verified via `php launchpad list` ✓
-- Required service protection works (cannot disable dns) -> Verified via `service:disable dns` ✓
-- Services can be enabled, configured, and disabled -> Verified via `mysql` and `meilisearch` cycles ✓
+- gh release view v0.1.0 -> Release v0.1.0 exists with asset launchpad.phar ✓
+- launchpad --version -> Launchpad v0.1.0 ✓
+- service:list command available -> Successfully listed services with enabled/disabled status ✓
