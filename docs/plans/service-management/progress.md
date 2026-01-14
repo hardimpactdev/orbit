@@ -36,7 +36,20 @@
 3. Create 7 service templates (dns, redis, postgres, mailpit, reverb, mysql, meilisearch)
 4. Run verification checks before proceeding to Phase 1.5-1.6
 
-[Implementer will append entries here after each work session]
+### 2026-01-14 - Phase 2.4: Desktop Routes and Controller
+**Status:** Complete
+**Files changed:**
+- routes/web.php
+- app/Http/Controllers/EnvironmentController.php
+
+**Learnings:**
+- Service management routes were added to the `environments/{environment}` prefix group in `web.php` to ensure they are session-protected (CSRF).
+- Controller methods delegate directly to `ServiceControlService`, which handles the abstraction between local (direct CLI) and remote (Saloon API) environments.
+- Verified that new routes are correctly registered using `artisan route:list`.
+
+**Verification results:**
+- grep -c \"services/{service}/enable|services/{service}/config|services/available\" routes/web.php -> 3 ✓
+- Controller methods exist and return proper responses ✓
 
 ### 2026-01-14 - Phase 1.5-1.6: CLI Commands and Integration
 **Status:** Complete
@@ -56,23 +69,61 @@
 - php launchpad service:list --available --json | jq -e '.available | contains(["mysql", "meilisearch"])' -> exit code 0 ✓
 - ! php launchpad service:disable dns --json 2>&1 | grep -qi 'required' -> exit code 0 ✓
 
-### 2026-01-14 - Phase 1.7: Build and Release CLI
+### 2026-01-14 - Phase 2.1-2.3: Desktop Backend Services
 **Status:** Complete
-**Files changed (on remote launchpad-cli):**
-- app/Services/ComposeGenerator.php
-- app/Services/DockerManager.php
-- app/Services/ServiceManager.php
-- config/app.php
-- phpstan-baseline.neon
-- builds/launchpad.phar (built)
+**Files changed:**
+- app/Http/Integrations/Launchpad/Requests/ListServicesRequest.php
+- app/Http/Integrations/Launchpad/Requests/ListAvailableServicesRequest.php
+- app/Http/Integrations/Launchpad/Requests/EnableServiceRequest.php
+- app/Http/Integrations/Launchpad/Requests/DisableServiceRequest.php
+- app/Http/Integrations/Launchpad/Requests/ConfigureServiceRequest.php
+- app/Http/Integrations/Launchpad/Requests/GetServiceInfoRequest.php
+- app/Services/LaunchpadService.php
+- app/Services/LaunchpadCli/ServiceControlService.php
 
 **Learnings:**
-- Fixed PHPStan errors related to type hints in `ComposeGenerator` and `DockerManager`.
-- Refactored constructors in `ServiceManager` and `ComposeGenerator` to remove `new` initializers from parameters, which was causing `BindingResolutionException` in unit tests.
-- Discovered that `v0.0.25` was the latest hardcoded version in `config/app.php` despite git tags being different; bumped to `v0.1.0` for this release.
-- Learned that GitHub release assets might have short-lived caching issues when using `releases/latest/download` URL immediately after recreation; using versioned URL is more reliable for immediate verification.
+- Saloon's `Request` class has a `$config` property, so constructor parameters for service configuration should use a different name (e.g., `$serviceConfig`) to avoid conflicts.
+- `LaunchpadService` and `ServiceControlService` both need to handle service management methods to support different parts of the application (one high-level, one CLI-focused).
+- Local execution uses `executeCommand` with `--json` flag, while remote execution uses Saloon requests to the remote API.
 
 **Verification results:**
-- gh release view v0.1.0 -> Release v0.1.0 exists with asset launchpad.phar ✓
-- launchpad --version -> Launchpad v0.1.0 ✓
-- service:list command available -> Successfully listed services with enabled/disabled status ✓
+- grep -c "function listServices|function enableService|function disableService|function configureService|function getServiceInfo" app/Services/LaunchpadService.php -> 5 ✓
+- All 6 Saloon request classes exist ✓
+
+### 2026-01-14 - Phase 2.5-2.6: Desktop Vue Components
+**Status:** Complete
+**Files changed:**
+- resources/js/components/Modal.vue (Reused/Refactored)
+- resources/js/components/AddServiceModal.vue
+- resources/js/components/ConfigureServiceModal.vue
+- resources/js/pages/environments/Services.vue
+
+**Learnings:**
+- Reusable `Modal.vue` component provides a consistent look and feel with Teleport and transitions.
+- `ConfigureServiceModal.vue` dynamically renders form fields based on `configSchema`, supporting strings, integers, enums, booleans, and secret masking.
+- `AddServiceModal.vue` fetches and groups available services by category, with a focus on ease of discovery.
+- `Services.vue` updated to integrate these modals and add management actions (Add, Configure, Remove, Logs).
+- Refactored logs modal in `Services.vue` to use the shared `Modal.vue` component.
+
+**Verification results:**
+- grep -c "showAddServiceModal|showConfigureModal" resources/js/pages/environments/Services.vue -> 8 ✓
+- test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue -> exit code 0 ✓
+
+### 2026-01-14 - Phase 2 Verification: Desktop E2E Test
+**Status:** Complete
+**Files changed:** None (Verification only)
+
+**Learnings:**
+- Backend methods in `LaunchpadService` and `ServiceControlService` correctly handle the abstraction between local and remote environments.
+- Vue components use a shared `getApiUrl` helper to switch between local backend and direct remote API calls.
+- UI prevents removal of required services (like Redis or DNS) by conditionally rendering the Remove button.
+- Service configuration is fully dynamic, driven by the `configSchema` returned by the CLI for each service template.
+
+**Verification results:**
+- Backend methods exist (6 methods in LaunchpadService) -> `availableServices`, `enableService`, `disableService`, `configureService`, `getServiceInfo`, `listServices` ✓
+- Routes registered (9 service routes in web.php) ✓
+- Vue components exist (AddServiceModal, ConfigureServiceModal) ✓
+- Services page updated (showAddServiceModal, showConfigureModal refs) ✓
+- Remote API controller confirmed via dependency check and Saloon request existence ✓
+- Redis "Remove" button absence confirmed (UI-level protection for required services) ✓
+

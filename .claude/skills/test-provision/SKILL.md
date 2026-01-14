@@ -25,7 +25,7 @@ bash .claude/scripts/test-provision-flow.sh my-test-project
 ## Architecture Overview
 
 ```
-Desktop App                    Remote Server (10.8.0.16)
+Desktop App                    Remote Server (ai)
 ┌─────────────┐               ┌──────────────────────────────────────┐
 │ Vue Form    │               │                                      │
 │     │       │    HTTPS      │  PHP Container (launchpad-php-XX)    │
@@ -49,7 +49,7 @@ Desktop App                    Remote Server (10.8.0.16)
 
 ```bash
 # Clean up any existing project first
-ssh launchpad@10.8.0.16 'gh repo delete nckrtl/test-api --yes 2>/dev/null; rm -rf ~/projects/test-api'
+ssh launchpad@ai 'gh repo delete nckrtl/test-api --yes 2>/dev/null; rm -rf ~/projects/test-api'
 
 # Create via API
 curl -s -X POST https://launchpad.ccc/api/projects \
@@ -66,7 +66,7 @@ Expected response:
 
 ```bash
 # Watch the web app logs for job progress
-ssh launchpad@10.8.0.16 'tail -f ~/.config/launchpad/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
+ssh launchpad@ai 'tail -f ~/.config/launchpad/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
 ```
 
 Expected log entries:
@@ -79,7 +79,7 @@ CreateProjectJob: Completed {"slug":"test-api"}
 
 ```bash
 # Check if project folder exists with .env
-ssh launchpad@10.8.0.16 'ls -la ~/projects/test-api/.env'
+ssh launchpad@ai 'ls -la ~/projects/test-api/.env'
 
 # Check if site responds
 curl -s -o /dev/null -w "%{http_code}" https://test-api.ccc/
@@ -91,7 +91,7 @@ curl -s https://launchpad.ccc/api/projects | jq '.data.projects[] | select(.name
 ### Step 4: Cleanup
 
 ```bash
-ssh launchpad@10.8.0.16 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api --yes'
+ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api --yes'
 ```
 
 ## Expected Timings
@@ -115,17 +115,17 @@ ssh launchpad@10.8.0.16 'rm -rf ~/projects/test-api && gh repo delete nckrtl/tes
 
 Check Horizon status:
 ```bash
-ssh launchpad@10.8.0.16 'cd ~/.config/launchpad/web && php artisan horizon:status'
+ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan horizon:status'
 ```
 
 Check for failed jobs:
 ```bash
-ssh launchpad@10.8.0.16 'cd ~/.config/launchpad/web && php artisan queue:failed'
+ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan queue:failed'
 ```
 
 Restart Horizon:
 ```bash
-ssh launchpad@10.8.0.16 'cd ~/.config/launchpad/web && php artisan horizon:terminate'
+ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan horizon:terminate'
 # Supervisord will restart it automatically
 ```
 
@@ -133,12 +133,12 @@ ssh launchpad@10.8.0.16 'cd ~/.config/launchpad/web && php artisan horizon:termi
 
 Check if bun is in PATH:
 ```bash
-ssh launchpad@10.8.0.16 'ls -la ~/.bun/bin/bun'
+ssh launchpad@ai 'ls -la ~/.bun/bin/bun'
 ```
 
 Verify CreateProjectJob has correct PATH:
 ```bash
-ssh launchpad@10.8.0.16 'grep -A5 "PATH" ~/.config/launchpad/web/app/Jobs/CreateProjectJob.php'
+ssh launchpad@ai 'grep -A5 "PATH" ~/.config/launchpad/web/app/Jobs/CreateProjectJob.php'
 ```
 
 The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
@@ -147,7 +147,7 @@ The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
 
 Check Horizon timeout setting:
 ```bash
-ssh launchpad@10.8.0.16 'grep timeout ~/.config/launchpad/web/config/horizon.php'
+ssh launchpad@ai 'grep timeout ~/.config/launchpad/web/config/horizon.php'
 ```
 
 Should be `'timeout' => 120` (120 seconds).
@@ -156,7 +156,7 @@ Should be `'timeout' => 120` (120 seconds).
 
 The CLI should be mounted into PHP containers:
 ```bash
-ssh launchpad@10.8.0.16 'grep launchpad ~/.config/launchpad/php/docker-compose.yml'
+ssh launchpad@ai 'grep launchpad ~/.config/launchpad/php/docker-compose.yml'
 ```
 
 Should show: `~/.local/bin/launchpad:/usr/local/bin/launchpad:ro`

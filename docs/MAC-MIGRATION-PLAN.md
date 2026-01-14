@@ -8,7 +8,7 @@ This plan migrates the local Mac development environment from the current setup 
 
 ## Current State (Remote Server - Completed)
 
-The Ubuntu VPS (10.8.0.16) is now running:
+The Ubuntu VPS (ai) is now running:
 - **PHP-FPM**: 8.4 and 8.5 pools with Unix sockets
 - **Caddy**: Host binary (systemd service)
 - **Horizon**: systemd service

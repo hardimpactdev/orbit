@@ -10,7 +10,7 @@ Add support for a new PHP version to the Launchpad stack. This involves updating
 
 ## Prerequisites
 
-- SSH access to the remote server (`ssh launchpad@10.8.0.16`)
+- SSH access to the remote server (`ssh launchpad@ai`)
 - The new PHP version must be available in the `dunglas/frankenphp` Docker image
 
 ## Parameters
@@ -24,7 +24,7 @@ Ask the user for the PHP version to add (e.g., `8.6`, `8.7`).
 First, check if the Docker image exists for the requested PHP version:
 
 ```bash
-ssh launchpad@10.8.0.16 "docker pull dunglas/frankenphp:php{VERSION} 2>&1 | head -5"
+ssh launchpad@ai "docker pull dunglas/frankenphp:php{VERSION} 2>&1 | head -5"
 ```
 
 If the image doesn't exist, inform the user and stop.
@@ -34,7 +34,7 @@ If the image doesn't exist, inform the user and stop.
 Create a new Dockerfile for the PHP version in the config directory:
 
 ```bash
-ssh launchpad@10.8.0.16 "cat > ~/.config/launchpad/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
+ssh launchpad@ai "cat > ~/.config/launchpad/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
 FROM dunglas/frankenphp:php{VERSION}
 
 RUN install-php-extensions     redis     pdo_pgsql     pdo_mysql     pcntl     intl     exif     gd     zip     bcmath
@@ -89,7 +89,7 @@ Update the return statement to include the new result.
 Run the CLI from source to regenerate configs and restart:
 
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && php launchpad restart"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && php launchpad restart"
 ```
 
 ### 6. Verify Containers
@@ -97,7 +97,7 @@ ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && php launchpad restart"
 Confirm all PHP containers are running:
 
 ```bash
-ssh launchpad@10.8.0.16 "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=launchpad-php-'"
+ssh launchpad@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=launchpad-php-'"
 ```
 
 Wait for containers to become healthy (may take 30-60 seconds on first build).
@@ -124,13 +124,13 @@ If `dunglas/frankenphp:php{VERSION}` doesn't exist, the PHP version may not be r
 ### Container Build Fails
 Check Docker build logs:
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/.config/launchpad/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
+ssh launchpad@ai "cd ~/.config/launchpad/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
 ```
 
 ### Container Not Starting
 Check container logs:
 ```bash
-ssh launchpad@10.8.0.16 "docker logs launchpad-php-{VERSION_NO_DOT}"
+ssh launchpad@ai "docker logs launchpad-php-{VERSION_NO_DOT}"
 ```
 
 ## Files Modified

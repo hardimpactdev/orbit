@@ -15,13 +15,13 @@ The CLI is a Laravel Zero app on the remote server. Follow these steps:
 ### 1. Check Current State
 
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && git status && git tag --sort=-version:refname | head -5"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && git status && git tag --sort=-version:refname | head -5"
 ```
 
 ### 2. Commit Changes (if needed)
 
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && git add -A && git commit -m 'Description of changes' && git push"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && git add -A && git commit -m 'Description of changes' && git push"
 ```
 
 ### 3. Build the Phar
@@ -29,7 +29,7 @@ ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && git add -A && git commit
 Use Box directly (Laravel Zero's bundled Box has a PHP 8.5 bug):
 
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && ~/.config/composer/vendor/bin/box compile"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && ~/.config/composer/vendor/bin/box compile"
 ```
 
 This creates `builds/launchpad.phar`.
@@ -44,19 +44,19 @@ Follow semantic versioning (MAJOR.MINOR.PATCH):
 ### 5. Create GitHub Release
 
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && gh release create vX.Y.Z builds/launchpad.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && gh release create vX.Y.Z builds/launchpad.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
 ```
 
 ### 6. Update CLI on Server
 
 ```bash
-ssh launchpad@10.8.0.16 "curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x ~/.local/bin/launchpad"
+ssh launchpad@ai "curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x ~/.local/bin/launchpad"
 ```
 
 ### 7. Verify
 
 ```bash
-ssh launchpad@10.8.0.16 "launchpad --version"
+ssh launchpad@ai "launchpad --version"
 ```
 
 ---

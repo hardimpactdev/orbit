@@ -165,4 +165,11 @@ return [
      * Custom PHP binary path.
      */
     'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH'),
+
+    /**
+     * Custom PHP binary version.
+     * If not specified, uses the current PHP version (PHP_MAJOR_VERSION.PHP_MINOR_VERSION).
+     * Override this if the NativePHP php-bin package doesn't have binaries for your PHP version.
+     */
+    'binary_version' => env('NATIVEPHP_PHP_BINARY_VERSION'),
 ];

@@ -2,7 +2,7 @@
 
 **Source Plan:** `docs/service-management-plan.md`
 **Verification:** `docs/plans/declarative-service-management/verification.md`
-**Target:** Remote CLI at `ssh launchpad@10.8.0.16:~/projects/launchpad-cli/`
+**Target:** Remote CLI at `ssh launchpad@ai:~/projects/launchpad-cli/`
 
 ## Overview
 
@@ -92,7 +92,7 @@ depends_on: []
 
 Run test suite after each phase:
 ```bash
-ssh launchpad@10.8.0.16 "cd ~/projects/launchpad-cli && ./vendor/bin/pest"
+ssh launchpad@ai "cd ~/projects/launchpad-cli && ./vendor/bin/pest"
 ```
 
 Full verification criteria in `docs/plans/declarative-service-management/verification.md`
@@ -100,7 +100,7 @@ Full verification criteria in `docs/plans/declarative-service-management/verific
 ## End-to-End Test
 
 ```bash
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 cd ~/projects/launchpad-cli
 php launchpad init
 php launchpad service:list

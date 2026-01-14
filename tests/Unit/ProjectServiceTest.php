@@ -21,7 +21,7 @@ beforeEach(function () {
 
     $this->environment = Environment::create([
         'name' => 'Test Environment',
-        'host' => '10.8.0.16',
+        'host' => 'ai',
         'user' => 'launchpad',
         'port' => 22,
         'is_local' => false,

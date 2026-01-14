@@ -57,7 +57,7 @@ Add a unified `launchpad setup` command to the CLI that auto-detects the platfor
 
 ### Location
 
-All CLI changes in: `ssh launchpad@10.8.0.16:~/projects/launchpad-cli/`
+All CLI changes in: `ssh launchpad@ai:~/projects/launchpad-cli/`
 
 ### New Command: `SetupCommand.php`
 
@@ -427,7 +427,7 @@ Remove redundant Mac-specific files from desktop app (now handled by CLI):
 ### CLI Testing (on Mac)
 
 ```bash
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 cd ~/projects/launchpad-cli
 
 # Test on Mac (copy to local machine first)

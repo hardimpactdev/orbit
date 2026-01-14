@@ -13,7 +13,7 @@ A NativePHP/Electron desktop application for managing local and remote launchpad
 **Current environments:**
 | Environment | SSH Command | TLD | Notes |
 |-------------|-------------|-----|-------|
-| Ubuntu VPS | `ssh launchpad@10.8.0.16` | `.ccc` | Main dev server, CLI source at `~/projects/launchpad-cli/` |
+| Ubuntu VPS | `ssh launchpad@ai` | `.ccc` | Main dev server, CLI source at `~/projects/launchpad-cli/` |
 | Local | N/A (localhost) | `.test` | Local machine |
 
 **Key paths on remote servers:**
@@ -26,7 +26,7 @@ A NativePHP/Electron desktop application for managing local and remote launchpad
 - Worktrees config: `~/.config/launchpad/worktrees.json`
 - Horizon service (Linux): `/etc/systemd/system/launchpad-horizon.service`
 
-**Important:** The launchpad CLI source code lives on the remote server at `ssh launchpad@10.8.0.16:~/projects/launchpad-cli/`. Any changes to CLI behavior (site scanning, Caddy generation, worktrees, etc.) must be made there via SSH. See the "Launchpad CLI Development" section below for the full workflow.
+**Important:** The launchpad CLI source code lives on the remote server at `ssh launchpad@ai:~/projects/launchpad-cli/`. Any changes to CLI behavior (site scanning, Caddy generation, worktrees, etc.) must be made there via SSH. See the "Launchpad CLI Development" section below for the full workflow.
 
 ## Project Overview
 
@@ -529,8 +529,8 @@ This desktop app works with two projects that live on the remote dev server. All
 
 ```
 ┌─────────────────────────┐         ┌──────────────────────────────────────┐
-│  Launchpad Desktop      │         │  Remote Dev Server (10.8.0.16)       │
-│  (this repo - local)    │  SSH    │  ssh launchpad@10.8.0.16             │
+│  Launchpad Desktop      │         │  Remote Dev Server (ai)       │
+│  (this repo - local)    │  SSH    │  ssh launchpad@ai             │
 │                         │ ──────► │                                      │
 │  - GUI for launchpad    │         │  ~/projects/launchpad-cli/  ← CLI    │
 │  - Calls CLI via SSH    │         │  ~/projects/orchestrator/   ← API    │
@@ -556,7 +556,7 @@ The **orchestrator** is a Laravel backend that provides:
 
 ```bash
 # SSH into the dev server
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 
 # Navigate to orchestrator
 cd ~/projects/orchestrator
@@ -586,7 +586,7 @@ The **launchpad CLI** manages sites, Caddy configs, Docker containers, and more.
 
 ```bash
 # SSH into the dev server
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 
 # Navigate to CLI source
 cd ~/projects/launchpad-cli
@@ -603,7 +603,7 @@ The CLI is a Laravel Zero application. Build using Box (Laravel Zero uses Box un
 
 **Quick local update (no GitHub release):**
 ```bash
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 cd ~/projects/launchpad-cli
 
 # Build phar using Box
@@ -621,7 +621,7 @@ After making changes to the CLI, publish a new release:
 
 **1. On the remote server - Build and release:**
 ```bash
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 cd ~/projects/launchpad-cli
 
 # Commit changes first
@@ -676,7 +676,7 @@ The CLI web app includes an E2E test that replicates the desktop workflow (creat
 
 ```bash
 # SSH into the remote server
-ssh launchpad@10.8.0.16
+ssh launchpad@ai
 
 # Run the E2E test
 cd ~/projects/launchpad-cli/web
@@ -707,12 +707,12 @@ CLI (ReverbBroadcaster) -> Pusher HTTP API -> Reverb container -> Caddy -> WebSo
 ## Related Projects
 
 - **launchpad-cli**: The command-line tool this app controls
-  - Source: `ssh launchpad@10.8.0.16:~/projects/launchpad-cli/`
+  - Source: `ssh launchpad@ai:~/projects/launchpad-cli/`
   - Releases: `https://github.com/nckrtl/launchpad-cli/releases`
   - Install/Update: `curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x ~/.local/bin/launchpad`
 
 - **orchestrator**: Laravel API backend for cross-project management
-  - Source: `ssh launchpad@10.8.0.16:~/projects/orchestrator/`
+  - Source: `ssh launchpad@ai:~/projects/orchestrator/`
   - Provides MCP tools for git, project, and task management
   - Desktop connects via `orchestrator_url` setting
 

@@ -7,7 +7,7 @@ use App\Models\Project;
 test('environment can be created', function () {
     $environment = Environment::create([
         'name' => 'Test Server',
-        'host' => '10.8.0.16',
+        'host' => 'ai',
         'user' => 'launchpad',
         'port' => 22,
         'is_local' => false,
@@ -16,7 +16,7 @@ test('environment can be created', function () {
 
     $this->assertDatabaseHas('environments', [
         'name' => 'Test Server',
-        'host' => '10.8.0.16',
+        'host' => 'ai',
     ]);
 });
 
@@ -44,25 +44,25 @@ test('environment has status helper methods', function () {
 test('get ssh connection string for remote environment', function () {
     $environment = Environment::create([
         'name' => 'Remote Server',
-        'host' => '10.8.0.16',
+        'host' => 'ai',
         'user' => 'launchpad',
         'port' => 22,
         'is_local' => false,
     ]);
 
-    expect($environment->getSshConnectionString())->toBe('launchpad@10.8.0.16');
+    expect($environment->getSshConnectionString())->toBe('launchpad@ai');
 });
 
 test('get ssh connection string includes port when not 22', function () {
     $environment = Environment::create([
         'name' => 'Remote Server',
-        'host' => '10.8.0.16',
+        'host' => 'ai',
         'user' => 'launchpad',
         'port' => 2222,
         'is_local' => false,
     ]);
 
-    expect($environment->getSshConnectionString())->toBe('launchpad@10.8.0.16 -p 2222');
+    expect($environment->getSshConnectionString())->toBe('launchpad@ai -p 2222');
 });
 
 test('get ssh connection string returns local for local environment', function () {

@@ -98,3 +98,18 @@ Track learnings, blockers, and decisions during implementation.
 | 3. CLI Commands | launchpad-desktop-8tv.3 | Not started |
 | 4. Service Templates | launchpad-desktop-8tv.4 | Not started |
 | 5. Update Existing Commands & Remove Legacy | launchpad-desktop-8tv.5 | Complete |
+
+### 2026-01-14 - Phase 2.7: Remote API Controller
+**Status:** Complete
+**Files changed:**
+- (Remote) web/app/Http/Controllers/Api/ServiceController.php
+- (Remote) web/routes/api.php
+
+**Learnings:**
+- Used SSH to manage files on the remote `ai` machine.
+- Wrapped CLI `service:*` commands in a new API controller.
+- Verified route registration via `php artisan route:list` on the remote machine.
+
+**Verification results:**
+- ssh launchpad@ai "test -f ~/projects/launchpad-cli/web/app/Http/Controllers/Api/ServiceController.php" -> File exists ✓
+- php artisan route:list --path=api/services -> All 6 routes registered ✓

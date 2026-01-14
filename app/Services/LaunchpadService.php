@@ -4,22 +4,28 @@ namespace App\Services;
 
 use App\Http\Integrations\Launchpad\LaunchpadConnector;
 use App\Http\Integrations\Launchpad\Requests\AddWorkspaceProjectRequest;
+use App\Http\Integrations\Launchpad\Requests\ConfigureServiceRequest;
 use App\Http\Integrations\Launchpad\Requests\CreateProjectRequest;
 use App\Http\Integrations\Launchpad\Requests\CreateWorkspaceRequest;
 use App\Http\Integrations\Launchpad\Requests\DeleteProjectRequest;
 use App\Http\Integrations\Launchpad\Requests\DeleteWorkspaceRequest;
+use App\Http\Integrations\Launchpad\Requests\DisableServiceRequest;
+use App\Http\Integrations\Launchpad\Requests\EnableServiceRequest;
 use App\Http\Integrations\Launchpad\Requests\GetConfigRequest;
 use App\Http\Integrations\Launchpad\Requests\GetLinkedPackagesRequest;
 use App\Http\Integrations\Launchpad\Requests\GetPhpRequest;
 use App\Http\Integrations\Launchpad\Requests\GetPhpVersionsRequest;
 use App\Http\Integrations\Launchpad\Requests\GetProjectsRequest;
 use App\Http\Integrations\Launchpad\Requests\GetProvisionStatusRequest;
+use App\Http\Integrations\Launchpad\Requests\GetServiceInfoRequest;
 use App\Http\Integrations\Launchpad\Requests\GetServiceLogsRequest;
 use App\Http\Integrations\Launchpad\Requests\GetSitesRequest;
 use App\Http\Integrations\Launchpad\Requests\GetStatusRequest;
 use App\Http\Integrations\Launchpad\Requests\GetWorkspacesRequest;
 use App\Http\Integrations\Launchpad\Requests\GetWorktreesRequest;
 use App\Http\Integrations\Launchpad\Requests\LinkPackageRequest;
+use App\Http\Integrations\Launchpad\Requests\ListAvailableServicesRequest;
+use App\Http\Integrations\Launchpad\Requests\ListServicesRequest;
 use App\Http\Integrations\Launchpad\Requests\RebuildProjectRequest;
 use App\Http\Integrations\Launchpad\Requests\RefreshWorktreesRequest;
 use App\Http\Integrations\Launchpad\Requests\RemoveWorkspaceProjectRequest;
@@ -179,6 +185,84 @@ BASH;
         }
 
         return $this->sendRequest($environment, new GetProjectsRequest);
+    }
+
+    /**
+     * List all services and their status.
+     */
+    public function listServices(Environment $environment): array
+    {
+        if ($environment->is_local) {
+            return $this->executeCommand($environment, 'service:list --json');
+        }
+
+        return $this->sendRequest($environment, new ListServicesRequest);
+    }
+
+    /**
+     * List available services that can be enabled.
+     */
+    public function availableServices(Environment $environment): array
+    {
+        if ($environment->is_local) {
+            return $this->executeCommand($environment, 'service:available --json');
+        }
+
+        return $this->sendRequest($environment, new ListAvailableServicesRequest);
+    }
+
+    /**
+     * Enable a service.
+     */
+    public function enableService(Environment $environment, string $service, array $options = []): array
+    {
+        if ($environment->is_local) {
+            $optionsJson = json_encode($options);
+            $escapedOptions = escapeshellarg($optionsJson);
+
+            return $this->executeCommand($environment, "service:enable {$service} --options={$escapedOptions} --json");
+        }
+
+        return $this->sendRequest($environment, new EnableServiceRequest($service, $options));
+    }
+
+    /**
+     * Disable a service.
+     */
+    public function disableService(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->executeCommand($environment, "service:disable {$service} --json");
+        }
+
+        return $this->sendRequest($environment, new DisableServiceRequest($service));
+    }
+
+    /**
+     * Update service configuration.
+     */
+    public function configureService(Environment $environment, string $service, array $config): array
+    {
+        if ($environment->is_local) {
+            $configJson = json_encode($config);
+            $escapedConfig = escapeshellarg($configJson);
+
+            return $this->executeCommand($environment, "service:config {$service} --config={$escapedConfig} --json");
+        }
+
+        return $this->sendRequest($environment, new ConfigureServiceRequest($service, $config));
+    }
+
+    /**
+     * Get detailed info for a service.
+     */
+    public function getServiceInfo(Environment $environment, string $service): array
+    {
+        if ($environment->is_local) {
+            return $this->executeCommand($environment, "service:info {$service} --json");
+        }
+
+        return $this->sendRequest($environment, new GetServiceInfoRequest($service));
     }
 
     public function start(Environment $environment, ?string $site = null): array

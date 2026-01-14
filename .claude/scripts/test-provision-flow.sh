@@ -9,7 +9,7 @@
 
 set -e
 
-SERVER="launchpad@10.8.0.16"
+SERVER="launchpad@ai"
 TEMPLATE="hardimpactdev/liftoff-starterkit"
 PROJECT_NAME="${1:-test-$(date +%s)}"
 TLD="ccc"
