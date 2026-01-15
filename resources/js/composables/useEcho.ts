@@ -9,10 +9,13 @@ declare global {
   }
 }
 
+// Suppress Pusher connection errors in console (Reverb may not be running)
+Pusher.logToConsole = false
 window.Pusher = Pusher
 
 let echoInstance: Echo<'reverb'> | null = null
 let currentTld: string | null = null
+let connectionFailed = false
 
 export interface Environment {
   id: number
@@ -32,33 +35,61 @@ export function useEcho() {
 
     const reverbHost = `launchpad.${environment.tld}`
     
-    echoInstance = new Echo({
-      broadcaster: 'reverb',
-      key: 'launchpad-key',
-      wsHost: reverbHost,
-      wsPort: 8080,
-      wssPort: 8080,
-      forceTLS: false,
-      enabledTransports: ['ws', 'wss'],
-      disableStats: true,
-    })
+    try {
+      echoInstance = new Echo({
+        broadcaster: 'reverb',
+        key: 'launchpad-key',
+        wsHost: reverbHost,
+        wsPort: 8080,
+        wssPort: 8080,
+        forceTLS: false,
+        enabledTransports: ['ws', 'wss'],
+        disableStats: true,
+      })
 
-    currentTld = environment.tld
-    
-    return echoInstance
+      // Listen for connection state changes
+      echoInstance.connector.pusher.connection.bind('connected', () => {
+        connectionFailed = false
+        console.log('[Echo] Connected to Reverb')
+      })
+
+      echoInstance.connector.pusher.connection.bind('failed', () => {
+        connectionFailed = true
+        // Silently fail - Reverb may not be running
+        console.debug('[Echo] Reverb connection unavailable - real-time updates disabled')
+      })
+
+      echoInstance.connector.pusher.connection.bind('unavailable', () => {
+        connectionFailed = true
+        console.debug('[Echo] Reverb unavailable - real-time updates disabled')
+      })
+
+      currentTld = environment.tld
+      
+      return echoInstance
+    } catch (error) {
+      console.debug('[Echo] Failed to initialize:', error)
+      connectionFailed = true
+      return null
+    }
   }
 
   const disconnect = () => {
     if (echoInstance) {
-      echoInstance.disconnect()
+      try {
+        echoInstance.disconnect()
+      } catch {
+        // Ignore disconnect errors
+      }
       echoInstance = null
       currentTld = null
+      connectionFailed = false
     }
   }
 
   const getEcho = () => echoInstance
 
-  const isConnected = () => echoInstance !== null
+  const isConnected = () => echoInstance !== null && !connectionFailed
 
   return {
     connect,
