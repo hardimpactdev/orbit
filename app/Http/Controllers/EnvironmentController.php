@@ -15,6 +15,7 @@ use App\Services\LaunchpadCli\ServiceControlService;
 use App\Services\LaunchpadCli\StatusService;
 use App\Services\LaunchpadCli\WorkspaceService;
 use App\Services\LaunchpadCli\WorktreeService;
+use App\Services\MacPhpFpmConfigService;
 use App\Services\SshService;
 use Illuminate\Http\Request;
 
@@ -32,6 +33,7 @@ class EnvironmentController extends Controller
         protected PackageService $package,
         protected DnsResolverService $dnsResolver,
         protected DoctorService $doctor,
+        protected MacPhpFpmConfigService $macPhpFpm,
     ) {}
 
     /**
@@ -227,6 +229,10 @@ class EnvironmentController extends Controller
 
     public function status(Environment $environment)
     {
+        if ($environment->is_local) {
+            $this->macPhpFpm->ensureConfigured();
+        }
+
         $result = $this->status->status($environment);
 
         return response()->json($result);
@@ -260,10 +266,14 @@ class EnvironmentController extends Controller
     public function servicesPage(Environment $environment): \Inertia\Response
     {
         $remoteApiUrl = $this->getRemoteApiUrl($environment);
+        $editor = Setting::getEditor();
 
         return \Inertia\Inertia::render('environments/Services', [
             'environment' => $environment,
             'remoteApiUrl' => $remoteApiUrl,
+            'editor' => $editor,
+            'localPhpIniPath' => $environment->is_local ? $this->macPhpFpm->getGlobalIniPath() : null,
+            'homebrewPrefix' => $environment->is_local ? $this->macPhpFpm->getHomebrewPrefix() : null,
         ]);
     }
 

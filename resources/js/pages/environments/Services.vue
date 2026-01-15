@@ -18,6 +18,11 @@ interface Environment {
     is_local: boolean;
 }
 
+interface Editor {
+    scheme: string;
+    name: string;
+}
+
 interface Service {
     status: string;
     container: string;
@@ -37,6 +42,9 @@ interface ServiceMeta {
 const props = defineProps<{
     environment: Environment;
     remoteApiUrl: string | null;
+    editor: Editor;
+    localPhpIniPath: string | null;
+    homebrewPrefix: string | null;
 }>();
 
 // Helper to get the API URL - uses remote API directly when available
@@ -194,6 +202,74 @@ const servicesByCategory = computed(() => {
 
 const allRunning = computed(() => servicesRunning.value === servicesTotal.value && servicesTotal.value > 0);
 const allStopped = computed(() => servicesRunning.value === 0);
+
+function normalizePhpVersion(serviceKey: string): string | null {
+    if (!serviceKey.startsWith('php-')) return null;
+
+    const raw = serviceKey.replace('php-', '');
+
+    if (raw.includes('.')) {
+        return raw;
+    }
+
+    // php-83 -> 8.3
+    if (raw.length === 2) {
+        return `${raw.slice(0, 1)}.${raw.slice(1)}`;
+    }
+
+    return null;
+}
+
+const latestPhpVersion = computed(() => {
+    const versions = servicesByCategory.value.php
+        .map(({ key }) => normalizePhpVersion(key))
+        .filter((v): v is string => v !== null);
+
+    if (versions.length === 0) return null;
+
+    versions.sort((a, b) => {
+        const [aMajor, aMinor] = a.split('.').map(Number);
+        const [bMajor, bMinor] = b.split('.').map(Number);
+
+        if (aMajor !== bMajor) return aMajor - bMajor;
+        return aMinor - bMinor;
+    });
+
+    return versions[versions.length - 1];
+});
+
+async function openExternal(url: string) {
+    try {
+        await fetch('/open-external', {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+        });
+    } catch {
+        // Silent fail for opening URLs
+    }
+}
+
+async function openPhpIni() {
+    if (!props.environment.is_local || !props.localPhpIniPath) return;
+
+    await openExternal(`${props.editor.scheme}://file${props.localPhpIniPath}`);
+}
+
+async function openPhpFpmConf() {
+    if (!props.environment.is_local) return;
+
+    const version = latestPhpVersion.value;
+    const prefix = props.homebrewPrefix || '/opt/homebrew';
+
+    if (!version) {
+        alert('No PHP services detected');
+        return;
+    }
+
+    const path = `${prefix}/etc/php/${version}/php-fpm.conf`;
+    await openExternal(`${props.editor.scheme}://file${path}`);
+}
 
 async function loadStatus(silent = false) {
     if (!silent) {
@@ -462,8 +538,28 @@ onUnmounted(() => {
         <div v-else class="space-y-6">
             <template v-for="category in categories" :key="category.key">
                 <div v-if="servicesByCategory[category.key].length > 0" class="border border-zinc-600/40 rounded-xl px-0.5 pt-4 pb-0.5 bg-zinc-800/40">
-                    <div class="px-4 mb-4">
+                    <div class="px-4 mb-4 flex items-center justify-between">
                         <h3 class="text-sm font-medium text-white">{{ category.label }}</h3>
+                        <div
+                            v-if="category.key === 'php' && environment.is_local"
+                            class="flex items-center gap-1"
+                        >
+                            <button
+                                @click="openPhpIni"
+                                :disabled="!localPhpIniPath"
+                                class="btn btn-plain p-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
+                                title="Open Launchpad php.ini"
+                            >
+                                <Settings class="w-4 h-4" />
+                            </button>
+                            <button
+                                @click="openPhpFpmConf"
+                                class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                                title="Open php-fpm.conf"
+                            >
+                                <FileText class="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                     <div class="border border-zinc-600/50 rounded-lg overflow-hidden divide-y divide-zinc-600/40">
                         <div

@@ -109,21 +109,25 @@
 - grep -c "showAddServiceModal|showConfigureModal" resources/js/pages/environments/Services.vue -> 8 ✓
 - test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue -> exit code 0 ✓
 
-### 2026-01-14 - Phase 2 Verification: Desktop E2E Test
+### 2026-01-15 - Create async service jobs (launchpad-cli-5hu)
 **Status:** Complete
-**Files changed:** None (Verification only)
+**Files changed (on remote launchpad-cli):**
+- app/Jobs/Services/StartServiceJob.php
+- app/Jobs/Services/StopServiceJob.php
+- app/Jobs/Services/RestartServiceJob.php
+- app/Jobs/Services/EnableServiceJob.php
+- app/Jobs/Services/DisableServiceJob.php
+- .env (added LAUNCHPAD_BINARY)
 
 **Learnings:**
-- Backend methods in `LaunchpadService` and `ServiceControlService` correctly handle the abstraction between local and remote environments.
-- Vue components use a shared `getApiUrl` helper to switch between local backend and direct remote API calls.
-- UI prevents removal of required services (like Redis or DNS) by conditionally rendering the Remove button.
-- Service configuration is fully dynamic, driven by the `configSchema` returned by the CLI for each service template.
+- Created a suite of async jobs for service operations to provide better UX for long-running CLI commands.
+- Jobs follow a consistent pattern: update `TrackedJob` status and broadcast `ServiceStatusChanged` events.
+- Used `LAUNCHPAD_BINARY` environment variable to decouple the binary location from the code.
+- Successfully used `bash -s` with `ssh` to avoid local variable expansion when creating remote files with heredocs.
 
 **Verification results:**
-- Backend methods exist (6 methods in LaunchpadService) -> `availableServices`, `enableService`, `disableService`, `configureService`, `getServiceInfo`, `listServices` ✓
-- Routes registered (9 service routes in web.php) ✓
-- Vue components exist (AddServiceModal, ConfigureServiceModal) ✓
-- Services page updated (showAddServiceModal, showConfigureModal refs) ✓
-- Remote API controller confirmed via dependency check and Saloon request existence ✓
-- Redis "Remove" button absence confirmed (UI-level protection for required services) ✓
+- All 5 job files exist in app/Jobs/Services/ -> Verified ✓
+- Each job implements ShouldQueue -> Verified ✓
+- Each job updates TrackedJob and broadcasts ServiceStatusChanged -> Verified ✓
+- LAUNCHPAD_BINARY env var is set -> Verified ✓
 

@@ -495,10 +495,25 @@ BASH;
 
     protected function configurePhpFpmPools(): bool
     {
-        // Create launchpad config directory for PHP-FPM pools
-        $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/php');
-
         $versions = ['8.2', '8.3', '8.4'];
+
+        // Keep Launchpad-managed PHP config in one place so it can be shared across versions.
+        $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/php ~/.config/launchpad/logs');
+
+        $globalIniPath = '/home/launchpad/.config/launchpad/php/launchpad.ini';
+        $globalIni = "; Launchpad global PHP settings\n"
+            ."; Shared across all installed PHP versions (CLI + FPM)\n"
+            ."; Add directives here (e.g. memory_limit=512M)\n";
+
+        $changedAny = false;
+
+        $globalIniResult = $this->ensureRemoteFile($globalIniPath, $globalIni, false);
+        if (! $globalIniResult['success']) {
+            $this->logError('Failed to write Launchpad global PHP ini');
+
+            return false;
+        }
+        $changedAny = $changedAny || $globalIniResult['changed'];
 
         foreach ($versions as $version) {
             $normalized = str_replace('.', '', $version); // "8.4" -> "84"
@@ -540,26 +555,45 @@ env[HOME] = /home/launchpad
 env[USER] = launchpad
 INI;
 
-            // Escape the config for shell
-            $escapedConfig = str_replace("'", "'\\''", $poolConfig);
             $poolConfigPath = "/home/launchpad/.config/launchpad/php/php{$normalized}-fpm.conf";
 
-            // Write pool config
-            $writeResult = $this->runAsLaunchpad("echo '{$escapedConfig}' > {$poolConfigPath}");
-
-            if (! $writeResult['success']) {
+            $poolWriteResult = $this->ensureRemoteFile($poolConfigPath, $poolConfig, false);
+            if (! $poolWriteResult['success']) {
                 $this->logError("Failed to write pool config for PHP {$version}");
 
                 return false;
             }
+            $changedAny = $changedAny || $poolWriteResult['changed'];
 
-            // Create log directory
-            $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/logs');
+            // Include our pool in the PHP-FPM config (symlinked into pool.d)
+            $poolLink = "/etc/php/{$version}/fpm/pool.d/launchpad.conf";
+            $poolSymlinkResult = $this->ensureRemoteSymlink($poolConfigPath, $poolLink, true);
+            if (! $poolSymlinkResult['success']) {
+                $this->logError("Failed to symlink pool config for PHP {$version}");
 
-            // Include our pool in the PHP-FPM config
-            $fpmConfDir = "/etc/php/{$version}/fpm/pool.d";
-            $symlinkCmd = "sudo ln -sf {$poolConfigPath} {$fpmConfDir}/launchpad.conf";
-            $this->runAsLaunchpad($symlinkCmd);
+                return false;
+            }
+            $changedAny = $changedAny || $poolSymlinkResult['changed'];
+
+            // Use a single global ini file across all versions.
+            $fpmIniLink = "/etc/php/{$version}/fpm/conf.d/99-launchpad.ini";
+            $cliIniLink = "/etc/php/{$version}/cli/conf.d/99-launchpad.ini";
+
+            $fpmIniSymlinkResult = $this->ensureRemoteSymlink($globalIniPath, $fpmIniLink, true);
+            if (! $fpmIniSymlinkResult['success']) {
+                $this->logError("Failed to symlink Launchpad ini for PHP {$version} (FPM)");
+
+                return false;
+            }
+            $changedAny = $changedAny || $fpmIniSymlinkResult['changed'];
+
+            $cliIniSymlinkResult = $this->ensureRemoteSymlink($globalIniPath, $cliIniLink, true);
+            if (! $cliIniSymlinkResult['success']) {
+                $this->logError("Failed to symlink Launchpad ini for PHP {$version} (CLI)");
+
+                return false;
+            }
+            $changedAny = $changedAny || $cliIniSymlinkResult['changed'];
 
             // Start and enable PHP-FPM service
             $this->logInfo("Starting PHP-FPM {$version}");
@@ -570,6 +604,172 @@ INI;
 
                 return false;
             }
+        }
+
+        // Watch PHP configs and reload PHP-FPM automatically when they change.
+        if (! $this->installPhpFpmReloadWatcher($versions, $globalIniPath)) {
+            return false;
+        }
+
+        if ($changedAny) {
+            foreach ($versions as $version) {
+                $this->reloadPhpFpm($version);
+            }
+        }
+
+        return true;
+    }
+
+    protected function ensureRemoteFile(string $path, string $contents, bool $sudo): array
+    {
+        $expectedHash = hash('sha256', $contents);
+        $pathArg = escapeshellarg($path);
+
+        $getHashScript = "if [ -f {$pathArg} ]; then sha256sum {$pathArg} | cut -d ' ' -f1; else echo missing; fi";
+        $getHashCommand = $sudo
+            ? 'sudo sh -c '.escapeshellarg($getHashScript)
+            : $getHashScript;
+
+        $currentHashResult = $this->runAsLaunchpad($getHashCommand);
+        if (! $currentHashResult['success']) {
+            return ['success' => false, 'changed' => false];
+        }
+
+        $currentHash = trim((string) $currentHashResult['output']);
+        if ($currentHash === $expectedHash) {
+            return ['success' => true, 'changed' => false];
+        }
+
+        $base64 = base64_encode($contents);
+        $base64Arg = escapeshellarg($base64);
+
+        $writeCommand = $sudo
+            ? "printf %s {$base64Arg} | base64 -d | sudo tee {$pathArg} >/dev/null"
+            : "printf %s {$base64Arg} | base64 -d > {$pathArg}";
+
+        $writeResult = $this->runAsLaunchpad($writeCommand);
+        if (! $writeResult['success']) {
+            return ['success' => false, 'changed' => false];
+        }
+
+        return ['success' => true, 'changed' => true];
+    }
+
+    protected function ensureRemoteSymlink(string $target, string $link, bool $sudo): array
+    {
+        $targetArg = escapeshellarg($target);
+        $linkArg = escapeshellarg($link);
+
+        $linkCheckScript = "if [ -L {$linkArg} ] && [ \"$(readlink -f {$linkArg})\" = \"$(readlink -f {$targetArg})\" ]; then echo ok; else ln -sf {$targetArg} {$linkArg} && echo changed; fi";
+
+        $command = $sudo
+            ? 'sudo sh -c '.escapeshellarg($linkCheckScript)
+            : 'sh -c '.escapeshellarg($linkCheckScript);
+
+        $result = $this->runAsLaunchpad($command);
+        if (! $result['success']) {
+            return ['success' => false, 'changed' => false];
+        }
+
+        $output = trim((string) $result['output']);
+
+        return ['success' => true, 'changed' => $output === 'changed'];
+    }
+
+    protected function reloadPhpFpm(string $version): void
+    {
+        $reload = $this->runAsLaunchpad("sudo systemctl reload php{$version}-fpm");
+        if ($reload['success']) {
+            return;
+        }
+
+        $this->runAsLaunchpad("sudo systemctl restart php{$version}-fpm");
+    }
+
+    protected function installPhpFpmReloadWatcher(array $versions, string $globalIniPath): bool
+    {
+        $scriptPath = '/usr/local/bin/launchpad-reload-php-fpm';
+        $scriptLines = [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail',
+        ];
+
+        foreach ($versions as $version) {
+            $scriptLines[] = "if systemctl list-unit-files | grep -q '^php{$version}-fpm\\.service'; then";
+            $scriptLines[] = "  systemctl reload php{$version}-fpm || systemctl restart php{$version}-fpm";
+            $scriptLines[] = 'fi';
+        }
+
+        $script = implode("\n", $scriptLines)."\n";
+
+        $scriptResult = $this->ensureRemoteFile($scriptPath, $script, true);
+        if (! $scriptResult['success']) {
+            $this->logError('Failed to install PHP-FPM reload script');
+
+            return false;
+        }
+
+        if ($scriptResult['changed']) {
+            $this->runAsLaunchpad('sudo chmod +x '.escapeshellarg($scriptPath));
+        }
+
+        $servicePath = '/etc/systemd/system/launchpad-php-fpm-reload.service';
+        $pathPath = '/etc/systemd/system/launchpad-php-fpm-reload.path';
+
+        $serviceUnit = <<<UNIT
+[Unit]
+Description=Launchpad reload PHP-FPM when configs change
+
+[Service]
+Type=oneshot
+ExecStart={$scriptPath}
+UNIT;
+
+        $serviceResult = $this->ensureRemoteFile($servicePath, $serviceUnit."\n", true);
+        if (! $serviceResult['success']) {
+            $this->logError('Failed to install PHP-FPM reload systemd service');
+
+            return false;
+        }
+
+        $pathLines = [
+            '[Unit]',
+            'Description=Launchpad watch PHP config changes',
+            '',
+            '[Path]',
+            "PathModified={$globalIniPath}",
+        ];
+
+        foreach ($versions as $version) {
+            $pathLines[] = "PathModified=/etc/php/{$version}/fpm/php.ini";
+            $pathLines[] = "PathModified=/etc/php/{$version}/fpm/php-fpm.conf";
+            $pathLines[] = "PathModified=/etc/php/{$version}/fpm/conf.d/";
+            $pathLines[] = "PathModified=/etc/php/{$version}/fpm/pool.d/";
+        }
+
+        $pathLines[] = 'Unit=launchpad-php-fpm-reload.service';
+        $pathLines[] = '';
+        $pathLines[] = '[Install]';
+        $pathLines[] = 'WantedBy=multi-user.target';
+
+        $pathUnit = implode("\n", $pathLines)."\n";
+
+        $pathResult = $this->ensureRemoteFile($pathPath, $pathUnit, true);
+        if (! $pathResult['success']) {
+            $this->logError('Failed to install PHP-FPM reload systemd path unit');
+
+            return false;
+        }
+
+        if ($serviceResult['changed'] || $pathResult['changed']) {
+            $this->runAsLaunchpad('sudo systemctl daemon-reload');
+        }
+
+        $enableResult = $this->runAsLaunchpad('sudo systemctl enable --now launchpad-php-fpm-reload.path');
+        if (! $enableResult['success']) {
+            $this->logError('Failed to enable PHP-FPM reload watcher: '.$enableResult['error']);
+
+            return false;
         }
 
         return true;

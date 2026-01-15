@@ -176,6 +176,8 @@ import EnvironmentCard from '@/components/EnvironmentCard.vue';
 ```
 
 **TypeScript Best Practices:**
+- Use Pinia for global state management.
+- State that needs persistence should use the `pinia-plugin-persistedstate` plugin.
 - Use explicit types for props and defineProps<>
 - Avoid `any` - use `unknown` or specific types
 - Use optional properties with `?` only when truly optional
