@@ -113,12 +113,15 @@ class ConfigurationService
         // Get TLD from environment cache or status
         $tld = $environment->tld ?? $statusData['tld'] ?? 'test';
 
+        // Get Reverb port from service config, default to 8080
+        $reverbPort = $reverbService['port'] ?? 8080;
+
         return [
             'success' => true,
             'enabled' => true,
-            'host' => "reverb.{$tld}",
-            'port' => 443,
-            'scheme' => 'https',
+            'host' => "launchpad.{$tld}",
+            'port' => $reverbPort,
+            'scheme' => 'http',
             'app_key' => 'launchpad-key',
         ];
     }
