@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import { useServicesStore } from '@/stores/services';
 import { toast } from 'vue-sonner';
 import axios from 'axios';
 import api from '@/lib/axios';
@@ -28,16 +29,6 @@ interface Installation {
 interface Editor {
     scheme: string;
     name: string;
-}
-
-interface Service {
-    status: string;
-}
-
-interface StatusData {
-    services_running?: number;
-    services_total?: number;
-    services?: Record<string, Service>;
 }
 
 interface Site {
@@ -89,9 +80,7 @@ const connectionStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
 const connectionMessage = ref('Connection not tested');
 
 // Services
-const services = ref<Record<string, Service>>({});
-const servicesRunning = ref(0);
-const servicesTotal = ref(0);
+const servicesStore = useServicesStore();
 const servicesLoading = ref(true);
 const restartingAll = ref(false);
 
@@ -158,18 +147,9 @@ async function testConnection() {
 async function loadStatus() {
     servicesLoading.value = true;
     try {
-        const { data: result } = await api.get(getApiUrl('/status'), {
-            signal: abortController.value?.signal,
-        });
-
-        if (result.success && result.data) {
-            services.value = result.data.services || {};
-            servicesRunning.value = result.data.services_running || 0;
-            servicesTotal.value = result.data.services_total || 0;
-        }
+        await servicesStore.fetchServices(getApiUrl(''));
     } catch (error) {
-        if (axios.isCancel(error)) return;
-        // Error toast handled by axios interceptor
+        console.error('Failed to load services status:', error);
     } finally {
         servicesLoading.value = false;
     }
@@ -231,14 +211,18 @@ async function loadConfig() {
 async function restartAllServices() {
     restartingAll.value = true;
     try {
-        const { data: result } = await api.post(getApiUrl('/restart'), {});
+        const result = await servicesStore.restartAll(getApiUrl(''));
 
         if (result.success) {
             toast.success('Services restarted successfully');
             await loadStatus();
+        } else {
+            toast.error('Failed to restart services', {
+                description: result.error || 'Unknown error'
+            });
         }
     } catch {
-        // Error toast handled by axios interceptor
+        toast.error('Failed to restart services');
     } finally {
         restartingAll.value = false;
     }
@@ -409,6 +393,9 @@ onMounted(() => {
     removeRouterListener = router.on('before', () => {
         abortController.value?.abort();
     });
+
+    // Set active environment in services store
+    servicesStore.setActiveEnvironment(props.environment.id);
 
     // Load all data in parallel
     // When remoteApiUrl is available, calls go directly to the remote server (bypasses NativePHP)
@@ -621,7 +608,7 @@ onUnmounted(() => {
                         <h3 class="text-sm font-medium text-white">Services</h3>
                         <p class="text-sm text-zinc-500">
                             <template v-if="servicesLoading">Loading...</template>
-                            <template v-else>{{ servicesRunning }}/{{ servicesTotal }} running</template>
+                            <template v-else>{{ servicesStore.servicesRunning }}/{{ servicesStore.servicesTotal }} running</template>
                         </p>
                     </div>
                     <button
@@ -639,7 +626,7 @@ onUnmounted(() => {
                     </div>
                     <template v-else>
                         <div
-                            v-for="(service, name) in services"
+                            v-for="(service, name) in servicesStore.services"
                             :key="name"
                             class="p-5 flex items-center justify-between bg-zinc-800/30"
                         >
@@ -668,7 +655,7 @@ onUnmounted(() => {
                                 {{ service.status || 'unknown' }}
                             </span>
                         </div>
-                        <div v-if="Object.keys(services).length === 0" class="p-5 text-zinc-500 text-sm bg-zinc-800/30">
+                        <div v-if="servicesStore.servicesTotal === 0" class="p-5 text-zinc-500 text-sm bg-zinc-800/30">
                             No services found
                         </div>
                     </template>

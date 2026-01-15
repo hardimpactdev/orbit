@@ -109,25 +109,26 @@
 - grep -c "showAddServiceModal|showConfigureModal" resources/js/pages/environments/Services.vue -> 8 ✓
 - test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue -> exit code 0 ✓
 
-### 2026-01-15 - Create async service jobs (launchpad-cli-5hu)
+### 2026-01-15 - Refactor Services.vue to use Pinia + Echo (launchpad-desktop-hhb)
 **Status:** Complete
-**Files changed (on remote launchpad-cli):**
-- app/Jobs/Services/StartServiceJob.php
-- app/Jobs/Services/StopServiceJob.php
-- app/Jobs/Services/RestartServiceJob.php
-- app/Jobs/Services/EnableServiceJob.php
-- app/Jobs/Services/DisableServiceJob.php
-- .env (added LAUNCHPAD_BINARY)
+**Files changed:**
+- resources/js/pages/environments/Services.vue
+- resources/js/stores/services.ts
+- resources/js/components/AddServiceModal.vue
 
 **Learnings:**
-- Created a suite of async jobs for service operations to provide better UX for long-running CLI commands.
-- Jobs follow a consistent pattern: update `TrackedJob` status and broadcast `ServiceStatusChanged` events.
-- Used `LAUNCHPAD_BINARY` environment variable to decouple the binary location from the code.
-- Successfully used `bash -s` with `ssh` to avoid local variable expansion when creating remote files with heredocs.
+- Pinia stores should support both local and remote API structures (e.g., handling `/status` vs `/services/status`).
+- Echo integration allows for real-time service status updates across multiple components.
+- Centralizing service actions in the Pinia store simplifies state management and ensures consistency when multiple components interact with the same services.
+- Using `store.isServicePending(serviceName)` provides a robust way to show loading states and prevent concurrent actions.
+- Inline error reporting from the store improves user feedback for asynchronous background jobs.
 
 **Verification results:**
-- All 5 job files exist in app/Jobs/Services/ -> Verified ✓
-- Each job implements ShouldQueue -> Verified ✓
-- Each job updates TrackedJob and broadcasts ServiceStatusChanged -> Verified ✓
-- LAUNCHPAD_BINARY env var is set -> Verified ✓
+- Services.vue uses useServicesStore -> Verified ✓
+- Services.vue uses useEcho for websocket connection -> Verified ✓
+- Service actions dispatch through store (start, stop, restart, enable) -> Verified ✓
+- Real-time updates via Echo '.service.status.changed' -> Verified ✓
+- Pending states and inline errors displayed correctly -> Verified ✓
+- Toast notifications on websocket events -> Verified ✓
+
 

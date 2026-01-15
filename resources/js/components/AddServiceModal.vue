@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import Modal from './Modal.vue';
+import { useServicesStore } from '@/stores/services';
 import { Loader2, Plus, Server, Database, Mail, Globe, Wifi, Container, Check } from 'lucide-vue-next';
 
 interface ServiceTemplate {
@@ -22,9 +23,12 @@ const emit = defineEmits<{
     serviceEnabled: [name: string];
 }>();
 
+const store = useServicesStore();
 const loading = ref(true);
 const availableServices = ref<ServiceTemplate[]>([]);
 const enabling = ref<string | null>(null);
+
+const baseApiUrl = computed(() => props.getApiUrl(''));
 
 const categories = [
     { key: 'core', label: 'Core Services' },
@@ -70,19 +74,12 @@ const fetchAvailable = async () => {
 const enableService = async (serviceName: string) => {
     enabling.value = serviceName;
     try {
-        const response = await fetch(props.getApiUrl(`/services/${serviceName}/enable`), {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': props.csrfToken,
-                'Content-Type': 'application/json',
-            },
-        });
-        const result = await response.json();
-        if (result.success) {
+        const result = await store.enableService(serviceName, baseApiUrl.value);
+        if (result?.success) {
             emit('serviceEnabled', serviceName);
             emit('close');
         } else {
-            alert('Failed to enable service: ' + (result.error || 'Unknown error'));
+            alert('Failed to enable service: ' + (result?.error || 'Unknown error'));
         }
     } catch (error) {
         alert('Failed to enable service');

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Head } from '@inertiajs/vue3';
+import { useServicesStore, type Service } from '@/stores/services';
+import { useEcho } from '@/composables/useEcho';
+import { toast } from 'vue-sonner';
 import Heading from '@/components/Heading.vue';
 import Modal from '@/components/Modal.vue';
 import AddServiceModal from '@/components/AddServiceModal.vue';
@@ -15,19 +18,13 @@ interface Environment {
     name: string;
     host: string;
     user: string;
+    tld: string;
     is_local: boolean;
 }
 
 interface Editor {
     scheme: string;
     name: string;
-}
-
-interface Service {
-    status: string;
-    container: string;
-    required?: boolean;
-    can_configure?: boolean;
 }
 
 interface ServiceMeta {
@@ -47,6 +44,9 @@ const props = defineProps<{
     homebrewPrefix: string | null;
 }>();
 
+const store = useServicesStore();
+const { connect, disconnect } = useEcho();
+
 // Helper to get the API URL - uses remote API directly when available
 const getApiUrl = (path: string) => {
     if (props.remoteApiUrl) {
@@ -55,12 +55,14 @@ const getApiUrl = (path: string) => {
     return `/api/environments/${props.environment.id}${path}`;
 };
 
+const baseApiUrl = computed(() => getApiUrl(''));
+
 const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
 
-const services = ref<Record<string, Service>>({});
-const loading = ref(true);
-const servicesRunning = ref(0);
-const servicesTotal = ref(0);
+const services = computed(() => store.services);
+const loading = ref(false); // We'll manage initial load state
+const servicesRunning = computed(() => store.servicesRunning);
+const servicesTotal = computed(() => store.servicesTotal);
 const restartingAll = ref(false);
 const actionInProgress = ref<string | null>(null);
 
@@ -276,16 +278,7 @@ async function loadStatus(silent = false) {
         loading.value = true;
     }
     try {
-        const response = await fetch(getApiUrl('/status'));
-        const result = await response.json();
-
-        if (result.success && result.data) {
-            services.value = result.data.services || {};
-            servicesRunning.value = result.data.services_running || 0;
-            servicesTotal.value = result.data.services_total || 0;
-        }
-    } catch (error) {
-        console.error('Failed to load status:', error);
+        await store.fetchServices(baseApiUrl.value);
     } finally {
         if (!silent) {
             loading.value = false;
@@ -296,19 +289,16 @@ async function loadStatus(silent = false) {
 async function startAll() {
     actionInProgress.value = 'start-all';
     try {
-        const response = await fetch(getApiUrl('/start'), {
-            method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
-        });
-        const result = await response.json();
+        const result = await store.startAll(baseApiUrl.value);
 
         if (result.success) {
+            toast.success('Starting all services...');
             await loadStatus(true);
         } else {
-            alert('Failed to start services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to start services: ' + (result.error || 'Unknown error'));
         }
     } catch {
-        alert('Failed to start services');
+        toast.error('Failed to start services');
     } finally {
         actionInProgress.value = null;
     }
@@ -317,19 +307,16 @@ async function startAll() {
 async function stopAll() {
     actionInProgress.value = 'stop-all';
     try {
-        const response = await fetch(getApiUrl('/stop'), {
-            method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
-        });
-        const result = await response.json();
+        const result = await store.stopAll(baseApiUrl.value);
 
         if (result.success) {
+            toast.success('Stopping all services...');
             await loadStatus(true);
         } else {
-            alert('Failed to stop services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to stop services: ' + (result.error || 'Unknown error'));
         }
     } catch {
-        alert('Failed to stop services');
+        toast.error('Failed to stop services');
     } finally {
         actionInProgress.value = null;
     }
@@ -339,19 +326,16 @@ async function restartAll() {
     restartingAll.value = true;
     actionInProgress.value = 'restart-all';
     try {
-        const response = await fetch(getApiUrl('/restart'), {
-            method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
-        });
-        const result = await response.json();
+        const result = await store.restartAll(baseApiUrl.value);
 
         if (result.success) {
+            toast.success('Restarting all services...');
             await loadStatus(true);
         } else {
-            alert('Failed to restart services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to restart services: ' + (result.error || 'Unknown error'));
         }
     } catch {
-        alert('Failed to restart services');
+        toast.error('Failed to restart services');
     } finally {
         restartingAll.value = false;
         actionInProgress.value = null;
@@ -359,49 +343,46 @@ async function restartAll() {
 }
 
 async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'restart') {
-    actionInProgress.value = `${action}-${serviceKey}`;
     const type = getServiceType(serviceKey);
-    const path = type === 'host' ? `/host-services/${serviceKey}/${action}` : `/services/${serviceKey}/${action}`;
-
+    
     try {
-        const response = await fetch(getApiUrl(path), {
-            method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
-        });
-        const result = await response.json();
-
-        if (result.success) {
-            await loadStatus(true);
+        let result;
+        if (action === 'start') {
+            result = await store.startService(serviceKey, baseApiUrl.value, type);
+        } else if (action === 'stop') {
+            result = await store.stopService(serviceKey, baseApiUrl.value, type);
         } else {
-            alert(`Failed to ${action} service: ` + (result.error || 'Unknown error'));
+            result = await store.restartService(serviceKey, baseApiUrl.value, type);
         }
-    } catch {
-        alert(`Failed to ${action} service`);
-    } finally {
-        actionInProgress.value = null;
+
+        if (result?.success) {
+            if (result.jobId) {
+                // Real-time update will handle the rest
+            } else {
+                await loadStatus(true);
+            }
+        } else {
+            toast.error(`Failed to ${action} ${serviceKey}: ` + (result?.error || 'Unknown error'));
+        }
+    } catch (error) {
+        toast.error(`Failed to ${action} ${serviceKey}`);
     }
 }
 
 async function removeService(serviceKey: string) {
     if (!confirm(`Are you sure you want to remove ${serviceKey}?`)) return;
 
-    actionInProgress.value = `remove-${serviceKey}`;
     try {
-        const response = await fetch(getApiUrl(`/services/${serviceKey}`), {
-            method: 'DELETE',
-            headers: { 'X-CSRF-TOKEN': csrfToken, 'Content-Type': 'application/json' },
-        });
-        const result = await response.json();
+        const result = await store.disableService(serviceKey, baseApiUrl.value);
 
-        if (result.success) {
+        if (result?.success) {
+            toast.success(`${serviceKey} disabled`);
             await loadStatus(true);
         } else {
-            alert('Failed to remove service: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to remove service: ' + (result?.error || 'Unknown error'));
         }
     } catch {
-        alert('Failed to remove service');
-    } finally {
-        actionInProgress.value = null;
+        toast.error('Failed to remove service');
     }
 }
 
@@ -463,11 +444,49 @@ function getServiceIcon(meta: ServiceMeta) {
     return meta.icon;
 }
 
-onMounted(() => {
-    loadStatus();
+interface ServiceStatusEvent {
+    job_id: string | null;
+    service: string;
+    status: string;
+    action: string;
+    error?: string;
+    timestamp: number;
+}
+
+onMounted(async () => {
+    store.setActiveEnvironment(props.environment.id);
+    
+    // Show cached data immediately, refresh if stale
+    if (store.isStale) {
+        loadStatus();
+    }
+    
+    // Connect Echo for real-time updates
+    const echo = connect(props.environment);
+    if (echo) {
+        echo.channel('launchpad')
+            .listen('.service.status.changed', (event: ServiceStatusEvent) => {
+                store.handleServiceStatusChanged(
+                    event.job_id,
+                    event.service,
+                    event.status,
+                    event.error
+                );
+                
+                if (event.error) {
+                    toast.error(`Failed to ${event.action} ${event.service}: ${event.error}`);
+                } else {
+                    toast.success(`${event.service} ${event.action} completed`);
+                }
+            });
+    }
+    
+    // Recover any pending jobs
+    store.recoverPendingJobs(baseApiUrl.value);
 });
 
 onUnmounted(() => {
+    disconnect();
     if (logsInterval) {
         clearInterval(logsInterval);
     }
@@ -620,30 +639,30 @@ onUnmounted(() => {
                                     <button
                                         v-if="service.status !== 'running'"
                                         @click="serviceAction(key, 'start')"
-                                        :disabled="actionInProgress !== null"
+                                        :disabled="store.isServicePending(key)"
                                         class="btn btn-plain p-1.5 text-zinc-400 hover:text-lime-400 disabled:opacity-50"
                                         title="Start"
                                     >
-                                        <Loader2 v-if="actionInProgress === `start-${key}`" class="w-4 h-4 animate-spin" />
+                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
                                         <Play v-else class="w-4 h-4" />
                                     </button>
                                     <button
                                         v-if="service.status === 'running'"
                                         @click="serviceAction(key, 'stop')"
-                                        :disabled="actionInProgress !== null"
+                                        :disabled="store.isServicePending(key)"
                                         class="btn btn-plain p-1.5 text-zinc-400 hover:text-red-400 disabled:opacity-50"
                                         title="Stop"
                                     >
-                                        <Loader2 v-if="actionInProgress === `stop-${key}`" class="w-4 h-4 animate-spin" />
+                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
                                         <Square v-else class="w-4 h-4" />
                                     </button>
                                     <button
                                         @click="serviceAction(key, 'restart')"
-                                        :disabled="actionInProgress !== null"
+                                        :disabled="store.isServicePending(key)"
                                         class="btn btn-plain p-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
                                         title="Restart"
                                     >
-                                        <Loader2 v-if="actionInProgress === `restart-${key}`" class="w-4 h-4 animate-spin" />
+                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
                                         <RefreshCw v-else class="w-4 h-4" />
                                     </button>
                                     <button
@@ -663,12 +682,21 @@ onUnmounted(() => {
                                     <button
                                         v-if="!service.required && !meta.required"
                                         @click="removeService(key)"
-                                        :disabled="actionInProgress !== null"
+                                        :disabled="store.isServicePending(key)"
                                         class="btn btn-plain p-1.5 text-zinc-400 hover:text-red-400 disabled:opacity-50"
                                         title="Remove Service"
                                     >
-                                        <Loader2 v-if="actionInProgress === `remove-${key}`" class="w-4 h-4 animate-spin" />
+                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
                                         <Trash2 v-else class="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Error message for this service -->
+                            <div v-if="store.getServiceError(key)" class="px-4 pb-3 -mt-2">
+                                <div class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-2 py-1 flex items-center justify-between">
+                                    <span>Error: {{ store.getServiceError(key) }}</span>
+                                    <button @click="store.clearServiceError(key)" class="text-red-400 hover:text-white">
+                                        <X class="w-3 h-3" />
                                     </button>
                                 </div>
                             </div>
