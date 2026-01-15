@@ -97,10 +97,12 @@ export const useServicesStore = defineStore('services', {
 
     async fetchServices(apiUrl: string) {
       try {
-        // Try /services/status first (remote), then fallback to /status (local)
-        let response = await fetch(`${apiUrl}/services/status`)
-        if (!response.ok && response.status === 404) {
-          response = await fetch(`${apiUrl}/status`)
+        // Use /status endpoint (works for both local NativePHP and remote Launchpad)
+        const response = await fetch(`${apiUrl}/status`)
+        
+        if (!response.ok) {
+          console.error('Failed to fetch services:', response.status, response.statusText)
+          return
         }
         
         const result = await response.json()
