@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { Key, Copy, Star, Pencil, Trash2, FileCode2, ExternalLink } from 'lucide-vue-next';
 import Modal from '@/components/Modal.vue';
+import { Button, Input, Label, Badge, Switch, Textarea } from '@hardimpactdev/craft-ui';
 
 interface Editor {
     scheme: string;
@@ -215,8 +216,10 @@ const toggleMenuBar = () => {
         <!-- Code Editor -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">Code Editor</h2>
-                <p class="text-sm text-zinc-400">Select your preferred editor for opening remote projects.</p>
+                <h2 class="text-sm font-semibold text-foreground">Code Editor</h2>
+                <p class="text-sm text-muted-foreground">
+                    Select your preferred editor for opening remote projects.
+                </p>
             </div>
             <div>
                 <select v-model="editorForm.editor" class="w-full">
@@ -227,13 +230,15 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-white/5" />
+        <hr class="my-10 border-t border-border" />
 
         <!-- Terminal -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">Terminal</h2>
-                <p class="text-sm text-zinc-400">Select your preferred terminal for SSH connections.</p>
+                <h2 class="text-sm font-semibold text-foreground">Terminal</h2>
+                <p class="text-sm text-muted-foreground">
+                    Select your preferred terminal for SSH connections.
+                </p>
             </div>
             <div>
                 <select v-model="editorForm.terminal" class="w-full">
@@ -244,78 +249,54 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-white/5" />
+        <hr class="my-10 border-t border-border" />
 
         <!-- Desktop Notifications -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">Desktop Notifications</h2>
-                <p class="text-sm text-zinc-400">Show system notifications for project events.</p>
+                <h2 class="text-sm font-semibold text-foreground">Desktop Notifications</h2>
+                <p class="text-sm text-muted-foreground">Show system notifications for project events.</p>
             </div>
             <div class="flex items-center">
-                <button
-                    type="button"
-                    @click="toggleNotifications"
+                <Switch
+                    :checked="notificationForm.enabled"
+                    @update:checked="toggleNotifications"
                     :disabled="notificationForm.processing"
-                    role="switch"
-                    :aria-checked="notificationForm.enabled"
-                    :class="[
-                        'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-lime-500 focus:ring-offset-2 focus:ring-offset-zinc-900',
-                        notificationForm.enabled ? 'bg-lime-500' : 'bg-zinc-700'
-                    ]"
-                >
-                    <span
-                        :class="[
-                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                            notificationForm.enabled ? 'translate-x-5' : 'translate-x-0'
-                        ]"
-                    />
-                </button>
+                />
             </div>
         </section>
 
-        <hr class="my-10 border-t border-white/5" />
+        <hr class="my-10 border-t border-border" />
 
         <!-- Menu Bar -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">Menu Bar Icon</h2>
-                <p class="text-sm text-zinc-400">Show Orbit in the system menu bar for quick access.</p>
+                <h2 class="text-sm font-semibold text-foreground">Menu Bar Icon</h2>
+                <p class="text-sm text-muted-foreground">
+                    Show Orbit in the system menu bar for quick access.
+                </p>
             </div>
             <div class="flex items-center">
-                <button
-                    type="button"
-                    @click="toggleMenuBar"
+                <Switch
+                    :checked="menuBarForm.enabled"
+                    @update:checked="toggleMenuBar"
                     :disabled="menuBarForm.processing"
-                    role="switch"
-                    :aria-checked="menuBarForm.enabled"
-                    :class="[
-                        'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-lime-500 focus:ring-offset-2 focus:ring-offset-zinc-900',
-                        menuBarForm.enabled ? 'bg-lime-500' : 'bg-zinc-700'
-                    ]"
-                >
-                    <span
-                        :class="[
-                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                            menuBarForm.enabled ? 'translate-x-5' : 'translate-x-0'
-                        ]"
-                    />
-                </button>
+                />
             </div>
         </section>
 
-        <hr class="my-10 border-t border-white/5" />
+        <hr class="my-10 border-t border-border" />
 
         <!-- SSH Keys -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">SSH Public Keys</h2>
-                <p class="text-sm text-zinc-400">Manage SSH keys for environment provisioning.</p>
+                <h2 class="text-sm font-semibold text-foreground">SSH Public Keys</h2>
+                <p class="text-sm text-muted-foreground">Manage SSH keys for environment provisioning.</p>
             </div>
             <div class="space-y-4">
                 <!-- Empty State -->
-                <div v-if="sshKeys.length === 0" class="text-center py-6 text-zinc-500">
-                    <Key class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
+                <div v-if="sshKeys.length === 0" class="text-center py-6 text-muted-foreground">
+                    <Key class="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
                     <p class="text-sm">No SSH keys configured.</p>
                 </div>
 
@@ -324,35 +305,64 @@ const toggleMenuBar = () => {
                     <div
                         v-for="key in sshKeys"
                         :key="key.id"
-                        class="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3"
+                        class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
                     >
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium text-white">{{ key.name }}</span>
-                                <span v-if="key.is_default" class="badge badge-lime">Default</span>
+                                <span class="text-sm font-medium text-foreground">{{ key.name }}</span>
+                                <Badge v-if="key.is_default" class="bg-lime-400/10 text-lime-300 border-lime-400/20">Default</Badge>
                             </div>
-                            <p class="mt-0.5 truncate font-mono text-xs text-zinc-500">{{ truncateKey(key.public_key, 50) }}</p>
+                            <p class="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                                {{ truncateKey(key.public_key, 50) }}
+                            </p>
                         </div>
                         <div class="ml-4 flex items-center gap-1">
-                            <button type="button" @click="copyKey(key)" class="p-1.5 text-zinc-500 hover:text-white rounded hover:bg-white/5" title="Copy">
+                            <Button
+                                type="button"
+                                @click="copyKey(key)"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Copy"
+                            >
                                 <Copy class="w-4 h-4" />
-                            </button>
-                            <button v-if="!key.is_default" type="button" @click="setDefaultKey(key)" class="p-1.5 text-zinc-500 hover:text-lime-400 rounded hover:bg-white/5" title="Set default">
+                            </Button>
+                            <Button
+                                v-if="!key.is_default"
+                                type="button"
+                                @click="setDefaultKey(key)"
+                                variant="ghost"
+                                size="icon-sm"
+                                class="hover:text-lime-400"
+                                title="Set default"
+                            >
                                 <Star class="w-4 h-4" />
-                            </button>
-                            <button type="button" @click="openEditModal(key)" class="p-1.5 text-zinc-500 hover:text-white rounded hover:bg-white/5" title="Edit">
+                            </Button>
+                            <Button
+                                type="button"
+                                @click="openEditModal(key)"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Edit"
+                            >
                                 <Pencil class="w-4 h-4" />
-                            </button>
-                            <button type="button" @click="deleteKey(key)" class="p-1.5 text-zinc-500 hover:text-red-400 rounded hover:bg-white/5" title="Delete">
+                            </Button>
+                            <Button
+                                type="button"
+                                @click="deleteKey(key)"
+                                variant="ghost"
+                                size="icon-sm"
+                                class="hover:text-red-400"
+                                title="Delete"
+                            >
                                 <Trash2 class="w-4 h-4" />
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
 
-                <button type="button" @click="openAddModal" class="btn btn-outline">
+                <Button type="button" @click="openAddModal" variant="outline">
                     Add SSH Key
-                </button>
+                </Button>
             </div>
         </section>
 
@@ -361,13 +371,13 @@ const toggleMenuBar = () => {
         <!-- Template Favorites -->
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
-                <h2 class="text-sm font-semibold text-white">Template Favorites</h2>
-                <p class="text-sm text-zinc-400">Manage your favorite project templates.</p>
+                <h2 class="text-sm font-semibold text-foreground">Template Favorites</h2>
+                <p class="text-sm text-muted-foreground">Manage your favorite project templates.</p>
             </div>
             <div class="space-y-4">
                 <!-- Empty State -->
-                <div v-if="templateFavorites.length === 0" class="text-center py-6 text-zinc-500">
-                    <FileCode2 class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
+                <div v-if="templateFavorites.length === 0" class="text-center py-6 text-muted-foreground">
+                    <FileCode2 class="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
                     <p class="text-sm">No template favorites yet.</p>
                 </div>
 
@@ -376,97 +386,172 @@ const toggleMenuBar = () => {
                     <div
                         v-for="template in templateFavorites"
                         :key="template.id"
-                        class="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3"
+                        class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
                     >
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium text-white">{{ template.display_name }}</span>
-                                <span v-if="template.usage_count > 0" class="badge badge-zinc">Used {{ template.usage_count }}x</span>
+                                <span class="text-sm font-medium text-foreground">{{
+                                    template.display_name
+                                }}</span>
+                                <Badge v-if="template.usage_count > 0" variant="secondary"
+                                    >Used {{ template.usage_count }}x</Badge
+                                >
                             </div>
-                            <p class="mt-0.5 font-mono text-xs text-zinc-500">{{ template.repo_url }}</p>
+                            <p class="mt-0.5 font-mono text-xs text-muted-foreground">
+                                {{ template.repo_url }}
+                            </p>
                         </div>
                         <div class="ml-4 flex items-center gap-1">
-                            <button type="button" @click="openGitHub(template.repo_url)" class="p-1.5 text-zinc-500 hover:text-white rounded hover:bg-white/5" title="Open on GitHub">
+                            <Button
+                                type="button"
+                                @click="openGitHub(template.repo_url)"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Open on GitHub"
+                            >
                                 <ExternalLink class="w-4 h-4" />
-                            </button>
-                            <button type="button" @click="openEditTemplateModal(template)" class="p-1.5 text-zinc-500 hover:text-white rounded hover:bg-white/5" title="Edit">
+                            </Button>
+                            <Button
+                                type="button"
+                                @click="openEditTemplateModal(template)"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Edit"
+                            >
                                 <Pencil class="w-4 h-4" />
-                            </button>
-                            <button type="button" @click="deleteTemplate(template)" class="p-1.5 text-zinc-500 hover:text-red-400 rounded hover:bg-white/5" title="Delete">
+                            </Button>
+                            <Button
+                                type="button"
+                                @click="deleteTemplate(template)"
+                                variant="ghost"
+                                size="icon-sm"
+                                class="hover:text-red-400"
+                                title="Delete"
+                            >
                                 <Trash2 class="w-4 h-4" />
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
 
-                <button type="button" @click="openAddTemplateModal" class="btn btn-outline">
+                <Button type="button" @click="openAddTemplateModal" variant="outline">
                     Add Template
-                </button>
+                </Button>
             </div>
         </section>
 
-        <hr class="my-10 border-t border-white/5" />
+        <hr class="my-10 border-t border-border" />
 
         <!-- Submit -->
         <div class="flex justify-end gap-4">
-            <button type="reset" class="btn btn-plain">Reset</button>
-            <button type="submit" :disabled="editorForm.processing" class="btn btn-secondary">Save changes</button>
+            <Button type="reset" variant="ghost">Reset</Button>
+            <Button type="submit" :disabled="editorForm.processing" variant="secondary">
+                Save changes
+            </Button>
         </div>
     </form>
 
     <!-- Add/Edit Key Modal -->
-    <Modal :show="showKeyModal" :title="editingKey ? 'Edit SSH Key' : 'Add SSH Key'" @close="closeModal">
+    <Modal
+        :show="showKeyModal"
+        :title="editingKey ? 'Edit SSH Key' : 'Add SSH Key'"
+        @close="closeModal"
+    >
         <form @submit.prevent="saveKey">
             <div class="p-6 space-y-4">
                 <div>
-                    <label for="keyName" class="block text-sm font-medium text-zinc-400 mb-1.5">Name</label>
-                    <input v-model="keyForm.name" type="text" id="keyName" required placeholder="e.g., MacBook Pro" class="w-full" />
+                    <Label for="keyName" class="text-muted-foreground mb-1.5">Name</Label>
+                    <Input
+                        v-model="keyForm.name"
+                        type="text"
+                        id="keyName"
+                        required
+                        placeholder="e.g., MacBook Pro"
+                        class="w-full"
+                    />
                 </div>
 
                 <div v-if="Object.keys(availableSshKeys).length > 0 && !editingKey">
-                    <label class="block text-sm font-medium text-zinc-400 mb-1.5">Import from ~/.ssh/</label>
+                    <Label class="text-muted-foreground mb-1.5">Import from ~/.ssh/</Label>
                     <select @change="importKey" class="w-full">
                         <option value="">Select a key to import...</option>
-                        <option v-for="(keyInfo, filename) in availableSshKeys" :key="filename" :value="keyInfo.content" :data-name="String(filename).replace('.pub', '')">
+                        <option
+                            v-for="(keyInfo, filename) in availableSshKeys"
+                            :key="filename"
+                            :value="keyInfo.content"
+                            :data-name="String(filename).replace('.pub', '')"
+                        >
                             {{ filename }} ({{ keyInfo.type }})
                         </option>
                     </select>
                 </div>
 
                 <div>
-                    <label for="keyPublicKey" class="block text-sm font-medium text-zinc-400 mb-1.5">Public Key</label>
-                    <textarea v-model="keyForm.public_key" id="keyPublicKey" rows="4" required placeholder="ssh-ed25519 AAAA..." class="w-full font-mono text-sm" />
+                    <Label for="keyPublicKey" class="text-muted-foreground mb-1.5">Public Key</Label>
+                    <Textarea
+                        v-model="keyForm.public_key"
+                        id="keyPublicKey"
+                        rows="4"
+                        required
+                        placeholder="ssh-ed25519 AAAA..."
+                        class="w-full font-mono text-sm"
+                    />
                 </div>
             </div>
 
-            <div class="flex justify-end gap-4 px-6 py-4 border-t border-white/5">
-                <button type="button" @click="closeModal" class="btn btn-plain">Cancel</button>
-                <button type="submit" :disabled="keyForm.processing" class="btn btn-secondary">Save</button>
+            <div class="flex justify-end gap-4 px-6 py-4 border-t border-border">
+                <Button type="button" @click="closeModal" variant="ghost">Cancel</Button>
+                <Button type="submit" :disabled="keyForm.processing" variant="secondary">
+                    Save
+                </Button>
             </div>
         </form>
     </Modal>
 
     <!-- Add/Edit Template Modal -->
-    <Modal :show="showTemplateModal" :title="editingTemplate ? 'Edit Template' : 'Add Template'" @close="closeTemplateModal">
+    <Modal
+        :show="showTemplateModal"
+        :title="editingTemplate ? 'Edit Template' : 'Add Template'"
+        @close="closeTemplateModal"
+    >
         <form @submit.prevent="saveTemplate">
             <div class="p-6 space-y-4">
                 <div v-if="!editingTemplate">
-                    <label for="templateRepoUrl" class="block text-sm font-medium text-zinc-400 mb-1.5">Repository URL</label>
-                    <input v-model="templateForm.repo_url" @blur="onRepoUrlChange" type="text" id="templateRepoUrl" required placeholder="owner/repo or https://github.com/owner/repo" class="w-full" />
+                    <Label for="templateRepoUrl" class="text-muted-foreground mb-1.5">Repository URL</Label>
+                    <Input
+                        v-model="templateForm.repo_url"
+                        @blur="onRepoUrlChange"
+                        type="text"
+                        id="templateRepoUrl"
+                        required
+                        placeholder="owner/repo or https://github.com/owner/repo"
+                        class="w-full"
+                    />
                 </div>
-                <div v-else class="text-sm text-zinc-400">
+                <div v-else class="text-sm text-muted-foreground">
                     <span class="font-medium">Repository:</span> {{ editingTemplate.repo_url }}
                 </div>
 
                 <div>
-                    <label for="templateDisplayName" class="block text-sm font-medium text-zinc-400 mb-1.5">Display Name</label>
-                    <input v-model="templateForm.display_name" type="text" id="templateDisplayName" required placeholder="e.g., Laravel, Next.js Starter" class="w-full" />
+                    <Label for="templateDisplayName" class="text-muted-foreground mb-1.5">Display Name</Label>
+                    <Input
+                        v-model="templateForm.display_name"
+                        type="text"
+                        id="templateDisplayName"
+                        required
+                        placeholder="e.g., Laravel, Next.js Starter"
+                        class="w-full"
+                    />
                 </div>
             </div>
 
-            <div class="flex justify-end gap-4 px-6 py-4 border-t border-white/5">
-                <button type="button" @click="closeTemplateModal" class="btn btn-plain">Cancel</button>
-                <button type="submit" :disabled="templateForm.processing" class="btn btn-secondary">{{ editingTemplate ? 'Update' : 'Add' }}</button>
+            <div class="flex justify-end gap-4 px-6 py-4 border-t border-border">
+                <Button type="button" @click="closeTemplateModal" variant="ghost">
+                    Cancel
+                </Button>
+                <Button type="submit" :disabled="templateForm.processing" variant="secondary">
+                    {{ editingTemplate ? 'Update' : 'Add' }}
+                </Button>
             </div>
         </form>
     </Modal>

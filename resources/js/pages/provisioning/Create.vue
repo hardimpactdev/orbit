@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import { ChevronLeft, Loader2, CheckCircle, AlertCircle, Server } from 'lucide-vue-next';
+import { Button, Input, Label } from '@hardimpactdev/craft-ui';
 
 interface SshKey {
     id: number;
@@ -37,7 +38,7 @@ const props = defineProps<{
 
 // Get the default key from database, or empty string
 const defaultKey = computed(() => {
-    const defaultSshKey = props.sshKeys.find(k => k.is_default);
+    const defaultSshKey = props.sshKeys.find((k) => k.is_default);
     return defaultSshKey?.public_key || props.sshKeys[0]?.public_key || '';
 });
 
@@ -49,7 +50,9 @@ const form = useForm({
 });
 
 // Check if we have any keys available in dropdowns
-const hasKeyOptions = computed(() => props.sshKeys.length > 0 || Object.keys(props.availableSshKeys).length > 0);
+const hasKeyOptions = computed(
+    () => props.sshKeys.length > 0 || Object.keys(props.availableSshKeys).length > 0,
+);
 
 // Track the selected key in the dropdown separately
 const selectedKeyValue = ref(defaultKey.value);
@@ -95,7 +98,9 @@ const checkServer = async () => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'X-CSRF-TOKEN':
+                    document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                    '',
             },
             body: JSON.stringify({
                 host: form.host,
@@ -141,7 +146,10 @@ const submit = () => {
 
     <div>
         <div class="mb-6">
-            <Link href="/servers" class="text-zinc-400 hover:text-white flex items-center transition-colors text-sm">
+            <Link
+                href="/servers"
+                class="text-zinc-400 hover:text-white flex items-center transition-colors text-sm"
+            >
                 <ChevronLeft class="w-4 h-4 mr-1" />
                 Back to Environments
             </Link>
@@ -155,10 +163,10 @@ const submit = () => {
         <form @submit.prevent="submit" class="max-w-lg">
             <div class="space-y-6">
                 <div>
-                    <label for="name" class="block text-sm font-medium text-zinc-400 mb-2">
+                    <Label for="name" class="text-muted-foreground mb-2">
                         Environment Name
-                    </label>
-                    <input
+                    </Label>
+                    <Input
                         v-model="form.name"
                         type="text"
                         id="name"
@@ -166,14 +174,16 @@ const submit = () => {
                         placeholder="Production"
                         class="w-full"
                     />
-                    <p v-if="form.errors.name" class="mt-2 text-sm text-red-400">{{ form.errors.name }}</p>
+                    <p v-if="form.errors.name" class="mt-2 text-sm text-red-400">
+                        {{ form.errors.name }}
+                    </p>
                 </div>
 
                 <div>
-                    <label for="host" class="block text-sm font-medium text-zinc-400 mb-2">
+                    <Label for="host" class="text-muted-foreground mb-2">
                         Host IP Address
-                    </label>
-                    <input
+                    </Label>
+                    <Input
                         v-model="form.host"
                         type="text"
                         id="host"
@@ -181,14 +191,16 @@ const submit = () => {
                         placeholder="192.168.1.100"
                         class="w-full"
                     />
-                    <p v-if="form.errors.host" class="mt-2 text-sm text-red-400">{{ form.errors.host }}</p>
+                    <p v-if="form.errors.host" class="mt-2 text-sm text-red-400">
+                        {{ form.errors.host }}
+                    </p>
                 </div>
 
                 <div>
-                    <label for="user" class="block text-sm font-medium text-zinc-400 mb-2">
+                    <Label for="user" class="text-muted-foreground mb-2">
                         SSH User
-                    </label>
-                    <input
+                    </Label>
+                    <Input
                         v-model="form.user"
                         type="text"
                         id="user"
@@ -196,28 +208,34 @@ const submit = () => {
                         placeholder="root"
                         class="w-full"
                     />
-                    <p class="mt-2 text-sm text-zinc-500">
+                    <p class="mt-2 text-sm text-muted-foreground">
                         User must have sudo privileges for provisioning
                     </p>
-                    <p v-if="form.errors.user" class="mt-2 text-sm text-red-400">{{ form.errors.user }}</p>
+                    <p v-if="form.errors.user" class="mt-2 text-sm text-red-400">
+                        {{ form.errors.user }}
+                    </p>
                 </div>
 
                 <!-- Check Server Button -->
                 <div v-if="form.host && !hasChecked">
-                    <button
+                    <Button
                         type="button"
                         @click="checkServer"
                         :disabled="isChecking"
-                        class="btn btn-outline w-full"
+                        variant="outline"
+                        class="w-full"
                     >
                         <Loader2 v-if="isChecking" class="w-4 h-4 animate-spin" />
                         <Server v-else class="w-4 h-4" />
                         {{ isChecking ? 'Checking server...' : 'Check Server' }}
-                    </button>
+                    </Button>
                 </div>
 
                 <!-- Check Result: Orbit Already Configured -->
-                <div v-if="checkResult?.has_orbit" class="p-4 bg-lime-400/10 border border-lime-400/20 rounded-lg">
+                <div
+                    v-if="checkResult?.has_orbit"
+                    class="p-4 bg-lime-400/10 border border-lime-400/20 rounded-lg"
+                >
                     <div class="flex items-start">
                         <CheckCircle class="w-5 h-5 text-lime-400 mr-3 mt-0.5 flex-shrink-0" />
                         <div class="flex-1">
@@ -226,7 +244,9 @@ const submit = () => {
                             </p>
                             <p class="mt-1 text-sm text-zinc-400">
                                 Status: {{ checkResult.orbit_running ? 'Running' : 'Not running' }}
-                                <span v-if="checkResult.status?.sites?.length"> · {{ checkResult.status.sites.length }} site(s)</span>
+                                <span v-if="checkResult.status?.sites?.length">
+                                    · {{ checkResult.status.sites.length }} site(s)</span
+                                >
                             </p>
                             <p class="mt-2 text-sm text-zinc-500">
                                 You can add this environment without re-provisioning.
@@ -236,7 +256,10 @@ const submit = () => {
                 </div>
 
                 <!-- Check Result: Can Connect but No Orbit -->
-                <div v-else-if="checkResult?.can_connect && !checkResult?.has_orbit" class="p-4 bg-blue-400/10 border border-blue-400/20 rounded-lg">
+                <div
+                    v-else-if="checkResult?.can_connect && !checkResult?.has_orbit"
+                    class="p-4 bg-blue-400/10 border border-blue-400/20 rounded-lg"
+                >
                     <div class="flex items-start">
                         <CheckCircle class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
                         <div class="flex-1">
@@ -251,13 +274,14 @@ const submit = () => {
                 </div>
 
                 <!-- Check Result: Cannot Connect -->
-                <div v-else-if="checkResult?.error" class="p-4 bg-red-400/10 border border-red-400/20 rounded-lg">
+                <div
+                    v-else-if="checkResult?.error"
+                    class="p-4 bg-red-400/10 border border-red-400/20 rounded-lg"
+                >
                     <div class="flex items-start">
                         <AlertCircle class="w-5 h-5 text-red-400 mr-3 mt-0.5 flex-shrink-0" />
                         <div class="flex-1">
-                            <p class="text-sm font-medium text-red-400">
-                                Connection Failed
-                            </p>
+                            <p class="text-sm font-medium text-red-400">Connection Failed</p>
                             <p class="mt-1 text-sm text-zinc-400">
                                 {{ checkResult.error }}
                             </p>
@@ -273,25 +297,20 @@ const submit = () => {
                 </div>
 
                 <div v-if="!checkResult?.has_orbit">
-                    <label for="ssh_public_key" class="block text-sm font-medium text-zinc-400 mb-2">
+                    <Label for="ssh_public_key" class="text-muted-foreground mb-2">
                         SSH Public Key
-                    </label>
-                    <select
-                        v-if="hasKeyOptions"
-                        v-model="selectedKeyValue"
-                        class="w-full"
-                    >
+                    </Label>
+                    <select v-if="hasKeyOptions" v-model="selectedKeyValue" class="w-full">
                         <option value="">Select a key...</option>
                         <optgroup v-if="sshKeys.length > 0" label="Saved Keys">
-                            <option
-                                v-for="key in sshKeys"
-                                :key="key.id"
-                                :value="key.public_key"
-                            >
+                            <option v-for="key in sshKeys" :key="key.id" :value="key.public_key">
                                 {{ key.name }} ({{ key.key_type }}){{ key.is_default ? ' ★' : '' }}
                             </option>
                         </optgroup>
-                        <optgroup v-if="Object.keys(availableSshKeys).length > 0" label="Import from ~/.ssh/">
+                        <optgroup
+                            v-if="Object.keys(availableSshKeys).length > 0"
+                            label="Import from ~/.ssh/"
+                        >
                             <option
                                 v-for="(keyInfo, filename) in availableSshKeys"
                                 :key="filename"
@@ -311,20 +330,30 @@ const submit = () => {
                         placeholder="ssh-rsa AAAA..."
                         class="w-full mt-2 font-mono text-sm"
                     />
-                    <p class="mt-2 text-sm text-zinc-500">
+                    <p class="mt-2 text-sm text-muted-foreground">
                         This key will be added to the launchpad user on the remote machine
                     </p>
-                    <p v-if="form.errors.ssh_public_key" class="mt-2 text-sm text-red-400">{{ form.errors.ssh_public_key }}</p>
+                    <p v-if="form.errors.ssh_public_key" class="mt-2 text-sm text-red-400">
+                        {{ form.errors.ssh_public_key }}
+                    </p>
                 </div>
             </div>
 
             <!-- Warning for provisioning -->
-            <div v-if="!checkResult?.has_orbit" class="mt-8 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-lg">
+            <div
+                v-if="!checkResult?.has_orbit"
+                class="mt-8 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-lg"
+            >
                 <p class="text-sm text-yellow-400">
-                    <strong>Note:</strong> We'll first check if Orbit is already installed. If not, provisioning will make these changes:
+                    <strong>Note:</strong> We'll first check if Orbit is already installed. If not,
+                    provisioning will make these changes:
                 </p>
                 <ul class="mt-2 text-sm text-zinc-400 list-disc list-inside space-y-1">
-                    <li>Create a <code class="bg-zinc-800 px-1 rounded text-zinc-300">launchpad</code> user with sudo access</li>
+                    <li>
+                        Create a
+                        <code class="bg-zinc-800 px-1 rounded text-zinc-300">launchpad</code> user
+                        with sudo access
+                    </li>
                     <li>Disable SSH password authentication</li>
                     <li>Disable root SSH login</li>
                     <li>Install Docker</li>
@@ -335,32 +364,29 @@ const submit = () => {
             <div class="mt-8 flex gap-3">
                 <!-- Show different buttons based on check result -->
                 <template v-if="checkResult?.has_orbit">
-                    <button
+                    <Button
                         type="button"
                         @click="addWithoutProvisioning"
                         :disabled="form.processing || !form.name"
-                        class="btn btn-secondary disabled:opacity-50"
+                        variant="secondary"
                     >
                         <Loader2 v-if="form.processing" class="w-4 h-4 animate-spin" />
                         Add
-                    </button>
+                    </Button>
                 </template>
                 <template v-else>
-                    <button
+                    <Button
                         type="submit"
                         :disabled="form.processing"
-                        class="btn btn-secondary disabled:opacity-50"
+                        variant="secondary"
                     >
                         <Loader2 v-if="form.processing" class="w-4 h-4 animate-spin" />
                         {{ form.processing ? 'Setting up...' : 'Provision' }}
-                    </button>
+                    </Button>
                 </template>
-                <Link
-                    href="/servers"
-                    class="btn btn-plain"
-                >
-                    Cancel
-                </Link>
+                <Button as-child variant="ghost">
+                    <Link href="/servers">Cancel</Link>
+                </Button>
             </div>
         </form>
     </div>

@@ -4,6 +4,7 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import Layout from '@/layouts/Layout.vue';
 import Heading from '@/components/Heading.vue';
 import { ArrowLeft } from 'lucide-vue-next';
+import { Button, Input, Label } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -56,10 +57,10 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="max-w-xl space-y-6">
             <div>
-                <label for="name" class="block text-sm font-medium text-zinc-300 mb-2">
+                <Label for="name" class="text-muted-foreground mb-2">
                     Workspace Name
-                </label>
-                <input
+                </Label>
+                <Input
                     id="name"
                     v-model="form.name"
                     type="text"
@@ -67,8 +68,8 @@ const submit = () => {
                     class="w-full"
                     :class="{ 'border-red-500': form.name && !isValidSlug }"
                 />
-                <p v-if="form.name && slug !== form.name" class="mt-1 text-xs text-zinc-500">
-                    Will be created as: <span class="font-mono text-zinc-400">{{ slug }}</span>
+                <p v-if="form.name && slug !== form.name" class="mt-1 text-xs text-muted-foreground">
+                    Will be created as: <span class="font-mono text-foreground">{{ slug }}</span>
                 </p>
                 <p v-if="form.name && !isValidSlug" class="mt-1 text-xs text-red-400">
                     Name must contain only lowercase letters, numbers, and hyphens.
@@ -79,19 +80,18 @@ const submit = () => {
             </div>
 
             <div class="flex items-center gap-3">
-                <button
+                <Button
                     type="submit"
-                    class="btn btn-secondary"
+                    variant="secondary"
                     :disabled="form.processing || !isValidSlug"
                 >
                     Create Workspace
-                </button>
-                <Link
-                    :href="`/environments/${environment.id}/workspaces`"
-                    class="btn btn-plain"
-                >
-                    Cancel
-                </Link>
+                </Button>
+                <Button as-child variant="ghost">
+                    <Link :href="`/environments/${environment.id}/workspaces`">
+                        Cancel
+                    </Link>
+                </Button>
             </div>
         </form>
     </div>

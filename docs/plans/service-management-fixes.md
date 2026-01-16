@@ -12,8 +12,8 @@ Fix the service management bugs and unify host services + Docker services into a
 
 **Fix:**
 
-| File | Change |
-|------|--------|
+| File                                           | Change                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
 | `resources/js/pages/environments/Services.vue` | Line 296: Change from `POST` + `/disable` path to `DELETE` method |
 
 ```javascript
@@ -30,8 +30,8 @@ const response = await fetch(getApiUrl(`/services/${serviceKey}`), {
 
 **Fix:**
 
-| File | Change |
-|------|--------|
+| File                                           | Change                                                     |
+| ---------------------------------------------- | ---------------------------------------------------------- |
 | `resources/js/pages/environments/Services.vue` | Add `required: true` to reverb, add horizon to serviceMeta |
 
 ---
@@ -46,20 +46,20 @@ const response = await fetch(getApiUrl(`/services/${serviceKey}`), {
 
 ### Architecture
 
-| Service | Type | Mac Management | Linux Management | Required |
-|---------|------|----------------|------------------|----------|
-| caddy | host | `brew services` | `systemctl` | Yes |
-| php-fpm-8.x | host | `brew services` | `systemctl` | No* |
-| horizon | host | `launchctl` | `systemctl` | Yes |
-| dns | docker | Docker | Docker | Yes |
-| postgres | docker | Docker | Docker | No |
-| redis | docker | Docker | Docker | Yes |
-| mailpit | docker | Docker | Docker | No |
-| reverb | docker | Docker | Docker | Yes |
-| mysql | docker | Docker | Docker | No |
-| meilisearch | docker | Docker | Docker | No |
+| Service     | Type   | Mac Management  | Linux Management | Required |
+| ----------- | ------ | --------------- | ---------------- | -------- |
+| caddy       | host   | `brew services` | `systemctl`      | Yes      |
+| php-fpm-8.x | host   | `brew services` | `systemctl`      | No\*     |
+| horizon     | host   | `launchctl`     | `systemctl`      | Yes      |
+| dns         | docker | Docker          | Docker           | Yes      |
+| postgres    | docker | Docker          | Docker           | No       |
+| redis       | docker | Docker          | Docker           | Yes      |
+| mailpit     | docker | Docker          | Docker           | No       |
+| reverb      | docker | Docker          | Docker           | Yes      |
+| mysql       | docker | Docker          | Docker           | No       |
+| meilisearch | docker | Docker          | Docker           | No       |
 
-*PHP-FPM versions are dynamically detected
+\*PHP-FPM versions are dynamically detected
 
 ---
 
@@ -98,11 +98,13 @@ public function restartHostService(Environment $environment, string $service): a
 ```
 
 For local environments:
+
 - Detect platform (`PHP_OS_FAMILY`)
 - Mac: use `brew services` for PHP-FPM/Caddy, `launchctl` for Horizon
 - Linux: use `systemctl` for all
 
 For remote environments:
+
 - Call new CLI commands (see Phase 3)
 
 #### Task 2.2: Update Container Name Mapping
@@ -132,16 +134,19 @@ Add `startHostService()`, `stopHostService()`, `restartHostService()` methods.
 #### Task 3.1: Add Host Service Commands
 
 **Create files:**
+
 - `app/Commands/Host/HostStartCommand.php`
 - `app/Commands/Host/HostStopCommand.php`
 - `app/Commands/Host/HostRestartCommand.php`
 
 Commands:
+
 - `launchpad host:start {service}` - Start a host service (caddy, php-fpm-8.4, horizon)
 - `launchpad host:stop {service}` - Stop a host service
 - `launchpad host:restart {service}` - Restart a host service
 
 Implementation uses existing managers:
+
 - `CaddyManager::start/stop/restart()`
 - `PhpManager::start/stop/restart($version)`
 - `HorizonManager::start/stop/restart()`
@@ -151,7 +156,8 @@ Implementation uses existing managers:
 **File:** `web/app/Http/Controllers/Api/ApiController.php`
 
 Update `startService()`, `stopService()`, `restartService()` to:
-1. Check if service is a host service (caddy, php-*, horizon)
+
+1. Check if service is a host service (caddy, php-\*, horizon)
 2. If host: call CLI `host:start/stop/restart`
 3. If docker: use existing `docker start/stop/restart`
 
@@ -203,6 +209,7 @@ async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'res
 **File:** `resources/js/pages/environments/Services.vue`
 
 Remove hardcoded PHP versions from `serviceMeta`. Instead:
+
 - Get service metadata from the API response
 - Merge with local display info (icons, descriptions)
 
@@ -212,10 +219,10 @@ Add new category for host services or group appropriately:
 
 ```javascript
 const categories = [
-    { key: 'host', label: 'Host Services' },      // caddy, php-fpm, horizon
-    { key: 'database', label: 'Databases' },       // postgres, redis, mysql
-    { key: 'utility', label: 'Utilities' },        // mailpit, reverb, meilisearch
-    { key: 'core', label: 'Core' },                // dns
+    { key: 'host', label: 'Host Services' }, // caddy, php-fpm, horizon
+    { key: 'database', label: 'Databases' }, // postgres, redis, mysql
+    { key: 'utility', label: 'Utilities' }, // mailpit, reverb, meilisearch
+    { key: 'core', label: 'Core' }, // dns
 ];
 ```
 
@@ -225,22 +232,22 @@ const categories = [
 
 ### Desktop (Local) - 4 files
 
-| File | Changes |
-|------|---------|
-| `resources/js/pages/environments/Services.vue` | Fix HTTP method, add type badge, dynamic serviceMeta, route by type |
-| `app/Services/LaunchpadCli/ServiceControlService.php` | Add host service methods, remove caddy from containerMap |
-| `routes/web.php` | Add host-service routes |
-| `app/Http/Controllers/EnvironmentController.php` | Add host service controller methods |
+| File                                                  | Changes                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `resources/js/pages/environments/Services.vue`        | Fix HTTP method, add type badge, dynamic serviceMeta, route by type |
+| `app/Services/LaunchpadCli/ServiceControlService.php` | Add host service methods, remove caddy from containerMap            |
+| `routes/web.php`                                      | Add host-service routes                                             |
+| `app/Http/Controllers/EnvironmentController.php`      | Add host service controller methods                                 |
 
 ### CLI (Remote) - 5 files
 
-| File | Changes |
-|------|---------|
-| `app/Commands/Host/HostStartCommand.php` | New: Start host service |
-| `app/Commands/Host/HostStopCommand.php` | New: Stop host service |
-| `app/Commands/Host/HostRestartCommand.php` | New: Restart host service |
-| `web/app/Http/Controllers/Api/ApiController.php` | Update start/stop/restart for host services |
-| `web/routes/api.php` | Add host-service routes (optional, or update existing) |
+| File                                             | Changes                                                |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| `app/Commands/Host/HostStartCommand.php`         | New: Start host service                                |
+| `app/Commands/Host/HostStopCommand.php`          | New: Stop host service                                 |
+| `app/Commands/Host/HostRestartCommand.php`       | New: Restart host service                              |
+| `web/app/Http/Controllers/Api/ApiController.php` | Update start/stop/restart for host services            |
+| `web/routes/api.php`                             | Add host-service routes (optional, or update existing) |
 
 ---
 
@@ -262,16 +269,19 @@ const categories = [
 The CLI already has these managers for host services:
 
 **PhpManager** (`app/Services/PhpManager.php`):
+
 - `start($version)`, `stop($version)`, `restart($version)`
 - `isRunning($version)`, `getInstalledVersions()`
 - Uses platform adapters (Mac/Linux)
 
 **CaddyManager** (`app/Services/CaddyManager.php`):
+
 - `start()`, `stop()`, `restart()`, `reload()`
 - `isRunning()`, `isInstalled()`
 - Delegates to platform adapter
 
 **HorizonManager** (`app/Services/HorizonManager.php`):
+
 - `start()`, `stop()`, `restart()`
 - `isRunning()`, `isInstalled()`
 - Mac: uses `launchctl` with plist at `~/Library/LaunchAgents/com.orbit.horizon.plist`
@@ -283,19 +293,20 @@ The CLI `StatusCommand` already outputs services with type information:
 
 ```json
 {
-  "services": {
-    "php-84": { "status": "running", "type": "php-fpm" },
-    "caddy": { "status": "running", "type": "host" },
-    "horizon": { "status": "running", "type": "systemd" },
-    "dns": { "status": "running", "type": "docker" },
-    "postgres": { "status": "running", "type": "docker" }
-  }
+    "services": {
+        "php-84": { "status": "running", "type": "php-fpm" },
+        "caddy": { "status": "running", "type": "host" },
+        "horizon": { "status": "running", "type": "systemd" },
+        "dns": { "status": "running", "type": "docker" },
+        "postgres": { "status": "running", "type": "docker" }
+    }
 }
 ```
 
 ### SSH Access Note
 
 SSH to remote server requires:
+
 ```bash
 SSH_AUTH_SOCK=$(launchctl getenv SSH_AUTH_SOCK) ssh launchpad@ai "command"
 ```

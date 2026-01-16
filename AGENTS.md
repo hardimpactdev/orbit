@@ -12,6 +12,37 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Project Architecture
+
+**This project (orbit-desktop) is a "dumb" GUI shell** that interacts with the [orbit-cli](https://github.com/nckrtl/orbit-cli) command-line tool. All business logic lives in the CLI - this desktop app simply provides a visual interface.
+
+> **Historical note:** The CLI was previously named "launchpad-cli". Any "launchpad" references in docs or code are deprecated and should be renamed to "orbit".
+
+### Orbit CLI Development Workflow
+
+The orbit-cli source code is developed on a remote server, not locally.
+
+**Remote server access:**
+```bash
+ssh ai                  # Via SSH config
+ssh nckrtl@ai           # Explicit user
+```
+
+**CLI source location:** `~/projects/orbit-cli/` on the remote server.
+
+**When CLI changes are needed:**
+
+1. SSH into the remote machine: `ssh ai`
+2. Navigate to CLI source: `cd ~/projects/orbit-cli`
+3. Make your changes
+4. Run tests: `php orbit test`
+5. Run E2E tests if applicable
+6. Release a new version (follow release workflow)
+7. Update local CLI: `orbit upgrade` (on this Mac)
+8. Verify versions match: `orbit --version`
+
+**Important:** Always release a new CLI version after making changes. Never leave unreleased changes on the remote server.
+
 ## Build, Lint, and Test Commands
 
 ### Frontend (Vue + TypeScript)
@@ -80,6 +111,7 @@ php artisan migrate:fresh                 # Drop and recreate all tables
 ### PHP (Laravel)
 
 **Naming Conventions:**
+
 - Classes: `PascalCase` (e.g., `EnvironmentController`)
 - Methods/properties: `camelCase` (e.g., `getRemoteApiUrl`)
 - Variables: `camelCase` (e.g., `$validatedData`)
@@ -88,22 +120,26 @@ php artisan migrate:fresh                 # Drop and recreate all tables
 - Interfaces: `PascalCase` (e.g., `TemplateAnalyzerInterface`)
 
 **Import Style:**
+
 - Use fully qualified class names for core Laravel/PhpStorm compatibility
 - Group imports logically (Laravel framework, custom app code, third-party)
 - Example (EnvironmentController.php):
+
 ```php
 use App\Models\Environment;
-use App\Services\LaunchpadCli\ProjectService;
+use App\Services\OrbitCli\ProjectService;
 use Illuminate\Http\Request;
 ```
 
 **Code Style:**
+
 - Strict types: `declare(strict_types=1);` at top of files
 - Return type hints: Always use for public methods
 - Property promotion: Use constructor property promotion
 - Null safety: Use nullable types and null coalescing
 - Control structures: Always use braces `{}`
 - Example:
+
 ```php
 public function store(Request $request)
 {
@@ -120,8 +156,10 @@ public function store(Request $request)
 ```
 
 **Testing & Dependencies:**
+
 - Avoid using `new` initializers directly in constructor parameters (e.g., `public function __construct(ConfigManager $config = new ConfigManager)`). This can cause `BindingResolutionException` in unit tests when dependencies use facades or require a booted app context.
 - Use nullable parameters and initialize in the constructor body:
+
 ```php
 public function __construct(protected ?ConfigManager $config = null)
 {
@@ -130,19 +168,22 @@ public function __construct(protected ?ConfigManager $config = null)
 ```
 
 **Error Handling:**
+
 - Use try/catch for operations that can fail externally
 - Return structured error responses: `['success' => false, 'error' => 'message']`
 - Log non-critical errors with `Log::warning()`
 - Re-throw critical exceptions after logging
 
 **Services Pattern:**
-- Wrap CLI interactions in service classes under `app/Services/LaunchpadCli/`
+
+- Wrap CLI interactions in service classes under `app/Services/OrbitCli/`
 - Services use dependency injection via constructors
 - Methods return consistent structure: `['success' => bool, 'data' => mixed, 'error' => ?string]`
 
 ### TypeScript/Vue
 
 **Naming Conventions:**
+
 - Components: `PascalCase` (e.g., `EnvironmentCard.vue`)
 - Files/functions: `camelCase` (e.g., `fetchProjects()`)
 - Interfaces/Types: `PascalCase` (e.g., `Environment`)
@@ -150,10 +191,12 @@ public function __construct(protected ?ConfigManager $config = null)
 - Props: `camelCase` with explicit types
 
 **Import Style:**
+
 - Use `@/` alias for app imports (maps to `resources/js/`)
 - Use `lucide-vue-next` for icons
 - Group: Vue core → Inertia → Components → Composables/Utils
 - Example:
+
 ```typescript
 import { Head, Link } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
@@ -162,6 +205,7 @@ import EnvironmentCard from '@/components/EnvironmentCard.vue';
 ```
 
 **Vue Component Structure:**
+
 ```vue
 <script setup lang="ts">
 // Imports
@@ -176,6 +220,7 @@ import EnvironmentCard from '@/components/EnvironmentCard.vue';
 ```
 
 **TypeScript Best Practices:**
+
 - Use Pinia for global state management.
 - State that needs persistence should use the `pinia-plugin-persistedstate` plugin.
 - Use explicit types for props and defineProps<>
@@ -183,6 +228,7 @@ import EnvironmentCard from '@/components/EnvironmentCard.vue';
 - Use optional properties with `?` only when truly optional
 - Use interfaces for object shapes, types for unions/primitives
 - Example:
+
 ```typescript
 interface Environment {
     id: number;
@@ -200,6 +246,7 @@ defineProps<{
 ```
 
 **Template Style:**
+
 - Use semantic HTML
 - Event handlers: `@click`, `@submit.prevent`
 - Bindings: `:prop` or `v-bind:prop`
@@ -210,11 +257,13 @@ defineProps<{
 ### CSS (Tailwind CSS v4)
 
 **Configuration:**
+
 - Uses `@theme` directive for semantic color tokens
 - Colors defined as CSS custom properties in `app.css`
 - Components use `@apply` for reusable patterns
 
 **Semantic Color Tokens (from app.css):**
+
 - `--color-surface`, `--color-surface-elevated`, `--color-surface-overlay`
 - `--color-border`, `--color-border-subtle`
 - `--color-text-primary`, `--color-text-secondary`, `--color-text-muted`
@@ -222,6 +271,7 @@ defineProps<{
 - `--color-error`, `--color-warning`, `--color-success`, `--color-info`
 
 **Component Classes:**
+
 - `.card` - Card container
 - `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-outline`, `.btn-plain` - Buttons
 - `.badge`, `.badge-lime`, `.badge-zinc`, `.badge-red`, `.badge-blue` - Badges
@@ -229,6 +279,7 @@ defineProps<{
 - `.settings-row`, `.settings-label`, `.settings-field` - Settings forms
 
 **Tailwind Utilities:**
+
 - Use `bg-zinc-900` for dark backgrounds, `text-white` for primary text
 - Accent color: `text-lime-400`, `bg-lime-500`
 - Spacing: `p-4`, `m-4`, `gap-4`
@@ -238,16 +289,19 @@ defineProps<{
 ## Architecture Patterns
 
 ### Frontend-Backend Communication
+
 - **Remote environments**: Vue calls remote API directly (`https://orbit.{tld}/api/...`)
 - **Local environments**: Calls through NativePHP backend via Inertia/HTTP
 - **RemoteApiUrl**: Controller passes `remoteApiUrl` prop to Vue pages
 
 ### Service Layer Pattern
+
 - `EnvironmentController` delegates to service classes
-- Services live in `app/Services/LaunchpadCli/{ServiceName}Service.php`
+- Services live in `app/Services/OrbitCli/{ServiceName}Service.php`
 - Services accept `Environment` and return `['success', 'data', 'error']`
 
 ### Vue Page Pattern
+
 - Pages in `resources/js/pages/environments/`
 - Load data asynchronously via `remoteApiUrl` fetch calls
 - Use Inertia for navigation, direct fetch for API data
@@ -262,17 +316,18 @@ defineProps<{
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
 4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
+    ```bash
+    git pull --rebase
+    bd sync
+    git push
+    git status  # MUST show "up to date with origin"
+    ```
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
+
 - Work is NOT complete until `git push` succeeds
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push

@@ -10,11 +10,11 @@ const pinia = createPinia();
 pinia.use(piniaPluginPersistedstate);
 
 createInertiaApp({
-    title: (title) => title ? `${title} - Orbit` : 'Orbit',
+    title: (title) => (title ? `${title} - Orbit` : 'Orbit'),
     resolve: async (name) => {
         const page = await resolvePageComponent(
             `./pages/${name}.vue`,
-            import.meta.glob<DefineComponent>('./pages/**/*.vue')
+            import.meta.glob<DefineComponent>('./pages/**/*.vue'),
         );
         page.default.layout = page.default.layout || Layout;
         return page;

@@ -1,4 +1,4 @@
-@import '../../node_modules/@hardimpactdev/liftoff-vue/dist/liftoff-vue.css';
+@import '@hardimpactdev/craft-ui/dist/craft-ui.css';
 @import 'tailwindcss';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
@@ -7,212 +7,168 @@
 @source '../**/*.vue';
 @source '../**/*.ts';
 
-@theme {
-    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
-}
+@custom-variant dark (&:is(.dark *));
 
-/* Semantic color tokens using inline for proper variable resolution - Catalyst inspired */
 @theme inline {
-    /* Surfaces - Catalyst uses very dark zinc tones */
-    --color-surface: #09090b; /* zinc-950 equivalent */
-    --color-surface-elevated: #18181b; /* zinc-900 equivalent */
-    --color-surface-overlay: #27272a; /* zinc-800 equivalent */
+    --font-sans:
+        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
 
-    /* Borders */
-    --color-border: #27272a; /* zinc-800 */
-    --color-border-subtle: rgba(39, 39, 42, 0.5); /* zinc-800/50 */
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
 
-    /* Text */
-    --color-text-primary: #ffffff;
-    --color-text-secondary: #a1a1aa; /* zinc-400 */
-    --color-text-muted: #71717a; /* zinc-500 */
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
 
-    /* Interactive - Primary (lime/green like Catalyst) */
-    --color-accent: #a3e635; /* lime-400 */
-    --color-accent-hover: #bef264; /* lime-300 */
-    --color-accent-text: #09090b; /* zinc-950 */
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
 
-    /* Interactive - Secondary (subtle dark with border) */
-    --color-interactive: #3f3f46; /* zinc-700 */
-    --color-interactive-hover: #52525b; /* zinc-600 */
-    --color-interactive-text: #ffffff;
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
 
-    /* Status colors */
-    --color-success: #a3e635; /* lime-400 */
-    --color-success-muted: rgba(163, 230, 53, 0.1);
-    --color-error: #f87171; /* red-400 */
-    --color-error-muted: rgba(248, 113, 113, 0.1);
-    --color-warning: #facc15; /* yellow-400 */
-    --color-warning-muted: rgba(250, 204, 21, 0.1);
-    --color-info: #60a5fa; /* blue-400 */
-    --color-info-muted: rgba(96, 165, 250, 0.1);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar-background);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Base layer styles */
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
 @layer base {
-    body {
-        @apply bg-surface text-text-primary antialiased;
-    }
-
-    /* Form elements base styles - Catalyst style */
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    input[type="url"],
-    input[type="tel"],
-    textarea,
-    select {
-        @apply bg-white/5 border border-white/10 text-white placeholder-zinc-500 rounded-lg;
-        @apply hover:border-white/20;
-        @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
-        @apply px-3.5 py-2.5 sm:px-3 sm:py-1.5;
-        @apply text-base sm:text-sm;
-    }
-
-    /* Select dropdown arrow */
-    select {
-        @apply appearance-none bg-no-repeat;
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 16 16'%3e%3cpath stroke='%2371717a' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M5.75 10.75L8 13L10.25 10.75'/%3e%3cpath stroke='%2371717a' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M10.25 5.25L8 3L5.75 5.25'/%3e%3c/svg%3e");
-        background-position: right 0.5rem center;
-        background-size: 1.25rem 1.25rem;
-        padding-right: 2.5rem;
-    }
-
-    select option {
-        @apply bg-zinc-800 text-white;
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
     }
 }
 
-/* Component layer styles */
-@layer components {
-    .card {
-        @apply bg-surface-elevated rounded-xl border border-transparent;
+@layer utilities {
+    body,
+    html {
+        --font-sans:
+            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+            'Noto Color Emoji';
     }
+}
 
-    .btn {
-        @apply px-3 py-1.5 rounded-lg font-semibold text-sm transition-colors inline-flex items-center justify-center gap-x-2;
+:root {
+    --background: hsl(0 0% 100%);
+    --foreground: hsl(0 0% 3.9%);
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 3.9%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 3.9%);
+    --primary: hsl(0 0% 9%);
+    --primary-foreground: hsl(0 0% 98%);
+    --secondary: hsl(0 0% 92.1%);
+    --secondary-foreground: hsl(0 0% 9%);
+    --muted: hsl(0 0% 96.1%);
+    --muted-foreground: hsl(0 0% 45.1%);
+    --accent: hsl(0 0% 96.1%);
+    --accent-foreground: hsl(0 0% 9%);
+    --destructive: hsl(0 84.2% 60.2%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 92.8%);
+    --input: hsl(0 0% 89.8%);
+    --ring: hsl(0 0% 3.9%);
+    --chart-1: hsl(12 76% 61%);
+    --chart-2: hsl(173 58% 39%);
+    --chart-3: hsl(197 37% 24%);
+    --chart-4: hsl(43 74% 66%);
+    --chart-5: hsl(27 87% 67%);
+    --radius: 0.5rem;
+    --sidebar-background: hsl(0 0% 98%);
+    --sidebar-foreground: hsl(240 5.3% 26.1%);
+    --sidebar-primary: hsl(0 0% 10%);
+    --sidebar-primary-foreground: hsl(0 0% 98%);
+    --sidebar-accent: hsl(0 0% 94%);
+    --sidebar-accent-foreground: hsl(0 0% 30%);
+    --sidebar-border: hsl(0 0% 91%);
+    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar: hsl(0 0% 98%);
+}
+
+.dark {
+    --background: hsl(0 0% 3.9%);
+    --foreground: hsl(0 0% 98%);
+    --card: hsl(0 0% 7%);
+    --card-foreground: hsl(0 0% 98%);
+    --popover: hsl(0 0% 7%);
+    --popover-foreground: hsl(0 0% 98%);
+    --primary: hsl(0 0% 98%);
+    --primary-foreground: hsl(0 0% 9%);
+    --secondary: hsl(0 0% 14.9%);
+    --secondary-foreground: hsl(0 0% 98%);
+    --muted: hsl(0 0% 16.08%);
+    --muted-foreground: hsl(0 0% 63.9%);
+    --accent: hsl(0 0% 14.9%);
+    --accent-foreground: hsl(0 0% 98%);
+    --destructive: hsl(0 84% 60%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 27%);
+    --input: hsl(0 0% 27%);
+    --ring: hsl(0 0% 83.1%);
+    --chart-1: hsl(220 70% 50%);
+    --chart-2: hsl(160 60% 45%);
+    --chart-3: hsl(30 80% 55%);
+    --chart-4: hsl(280 65% 60%);
+    --chart-5: hsl(340 75% 55%);
+    --sidebar-background: hsl(0 0% 7%);
+    --sidebar-foreground: hsl(0 0% 95.9%);
+    --sidebar-primary: hsl(360, 100%, 100%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(0 0% 15.9%);
+    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+    --sidebar-border: hsl(0 0% 15.9%);
+    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar: hsl(240 5.9% 10%);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
     }
-
-    /* Primary button - lime/green accent like Catalyst */
-    .btn-primary {
-        @apply bg-lime-300 hover:bg-lime-200 text-lime-950 border border-lime-400/80;
-    }
-
-    /* Secondary/dark button - zinc background with border */
-    .btn-secondary {
-        @apply bg-zinc-600 hover:bg-zinc-500 text-white border border-zinc-700/90;
-    }
-
-    /* Outline button - transparent with visible border */
-    .btn-outline {
-        @apply bg-transparent hover:bg-white/5 text-white border border-white/15;
-    }
-
-    /* Plain/ghost button - no border, just hover background */
-    .btn-plain {
-        @apply bg-transparent hover:bg-white/10 text-white border-transparent;
-    }
-
-    .btn-ghost {
-        @apply text-zinc-400 hover:text-white hover:bg-white/5;
-    }
-
-    /* Badge styles - Catalyst uses rounded-md with semi-transparent backgrounds */
-    .badge {
-        @apply inline-flex items-center gap-x-1.5 px-1.5 py-0.5 rounded-md text-xs font-medium;
-    }
-
-    /* Lime badge - for "On Sale", "Active", "Local" status */
-    .badge-lime {
-        @apply bg-lime-400/10 text-lime-300;
-    }
-
-    /* Zinc badge - for neutral/closed status */
-    .badge-zinc {
-        @apply bg-white/5 text-zinc-400;
-    }
-
-    /* Red badge - for errors */
-    .badge-red {
-        @apply bg-red-500/10 text-red-400;
-    }
-
-    /* Blue badge - for info */
-    .badge-blue {
-        @apply bg-blue-500/15 text-blue-400;
-    }
-
-    /* Yellow badge - for warnings */
-    .badge-yellow {
-        @apply bg-yellow-400/10 text-yellow-300;
-    }
-
-    /* Purple badge - for integrations */
-    .badge-purple {
-        @apply bg-purple-500/10 text-purple-400;
-    }
-
-    /* Table styles - Catalyst minimal design */
-    .table-catalyst {
-        @apply min-w-full;
-    }
-
-    .table-catalyst thead tr {
-        @apply border-b border-zinc-800;
-    }
-
-    .table-catalyst th {
-        @apply px-0 py-3 text-left text-sm font-medium text-zinc-500;
-    }
-
-    .table-catalyst th:first-child {
-        @apply pl-0;
-    }
-
-    .table-catalyst th:last-child {
-        @apply pr-0 text-right;
-    }
-
-    .table-catalyst tbody {
-        @apply divide-y divide-zinc-800/50;
-    }
-
-    .table-catalyst td {
-        @apply py-4 text-sm;
-    }
-
-    .table-catalyst td:first-child {
-        @apply pl-0;
-    }
-
-    .table-catalyst td:last-child {
-        @apply pr-0 text-right;
-    }
-
-    .table-catalyst tr {
-        @apply hover:bg-white/[0.02] transition-colors;
-    }
-
-    /* Settings form layout - two column like Catalyst */
-    .settings-row {
-        @apply py-6 border-b border-zinc-800 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3;
-    }
-
-    .settings-row:last-child {
-        @apply border-b-0;
-    }
-
-    .settings-label {
-        @apply text-sm font-medium text-white;
-    }
-
-    .settings-description {
-        @apply text-sm text-zinc-400 mt-1;
-    }
-
-    .settings-field {
-        @apply sm:col-span-2;
+    body {
+        @apply bg-background text-foreground;
     }
 }

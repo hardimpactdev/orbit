@@ -25,6 +25,7 @@ Generated (docker-compose.yaml)
 ## File Structure
 
 **CLI Source** (`~/projects/orbit-cli/`):
+
 ```
 stubs/
 ├── templates/                    # NEW: Service templates
@@ -54,6 +55,7 @@ app/
 ```
 
 **Runtime Config** (`~/.config/orbit/`):
+
 ```
 services.yaml              # User's enabled services + config
 docker-compose.yaml        # GENERATED from templates
@@ -68,6 +70,7 @@ service-data/              # Persistent service data
 ### Step 1: Create DTOs and Template Loader
 
 **File:** `app/Data/ServiceTemplate.php`
+
 ```php
 class ServiceTemplate
 {
@@ -87,6 +90,7 @@ class ServiceTemplate
 ```
 
 **File:** `app/Services/ServiceTemplateLoader.php`
+
 - `load(string $name): ?ServiceTemplate` - Load single template
 - `loadAll(): array` - Load all templates
 - `getAvailable(): array` - List available service names
@@ -94,10 +98,12 @@ class ServiceTemplate
 ### Step 2: Create Config Validator
 
 **File:** `app/Services/ServiceConfigValidator.php`
+
 - `validate(ServiceTemplate, array $config): array` - Returns validation errors
 - `applyDefaults(ServiceTemplate, array $config): array` - Merge defaults
 
 Validates:
+
 - Type (string, integer, boolean)
 - Enum values
 - Min/max ranges
@@ -106,10 +112,12 @@ Validates:
 ### Step 3: Create Compose Generator
 
 **File:** `app/Services/ComposeGenerator.php`
+
 - `generate(array $enabledServices): string` - Generate compose YAML
 - `write(string $content): void` - Write to config path
 
 Key features:
+
 - Variable interpolation (`${version}`, `${port}`, etc.)
 - System variables (`${data_path}`, `${config_path}`)
 - Dependency sorting (topological sort)
@@ -118,6 +126,7 @@ Key features:
 ### Step 4: Create Service Manager
 
 **File:** `app/Services/ServiceManager.php`
+
 - `loadServices(): void` - Read services.yaml
 - `saveServices(): void` - Write services.yaml
 - `getEnabled(): array` - Get enabled services
@@ -132,19 +141,20 @@ Key features:
 
 ### Step 5: Create CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `service:list` | List all services with status |
-| `service:enable {service}` | Enable a service |
-| `service:disable {service}` | Disable a service |
-| `service:configure {service}` | View/update service config |
-| `service:info {service}` | Show detailed service info |
+| Command                       | Description                   |
+| ----------------------------- | ----------------------------- |
+| `service:list`                | List all services with status |
+| `service:enable {service}`    | Enable a service              |
+| `service:disable {service}`   | Disable a service             |
+| `service:configure {service}` | View/update service config    |
+| `service:info {service}`      | Show detailed service info    |
 
 All commands support `--json` flag for programmatic output.
 
 ### Step 6: Create Service Templates
 
 **Priority templates:**
+
 1. `postgres.yaml` - PostgreSQL (migrate from existing stub)
 2. `redis.yaml` - Redis (migrate from existing stub)
 3. `mailpit.yaml` - Mailpit (migrate from existing stub)
@@ -154,43 +164,44 @@ All commands support `--json` flag for programmatic output.
 7. `meilisearch.yaml` - Meilisearch (new)
 
 **Template format:**
+
 ```yaml
 name: mysql
 label: MySQL
 description: MySQL database server
 category: database
 
-versions: ["8.0", "8.4", "9.0"]
+versions: ['8.0', '8.4', '9.0']
 
 config:
-  version:
-    type: string
-    default: "8.0"
-    enum: ["8.0", "8.4", "9.0"]
-  port:
-    type: integer
-    default: 3306
-  root_password:
-    type: string
-    default: ""
-    secret: true
+    version:
+        type: string
+        default: '8.0'
+        enum: ['8.0', '8.4', '9.0']
+    port:
+        type: integer
+        default: 3306
+    root_password:
+        type: string
+        default: ''
+        secret: true
 
 docker:
-  image: mysql:${version}
-  container_name: launchpad-mysql
-  ports:
-    - "${port}:3306"
-  environment:
-    MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-  volumes:
-    - ${data_path}/mysql:/var/lib/mysql
-  networks:
-    - launchpad
-  healthcheck:
-    test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-    interval: 10s
-    timeout: 5s
-    retries: 3
+    image: mysql:${version}
+    container_name: launchpad-mysql
+    ports:
+        - '${port}:3306'
+    environment:
+        MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+    volumes:
+        - ${data_path}/mysql:/var/lib/mysql
+    networks:
+        - launchpad
+    healthcheck:
+        test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost']
+        interval: 10s
+        timeout: 5s
+        retries: 3
 
 depends_on: []
 ```
@@ -198,19 +209,23 @@ depends_on: []
 ### Step 7: Update Existing Commands
 
 **StartCommand:**
+
 - Remove hardcoded service logic
 - Use `ServiceManager::startAll()` to start enabled services
 - Load services from generated `docker-compose.yaml`
 
 **StopCommand:**
+
 - Use `ServiceManager::stopAll()`
 
 **StatusCommand:**
+
 - Get service list from `ServiceManager`
 - Show template metadata (label, category, version)
 - Query Docker for running status
 
 **InitCommand:**
+
 - Generate default `services.yaml` with core services enabled
 - Generate initial `docker-compose.yaml`
 
@@ -256,67 +271,68 @@ Service 'mysql' disabled.
 name: launchpad
 
 networks:
-  launchpad:
-    external: true
+    launchpad:
+        external: true
 
 services:
-  postgres:
-    image: postgres:17
-    container_name: orbit-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: launchpad
-      POSTGRES_PASSWORD: launchpad
-    volumes:
-      - /home/launchpad/.config/orbit/service-data/postgres:/var/lib/postgresql/data
-    networks:
-      - launchpad
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U launchpad"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    postgres:
+        image: postgres:17
+        container_name: orbit-postgres
+        ports:
+            - '5432:5432'
+        environment:
+            POSTGRES_USER: launchpad
+            POSTGRES_PASSWORD: launchpad
+        volumes:
+            - /home/launchpad/.config/orbit/service-data/postgres:/var/lib/postgresql/data
+        networks:
+            - launchpad
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U launchpad']
+            interval: 10s
+            timeout: 5s
+            retries: 3
 
-  redis:
-    image: redis:7-alpine
-    container_name: orbit-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - /home/launchpad/.config/orbit/service-data/redis:/data
-    networks:
-      - launchpad
+    redis:
+        image: redis:7-alpine
+        container_name: orbit-redis
+        ports:
+            - '6379:6379'
+        volumes:
+            - /home/launchpad/.config/orbit/service-data/redis:/data
+        networks:
+            - launchpad
 
-  mysql:
-    image: mysql:8.0
-    container_name: launchpad-mysql
-    ports:
-      - "3307:3306"
-    environment:
-      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-    volumes:
-      - /home/launchpad/.config/orbit/service-data/mysql:/var/lib/mysql
-    networks:
-      - launchpad
+    mysql:
+        image: mysql:8.0
+        container_name: launchpad-mysql
+        ports:
+            - '3307:3306'
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        volumes:
+            - /home/launchpad/.config/orbit/service-data/mysql:/var/lib/mysql
+        networks:
+            - launchpad
 ```
 
 ## Breaking Changes
 
 This is a breaking change that replaces the legacy stub-based system entirely:
+
 - Container names remain `launchpad-*` for consistency
 - Existing service data directories are preserved and migrated to `service-data/`
 
 ## Critical Files to Modify
 
-| File | Changes |
-|------|---------|
+| File                             | Changes                                                         |
+| -------------------------------- | --------------------------------------------------------------- |
 | `app/Services/DockerManager.php` | Remove `CONTAINERS` constant, simplify to use generated compose |
-| `app/Services/ConfigManager.php` | Add `getServicesPath()` |
-| `app/Commands/StartCommand.php` | Use `ServiceManager::startAll()` |
-| `app/Commands/StopCommand.php` | Use `ServiceManager::stopAll()` |
-| `app/Commands/StatusCommand.php` | Use `ServiceManager` for service list |
-| `app/Commands/InitCommand.php` | Generate default `services.yaml` |
+| `app/Services/ConfigManager.php` | Add `getServicesPath()`                                         |
+| `app/Commands/StartCommand.php`  | Use `ServiceManager::startAll()`                                |
+| `app/Commands/StopCommand.php`   | Use `ServiceManager::stopAll()`                                 |
+| `app/Commands/StatusCommand.php` | Use `ServiceManager` for service list                           |
+| `app/Commands/InitCommand.php`   | Generate default `services.yaml`                                |
 
 ## Files to Delete
 
@@ -333,27 +349,28 @@ This is a breaking change that replaces the legacy stub-based system entirely:
 
 1. **Unit tests**: Template parsing, validation, compose generation
 2. **Manual testing**:
-   ```bash
-   # Initialize with default services
-   launchpad init
 
-   # Check generated files
-   cat ~/.config/orbit/services.yaml
-   cat ~/.config/orbit/docker-compose.yaml
+    ```bash
+    # Initialize with default services
+    launchpad init
 
-   # List services
-   launchpad service:list
+    # Check generated files
+    cat ~/.config/orbit/services.yaml
+    cat ~/.config/orbit/docker-compose.yaml
 
-   # Enable a new service
-   launchpad service:enable mysql
+    # List services
+    launchpad service:list
 
-   # Start all services
-   launchpad start
+    # Enable a new service
+    launchpad service:enable mysql
 
-   # Check status
-   launchpad status
+    # Start all services
+    launchpad start
 
-   # Configure a service
-   launchpad service:configure mysql --set port=3307
-   launchpad restart
-   ```
+    # Check status
+    launchpad status
+
+    # Configure a service
+    launchpad service:configure mysql --set port=3307
+    launchpad restart
+    ```

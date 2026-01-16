@@ -2,7 +2,20 @@
 import { ref, computed, onMounted } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
-import { Workflow, ExternalLink, Check, AlertCircle, Loader2, Download, RefreshCw, FolderSearch, FolderGit2, GitBranch, Clock } from 'lucide-vue-next';
+import {
+    Workflow,
+    ExternalLink,
+    Check,
+    AlertCircle,
+    Loader2,
+    Download,
+    RefreshCw,
+    FolderSearch,
+    FolderGit2,
+    GitBranch,
+    Clock,
+} from 'lucide-vue-next';
+import { Button, Badge } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -123,14 +136,17 @@ async function reconcileOrchestrator(installation: OrchestratorInstallation) {
     reconcileError.value = null;
 
     try {
-        const response = await fetch(`/environments/${props.environment.id}/orchestrator/reconcile`, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken,
-                'Content-Type': 'application/json',
+        const response = await fetch(
+            `/environments/${props.environment.id}/orchestrator/reconcile`,
+            {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ path: installation.path }),
             },
-            body: JSON.stringify({ path: installation.path }),
-        });
+        );
 
         const result = await response.json();
 
@@ -218,9 +234,7 @@ onMounted(() => {
     <div>
         <div class="mb-8">
             <Heading title="Orchestrator" />
-            <p class="text-zinc-400 mt-1">
-                Manage projects and tasks with AI assistance
-            </p>
+            <p class="text-zinc-400 mt-1">Manage projects and tasks with AI assistance</p>
         </div>
 
         <!-- Orchestrator Enabled -->
@@ -228,13 +242,17 @@ onMounted(() => {
             <div class="border border-zinc-800 rounded-lg p-6">
                 <div class="flex items-start justify-between">
                     <div class="flex items-start gap-4">
-                        <div class="w-10 h-10 rounded-lg bg-lime-500/10 flex items-center justify-center">
+                        <div
+                            class="w-10 h-10 rounded-lg bg-lime-500/10 flex items-center justify-center"
+                        >
                             <Workflow class="w-5 h-5 text-lime-400" />
                         </div>
                         <div>
                             <h3 class="text-sm font-medium text-white flex items-center gap-2">
                                 Orchestrator Connected
-                                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-400">
+                                <span
+                                    class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-lime-500/10 text-lime-400"
+                                >
                                     <Check class="w-3 h-3" />
                                     Active
                                 </span>
@@ -244,13 +262,13 @@ onMounted(() => {
                             </p>
                         </div>
                     </div>
-                    <button
+                    <Button
                         @click="openOrchestrator"
-                        class="btn btn-secondary flex items-center gap-2"
+                        variant="secondary"
                     >
                         Open Orchestrator
                         <ExternalLink class="w-4 h-4" />
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -297,17 +315,32 @@ onMounted(() => {
                     >
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center">
+                                <div
+                                    class="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center"
+                                >
                                     <FolderGit2 class="w-4 h-4 text-zinc-400" />
                                 </div>
                                 <div>
-                                    <h4 class="text-sm font-medium text-white">{{ project.name }}</h4>
+                                    <h4 class="text-sm font-medium text-white">
+                                        {{ project.name }}
+                                    </h4>
                                     <div class="flex items-center gap-3 mt-0.5">
-                                        <span v-if="project.github_url" class="text-xs text-zinc-500 flex items-center gap-1">
+                                        <span
+                                            v-if="project.github_url"
+                                            class="text-xs text-zinc-500 flex items-center gap-1"
+                                        >
                                             <GitBranch class="w-3 h-3" />
-                                            {{ project.github_url.replace('https://github.com/', '') }}
+                                            {{
+                                                project.github_url.replace(
+                                                    'https://github.com/',
+                                                    '',
+                                                )
+                                            }}
                                         </span>
-                                        <span v-if="project.linear_team_name" class="text-xs text-zinc-500">
+                                        <span
+                                            v-if="project.linear_team_name"
+                                            class="text-xs text-zinc-500"
+                                        >
                                             {{ project.linear_team_name }}
                                         </span>
                                         <span class="text-xs text-zinc-600 flex items-center gap-1">
@@ -317,13 +350,14 @@ onMounted(() => {
                                     </div>
                                 </div>
                             </div>
-                            <button
+                            <Button
                                 @click="openProjectInOrchestrator(project)"
-                                class="btn btn-outline py-1 px-2 text-xs"
+                                variant="outline"
+                                size="sm"
                             >
                                 <ExternalLink class="w-3.5 h-3.5" />
                                 View
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -333,7 +367,8 @@ onMounted(() => {
             <div class="border border-zinc-800 rounded-lg p-6">
                 <h3 class="text-sm font-medium text-white mb-4">MCP Integration</h3>
                 <p class="text-sm text-zinc-400 mb-4">
-                    The orchestrator's MCP service is available to orbit-cli for AI-assisted operations.
+                    The orchestrator's MCP service is available to orbit-cli for AI-assisted
+                    operations.
                 </p>
                 <div class="bg-zinc-900 rounded-lg p-4 font-mono text-sm text-zinc-300">
                     <div class="text-zinc-500"># MCP endpoint</div>
@@ -356,13 +391,18 @@ onMounted(() => {
             <div v-else-if="detectedInstallations.length > 0" class="space-y-6">
                 <div class="border border-yellow-500/20 bg-yellow-500/5 rounded-lg p-6">
                     <div class="flex items-start gap-4">
-                        <div class="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                        <div
+                            class="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center"
+                        >
                             <FolderSearch class="w-5 h-5 text-yellow-400" />
                         </div>
                         <div class="flex-1">
-                            <h3 class="text-sm font-medium text-white">Existing Installation Found</h3>
+                            <h3 class="text-sm font-medium text-white">
+                                Existing Installation Found
+                            </h3>
                             <p class="text-sm text-zinc-400 mt-1">
-                                An orchestrator installation was detected but is not linked to this environment.
+                                An orchestrator installation was detected but is not linked to this
+                                environment.
                             </p>
                         </div>
                     </div>
@@ -375,34 +415,37 @@ onMounted(() => {
                         >
                             <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm font-mono text-zinc-300">{{ installation.path }}</p>
+                                    <p class="text-sm font-mono text-zinc-300">
+                                        {{ installation.path }}
+                                    </p>
                                     <p class="text-xs text-zinc-500 mt-1">
-                                        Will be available at: <span class="text-zinc-400">{{ installation.url }}</span>
+                                        Will be available at:
+                                        <span class="text-zinc-400">{{ installation.url }}</span>
                                     </p>
                                 </div>
-                                <button
+                                <Button
                                     @click="reconcileOrchestrator(installation)"
                                     :disabled="reconciling"
-                                    class="btn btn-primary flex items-center gap-2 disabled:opacity-50"
                                 >
                                     <Loader2 v-if="reconciling" class="w-4 h-4 animate-spin" />
                                     <RefreshCw v-else class="w-4 h-4" />
                                     {{ reconciling ? 'Linking...' : 'Link & Configure' }}
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     </div>
 
-                    <div v-if="reconcileError" class="mt-4 flex items-center gap-2 text-sm text-red-400">
+                    <div
+                        v-if="reconcileError"
+                        class="mt-4 flex items-center gap-2 text-sm text-red-400"
+                    >
                         <AlertCircle class="w-4 h-4" />
                         {{ reconcileError }}
                     </div>
                 </div>
 
                 <!-- Still show install option -->
-                <div class="text-center text-zinc-500 text-sm">
-                    or
-                </div>
+                <div class="text-center text-zinc-500 text-sm">or</div>
             </div>
 
             <!-- Install New Orchestrator -->
@@ -423,9 +466,15 @@ onMounted(() => {
                 <div v-if="installing || installSuccess" class="space-y-4">
                     <div class="bg-zinc-900 rounded-lg p-4">
                         <div class="flex items-center gap-3">
-                            <Loader2 v-if="!installSuccess" class="w-5 h-5 animate-spin text-lime-400" />
+                            <Loader2
+                                v-if="!installSuccess"
+                                class="w-5 h-5 animate-spin text-lime-400"
+                            />
                             <Check v-else class="w-5 h-5 text-lime-400" />
-                            <span class="text-sm" :class="installSuccess ? 'text-lime-400' : 'text-zinc-300'">
+                            <span
+                                class="text-sm"
+                                :class="installSuccess ? 'text-lime-400' : 'text-zinc-300'"
+                            >
                                 {{ installProgress }}
                             </span>
                         </div>
@@ -435,14 +484,11 @@ onMounted(() => {
                 <!-- Install Button -->
                 <div v-else class="space-y-4">
                     <div class="bg-zinc-900 rounded-lg p-4">
-                        <p class="text-sm text-zinc-400">
-                            The orchestrator will be installed at:
-                        </p>
-                        <p class="text-sm font-mono text-zinc-300 mt-1">
-                            ~/projects/orchestrator
-                        </p>
+                        <p class="text-sm text-zinc-400">The orchestrator will be installed at:</p>
+                        <p class="text-sm font-mono text-zinc-300 mt-1">~/projects/orchestrator</p>
                         <p class="text-xs text-zinc-500 mt-2">
-                            Available at: <span class="text-zinc-400">https://orchestrator.{{ tld }}</span>
+                            Available at:
+                            <span class="text-zinc-400">https://orchestrator.{{ tld }}</span>
                         </p>
                     </div>
 
@@ -451,14 +497,13 @@ onMounted(() => {
                         {{ installError }}
                     </div>
 
-                    <button
+                    <Button
                         @click="installOrchestrator"
                         :disabled="installing"
-                        class="btn btn-primary flex items-center gap-2 disabled:opacity-50"
                     >
                         <Download class="w-4 h-4" />
                         Install Orchestrator
-                    </button>
+                    </Button>
                 </div>
             </div>
 

@@ -45,4 +45,8 @@ Route::prefix('environments/{environment}')->group(function (): void {
     Route::delete('services/{service}', [EnvironmentController::class, 'disableService']);
     Route::put('services/{service}/config', [EnvironmentController::class, 'configureService']);
     Route::get('services/{service}/info', [EnvironmentController::class, 'serviceInfo']);
+
+    // PHP Configuration
+    Route::get('php/config/{version?}', [EnvironmentController::class, 'getPhpConfig']);
+    Route::post('php/config/{version?}', [EnvironmentController::class, 'setPhpConfig']);
 });

@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { watch, onMounted, onUnmounted } from 'vue';
-import { X } from 'lucide-vue-next';
+import { computed } from 'vue';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@hardimpactdev/craft-ui';
 
 const props = defineProps<{
     show: boolean;
@@ -12,75 +17,32 @@ const emit = defineEmits<{
     close: [];
 }>();
 
-const close = () => {
-    emit('close');
-};
+// Map maxWidth classes to DialogContent sizes
+const dialogClass = computed(() => {
+    if (!props.maxWidth) return 'sm:max-w-md';
+    // Convert max-w-* classes to appropriate dialog sizes
+    if (props.maxWidth.includes('max-w-4xl')) return 'sm:max-w-4xl';
+    if (props.maxWidth.includes('max-w-3xl')) return 'sm:max-w-3xl';
+    if (props.maxWidth.includes('max-w-2xl')) return 'sm:max-w-2xl';
+    if (props.maxWidth.includes('max-w-xl')) return 'sm:max-w-xl';
+    if (props.maxWidth.includes('max-w-lg')) return 'sm:max-w-lg';
+    return props.maxWidth;
+});
 
-const handleEscape = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && props.show) {
-        close();
+const handleOpenChange = (open: boolean) => {
+    if (!open) {
+        emit('close');
     }
 };
-
-onMounted(() => {
-    document.addEventListener('keydown', handleEscape);
-});
-
-onUnmounted(() => {
-    document.removeEventListener('keydown', handleEscape);
-});
-
-watch(() => props.show, (show) => {
-    document.body.style.overflow = show ? 'hidden' : '';
-});
 </script>
 
 <template>
-    <Teleport to="body">
-        <Transition
-            enter-active-class="transition ease-out duration-200"
-            enter-from-class="opacity-0"
-            enter-to-class="opacity-100"
-            leave-active-class="transition ease-in duration-150"
-            leave-from-class="opacity-100"
-            leave-to-class="opacity-0"
-        >
-            <div
-                v-if="show"
-                class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
-                @click.self="close"
-            >
-                <Transition
-                    enter-active-class="transition ease-out duration-200"
-                    enter-from-class="opacity-0 scale-95"
-                    enter-to-class="opacity-100 scale-100"
-                    leave-active-class="transition ease-in duration-150"
-                    leave-from-class="opacity-100 scale-100"
-                    leave-to-class="opacity-0 scale-95"
-                >
-                    <div
-                        v-if="show"
-                        class="bg-zinc-900 border border-white/10 rounded-lg shadow-xl ring-1 ring-white/10 w-full"
-                        :class="maxWidth || 'max-w-md'"
-                    >
-                        <!-- Header -->
-                        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-                            <h3 class="text-lg font-semibold text-white">
-                                {{ title }}
-                            </h3>
-                            <button
-                                @click="close"
-                                class="p-1.5 text-zinc-500 hover:text-white hover:bg-white/10 rounded transition-colors"
-                            >
-                                <X class="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <!-- Content -->
-                        <slot />
-                    </div>
-                </Transition>
-            </div>
-        </Transition>
-    </Teleport>
+    <Dialog :open="show" @update:open="handleOpenChange">
+        <DialogContent :class="dialogClass">
+            <DialogHeader>
+                <DialogTitle>{{ title }}</DialogTitle>
+            </DialogHeader>
+            <slot />
+        </DialogContent>
+    </Dialog>
 </template>

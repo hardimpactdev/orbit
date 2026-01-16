@@ -43,11 +43,7 @@ const getIcon = (editor: string) => {
 </script>
 
 <template>
-    <svg
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        xmlns="http://www.w3.org/2000/svg"
-    >
+    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
         <path :d="getIcon(editor).path" />
     </svg>
 </template>

@@ -6,8 +6,8 @@ A NativePHP/Electron desktop application for managing local and remote [Orbit CL
 
 ## Features
 
-- **Local Environment Management**: Control your local Launchpad installation directly
-- **Remote Server Management**: Manage remote Launchpad installations via SSH
+- **Local Environment Management**: Control your local Orbit CLI installation directly
+- **Remote Server Management**: Manage remote Orbit CLI installations via SSH
 - **Server Provisioning**: Provision new Ubuntu servers with the complete Orbit stack (PHP-FPM, Caddy, Docker services)
 - **Automatic DNS Setup**: Configures macOS DNS resolvers with Touch ID authentication
 - **Multi-Editor Support**: Open projects in Cursor, VS Code, Windsurf, Zed, and more
@@ -62,7 +62,7 @@ When you configure a TLD (e.g., `.test`, `.ccc`) for an environment:
 
 1. **Mac Resolver**: Creates `/etc/resolver/{tld}` pointing to the server's DNS
 2. **Remote DNS Container**: Rebuilds the dnsmasq container with the correct TLD
-3. **Caddy Config**: Restarts Launchpad to regenerate Caddy configuration
+3. **Caddy Config**: Restarts Orbit to regenerate Caddy configuration
 
 ### Communication
 

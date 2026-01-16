@@ -58,8 +58,14 @@ curl -s -X POST https://launchpad.ccc/api/projects \
 ```
 
 Expected response:
+
 ```json
-{"success":true,"status":"provisioning","slug":"test-api","message":"Project provisioning started."}
+{
+    "success": true,
+    "status": "provisioning",
+    "slug": "test-api",
+    "message": "Project provisioning started."
+}
 ```
 
 ### Step 2: Monitor Job Execution
@@ -70,6 +76,7 @@ ssh launchpad@ai 'tail -f ~/.config/orbit/web/storage/logs/laravel.log | grep -E
 ```
 
 Expected log entries:
+
 ```
 CreateProjectJob: Running {"slug":"test-api","command":"..."}
 CreateProjectJob: Completed {"slug":"test-api"}
@@ -96,16 +103,16 @@ ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api -
 
 ## Expected Timings
 
-| Step | Time |
-|------|------|
-| API dispatch + job pickup | ~1-2s |
-| GitHub repo creation | ~3-5s |
-| Git clone | ~2s |
-| Composer install | ~4s |
-| Bun install | ~1-2s |
-| Bun build | ~4-5s |
-| Migrations + finalize | ~2s |
-| **Total** | **~20-30s** |
+| Step                      | Time        |
+| ------------------------- | ----------- |
+| API dispatch + job pickup | ~1-2s       |
+| GitHub repo creation      | ~3-5s       |
+| Git clone                 | ~2s         |
+| Composer install          | ~4s         |
+| Bun install               | ~1-2s       |
+| Bun build                 | ~4-5s       |
+| Migrations + finalize     | ~2s         |
+| **Total**                 | **~20-30s** |
 
 **Important:** If provisioning takes >60s, something is wrong.
 
@@ -114,16 +121,19 @@ ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api -
 ### Job Not Running
 
 Check Horizon status:
+
 ```bash
 ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:status'
 ```
 
 Check for failed jobs:
+
 ```bash
 ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan queue:failed'
 ```
 
 Restart Horizon:
+
 ```bash
 ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
 # Supervisord will restart it automatically
@@ -132,11 +142,13 @@ ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
 ### Bun Install Hangs
 
 Check if bun is in PATH:
+
 ```bash
 ssh launchpad@ai 'ls -la ~/.bun/bin/bun'
 ```
 
 Verify CreateProjectJob has correct PATH:
+
 ```bash
 ssh launchpad@ai 'grep -A5 "PATH" ~/.config/orbit/web/app/Jobs/CreateProjectJob.php'
 ```
@@ -146,6 +158,7 @@ The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
 ### Job Times Out
 
 Check Horizon timeout setting:
+
 ```bash
 ssh launchpad@ai 'grep timeout ~/.config/orbit/web/config/horizon.php'
 ```
@@ -155,6 +168,7 @@ Should be `'timeout' => 120` (120 seconds).
 ### CLI Not Found in Container
 
 The CLI should be mounted into PHP containers:
+
 ```bash
 ssh launchpad@ai 'grep launchpad ~/.config/orbit/php/docker-compose.yml'
 ```
@@ -164,26 +178,29 @@ Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
 ## Historical Fixes (Jan 2026)
 
 ### PATH Bug in CreateProjectJob
+
 - **Issue**: Bun install hung indefinitely
 - **Cause**: PATH was malformed as `/home/launchpad/home/launchpad/.bun/bin`
 - **Fix**: Changed to proper interpolation `{$home}/.bun/bin`
 
 ### ProjectController Using `at now`
+
 - **Issue**: Projects never created via API
 - **Cause**: `at now` doesn't work from Docker container
 - **Fix**: Changed to dispatch CreateProjectJob via Horizon
 
 ### Broadcast Exceptions Failing Jobs
+
 - **Issue**: Jobs failed with "Could not resolve host: reverb.ccc"
 - **Cause**: Horizon runs on HOST which doesn't use launchpad DNS
 - **Fix**: Made broadcast() catch exceptions (non-blocking)
 
 ## Key Files
 
-| Location | File | Purpose |
-|----------|------|---------|
-| Remote Web App | `~/.config/orbit/web/app/Jobs/CreateProjectJob.php` | Horizon job that calls CLI |
-| Remote Web App | `~/.config/orbit/web/app/Http/Controllers/Api/ProjectController.php` | API endpoint |
-| Remote Web App | `~/.config/orbit/web/config/horizon.php` | Queue timeout settings |
-| Remote CLI | `~/projects/orbit-cli/app/Commands/ProvisionCommand.php` | Actual provisioning |
-| Desktop | `.claude/scripts/test-provision-flow.sh` | Test script |
+| Location       | File                                                                 | Purpose                    |
+| -------------- | -------------------------------------------------------------------- | -------------------------- |
+| Remote Web App | `~/.config/orbit/web/app/Jobs/CreateProjectJob.php`                  | Horizon job that calls CLI |
+| Remote Web App | `~/.config/orbit/web/app/Http/Controllers/Api/ProjectController.php` | API endpoint               |
+| Remote Web App | `~/.config/orbit/web/config/horizon.php`                             | Queue timeout settings     |
+| Remote CLI     | `~/projects/orbit-cli/app/Commands/ProvisionCommand.php`             | Actual provisioning        |
+| Desktop        | `.claude/scripts/test-provision-flow.sh`                             | Test script                |

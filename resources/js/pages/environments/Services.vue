@@ -9,9 +9,23 @@ import Modal from '@/components/Modal.vue';
 import AddServiceModal from '@/components/AddServiceModal.vue';
 import ConfigureServiceModal from '@/components/ConfigureServiceModal.vue';
 import {
-    Loader2, Play, Square, RefreshCw, Server, Database, Mail, Globe,
-    Wifi, Container, FileText, X, Settings, Trash2, Plus
+    Loader2,
+    Play,
+    Square,
+    RefreshCw,
+    Server,
+    Database,
+    Mail,
+    Globe,
+    Wifi,
+    Container,
+    FileText,
+    X,
+    Settings,
+    Trash2,
+    Plus,
 } from 'lucide-vue-next';
+import { Button, Badge, Input } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -79,9 +93,25 @@ const logsLoading = ref(false);
 const logsAutoRefresh = ref(false);
 let logsInterval: ReturnType<typeof setInterval> | null = null;
 
+// PHP Settings Modal
+const showPhpSettings = ref(false);
+const phpSettingsLoading = ref(false);
+const phpSettingsSaving = ref(false);
+const phpSettingsVersion = ref('');
+const phpSettings = ref({
+    upload_max_filesize: '2M',
+    post_max_size: '8M',
+    memory_limit: '128M',
+    max_execution_time: '30',
+    max_children: '5',
+    start_servers: '2',
+    min_spare_servers: '1',
+    max_spare_servers: '3',
+});
+
 // Service metadata
 const serviceMeta: Record<string, ServiceMeta> = {
-    'dns': {
+    dns: {
         name: 'DNS Server',
         description: 'Resolves local domains to Orbit',
         icon: Globe,
@@ -89,7 +119,7 @@ const serviceMeta: Record<string, ServiceMeta> = {
         category: 'core',
         required: true,
     },
-    'caddy': {
+    caddy: {
         name: 'Caddy Web Server',
         description: 'HTTPS reverse proxy with automatic certificates',
         icon: Server,
@@ -97,21 +127,21 @@ const serviceMeta: Record<string, ServiceMeta> = {
         category: 'core',
         required: true,
     },
-    'postgres': {
+    postgres: {
         name: 'PostgreSQL',
         description: 'Relational database server',
         icon: Database,
         ports: '5432',
         category: 'database',
     },
-    'mysql': {
+    mysql: {
         name: 'MySQL',
         description: 'Relational database server',
         icon: Database,
         ports: '3306',
         category: 'database',
     },
-    'redis': {
+    redis: {
         name: 'Redis',
         description: 'In-memory cache and message broker',
         icon: Database,
@@ -119,14 +149,14 @@ const serviceMeta: Record<string, ServiceMeta> = {
         category: 'database',
         required: true,
     },
-    'mailpit': {
+    mailpit: {
         name: 'Mailpit',
         description: 'Email testing and capture',
         icon: Mail,
         ports: '1025, 8025',
         category: 'utility',
     },
-    'reverb': {
+    reverb: {
         name: 'Laravel Reverb',
         description: 'WebSocket server for real-time features',
         icon: Wifi,
@@ -134,7 +164,7 @@ const serviceMeta: Record<string, ServiceMeta> = {
         category: 'utility',
         required: true,
     },
-    'horizon': {
+    horizon: {
         name: 'Laravel Horizon',
         description: 'Queue worker management for Redis',
         icon: FileText,
@@ -202,7 +232,9 @@ const servicesByCategory = computed(() => {
     return result;
 });
 
-const allRunning = computed(() => servicesRunning.value === servicesTotal.value && servicesTotal.value > 0);
+const allRunning = computed(
+    () => servicesRunning.value === servicesTotal.value && servicesTotal.value > 0,
+);
 const allStopped = computed(() => servicesRunning.value === 0);
 
 function normalizePhpVersion(serviceKey: string): string | null {
@@ -252,25 +284,65 @@ async function openExternal(url: string) {
     }
 }
 
-async function openPhpIni() {
-    if (!props.environment.is_local || !props.localPhpIniPath) return;
-
-    await openExternal(`${props.editor.scheme}://file${props.localPhpIniPath}`);
-}
-
-async function openPhpFpmConf() {
-    if (!props.environment.is_local) return;
-
+async function openPhpSettings() {
     const version = latestPhpVersion.value;
-    const prefix = props.homebrewPrefix || '/opt/homebrew';
 
     if (!version) {
-        alert('No PHP services detected');
+        toast.error('No PHP services detected');
         return;
     }
 
-    const path = `${prefix}/etc/php/${version}/php-fpm.conf`;
-    await openExternal(`${props.editor.scheme}://file${path}`);
+    phpSettingsVersion.value = version;
+    phpSettingsLoading.value = true;
+    showPhpSettings.value = true;
+
+    try {
+        const response = await fetch(getApiUrl(`/php/config/${version}`));
+        if (!response.ok) throw new Error('Failed to fetch PHP settings');
+        const data = await response.json();
+        
+        if (data.success && data.data?.settings) {
+            phpSettings.value = { ...phpSettings.value, ...data.data.settings };
+        }
+    } catch (error) {
+        toast.error(`Error loading PHP settings: ${error}`);
+    } finally {
+        phpSettingsLoading.value = false;
+    }
+}
+
+async function savePhpSettings() {
+    phpSettingsSaving.value = true;
+
+    try {
+        const response = await fetch(getApiUrl(`/php/config/${phpSettingsVersion.value}`), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(phpSettings.value),
+        });
+
+        if (!response.ok) throw new Error('Failed to save PHP settings');
+        const data = await response.json();
+
+        if (data.success) {
+            toast.success('PHP Settings Saved', {
+                description: 'PHP-FPM has been restarted with the new configuration.',
+            });
+            showPhpSettings.value = false;
+        } else {
+            toast.error('Failed to Save Settings', {
+                description: data.error || 'An unknown error occurred.',
+            });
+        }
+    } catch (error) {
+        toast.error('Error Saving PHP Settings', {
+            description: String(error),
+        });
+    } finally {
+        phpSettingsSaving.value = false;
+    }
 }
 
 async function loadStatus(silent = false) {
@@ -292,13 +364,19 @@ async function startAll() {
         const result = await store.startAll(baseApiUrl.value);
 
         if (result.success) {
-            toast.success('Starting all services...');
+            toast.success('Services Starting', {
+                description: 'All services are being started.',
+            });
             await loadStatus(true);
         } else {
-            toast.error('Failed to start services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to Start Services', {
+                description: result.error || 'An unknown error occurred.',
+            });
         }
     } catch {
-        toast.error('Failed to start services');
+        toast.error('Failed to Start Services', {
+            description: 'Could not connect to the server.',
+        });
     } finally {
         actionInProgress.value = null;
     }
@@ -310,13 +388,19 @@ async function stopAll() {
         const result = await store.stopAll(baseApiUrl.value);
 
         if (result.success) {
-            toast.success('Stopping all services...');
+            toast.success('Services Stopping', {
+                description: 'All services are being stopped.',
+            });
             await loadStatus(true);
         } else {
-            toast.error('Failed to stop services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to Stop Services', {
+                description: result.error || 'An unknown error occurred.',
+            });
         }
     } catch {
-        toast.error('Failed to stop services');
+        toast.error('Failed to Stop Services', {
+            description: 'Could not connect to the server.',
+        });
     } finally {
         actionInProgress.value = null;
     }
@@ -329,13 +413,19 @@ async function restartAll() {
         const result = await store.restartAll(baseApiUrl.value);
 
         if (result.success) {
-            toast.success('Restarting all services...');
+            toast.success('Services Restarting', {
+                description: 'All services are being restarted.',
+            });
             await loadStatus(true);
         } else {
-            toast.error('Failed to restart services: ' + (result.error || 'Unknown error'));
+            toast.error('Failed to Restart Services', {
+                description: result.error || 'An unknown error occurred.',
+            });
         }
     } catch {
-        toast.error('Failed to restart services');
+        toast.error('Failed to Restart Services', {
+            description: 'Could not connect to the server.',
+        });
     } finally {
         restartingAll.value = false;
         actionInProgress.value = null;
@@ -344,7 +434,7 @@ async function restartAll() {
 
 async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'restart') {
     const type = getServiceType(serviceKey);
-    
+
     try {
         let result;
         if (action === 'start') {
@@ -403,7 +493,10 @@ async function fetchLogs() {
     logsLoading.value = true;
     try {
         const type = getServiceType(logsService.value);
-        const path = type === 'host' ? `/host-services/${logsService.value}/logs` : `/services/${logsService.value}/logs`;
+        const path =
+            type === 'host'
+                ? `/host-services/${logsService.value}/logs`
+                : `/services/${logsService.value}/logs`;
         const response = await fetch(getApiUrl(path));
         const result = await response.json();
 
@@ -455,32 +548,31 @@ interface ServiceStatusEvent {
 
 onMounted(async () => {
     store.setActiveEnvironment(props.environment.id);
-    
+
     // Show cached data immediately, refresh if stale
     if (store.isStale) {
         loadStatus();
     }
-    
+
     // Connect Echo for real-time updates
     const echo = connect(props.environment);
     if (echo) {
-        echo.channel('orbit')
-            .listen('.service.status.changed', (event: ServiceStatusEvent) => {
-                store.handleServiceStatusChanged(
-                    event.job_id,
-                    event.service,
-                    event.status,
-                    event.error
-                );
-                
-                if (event.error) {
-                    toast.error(`Failed to ${event.action} ${event.service}: ${event.error}`);
-                } else {
-                    toast.success(`${event.service} ${event.action} completed`);
-                }
-            });
+        echo.channel('orbit').listen('.service.status.changed', (event: ServiceStatusEvent) => {
+            store.handleServiceStatusChanged(
+                event.job_id,
+                event.service,
+                event.status,
+                event.error,
+            );
+
+            if (event.error) {
+                toast.error(`Failed to ${event.action} ${event.service}: ${event.error}`);
+            } else {
+                toast.success(`${event.service} ${event.action} completed`);
+            }
+        });
     }
-    
+
     // Recover any pending jobs
     store.recoverPendingJobs(baseApiUrl.value);
 });
@@ -502,48 +594,49 @@ onUnmounted(() => {
                 <Heading title="Services" />
                 <p class="text-zinc-400 mt-1">
                     <template v-if="loading">Loading services...</template>
-                    <template v-else>{{ servicesRunning }}/{{ servicesTotal }} services running</template>
+                    <template v-else
+                        >{{ servicesRunning }}/{{ servicesTotal }} services running</template
+                    >
                 </p>
             </div>
             <div class="flex items-center gap-2">
-                <button
+                <Button
                     @click="showAddServiceModal = true"
-                    class="btn btn-primary"
                     :disabled="loading"
                 >
                     <Plus class="w-4 h-4" />
                     Add Service
-                </button>
+                </Button>
                 <div class="w-px h-6 bg-zinc-800 mx-1" />
-                <button
+                <Button
                     v-if="!allRunning"
                     @click="startAll"
                     :disabled="loading || actionInProgress !== null"
-                    class="btn btn-secondary disabled:opacity-50"
+                    variant="secondary"
                 >
                     <Loader2 v-if="actionInProgress === 'start-all'" class="w-4 h-4 animate-spin" />
                     <Play v-else class="w-4 h-4" />
                     Start All
-                </button>
-                <button
+                </Button>
+                <Button
                     v-if="!allStopped"
                     @click="stopAll"
                     :disabled="loading || actionInProgress !== null"
-                    class="btn btn-outline disabled:opacity-50"
+                    variant="outline"
                 >
                     <Loader2 v-if="actionInProgress === 'stop-all'" class="w-4 h-4 animate-spin" />
                     <Square v-else class="w-4 h-4" />
                     Stop All
-                </button>
-                <button
+                </Button>
+                <Button
                     @click="restartAll"
                     :disabled="loading || actionInProgress !== null"
-                    class="btn btn-outline disabled:opacity-50"
+                    variant="outline"
                 >
                     <Loader2 v-if="restartingAll" class="w-4 h-4 animate-spin" />
                     <RefreshCw v-else class="w-4 h-4" />
                     Restart All
-                </button>
+                </Button>
             </div>
         </div>
 
@@ -556,31 +649,25 @@ onUnmounted(() => {
         <!-- Services by Category -->
         <div v-else class="space-y-6">
             <template v-for="category in categories" :key="category.key">
-                <div v-if="servicesByCategory[category.key].length > 0" class="border border-zinc-600/40 rounded-xl px-0.5 pt-4 pb-0.5 bg-zinc-800/40">
+                <div
+                    v-if="servicesByCategory[category.key].length > 0"
+                    class="border border-zinc-600/40 rounded-xl px-0.5 pt-4 pb-0.5 bg-zinc-800/40"
+                >
                     <div class="px-4 mb-4 flex items-center justify-between">
                         <h3 class="text-sm font-medium text-white">{{ category.label }}</h3>
-                        <div
-                            v-if="category.key === 'php' && environment.is_local"
-                            class="flex items-center gap-1"
+                        <Button
+                            v-if="category.key === 'php'"
+                            @click="openPhpSettings"
+                            variant="ghost"
+                            size="icon-sm"
+                            title="PHP Settings"
                         >
-                            <button
-                                @click="openPhpIni"
-                                :disabled="!localPhpIniPath"
-                                class="btn btn-plain p-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
-                                title="Open Orbit php.ini"
-                            >
-                                <Settings class="w-4 h-4" />
-                            </button>
-                            <button
-                                @click="openPhpFpmConf"
-                                class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
-                                title="Open php-fpm.conf"
-                            >
-                                <FileText class="w-4 h-4" />
-                            </button>
-                        </div>
+                            <Settings class="w-4 h-4" />
+                        </Button>
                     </div>
-                    <div class="border border-zinc-600/50 rounded-lg overflow-hidden divide-y divide-zinc-600/40">
+                    <div
+                        class="border border-zinc-600/50 rounded-lg overflow-hidden divide-y divide-zinc-600/40"
+                    >
                         <div
                             v-for="{ key, service, meta } in servicesByCategory[category.key]"
                             :key="key"
@@ -589,113 +676,158 @@ onUnmounted(() => {
                             <div class="flex items-center gap-4">
                                 <div
                                     class="w-10 h-10 rounded-lg flex items-center justify-center"
-                                    :class="service.status === 'running' ? 'bg-lime-500/10' : 'bg-zinc-700/50'"
+                                    :class="
+                                        service.status === 'running'
+                                            ? 'bg-lime-500/10'
+                                            : 'bg-zinc-700/50'
+                                    "
                                 >
                                     <component
                                         :is="getServiceIcon(meta)"
                                         class="w-5 h-5"
-                                        :class="service.status === 'running' ? 'text-lime-400' : 'text-zinc-500'"
+                                        :class="
+                                            service.status === 'running'
+                                                ? 'text-lime-400'
+                                                : 'text-zinc-500'
+                                        "
                                     />
                                 </div>
                                 <div>
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-white">{{ meta.name }}</span>
-                                        <span
+                                        <Badge
                                             v-if="service.required || meta.required"
-                                            class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700"
+                                            variant="secondary"
+                                            class="text-[10px] font-bold uppercase tracking-tight"
                                         >
                                             Required
-                                        </span>
-                                        <span
-                                            class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded border"
-                                            :class="getServiceType(key) === 'host'
-                                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                                : 'bg-purple-500/10 text-purple-400 border-purple-500/20'"
+                                        </Badge>
+                                        <Badge
+                                            class="text-[10px] font-bold uppercase tracking-tight"
+                                            :class="
+                                                getServiceType(key) === 'host'
+                                                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                                    : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                            "
                                         >
                                             {{ getServiceType(key) === 'host' ? 'Host' : 'Docker' }}
-                                        </span>
+                                        </Badge>
                                         <span
                                             class="w-2 h-2 rounded-full"
-                                            :class="service.status === 'running' ? 'bg-lime-400' : 'bg-zinc-600'"
+                                            :class="
+                                                service.status === 'running'
+                                                    ? 'bg-lime-400'
+                                                    : 'bg-zinc-600'
+                                            "
                                         />
                                     </div>
                                     <div class="text-sm text-zinc-400">
                                         {{ meta.description }}
                                         <span v-if="meta.ports" class="text-zinc-600"> · </span>
-                                        <span v-if="meta.ports" class="font-mono text-xs">{{ meta.ports }}</span>
+                                        <span v-if="meta.ports" class="font-mono text-xs">{{
+                                            meta.ports
+                                        }}</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
                                 <span
                                     class="text-xs px-2 py-1 rounded-full capitalize"
-                                    :class="service.status === 'running'
-                                        ? 'bg-lime-500/10 text-lime-400'
-                                        : 'bg-zinc-700/50 text-zinc-400'"
+                                    :class="
+                                        service.status === 'running'
+                                            ? 'bg-lime-500/10 text-lime-400'
+                                            : 'bg-zinc-700/50 text-zinc-400'
+                                    "
                                 >
                                     {{ service.status }}
                                 </span>
                                 <div class="flex items-center gap-1 ml-2">
-                                    <button
+                                    <Button
                                         v-if="service.status !== 'running'"
                                         @click="serviceAction(key, 'start')"
                                         :disabled="store.isServicePending(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-lime-400 disabled:opacity-50"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        class="text-zinc-400 hover:text-lime-400"
                                         title="Start"
                                     >
-                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
+                                        <Loader2
+                                            v-if="store.isServicePending(key)"
+                                            class="w-4 h-4 animate-spin"
+                                        />
                                         <Play v-else class="w-4 h-4" />
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         v-if="service.status === 'running'"
                                         @click="serviceAction(key, 'stop')"
                                         :disabled="store.isServicePending(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-red-400 disabled:opacity-50"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        class="text-zinc-400 hover:text-red-400"
                                         title="Stop"
                                     >
-                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
+                                        <Loader2
+                                            v-if="store.isServicePending(key)"
+                                            class="w-4 h-4 animate-spin"
+                                        />
                                         <Square v-else class="w-4 h-4" />
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         @click="serviceAction(key, 'restart')"
                                         :disabled="store.isServicePending(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
+                                        variant="ghost"
+                                        size="icon-sm"
                                         title="Restart"
                                     >
-                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
+                                        <Loader2
+                                            v-if="store.isServicePending(key)"
+                                            class="w-4 h-4 animate-spin"
+                                        />
                                         <RefreshCw v-else class="w-4 h-4" />
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         @click="configureService(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                                        variant="ghost"
+                                        size="icon-sm"
                                         title="Configure"
                                     >
                                         <Settings class="w-4 h-4" />
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         @click="openLogs(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                                        variant="ghost"
+                                        size="icon-sm"
                                         title="View Logs"
                                     >
                                         <FileText class="w-4 h-4" />
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         v-if="!service.required && !meta.required"
                                         @click="removeService(key)"
                                         :disabled="store.isServicePending(key)"
-                                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-red-400 disabled:opacity-50"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        class="text-zinc-400 hover:text-red-400"
                                         title="Remove Service"
                                     >
-                                        <Loader2 v-if="store.isServicePending(key)" class="w-4 h-4 animate-spin" />
+                                        <Loader2
+                                            v-if="store.isServicePending(key)"
+                                            class="w-4 h-4 animate-spin"
+                                        />
                                         <Trash2 v-else class="w-4 h-4" />
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                             <!-- Error message for this service -->
                             <div v-if="store.getServiceError(key)" class="px-4 pb-3 -mt-2">
-                                <div class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-2 py-1 flex items-center justify-between">
+                                <div
+                                    class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-2 py-1 flex items-center justify-between"
+                                >
                                     <span>Error: {{ store.getServiceError(key) }}</span>
-                                    <button @click="store.clearServiceError(key)" class="text-red-400 hover:text-white">
+                                    <button
+                                        @click="store.clearServiceError(key)"
+                                        class="text-red-400 hover:text-white"
+                                    >
                                         <X class="w-3 h-3" />
                                     </button>
                                 </div>
@@ -726,33 +858,117 @@ onUnmounted(() => {
         />
 
         <!-- Logs Modal -->
-        <Modal :show="showLogs" :title="`${serviceMeta[logsService!]?.name || logsService} Logs`" maxWidth="max-w-4xl" @close="closeLogs">
+        <Modal
+            :show="showLogs"
+            :title="`${serviceMeta[logsService!]?.name || logsService} Logs`"
+            maxWidth="max-w-4xl"
+            @close="closeLogs"
+        >
             <div class="flex flex-col max-h-[70vh]">
-                <div class="flex items-center gap-3 px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
-                    <button
+                <div
+                    class="flex items-center gap-3 px-6 py-3 border-b border-zinc-800 bg-zinc-900/50"
+                >
+                    <Button
                         @click="fetchLogs"
                         :disabled="logsLoading"
-                        class="btn btn-plain p-1.5 text-zinc-400 hover:text-white"
+                        variant="ghost"
+                        size="icon-sm"
                         title="Refresh"
                     >
                         <Loader2 v-if="logsLoading" class="w-4 h-4 animate-spin" />
                         <RefreshCw v-else class="w-4 h-4" />
-                    </button>
+                    </Button>
                     <button
                         @click="toggleAutoRefresh"
                         class="text-xs px-2 py-1 rounded-full"
-                        :class="logsAutoRefresh
-                            ? 'bg-lime-500/10 text-lime-400'
-                            : 'bg-zinc-700/50 text-zinc-400 hover:text-white'"
+                        :class="
+                            logsAutoRefresh
+                                ? 'bg-lime-500/10 text-lime-400'
+                                : 'bg-zinc-700/50 text-zinc-400 hover:text-white'
+                        "
                     >
                         {{ logsAutoRefresh ? 'Auto-refresh ON' : 'Auto-refresh' }}
                     </button>
                 </div>
                 <div class="flex-1 overflow-auto p-4 bg-black">
-                    <pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap">{{ logs }}</pre>
+                    <pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap">{{
+                        logs
+                    }}</pre>
                 </div>
+            </div>
+        </Modal>
+
+        <!-- PHP Settings Modal -->
+        <Modal
+            :show="showPhpSettings"
+            :title="`PHP ${phpSettingsVersion} Settings`"
+            maxWidth="max-w-lg"
+            @close="showPhpSettings = false"
+        >
+            <div class="p-6">
+                <div v-if="phpSettingsLoading" class="py-8 text-center">
+                    <Loader2 class="w-8 h-8 mx-auto text-zinc-600 animate-spin mb-3" />
+                    <p class="text-zinc-500">Loading settings...</p>
+                </div>
+                <form v-else @submit.prevent="savePhpSettings" class="space-y-6">
+                    <!-- php.ini settings -->
+                    <div>
+                        <h4 class="text-sm font-medium text-white mb-3">php.ini</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Upload Max Filesize</label>
+                                <Input v-model="phpSettings.upload_max_filesize" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Post Max Size</label>
+                                <Input v-model="phpSettings.post_max_size" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Memory Limit</label>
+                                <Input v-model="phpSettings.memory_limit" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Max Execution Time (sec)</label>
+                                <Input v-model="phpSettings.max_execution_time" class="w-full font-mono" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- php-fpm pool settings -->
+                    <div>
+                        <h4 class="text-sm font-medium text-white mb-3">PHP-FPM Pool</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Max Children</label>
+                                <Input v-model="phpSettings.max_children" type="number" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Start Servers</label>
+                                <Input v-model="phpSettings.start_servers" type="number" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Min Spare Servers</label>
+                                <Input v-model="phpSettings.min_spare_servers" type="number" class="w-full font-mono" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Max Spare Servers</label>
+                                <Input v-model="phpSettings.max_spare_servers" type="number" class="w-full font-mono" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                        <Button type="button" variant="ghost" @click="showPhpSettings = false">
+                            Cancel
+                        </Button>
+                        <Button type="submit" variant="secondary" :disabled="phpSettingsSaving">
+                            <Loader2 v-if="phpSettingsSaving" class="w-4 h-4 animate-spin" />
+                            {{ phpSettingsSaving ? 'Saving...' : 'Save Settings' }}
+                        </Button>
+                    </div>
+                </form>
             </div>
         </Modal>
     </div>
 </template>
-

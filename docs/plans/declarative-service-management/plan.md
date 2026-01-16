@@ -11,6 +11,7 @@ Replace hardcoded Docker service definitions in orbit-cli with YAML-based templa
 ## Phase 1: DTOs and Template Loader
 
 **New files:**
+
 - `app/Data/ServiceTemplate.php` - DTO with properties: name, label, description, category, versions, configSchema, dockerConfig, dependsOn
 - `app/Services/ServiceTemplateLoader.php` - Methods: `load()`, `loadAll()`, `getAvailable()`
 - `app/Services/ServiceConfigValidator.php` - Methods: `validate()`, `applyDefaults()`
@@ -19,6 +20,7 @@ Replace hardcoded Docker service definitions in orbit-cli with YAML-based templa
 ## Phase 2: Compose Generator and Service Manager
 
 **New files:**
+
 - `app/Services/ComposeGenerator.php` - Methods: `generate()`, `write()`. Handles variable interpolation (`${version}`, `${data_path}`), dependency sorting, network config
 - `app/Services/ServiceManager.php` - Methods: `loadServices()`, `saveServices()`, `getEnabled()`, `enable()`, `disable()`, `configure()`, `regenerateCompose()`, `start()`, `stop()`, `startAll()`, `stopAll()`
 - `stubs/services.yaml.stub` - Default configuration template
@@ -30,6 +32,7 @@ Replace hardcoded Docker service definitions in orbit-cli with YAML-based templa
 **New directory:** `app/Commands/Service/`
 
 **New files:**
+
 - `ServiceListCommand.php` - `service:list [--available] [--json]`
 - `ServiceEnableCommand.php` - `service:enable {service} [--json]`
 - `ServiceDisableCommand.php` - `service:disable {service} [--json]`
@@ -42,6 +45,7 @@ Replace hardcoded Docker service definitions in orbit-cli with YAML-based templa
 **New directory:** `stubs/templates/`
 
 **New files (7 templates):**
+
 - `postgres.yaml` - Migrate from existing stub
 - `redis.yaml` - Migrate from existing stub
 - `mailpit.yaml` - Migrate from existing stub
@@ -51,27 +55,29 @@ Replace hardcoded Docker service definitions in orbit-cli with YAML-based templa
 - `meilisearch.yaml` - New service
 
 **Template structure:**
+
 ```yaml
 name: service-name
 label: Display Name
 description: Service description
 category: database|cache|mail|search
-versions: ["8.0", "8.4"]
+versions: ['8.0', '8.4']
 config:
-  version: {type: string, default: "8.0", enum: [...]}
-  port: {type: integer, default: 5432}
+    version: { type: string, default: '8.0', enum: [...] }
+    port: { type: integer, default: 5432 }
 docker:
-  image: image:${version}
-  container_name: launchpad-service
-  ports: ["${port}:5432"]
-  volumes: ["${data_path}/service:/data"]
-  networks: [launchpad]
+    image: image:${version}
+    container_name: launchpad-service
+    ports: ['${port}:5432']
+    volumes: ['${data_path}/service:/data']
+    networks: [launchpad]
 depends_on: []
 ```
 
 ## Phase 5: Update Existing Commands & Remove Legacy
 
 **Modify:**
+
 - `app/Commands/StartCommand.php` - Use `ServiceManager::startAll()`
 - `app/Commands/StopCommand.php` - Use `ServiceManager::stopAll()`
 - `app/Commands/StatusCommand.php` - Use `ServiceManager` for service list
@@ -79,6 +85,7 @@ depends_on: []
 - `app/Services/DockerManager.php` - Remove `CONTAINERS` constant, simplify to use generated compose
 
 **Delete:**
+
 - `stubs/postgres/docker-compose.yml`
 - `stubs/redis/docker-compose.yml`
 - `stubs/mailpit/docker-compose.yml`
@@ -91,6 +98,7 @@ depends_on: []
 ## Verification
 
 Run test suite after each phase:
+
 ```bash
 ssh launchpad@ai "cd ~/projects/orbit-cli && ./vendor/bin/pest"
 ```

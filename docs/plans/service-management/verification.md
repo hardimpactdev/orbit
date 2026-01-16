@@ -5,23 +5,23 @@ Plan: docs/plans/service-management/specification.md
 
 ## Phase 1: CLI Service Management System
 
-| Check | Command | Expected | Source |
-|-------|---------|----------|--------|
-| Service templates exist | `ssh launchpad@ai "test -f ~/projects/orbit-cli/stubs/templates/postgres.yaml && test -f ~/projects/orbit-cli/stubs/templates/mysql.yaml && test -f ~/projects/orbit-cli/stubs/templates/meilisearch.yaml"` | exit code 0 | plan step 1.4 |
-| Service commands registered | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad list" \| grep -c 'service:'` | returns 5 (list, enable, disable, configure, info) | plan step 1.5 |
-| Templates load correctly | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad service:list --available --json" \| jq -e '.available \| contains(["mysql", "meilisearch"])'` | exit code 0 (both services in array) | plan verification section |
-| Required service protection | `ssh launchpad@ai "cd ~/projects/orbit-cli && ! php launchpad service:disable dns --json 2>&1" \| grep -qi 'required'` | exit code 0 (error contains "required") | plan verification section |
-| Full cycle test | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad service:enable mysql --json && php launchpad service:configure mysql --set port=3307 --json && grep -q 'port: 3307' ~/.config/orbit/services.yaml && php launchpad service:disable mysql --json && ! grep -q 'mysql:' ~/.config/orbit/services.yaml"` | exit code 0 (enable → configure → verify → disable → verify removed) | user requirement: full cycle |
+| Check                       | Command                                                                                                                                                                                                                                                                                                           | Expected                                                             | Source                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------- |
+| Service templates exist     | `ssh launchpad@ai "test -f ~/projects/orbit-cli/stubs/templates/postgres.yaml && test -f ~/projects/orbit-cli/stubs/templates/mysql.yaml && test -f ~/projects/orbit-cli/stubs/templates/meilisearch.yaml"`                                                                                                       | exit code 0                                                          | plan step 1.4                |
+| Service commands registered | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad list" \| grep -c 'service:'`                                                                                                                                                                                                                          | returns 5 (list, enable, disable, configure, info)                   | plan step 1.5                |
+| Templates load correctly    | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad service:list --available --json" \| jq -e '.available \| contains(["mysql", "meilisearch"])'`                                                                                                                                                         | exit code 0 (both services in array)                                 | plan verification section    |
+| Required service protection | `ssh launchpad@ai "cd ~/projects/orbit-cli && ! php launchpad service:disable dns --json 2>&1" \| grep -qi 'required'`                                                                                                                                                                                            | exit code 0 (error contains "required")                              | plan verification section    |
+| Full cycle test             | `ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad service:enable mysql --json && php launchpad service:configure mysql --set port=3307 --json && grep -q 'port: 3307' ~/.config/orbit/services.yaml && php launchpad service:disable mysql --json && ! grep -q 'mysql:' ~/.config/orbit/services.yaml"` | exit code 0 (enable → configure → verify → disable → verify removed) | user requirement: full cycle |
 
 ## Phase 2: Desktop App UI Layer
 
-| Check | Command | Expected | Source |
-|-------|---------|----------|--------|
-| Backend methods exist | `grep -c "function listServices\|function enableService\|function disableService\|function configureService\|function getServiceInfo" app/Services/LaunchpadService.php` | returns 5 | plan step 2.1 |
-| Routes registered | `grep -c "services/{service}/enable\|services/{service}/config\|services/available" routes/web.php` | returns 3 | plan step 2.4 |
-| Vue components exist | `test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue` | exit code 0 | plan step 2.6 |
-| Services page updated | `grep -c "showAddServiceModal\|showConfigureModal" resources/js/pages/environments/Services.vue` | returns 2 | plan step 2.5 |
-| Remote API controller exists | `ssh launchpad@ai "test -f ~/projects/orbit-cli/web/app/Http/Controllers/Api/ServiceController.php"` | exit code 0 | plan step 2.7 |
+| Check                        | Command                                                                                                                                                                  | Expected    | Source        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------- |
+| Backend methods exist        | `grep -c "function listServices\|function enableService\|function disableService\|function configureService\|function getServiceInfo" app/Services/LaunchpadService.php` | returns 5   | plan step 2.1 |
+| Routes registered            | `grep -c "services/{service}/enable\|services/{service}/config\|services/available" routes/web.php`                                                                      | returns 3   | plan step 2.4 |
+| Vue components exist         | `test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue`                                                       | exit code 0 | plan step 2.6 |
+| Services page updated        | `grep -c "showAddServiceModal\|showConfigureModal" resources/js/pages/environments/Services.vue`                                                                         | returns 2   | plan step 2.5 |
+| Remote API controller exists | `ssh launchpad@ai "test -f ~/projects/orbit-cli/web/app/Http/Controllers/Api/ServiceController.php"`                                                                     | exit code 0 | plan step 2.7 |
 
 ### E2E Test Scenario
 

@@ -13,6 +13,7 @@ Desktop UI (Vue) → NativePHP → LaunchpadService → CLI Commands → Service
 ```
 
 **Key Principles:**
+
 - CLI is the source of truth for service definitions and configuration
 - Desktop app provides UI layer that calls CLI commands
 - Service templates define available services with configurable options
@@ -28,10 +29,12 @@ Desktop UI (Vue) → NativePHP → LaunchpadService → CLI Commands → Service
 #### Step 1.1: Create Service Template DTOs and Loader
 
 **Files to create:**
+
 - `app/Data/ServiceTemplate.php` - DTO for service template structure
 - `app/Services/ServiceTemplateLoader.php` - Load templates from YAML files
 
 **ServiceTemplate structure:**
+
 ```php
 class ServiceTemplate
 {
@@ -48,6 +51,7 @@ class ServiceTemplate
 ```
 
 **Config schema format:**
+
 ```php
 'configSchema' => [
     'port' => [
@@ -74,10 +78,12 @@ class ServiceTemplate
 #### Step 1.2: Create Config Validator and Compose Generator
 
 **Files to create:**
+
 - `app/Services/ServiceConfigValidator.php` - Validate config against schema
 - `app/Services/ComposeGenerator.php` - Generate docker-compose.yaml from enabled services
 
 **ComposeGenerator responsibilities:**
+
 - Load enabled services from services.yaml
 - Interpolate config values into docker templates
 - Handle system variables (${data_path}, ${config_path})
@@ -87,9 +93,11 @@ class ServiceTemplate
 #### Step 1.3: Create Service Manager
 
 **File to create:**
+
 - `app/Services/ServiceManager.php` - Main orchestrator for service operations
 
 **Key methods:**
+
 ```php
 loadServices(): array           // Read services.yaml
 saveServices(array): void       // Write services.yaml
@@ -107,6 +115,7 @@ regenerateCompose(): void       // Generate docker-compose.yaml
 **Location:** `stubs/templates/`
 
 **Templates to create:**
+
 1. `dns.yaml` - dnsmasq (required, migrate from existing stub)
 2. `redis.yaml` - Redis (required, migrate from existing stub)
 3. `postgres.yaml` - PostgreSQL (optional, migrate from existing stub)
@@ -116,6 +125,7 @@ regenerateCompose(): void       // Generate docker-compose.yaml
 7. `meilisearch.yaml` - Meilisearch (optional, new)
 
 **Example template (postgres.yaml):**
+
 ```yaml
 name: postgres
 label: PostgreSQL
@@ -123,45 +133,45 @@ description: PostgreSQL database server
 category: database
 required: false
 
-versions: ["15", "16", "17"]
+versions: ['15', '16', '17']
 
 config:
-  version:
-    type: string
-    default: "17"
-    enum: ["15", "16", "17"]
-    label: "Version"
-  port:
-    type: integer
-    default: 5432
-    label: "Port"
-  user:
-    type: string
-    default: "launchpad"
-    label: "Username"
-  password:
-    type: string
-    default: "launchpad"
-    secret: true
-    label: "Password"
+    version:
+        type: string
+        default: '17'
+        enum: ['15', '16', '17']
+        label: 'Version'
+    port:
+        type: integer
+        default: 5432
+        label: 'Port'
+    user:
+        type: string
+        default: 'launchpad'
+        label: 'Username'
+    password:
+        type: string
+        default: 'launchpad'
+        secret: true
+        label: 'Password'
 
 docker:
-  image: postgres:${version}
-  container_name: orbit-postgres
-  ports:
-    - "${port}:5432"
-  environment:
-    POSTGRES_USER: ${user}
-    POSTGRES_PASSWORD: ${password}
-  volumes:
-    - ${data_path}/postgres:/var/lib/postgresql/data
-  networks:
-    - launchpad
-  healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U ${user}"]
-    interval: 10s
-    timeout: 5s
-    retries: 3
+    image: postgres:${version}
+    container_name: orbit-postgres
+    ports:
+        - '${port}:5432'
+    environment:
+        POSTGRES_USER: ${user}
+        POSTGRES_PASSWORD: ${password}
+    volumes:
+        - ${data_path}/postgres:/var/lib/postgresql/data
+    networks:
+        - launchpad
+    healthcheck:
+        test: ['CMD-SHELL', 'pg_isready -U ${user}']
+        interval: 10s
+        timeout: 5s
+        retries: 3
 
 depends_on: []
 ```
@@ -169,6 +179,7 @@ depends_on: []
 #### Step 1.5: Create CLI Commands
 
 **Files to create:**
+
 - `app/Commands/Service/ServiceListCommand.php`
 - `app/Commands/Service/ServiceEnableCommand.php`
 - `app/Commands/Service/ServiceDisableCommand.php`
@@ -176,6 +187,7 @@ depends_on: []
 - `app/Commands/Service/ServiceInfoCommand.php`
 
 **Command signatures:**
+
 ```bash
 launchpad service:list [--available] [--json]
 launchpad service:enable {service} [--json]
@@ -185,62 +197,65 @@ launchpad service:info {service} [--json]
 ```
 
 **JSON output format for service:list:**
+
 ```json
 {
-  "enabled": [
-    {
-      "name": "postgres",
-      "label": "PostgreSQL",
-      "category": "database",
-      "required": false,
-      "status": "running",
-      "config": {
-        "version": "17",
-        "port": 5432,
-        "user": "launchpad"
-      }
-    }
-  ],
-  "available": ["mysql", "meilisearch"]
+    "enabled": [
+        {
+            "name": "postgres",
+            "label": "PostgreSQL",
+            "category": "database",
+            "required": false,
+            "status": "running",
+            "config": {
+                "version": "17",
+                "port": 5432,
+                "user": "launchpad"
+            }
+        }
+    ],
+    "available": ["mysql", "meilisearch"]
 }
 ```
 
 #### Step 1.6: Update Existing Commands
 
 **Files to modify:**
+
 - `app/Commands/InitCommand.php` - Generate default services.yaml
 - `app/Commands/StartCommand.php` - Use generated docker-compose.yaml
 - `app/Commands/StopCommand.php` - Use generated docker-compose.yaml
 - `app/Commands/StatusCommand.php` - Load services from ServiceManager
 
 **Default services.yaml (created by InitCommand):**
+
 ```yaml
 services:
-  dns:
-    enabled: true
-    config: {}
-  redis:
-    enabled: true
-    config:
-      port: 6379
-      version: "7"
-  postgres:
-    enabled: true
-    config:
-      port: 5432
-      version: "17"
-      user: launchpad
-      password: launchpad
-  mailpit:
-    enabled: true
-    config:
-      smtp_port: 1025
-      http_port: 8025
-  reverb:
-    enabled: true
-    config:
-      port: 6001
-      app_id: launchpad
+    dns:
+        enabled: true
+        config: {}
+    redis:
+        enabled: true
+        config:
+            port: 6379
+            version: '7'
+    postgres:
+        enabled: true
+        config:
+            port: 5432
+            version: '17'
+            user: launchpad
+            password: launchpad
+    mailpit:
+        enabled: true
+        config:
+            smtp_port: 1025
+            http_port: 8025
+    reverb:
+        enabled: true
+        config:
+            port: 6001
+            app_id: launchpad
 ```
 
 #### Step 1.7: Build and Release CLI
@@ -275,6 +290,7 @@ chmod +x ~/.local/bin/orbit
 **File to modify:** `app/Services/LaunchpadService.php`
 
 **Methods to add:**
+
 ```php
 public function listServices(Environment $environment): array
 {
@@ -316,6 +332,7 @@ public function getServiceInfo(Environment $environment, string $service): array
 **File to modify:** `app/Services/LaunchpadCli/ServiceControlService.php`
 
 Add methods for remote environments that use HTTP API:
+
 ```php
 // For remote environments
 public function listServices(Environment $environment): array
@@ -330,6 +347,7 @@ public function getServiceInfo(Environment $environment, string $service): array
 **Directory:** `app/Http/Integrations/Launchpad/Requests/`
 
 **Files to create:**
+
 - `ListServicesRequest.php` - GET /services
 - `ListAvailableServicesRequest.php` - GET /services/available
 - `EnableServiceRequest.php` - POST /services/{service}/enable
@@ -357,6 +375,7 @@ Route::prefix('environments/{environment}')->group(function () {
 **File to modify:** `app/Http/Controllers/EnvironmentController.php`
 
 **Methods to add:**
+
 ```php
 public function availableServices(Environment $environment): Response
 {
@@ -413,6 +432,7 @@ public function serviceInfo(Environment $environment, string $service): Response
 **File to modify:** `resources/js/pages/environments/Services.vue`
 
 **Changes:**
+
 1. Fetch services dynamically from service:list instead of hardcoded metadata
 2. Add "Add Service" button that opens modal with available services
 3. Add "Configure" button to each service row
@@ -420,81 +440,82 @@ public function serviceInfo(Environment $environment, string $service): Response
 5. Show required badge for required services
 
 **Component structure:**
+
 ```vue
 <script setup lang="ts">
 interface Service {
-  name: string
-  label: string
-  description: string
-  category: string
-  required: boolean
-  status: 'running' | 'stopped'
-  config: Record<string, any>
-  configSchema?: Record<string, ConfigField>
+    name: string;
+    label: string;
+    description: string;
+    category: string;
+    required: boolean;
+    status: 'running' | 'stopped';
+    config: Record<string, any>;
+    configSchema?: Record<string, ConfigField>;
 }
 
 const { environment, services, availableServices } = defineProps<{
-  environment: Environment
-  services: Service[]
-  availableServices: string[]
-}>()
+    environment: Environment;
+    services: Service[];
+    availableServices: string[];
+}>();
 
-const showAddServiceModal = ref(false)
-const showConfigureModal = ref(false)
-const selectedService = ref<Service | null>(null)
+const showAddServiceModal = ref(false);
+const showConfigureModal = ref(false);
+const selectedService = ref<Service | null>(null);
 </script>
 
 <template>
-  <!-- Existing header with global controls -->
-  <div class="flex items-center justify-between mb-4 px-4">
-    <h2>Services</h2>
-    <div class="flex gap-2">
-      <button @click="showAddServiceModal = true" class="btn btn-secondary">
-        <Plus class="w-4 h-4" />
-        Add Service
-      </button>
-      <!-- Existing Start All / Stop All / Restart All buttons -->
-    </div>
-  </div>
-
-  <!-- Services list grouped by category -->
-  <div v-for="category in categories" :key="category">
-    <h3>{{ category }}</h3>
-    <div v-for="service in servicesInCategory(category)" :key="service.name">
-      <!-- Service row with status, ports, actions -->
-      <div class="flex items-center justify-between">
-        <div>
-          <span>{{ service.label }}</span>
-          <span v-if="service.required" class="badge badge-zinc">Required</span>
-        </div>
+    <!-- Existing header with global controls -->
+    <div class="flex items-center justify-between mb-4 px-4">
+        <h2>Services</h2>
         <div class="flex gap-2">
-          <button @click="configure(service)" class="btn btn-plain">
-            <Settings class="w-4 h-4" />
-          </button>
-          <button v-if="!service.required" @click="remove(service)" class="btn btn-plain">
-            <Trash2 class="w-4 h-4" />
-          </button>
-          <!-- Existing Start/Stop/Restart/Logs buttons -->
+            <button @click="showAddServiceModal = true" class="btn btn-secondary">
+                <Plus class="w-4 h-4" />
+                Add Service
+            </button>
+            <!-- Existing Start All / Stop All / Restart All buttons -->
         </div>
-      </div>
     </div>
-  </div>
 
-  <!-- Add Service Modal -->
-  <AddServiceModal
-    v-if="showAddServiceModal"
-    :available="availableServices"
-    :environment="environment"
-    @close="showAddServiceModal = false"
-  />
+    <!-- Services list grouped by category -->
+    <div v-for="category in categories" :key="category">
+        <h3>{{ category }}</h3>
+        <div v-for="service in servicesInCategory(category)" :key="service.name">
+            <!-- Service row with status, ports, actions -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <span>{{ service.label }}</span>
+                    <span v-if="service.required" class="badge badge-zinc">Required</span>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="configure(service)" class="btn btn-plain">
+                        <Settings class="w-4 h-4" />
+                    </button>
+                    <button v-if="!service.required" @click="remove(service)" class="btn btn-plain">
+                        <Trash2 class="w-4 h-4" />
+                    </button>
+                    <!-- Existing Start/Stop/Restart/Logs buttons -->
+                </div>
+            </div>
+        </div>
+    </div>
 
-  <!-- Configure Service Modal -->
-  <ConfigureServiceModal
-    v-if="showConfigureModal && selectedService"
-    :service="selectedService"
-    :environment="environment"
-    @close="showConfigureModal = false"
-  />
+    <!-- Add Service Modal -->
+    <AddServiceModal
+        v-if="showAddServiceModal"
+        :available="availableServices"
+        :environment="environment"
+        @close="showAddServiceModal = false"
+    />
+
+    <!-- Configure Service Modal -->
+    <ConfigureServiceModal
+        v-if="showConfigureModal && selectedService"
+        :service="selectedService"
+        :environment="environment"
+        @close="showConfigureModal = false"
+    />
 </template>
 ```
 
@@ -503,73 +524,75 @@ const selectedService = ref<Service | null>(null)
 **Files to create:**
 
 1. **AddServiceModal.vue** - Modal to select and enable a service
+
 ```vue
 <template>
-  <Modal @close="$emit('close')">
-    <h2>Add Service</h2>
-    <div class="space-y-4">
-      <div v-for="service in availableServices" :key="service">
-        <button @click="enableService(service)" class="w-full btn btn-outline">
-          {{ serviceLabels[service] }}
-        </button>
-      </div>
-    </div>
-  </Modal>
+    <Modal @close="$emit('close')">
+        <h2>Add Service</h2>
+        <div class="space-y-4">
+            <div v-for="service in availableServices" :key="service">
+                <button @click="enableService(service)" class="w-full btn btn-outline">
+                    {{ serviceLabels[service] }}
+                </button>
+            </div>
+        </div>
+    </Modal>
 </template>
 ```
 
 2. **ConfigureServiceModal.vue** - Modal to configure service settings
+
 ```vue
 <template>
-  <Modal @close="$emit('close')">
-    <h2>Configure {{ service.label }}</h2>
-    <form @submit.prevent="saveConfig">
-      <!-- Dynamic form fields based on configSchema -->
-      <div v-for="(field, key) in service.configSchema" :key="key">
-        <label>{{ field.label }}</label>
+    <Modal @close="$emit('close')">
+        <h2>Configure {{ service.label }}</h2>
+        <form @submit.prevent="saveConfig">
+            <!-- Dynamic form fields based on configSchema -->
+            <div v-for="(field, key) in service.configSchema" :key="key">
+                <label>{{ field.label }}</label>
 
-        <!-- Select for enum fields -->
-        <select v-if="field.enum" v-model="config[key]">
-          <option v-for="option in field.enum" :key="option" :value="option">
-            {{ option }}
-          </option>
-        </select>
+                <!-- Select for enum fields -->
+                <select v-if="field.enum" v-model="config[key]">
+                    <option v-for="option in field.enum" :key="option" :value="option">
+                        {{ option }}
+                    </option>
+                </select>
 
-        <!-- Number input for integer fields -->
-        <input v-else-if="field.type === 'integer'" type="number" v-model.number="config[key]" />
+                <!-- Number input for integer fields -->
+                <input
+                    v-else-if="field.type === 'integer'"
+                    type="number"
+                    v-model.number="config[key]"
+                />
 
-        <!-- Text/password input for string fields -->
-        <input
-          v-else
-          :type="field.secret ? 'password' : 'text'"
-          v-model="config[key]"
-        />
+                <!-- Text/password input for string fields -->
+                <input v-else :type="field.secret ? 'password' : 'text'" v-model="config[key]" />
 
-        <p class="text-sm text-zinc-500">{{ field.description }}</p>
-      </div>
+                <p class="text-sm text-zinc-500">{{ field.description }}</p>
+            </div>
 
-      <div class="flex justify-end gap-2 mt-6">
-        <button type="button" @click="$emit('close')" class="btn btn-plain">Cancel</button>
-        <button type="submit" class="btn btn-secondary">Save Configuration</button>
-      </div>
-    </form>
-  </Modal>
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" @click="$emit('close')" class="btn btn-plain">Cancel</button>
+                <button type="submit" class="btn btn-secondary">Save Configuration</button>
+            </div>
+        </form>
+    </Modal>
 </template>
 
 <script setup lang="ts">
 const { service, environment } = defineProps<{
-  service: Service
-  environment: Environment
-}>()
+    service: Service;
+    environment: Environment;
+}>();
 
-const config = ref({ ...service.config })
+const config = ref({ ...service.config });
 
 const saveConfig = async () => {
-  await router.put(`/environments/${environment.id}/services/${service.name}/config`, {
-    config: config.value,
-  })
-  emit('close')
-}
+    await router.put(`/environments/${environment.id}/services/${service.name}/config`, {
+        config: config.value,
+    });
+    emit('close');
+};
 </script>
 ```
 
@@ -611,12 +634,14 @@ This controller wraps CLI commands and returns JSON responses.
 ## Required vs Optional Services
 
 **Required (cannot be removed):**
+
 - `dns` - Domain resolution for .test/.ccc domains
 - `redis` - Queue backend for Horizon
 - `caddy` - Web server (Note: May need special handling as it runs on host, not Docker)
 - `horizon` - Queue worker (Note: Runs as systemd/launchd, not Docker)
 
 **Optional (can be added/removed):**
+
 - `postgres` - PostgreSQL database
 - `mysql` - MySQL database
 - `mailpit` - Email testing
@@ -626,6 +651,7 @@ This controller wraps CLI commands and returns JSON responses.
 ## Service Configuration Schema
 
 Each service template defines a `configSchema` that specifies:
+
 - **type**: string | integer | boolean
 - **default**: Default value
 - **enum**: Allowed values (for dropdowns)
@@ -638,6 +664,7 @@ Each service template defines a `configSchema` that specifies:
 ### CLI (Remote Server)
 
 **Create:**
+
 - `app/Data/ServiceTemplate.php`
 - `app/Services/ServiceTemplateLoader.php`
 - `app/Services/ServiceConfigValidator.php`
@@ -658,6 +685,7 @@ Each service template defines a `configSchema` that specifies:
 - `web/app/Http/Controllers/Api/ServiceController.php` (for remote API)
 
 **Modify:**
+
 - `app/Commands/InitCommand.php`
 - `app/Commands/StartCommand.php`
 - `app/Commands/StopCommand.php`
@@ -667,6 +695,7 @@ Each service template defines a `configSchema` that specifies:
 ### Desktop (Local)
 
 **Create:**
+
 - `app/Http/Integrations/Launchpad/Requests/ListServicesRequest.php`
 - `app/Http/Integrations/Launchpad/Requests/ListAvailableServicesRequest.php`
 - `app/Http/Integrations/Launchpad/Requests/EnableServiceRequest.php`
@@ -678,6 +707,7 @@ Each service template defines a `configSchema` that specifies:
 - `resources/js/components/Modal.vue` (if doesn't exist)
 
 **Modify:**
+
 - `app/Services/LaunchpadService.php`
 - `app/Services/LaunchpadCli/ServiceControlService.php`
 - `app/Http/Controllers/EnvironmentController.php`

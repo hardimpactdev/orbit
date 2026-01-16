@@ -2,7 +2,23 @@
 import { ref, onMounted, computed } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
-import { Loader2, Trash2, Plus, AlertTriangle, Workflow, Check, AlertCircle, Stethoscope, RefreshCw, CheckCircle2, XCircle, AlertTriangleIcon, ChevronDown, ChevronRight } from 'lucide-vue-next';
+import {
+    Loader2,
+    Trash2,
+    Plus,
+    AlertTriangle,
+    Workflow,
+    Check,
+    AlertCircle,
+    Stethoscope,
+    RefreshCw,
+    CheckCircle2,
+    XCircle,
+    AlertTriangleIcon,
+    ChevronDown,
+    ChevronRight,
+} from 'lucide-vue-next';
+import { Button, Badge, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -126,13 +142,16 @@ async function fixIssue(checkKey: string) {
     fixingChecks.value.add(checkKey);
 
     try {
-        const response = await fetch(`/environments/${props.environment.id}/doctor/fix/${checkKey}`, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken,
-                'Content-Type': 'application/json',
+        const response = await fetch(
+            `/environments/${props.environment.id}/doctor/fix/${checkKey}`,
+            {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Content-Type': 'application/json',
+                },
             },
-        });
+        );
         const result = await response.json();
 
         if (result.success) {
@@ -155,7 +174,9 @@ async function enableOrchestrator() {
 
     try {
         // Step 1: Detect existing installations
-        const detectResponse = await fetch(`/environments/${props.environment.id}/orchestrator/detect`);
+        const detectResponse = await fetch(
+            `/environments/${props.environment.id}/orchestrator/detect`,
+        );
         const detectResult = await detectResponse.json();
 
         if (detectResult.success) {
@@ -166,14 +187,17 @@ async function enableOrchestrator() {
                 orchestratorStatus.value = 'Found existing installation, linking...';
                 const installation = detectResult.installations[0];
 
-                const reconcileResponse = await fetch(`/environments/${props.environment.id}/orchestrator/reconcile`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Content-Type': 'application/json',
+                const reconcileResponse = await fetch(
+                    `/environments/${props.environment.id}/orchestrator/reconcile`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ path: installation.path }),
                     },
-                    body: JSON.stringify({ path: installation.path }),
-                });
+                );
 
                 const reconcileResult = await reconcileResponse.json();
 
@@ -182,7 +206,8 @@ async function enableOrchestrator() {
                     setTimeout(() => router.reload(), 1000);
                     return;
                 } else {
-                    orchestratorError.value = reconcileResult.error || 'Failed to link orchestrator';
+                    orchestratorError.value =
+                        reconcileResult.error || 'Failed to link orchestrator';
                     orchestratorStatus.value = null;
                     orchestratorBusy.value = false;
                     return;
@@ -192,13 +217,16 @@ async function enableOrchestrator() {
             // Step 3: If not found, install new
             orchestratorStatus.value = 'Installing orchestrator...';
 
-            const installResponse = await fetch(`/environments/${props.environment.id}/orchestrator/install`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Content-Type': 'application/json',
+            const installResponse = await fetch(
+                `/environments/${props.environment.id}/orchestrator/install`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Content-Type': 'application/json',
+                    },
                 },
-            });
+            );
 
             const installResult = await installResponse.json();
 
@@ -223,9 +251,13 @@ async function enableOrchestrator() {
 }
 
 function disableOrchestrator() {
-    router.post(`/environments/${props.environment.id}/orchestrator/disable`, {}, {
-        preserveScroll: true,
-    });
+    router.post(
+        `/environments/${props.environment.id}/orchestrator/disable`,
+        {},
+        {
+            preserveScroll: true,
+        },
+    );
 }
 
 async function loadConfig() {
@@ -265,7 +297,7 @@ function removePath(index: number) {
 }
 
 async function saveConfig() {
-    const paths = editPaths.value.filter(p => p.trim() !== '');
+    const paths = editPaths.value.filter((p) => p.trim() !== '');
     if (paths.length === 0) {
         alert('Please add at least one project path');
         return;
@@ -330,9 +362,7 @@ onMounted(() => {
     <div>
         <div class="mb-8">
             <Heading title="Settings" />
-            <p class="text-zinc-400 mt-1">
-                Configure {{ environment.name }}
-            </p>
+            <p class="text-zinc-400 mt-1">Configure {{ environment.name }}</p>
         </div>
 
         <form @submit.prevent="saveEnvSettings">
@@ -343,13 +373,10 @@ onMounted(() => {
                     <p class="text-sm text-zinc-500 mt-1">Display name for this environment.</p>
                 </div>
                 <div>
-                    <input
-                        v-model="envForm.name"
-                        type="text"
-                        id="name"
-                        class="w-full"
-                    />
-                    <p v-if="envForm.errors.name" class="mt-2 text-sm text-red-400">{{ envForm.errors.name }}</p>
+                    <Input v-model="envForm.name" type="text" id="name" class="w-full" />
+                    <p v-if="envForm.errors.name" class="mt-2 text-sm text-red-400">
+                        {{ envForm.errors.name }}
+                    </p>
                 </div>
             </div>
 
@@ -360,39 +387,57 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-8 py-6">
                     <div>
                         <h3 class="text-sm font-medium text-white">SSH Connection</h3>
-                        <p class="text-sm text-zinc-500 mt-1">Host, user, and port for SSH access.</p>
+                        <p class="text-sm text-zinc-500 mt-1">
+                            Host, user, and port for SSH access.
+                        </p>
                     </div>
                     <div class="space-y-4">
                         <div>
-                            <label for="host" class="block text-sm font-medium text-zinc-400 mb-1">Host</label>
-                            <input
+                            <label for="host" class="block text-sm font-medium text-zinc-400 mb-1"
+                                >Host</label
+                            >
+                            <Input
                                 v-model="envForm.host"
                                 type="text"
                                 id="host"
                                 class="w-full font-mono"
                             />
-                            <p v-if="envForm.errors.host" class="mt-1 text-sm text-red-400">{{ envForm.errors.host }}</p>
+                            <p v-if="envForm.errors.host" class="mt-1 text-sm text-red-400">
+                                {{ envForm.errors.host }}
+                            </p>
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label for="user" class="block text-sm font-medium text-zinc-400 mb-1">User</label>
-                                <input
+                                <label
+                                    for="user"
+                                    class="block text-sm font-medium text-zinc-400 mb-1"
+                                    >User</label
+                                >
+                                <Input
                                     v-model="envForm.user"
                                     type="text"
                                     id="user"
                                     class="w-full font-mono"
                                 />
-                                <p v-if="envForm.errors.user" class="mt-1 text-sm text-red-400">{{ envForm.errors.user }}</p>
+                                <p v-if="envForm.errors.user" class="mt-1 text-sm text-red-400">
+                                    {{ envForm.errors.user }}
+                                </p>
                             </div>
                             <div>
-                                <label for="port" class="block text-sm font-medium text-zinc-400 mb-1">Port</label>
-                                <input
+                                <label
+                                    for="port"
+                                    class="block text-sm font-medium text-zinc-400 mb-1"
+                                    >Port</label
+                                >
+                                <Input
                                     v-model="envForm.port"
                                     type="number"
                                     id="port"
                                     class="w-full font-mono"
                                 />
-                                <p v-if="envForm.errors.port" class="mt-1 text-sm text-red-400">{{ envForm.errors.port }}</p>
+                                <p v-if="envForm.errors.port" class="mt-1 text-sm text-red-400">
+                                    {{ envForm.errors.port }}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -403,13 +448,13 @@ onMounted(() => {
 
             <!-- Save Environment Button -->
             <div class="flex justify-end py-6">
-                <button
+                <Button
                     type="submit"
                     :disabled="envForm.processing"
-                    class="btn btn-secondary disabled:opacity-50"
+                    variant="secondary"
                 >
                     {{ envForm.processing ? 'Saving...' : 'Save Environment' }}
-                </button>
+                </Button>
             </div>
         </form>
 
@@ -429,12 +474,18 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-8 py-6">
                     <div>
                         <h3 class="text-sm font-medium text-white">Project Paths</h3>
-                        <p class="text-sm text-zinc-500 mt-1">Directories where your projects are located.</p>
+                        <p class="text-sm text-zinc-500 mt-1">
+                            Directories where your projects are located.
+                        </p>
                     </div>
                     <div>
                         <div class="space-y-2">
-                            <div v-for="(path, index) in editPaths" :key="index" class="flex items-center gap-2">
-                                <input
+                            <div
+                                v-for="(path, index) in editPaths"
+                                :key="index"
+                                class="flex items-center gap-2"
+                            >
+                                <Input
                                     v-model="editPaths[index]"
                                     type="text"
                                     placeholder="/home/user/projects"
@@ -466,10 +517,13 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-8 py-6">
                     <div>
                         <h3 class="text-sm font-medium text-white">TLD</h3>
-                        <p class="text-sm text-zinc-500 mt-1">Top-level domain for local sites. Sites will be accessible at sitename.{{ editTld || 'test' }}</p>
+                        <p class="text-sm text-zinc-500 mt-1">
+                            Top-level domain for local sites. Sites will be accessible at
+                            sitename.{{ editTld || 'test' }}
+                        </p>
                     </div>
                     <div>
-                        <input
+                        <Input
                             v-model="editTld"
                             type="text"
                             id="config-tld"
@@ -488,28 +542,33 @@ onMounted(() => {
                         <p class="text-sm text-zinc-500 mt-1">PHP version used for new sites.</p>
                     </div>
                     <div>
-                        <select v-model="editPhpVersion" id="config-php" class="w-full">
-                            <option
-                                v-for="version in availablePhpVersions"
-                                :key="version"
-                                :value="version"
-                            >
-                                PHP {{ version }}
-                            </option>
-                        </select>
+                        <Select v-model="editPhpVersion">
+                            <SelectTrigger class="w-full">
+                                <SelectValue placeholder="Select PHP version" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem
+                                    v-for="version in availablePhpVersions"
+                                    :key="version"
+                                    :value="version"
+                                >
+                                    PHP {{ version }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
 
                 <!-- Save Config Button -->
                 <div class="flex justify-end py-6">
-                    <button
+                    <Button
                         @click="saveConfig"
                         type="button"
                         :disabled="configSaving"
-                        class="btn btn-secondary disabled:opacity-50"
+                        variant="secondary"
                     >
                         {{ configSaving ? 'Saving...' : 'Save Configuration' }}
-                    </button>
+                    </Button>
                 </div>
             </template>
         </div>
@@ -520,7 +579,10 @@ onMounted(() => {
         <div class="grid grid-cols-2 gap-8 py-6">
             <div>
                 <div class="flex items-center gap-2">
-                    <Workflow class="w-5 h-5" :class="isOrchestratorEnabled ? 'text-lime-400' : 'text-zinc-400'" />
+                    <Workflow
+                        class="w-5 h-5"
+                        :class="isOrchestratorEnabled ? 'text-lime-400' : 'text-zinc-400'"
+                    />
                     <h3 class="text-sm font-medium text-white">Orchestrator</h3>
                     <span
                         v-if="isOrchestratorEnabled"
@@ -531,37 +593,48 @@ onMounted(() => {
                     </span>
                 </div>
                 <p class="text-sm text-zinc-500 mt-1">
-                    {{ isOrchestratorEnabled ? environment.orchestrator_url : 'AI-assisted project management with MCP integration.' }}
+                    {{
+                        isOrchestratorEnabled
+                            ? environment.orchestrator_url
+                            : 'AI-assisted project management with MCP integration.'
+                    }}
                 </p>
                 <!-- Progress/Status -->
-                <div v-if="!isOrchestratorEnabled && (orchestratorBusy || orchestratorError)" class="mt-3">
+                <div
+                    v-if="!isOrchestratorEnabled && (orchestratorBusy || orchestratorError)"
+                    class="mt-3"
+                >
                     <div v-if="orchestratorStatus" class="flex items-center gap-2">
                         <Loader2 class="w-4 h-4 animate-spin text-lime-400" />
                         <span class="text-sm text-zinc-300">{{ orchestratorStatus }}</span>
                     </div>
-                    <div v-if="orchestratorError" class="flex items-center gap-2 text-sm text-red-400">
+                    <div
+                        v-if="orchestratorError"
+                        class="flex items-center gap-2 text-sm text-red-400"
+                    >
                         <AlertCircle class="w-4 h-4" />
                         {{ orchestratorError }}
                     </div>
                 </div>
             </div>
             <div class="flex items-start">
-                <button
+                <Button
                     v-if="isOrchestratorEnabled"
                     @click="disableOrchestrator"
                     type="button"
-                    class="btn btn-plain text-red-400 hover:text-red-300"
+                    variant="outline"
+                    class="text-red-400 border-red-400/50 hover:bg-red-400/10 hover:text-red-300"
                 >
                     Disable
-                </button>
-                <button
+                </Button>
+                <Button
                     v-else-if="!orchestratorBusy"
                     @click="enableOrchestrator"
                     type="button"
-                    class="btn btn-secondary"
+                    variant="secondary"
                 >
                     Enable
-                </button>
+                </Button>
             </div>
         </div>
 
@@ -577,24 +650,31 @@ onMounted(() => {
                         v-if="doctorResult"
                         :class="[
                             'text-xs px-2 py-0.5 rounded-full',
-                            doctorResult.status === 'healthy' ? 'bg-lime-500/10 text-lime-400' :
-                            doctorResult.status === 'degraded' ? 'bg-amber-500/10 text-amber-400' :
-                            'bg-red-500/10 text-red-400'
+                            doctorResult.status === 'healthy'
+                                ? 'bg-lime-500/10 text-lime-400'
+                                : doctorResult.status === 'degraded'
+                                  ? 'bg-amber-500/10 text-amber-400'
+                                  : 'bg-red-500/10 text-red-400',
                         ]"
                     >
-                        {{ doctorResult.status === 'healthy' ? 'All Passed' :
-                           doctorResult.status === 'degraded' ? 'Warnings' : 'Issues Found' }}
+                        {{
+                            doctorResult.status === 'healthy'
+                                ? 'All Passed'
+                                : doctorResult.status === 'degraded'
+                                  ? 'Warnings'
+                                  : 'Issues Found'
+                        }}
                     </span>
                 </div>
-                <button
+                <Button
                     @click="runDoctor"
                     :disabled="doctorRunning"
-                    class="btn btn-outline flex items-center gap-2"
+                    variant="outline"
                 >
                     <RefreshCw v-if="doctorRunning" class="w-4 h-4 animate-spin" />
                     <Stethoscope v-else class="w-4 h-4" />
                     {{ doctorRunning ? 'Running...' : 'Run Diagnostics' }}
-                </button>
+                </Button>
             </div>
 
             <!-- Error State -->
@@ -638,10 +718,7 @@ onMounted(() => {
                                 v-else-if="check.status === 'warning'"
                                 class="w-5 h-5 text-amber-400"
                             />
-                            <XCircle
-                                v-else
-                                class="w-5 h-5 text-red-400"
-                            />
+                            <XCircle v-else class="w-5 h-5 text-red-400" />
 
                             <!-- Check Name & Message -->
                             <div>
@@ -654,22 +731,26 @@ onMounted(() => {
 
                         <div class="flex items-center gap-2">
                             <!-- Fix Button -->
-                            <button
+                            <Button
                                 v-if="check.status === 'error' && check.details?.can_fix"
                                 @click.stop="fixIssue(key as string)"
                                 :disabled="fixingChecks.has(key as string)"
-                                class="btn btn-secondary py-1 px-2 text-xs"
+                                variant="secondary"
+                                size="sm"
                             >
-                                <Loader2 v-if="fixingChecks.has(key as string)" class="w-3 h-3 animate-spin mr-1" />
+                                <Loader2
+                                    v-if="fixingChecks.has(key as string)"
+                                    class="w-3 h-3 animate-spin mr-1"
+                                />
                                 {{ fixingChecks.has(key as string) ? 'Fixing...' : 'Fix' }}
-                            </button>
+                            </Button>
 
                             <!-- Expand Arrow -->
                             <ChevronDown
                                 v-if="check.details && Object.keys(check.details).length > 0"
                                 :class="[
                                     'w-4 h-4 text-zinc-500 transition-transform',
-                                    expandedChecks.has(key as string) ? 'rotate-180' : ''
+                                    expandedChecks.has(key as string) ? 'rotate-180' : '',
                                 ]"
                             />
                         </div>
@@ -677,7 +758,11 @@ onMounted(() => {
 
                     <!-- Details (expanded) -->
                     <div
-                        v-if="expandedChecks.has(key as string) && check.details && Object.keys(check.details).filter(k => k !== 'can_fix').length > 0"
+                        v-if="
+                            expandedChecks.has(key as string) &&
+                            check.details &&
+                            Object.keys(check.details).filter((k) => k !== 'can_fix').length > 0
+                        "
                         class="px-4 py-3 bg-zinc-900/50 border-t border-zinc-700/50"
                     >
                         <dl class="space-y-2 text-sm">
@@ -690,10 +775,16 @@ onMounted(() => {
                                 <dt class="text-zinc-500 w-32 flex-shrink-0">{{ detailKey }}</dt>
                                 <dd class="text-zinc-300 font-mono break-all">
                                     <template v-if="Array.isArray(value)">
-                                        <span v-for="(item, i) in value" :key="i" class="block">{{ item }}</span>
+                                        <span v-for="(item, i) in value" :key="i" class="block">{{
+                                            item
+                                        }}</span>
                                     </template>
-                                    <template v-else-if="typeof value === 'object' && value !== null">
-                                        <pre class="text-xs">{{ JSON.stringify(value, null, 2) }}</pre>
+                                    <template
+                                        v-else-if="typeof value === 'object' && value !== null"
+                                    >
+                                        <pre class="text-xs">{{
+                                            JSON.stringify(value, null, 2)
+                                        }}</pre>
                                     </template>
                                     <template v-else>{{ value }}</template>
                                 </dd>
@@ -719,17 +810,19 @@ onMounted(() => {
             <div class="grid grid-cols-2 gap-8">
                 <div>
                     <h3 class="text-sm font-medium text-white">Delete Environment</h3>
-                    <p class="text-sm text-zinc-500 mt-1">Permanently delete this environment. This action cannot be undone.</p>
+                    <p class="text-sm text-zinc-500 mt-1">
+                        Permanently delete this environment. This action cannot be undone.
+                    </p>
                 </div>
                 <div>
                     <div v-if="!showDeleteConfirm">
-                        <button
+                        <Button
                             @click="confirmDelete"
                             type="button"
-                            class="btn bg-red-900/50 text-red-400 hover:bg-red-900 border border-red-800"
+                            variant="destructive"
                         >
                             Delete Environment
-                        </button>
+                        </Button>
                     </div>
 
                     <div v-else class="space-y-4">
@@ -738,32 +831,30 @@ onMounted(() => {
                             <div>
                                 <p class="text-sm text-red-300 font-medium">Are you sure?</p>
                                 <p class="text-sm text-red-400/80">
-                                    Type <strong class="text-red-300">{{ environment.name }}</strong> to confirm.
+                                    Type
+                                    <strong class="text-red-300">{{ environment.name }}</strong> to
+                                    confirm.
                                 </p>
                             </div>
                         </div>
-                        <input
+                        <Input
                             v-model="deleteConfirmName"
                             type="text"
                             placeholder="Type environment name"
                             class="w-full"
                         />
                         <div class="flex gap-3">
-                            <button
+                            <Button
                                 @click="deleteEnvironment"
                                 type="button"
                                 :disabled="deleteConfirmName !== environment.name"
-                                class="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                variant="destructive"
                             >
                                 Delete
-                            </button>
-                            <button
-                                @click="cancelDelete"
-                                type="button"
-                                class="btn btn-plain"
-                            >
+                            </Button>
+                            <Button @click="cancelDelete" type="button" variant="ghost">
                                 Cancel
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

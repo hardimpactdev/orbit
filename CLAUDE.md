@@ -17,6 +17,7 @@ A NativePHP/Electron desktop application for managing local and remote orbit CLI
 | Local | N/A (localhost) | `.test` | Local machine |
 
 **Key paths on remote servers:**
+
 - Projects: `~/projects/`
 - **Orbit CLI source code**: `~/projects/orbit-cli/` - THIS IS WHERE TO MAKE CLI CHANGES
 - Launchpad config: `~/.config/orbit/`
@@ -31,6 +32,7 @@ A NativePHP/Electron desktop application for managing local and remote orbit CLI
 ## Project Overview
 
 This is a Laravel 12 application wrapped in NativePHP/Electron that provides a GUI for the orbit CLI tool. It can manage:
+
 - Local launchpad installations (on the same machine)
 - Remote launchpad installations (via SSH)
 - Provisioning new servers from scratch
@@ -38,6 +40,7 @@ This is a Laravel 12 application wrapped in NativePHP/Electron that provides a G
 ### Platform Support
 
 **This is a macOS-only application.** Key macOS-specific dependencies:
+
 - DNS resolver management via `/etc/resolver/` files
 - Touch ID authentication for sudo via `pam_tid.so`
 - `expect` for PTY spawning to enable Touch ID
@@ -83,20 +86,24 @@ The orbit stack uses **PHP-FPM on the host** (not containerized) with **Caddy** 
 ```
 
 **Benefits of PHP-FPM architecture:**
+
 - Single Caddy instance on host (no dual-Caddy complexity)
 - PHP-FPM has direct access to CLI, Bun, git, composer
 - Horizon runs natively with full host access
 - Simpler debugging and log access
 
 **Services on host:**
+
 - **PHP-FPM**: Multiple pools (8.4, 8.5) with Unix sockets
 - **Caddy**: Web server with automatic HTTPS (systemd on Linux, brew services on macOS)
 - **Horizon**: Queue worker as systemd (Linux) or launchd (macOS) service
 
 **Services in Docker:**
+
 - PostgreSQL, Redis, Mailpit, Reverb, dnsmasq
 
 ### Communication Pattern
+
 - **Local environments**: NativePHP backend → Direct PHP process execution
 - **Remote environments**: Vue frontend → Direct HTTP to remote launchpad web app API
 
@@ -115,18 +122,21 @@ Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
 ```
 
 **Implementation:**
+
 1. `EnvironmentController` passes `remoteApiUrl` prop to Vue pages (e.g., `https://launchpad.ccc/api`)
 2. Vue pages use a `getApiUrl(path)` helper that returns the remote URL when available
 3. For local environments or when TLD isn't set, falls back to NativePHP backend
 4. The TLD is cached in the `environments.tld` database column
 
 **What uses direct API calls:**
+
 - Dashboard/Show: status, sites, config, worktrees, restart, PHP version, worktree unlink
 - Projects page: list, delete, rebuild, PHP version change, provision status
 - Services page: status, start/stop/restart (all and individual), logs
 - Workspaces: list, delete, workspace details, add/remove projects, linked packages
 
 **What still uses NativePHP backend:**
+
 - SSH connection testing (testConnection) - requires SSH
 - Environment provisioning - requires SSH
 - Config saving with TLD changes - requires local DNS resolver updates
@@ -146,42 +156,42 @@ Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
 - **CliUpdateService** (`app/Services/CliUpdateService.php`): Manages the local CLI installation at `~/.local/bin/orbit`.
 
 - **DnsResolverService** (`app/Services/DnsResolverService.php`): Manages macOS DNS resolver files in `/etc/resolver/`. Uses `expect` to spawn sudo with a PTY, enabling Touch ID authentication via `pam_tid.so`. Key methods:
-  - `updateResolver(Environment, tld)`: Creates/updates `/etc/resolver/{tld}` pointing to the environment's DNS
-  - `removeResolver(tld)`: Removes a resolver file when no longer needed
-  - `getManagedResolvers()`: Lists all resolver files managed by Launchpad
+    - `updateResolver(Environment, tld)`: Creates/updates `/etc/resolver/{tld}` pointing to the environment's DNS
+    - `removeResolver(tld)`: Removes a resolver file when no longer needed
+    - `getManagedResolvers()`: Lists all resolver files managed by Launchpad
 
 - **ProvisioningService** (`app/Services/ProvisioningService.php`): Provisions new environments with the complete Orbit stack. Handles these steps:
-  1. Clear old SSH host keys (prevents conflicts when environment is reset)
-  2. Test root SSH connection
-  3. Create `launchpad` user
-  4. Setup SSH key for launchpad user
-  5. Configure passwordless sudo
-  6. Secure SSH (disable password auth, disable root login)
-  7. Test launchpad user connection
-  8. Install Docker
-  9. Configure DNS (disable systemd-resolved, set to 1.1.1.1)
-  10. Add Ondřej PPA for PHP (Linux)
-  11. Install PHP-FPM versions (8.4, 8.5)
-  12. Configure PHP-FPM pools with Unix sockets
-  13. Install Caddy web server
-  14. Install orbit CLI from GitHub releases
-  15. Create directory structure (`~/projects`)
-  16. Initialize orbit stack
-  17. Configure Horizon as systemd service
-  18. Start orbit services
+    1. Clear old SSH host keys (prevents conflicts when environment is reset)
+    2. Test root SSH connection
+    3. Create `launchpad` user
+    4. Setup SSH key for launchpad user
+    5. Configure passwordless sudo
+    6. Secure SSH (disable password auth, disable root login)
+    7. Test launchpad user connection
+    8. Install Docker
+    9. Configure DNS (disable systemd-resolved, set to 1.1.1.1)
+    10. Add Ondřej PPA for PHP (Linux)
+    11. Install PHP-FPM versions (8.4, 8.5)
+    12. Configure PHP-FPM pools with Unix sockets
+    13. Install Caddy web server
+    14. Install orbit CLI from GitHub releases
+    15. Create directory structure (`~/projects`)
+    16. Initialize orbit stack
+    17. Configure Horizon as systemd service
+    18. Start orbit services
 
 ### Models
 
 - **Environment**: Represents a local or remote machine with launchpad installed
-  - Fields: name, host, user, port, is_local, is_default, orchestrator_url, metadata, last_connected_at
-  - Provisioning fields: status, provisioning_log, provisioning_error, provisioning_step, provisioning_total_steps
-  - Status values: `provisioning`, `active`, `error`
+    - Fields: name, host, user, port, is_local, is_default, orchestrator_url, metadata, last_connected_at
+    - Provisioning fields: status, provisioning_log, provisioning_error, provisioning_step, provisioning_total_steps
+    - Status values: `provisioning`, `active`, `error`
 
 - **Project**: Represents a project tracked across environments
-  - Fields: name, github_url
+    - Fields: name, github_url
 
 - **Deployment**: Links a project to an environment
-  - Fields: project_id, environment_id, status, local_path, site_url, orchestrator_id
+    - Fields: project_id, environment_id, status, local_path, site_url, orchestrator_id
 
 - **Setting**: Key-value store for app settings (editor preference, SSH keys, etc.)
 
@@ -199,16 +209,19 @@ Project creation uses an async workflow via the bundled web app API:
 6. **Desktop** refreshes project list to see new project
 
 **Architecture note:** The web app runs via PHP-FPM on the host and dispatches jobs to Horizon which also runs on the HOST as a system service. This is critical because:
+
 - CLI needs access to host filesystem (`~/projects/`)
 - Bun/Node need proper PATH on the host
 - PHP-FPM processes run as the `launchpad` user with full host access
 
 **Key files (remote server `~/projects/orbit-cli/web/`):**
+
 - `app/Http/Controllers/Api/ProjectController.php` - Dispatches CreateProjectJob
 - `app/Jobs/CreateProjectJob.php` - Runs CLI provision command via Horizon
 - `config/horizon.php` - Queue worker configuration (timeout: 120s)
 
 **Key files (CLI `~/projects/orbit-cli/`):**
+
 - `app/Commands/ProvisionCommand.php` - Actual provisioning logic
 
 **Status flow:** `provisioning` → `creating_repo` → `cloning` → `setting_up` → `installing_composer` → `installing_npm` → `building` → `finalizing` → `ready`
@@ -217,11 +230,13 @@ Project creation uses an async workflow via the bundled web app API:
 
 **Testing provisioning:**
 Use the `/test-provision` skill for step-by-step debugging, or run the test script:
+
 ```bash
 bash .claude/scripts/test-provision-flow.sh test-$(date +%s) --cleanup
 ```
 
 **Common issues:**
+
 - **Job times out**: Check Horizon timeout in `config/horizon.php` (should be 120s)
 - **Bun hangs**: CLI now uses `CI=1` and `--no-progress` flags to prevent hanging in non-TTY environments
 - **Project not appearing**: Check `~/.config/orbit/web/storage/logs/laravel.log`
@@ -230,8 +245,8 @@ bash .claude/scripts/test-provision-flow.sh test-$(date +%s) --cleanup
 ### External Integrations
 
 - **Editor Support**: Opens projects via SSH Remote extension
-  - URL format: `{editor}://vscode-remote/ssh-remote+user@host/path?windowId=_blank`
-  - Supported editors: Cursor, VS Code, VS Code Insiders, Windsurf, Antigravity, Zed
+    - URL format: `{editor}://vscode-remote/ssh-remote+user@host/path?windowId=_blank`
+    - Supported editors: Cursor, VS Code, VS Code Insiders, Windsurf, Antigravity, Zed
 
 - **Browser**: Uses `Shell::openExternal()` via `/open-external` route to open URLs in system browser
 
@@ -241,10 +256,10 @@ bash .claude/scripts/test-provision-flow.sh test-$(date +%s) --cleanup
 
 NativePHP maintains two separate SQLite databases:
 
-| Database | Connection | Used By | Location |
-|----------|------------|---------|----------|
-| `database/database.sqlite` | `sqlite` (default) | `php artisan` commands, tests | Project directory |
-| `database/nativephp.sqlite` | `nativephp` | Running desktop app (dev mode) | Project directory |
+| Database                    | Connection         | Used By                        | Location          |
+| --------------------------- | ------------------ | ------------------------------ | ----------------- |
+| `database/database.sqlite`  | `sqlite` (default) | `php artisan` commands, tests  | Project directory |
+| `database/nativephp.sqlite` | `nativephp`        | Running desktop app (dev mode) | Project directory |
 
 **Running Migrations:**
 
@@ -275,11 +290,13 @@ php artisan migrate --database=sqlite --database-path=database/nativephp.sqlite
 Then run: `php artisan migrate --database=nativephp_dev`
 
 **Common Issues:**
+
 - "No such column" or "No such table" errors in the app → The NativePHP database needs migration
 - `php artisan migrate --database=nativephp` fails with "connection not configured" → This is expected, use methods above
 - Data missing in app but exists in tests → The two databases are out of sync
 
 **When to restart the app:**
+
 - After adding new migrations (NativePHP runs them on startup)
 - After changing `.env` configuration
 - After modifying NativePHP config files
@@ -287,6 +304,7 @@ Then run: `php artisan migrate --database=nativephp_dev`
 ## Routes
 
 ### Environment Management
+
 - `GET /environments` - List all environments
 - `GET /environments/{environment}` - Show environment (or provisioning progress if status is `provisioning`)
 - `POST /environments/{environment}/test-connection` - Test SSH connection
@@ -296,17 +314,20 @@ Then run: `php artisan migrate --database=nativephp_dev`
 - `POST /environments/{environment}/php` - Change PHP version for a site
 
 ### Provisioning
+
 - `GET /provision` - Show provisioning form
 - `POST /provision` - Create environment and redirect to provisioning
 - `POST /provision/{environment}/run` - Start provisioning (called via AJAX)
 - `GET /provision/{environment}/status` - Poll provisioning status
 
 ### Worktrees
+
 - `GET /environments/{environment}/worktrees` - List all worktrees (auto-detected from git)
 - `POST /environments/{environment}/worktrees/unlink` - Remove worktree subdomain routing
 - `POST /environments/{environment}/worktrees/refresh` - Re-scan for new worktrees
 
 ### Projects
+
 - `GET /projects` - List all projects
 - `GET /projects/create` - Create project form
 - `GET /projects/{project}` - Show project with deployments
@@ -353,6 +374,7 @@ When an environment is deleted, the resolver file is cleaned up (if no other env
 The app automatically detects git worktrees created by vibekanban (or manually) and makes them available as subdomains.
 
 **How it works:**
+
 1. Worktrees are stored at `/var/tmp/vibe-kanban/worktrees/{task-id}/{project-name}/`
 2. Branches follow the pattern `vk/{task-id}` (e.g., `vk/0d16-update-homepage`)
 3. Detection runs via `git worktree list --porcelain` in each site directory
@@ -360,16 +382,19 @@ The app automatically detects git worktrees created by vibekanban (or manually) 
 5. Subdomain format: `{worktree-name}.{site-name}.{tld}` (e.g., `0d16-update-homepage.platform11-2026.ccc`)
 
 **CLI Commands (orbit-cli):**
+
 - `launchpad worktrees [site] --json` - List all worktrees
 - `launchpad worktree:unlink <site> <name> --json` - Remove worktree routing
 - `launchpad worktree:refresh --json` - Re-scan and auto-link new worktrees
 
 **Storage:**
+
 - Linked worktrees stored in `~/.config/orbit/worktrees.json`
 - Caddy config automatically regenerated to include worktree subdomains
 - PHP-FPM has direct access to worktree paths on the host filesystem
 
 **UI:**
+
 - Sites with worktrees show a badge with count
 - Click the arrow to expand and see worktree subdomains
 - Each worktree row has Open, Editor, and Unlink buttons
@@ -385,6 +410,7 @@ auth sufficient pam_tid.so
 Create it with: `sudo sh -c 'echo "auth sufficient pam_tid.so" > /etc/pam.d/sudo_local'`
 
 The expect script approach is necessary because:
+
 - NativePHP runs in a non-TTY context (no terminal)
 - `sudo -S` (stdin password) doesn't trigger Touch ID
 - `osascript` with administrator privileges shows a password dialog, not Touch ID
@@ -393,11 +419,13 @@ The expect script approach is necessary because:
 ## UI/Design Guidelines
 
 ### Tech Stack
+
 - **Frontend**: Vue 3 + TypeScript + Inertia.js
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide Vue Next
 
 ### Color Palette
+
 - **Background**: `bg-zinc-900` (page), `bg-zinc-800/30` (cards/rows)
 - **Borders**: `border-zinc-800` (outer), `border-zinc-700/50` (inner/subtle)
 - **Text**: `text-white` (primary), `text-zinc-400` (secondary), `text-zinc-500` (muted)
@@ -408,6 +436,7 @@ The expect script approach is necessary because:
 ### Page Layouts
 
 **Dashboard Pages** (Show.vue, Index pages):
+
 - Use card structure with outer border and inner content areas
 - Outer card: `border border-zinc-800 rounded-xl px-0.5 pt-4 pb-0.5`
 - Section header: `px-4 mb-4` with title and optional action button
@@ -415,6 +444,7 @@ The expect script approach is necessary because:
 - Content rows: `bg-zinc-800/30` with `space-y-px` for 1px gaps
 
 **Form Pages** (Create.vue, Edit.vue):
+
 - Simple layout with horizontal dividers, NO outer card border
 - Two-column grid: `grid grid-cols-2 gap-8 py-6`
 - Left column: Label + description
@@ -443,6 +473,7 @@ The expect script approach is necessary because:
 ```
 
 Key table patterns:
+
 - `border-separate` with `border-spacing: 0 2px` for row gaps
 - Header AND data rows have same `bg-zinc-800/30` background
 - First cell: `rounded-l-lg`, last cell: `rounded-r-lg`
@@ -475,7 +506,9 @@ Key table patterns:
 
 ```vue
 <span class="badge badge-zinc">Label</span>
-<span class="text-xs px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/20">Status</span>
+<span
+    class="text-xs px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/20"
+>Status</span>
 ```
 
 ### Loading States
@@ -485,16 +518,19 @@ Key table patterns:
 ```
 
 ### Icons
+
 - Standard size: `w-4 h-4`
 - Small (in buttons): `w-3.5 h-3.5`
 - Always import from `lucide-vue-next`
 
 ### Spacing
+
 - Section margin: `mb-6`
 - Inner padding: `p-5` or `px-4 py-3`
 - Gap between items: `gap-2` or `gap-3`
 
 ### Do NOT
+
 - Add emojis unless explicitly requested
 - Create new files unless necessary (prefer editing existing)
 - Over-engineer or add unnecessary abstractions
@@ -538,16 +574,17 @@ This desktop app works with two projects that live on the remote dev server. All
 └─────────────────────────┘         └──────────────────────────────────────┘
 ```
 
-| Project | Path | Purpose | Has Releases? |
-|---------|------|---------|---------------|
-| orbit-cli | `~/projects/orbit-cli/` | CLI tool for managing sites, Caddy, Docker | Yes - build phar, GitHub release |
-| orchestrator | `~/projects/orchestrator/` | Laravel API backend, MCP server for cross-project management | No - just deploy |
+| Project      | Path                       | Purpose                                                      | Has Releases?                    |
+| ------------ | -------------------------- | ------------------------------------------------------------ | -------------------------------- |
+| orbit-cli    | `~/projects/orbit-cli/`    | CLI tool for managing sites, Caddy, Docker                   | Yes - build phar, GitHub release |
+| orchestrator | `~/projects/orchestrator/` | Laravel API backend, MCP server for cross-project management | No - just deploy                 |
 
 ---
 
 ## Orchestrator Development
 
 The **orchestrator** is a Laravel backend that provides:
+
 - MCP tools for git operations, project management, task tracking
 - API endpoints called by the desktop app (via `orchestrator_url`)
 - Cross-project management functionality
@@ -569,6 +606,7 @@ php artisan waymaker:generate
 ```
 
 ### Key Patterns (from orchestrator CLAUDE.md)
+
 - **Actions** (`app/Actions/`) - Business logic with single `handle()` method
 - **Services** (`app/Services/`) - Infrastructure/API wrappers
 - **DTOs** (`app/Data/`) - Data transfer objects using spatie/laravel-data
@@ -602,6 +640,7 @@ php launchpad <command>
 The CLI is a Laravel Zero application. Build using Box (Laravel Zero uses Box under the hood).
 
 **Quick local update (no GitHub release):**
+
 ```bash
 ssh launchpad@ai
 cd ~/projects/orbit-cli
@@ -620,6 +659,7 @@ cp builds/orbit.phar ~/.local/bin/orbit
 After making changes to the CLI, publish a new release:
 
 **1. On the remote server - Build and release:**
+
 ```bash
 ssh launchpad@ai
 cd ~/projects/orbit-cli
@@ -636,6 +676,7 @@ gh release create v1.x.x builds/orbit.phar --title "v1.x.x" --notes "Changelog"
 ```
 
 **2. Update CLI on servers:**
+
 ```bash
 # On each server that runs launchpad (including the dev server)
 curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar
@@ -644,12 +685,12 @@ chmod +x ~/.local/bin/orbit
 
 ### Key CLI Paths (on remote server)
 
-| Path | Purpose |
-|------|---------|
-| `~/projects/orbit-cli/` | CLI source code - make changes here |
-| `~/projects/orbit-cli/app/Commands/` | CLI commands |
-| `~/projects/orbit-cli/builds/orbit.phar` | Built binary (after `app:build`) |
-| `~/.local/bin/orbit` | Installed CLI binary |
+| Path                                     | Purpose                             |
+| ---------------------------------------- | ----------------------------------- |
+| `~/projects/orbit-cli/`                  | CLI source code - make changes here |
+| `~/projects/orbit-cli/app/Commands/`     | CLI commands                        |
+| `~/projects/orbit-cli/builds/orbit.phar` | Built binary (after `app:build`)    |
+| `~/.local/bin/orbit`                     | Installed CLI binary                |
 
 ### How Desktop Communicates with CLI
 
@@ -660,10 +701,12 @@ For remote environments, the desktop app primarily uses **direct API calls** to 
 3. **Horizon** (systemd/launchd service on host) picks up the job and runs CLI command (e.g., `launchpad project:delete`)
 
 For operations that require SSH (provisioning, config changes with TLD), the NativePHP backend uses:
+
 - `LaunchpadService::executeCommand()` which runs CLI commands over SSH
 - Commands are executed as `launchpad <command> --json`
 
 **If you change CLI behavior**, you must:
+
 1. Make changes in `~/projects/orbit-cli/` on the remote server
 2. Build and release a new version
 3. Update the CLI on all servers that need the new version
@@ -684,12 +727,14 @@ php tests/e2e-desktop-flow-test.php
 ```
 
 **What it tests:**
+
 1. Creates a project via `POST /api/projects`
 2. Tracks provisioning broadcasts until `ready`
 3. Deletes via `DELETE /api/projects/{slug}`
 4. Tracks deletion broadcasts until `deleted`
 
 **Expected output:**
+
 ```
 Provision: provisioning -> creating_repo -> cloning -> ... -> ready
 Deletion:  deleting -> removing_orchestrator -> removing_files -> deleted
@@ -707,14 +752,14 @@ CLI (ReverbBroadcaster) -> Pusher HTTP API -> Reverb container -> Caddy -> WebSo
 ## Related Projects
 
 - **orbit-cli**: The command-line tool this app controls
-  - Source: `ssh launchpad@ai:~/projects/orbit-cli/`
-  - Releases: `https://github.com/nckrtl/orbit-cli/releases`
-  - Install/Update: `curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit`
+    - Source: `ssh launchpad@ai:~/projects/orbit-cli/`
+    - Releases: `https://github.com/nckrtl/orbit-cli/releases`
+    - Install/Update: `curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit`
 
 - **orchestrator**: Laravel API backend for cross-project management
-  - Source: `ssh launchpad@ai:~/projects/orchestrator/`
-  - Provides MCP tools for git, project, and task management
-  - Desktop connects via `orchestrator_url` setting
+    - Source: `ssh launchpad@ai:~/projects/orchestrator/`
+    - Provides MCP tools for git, project, and task management
+    - Desktop connects via `orchestrator_url` setting
 
 ## Known Issues
 

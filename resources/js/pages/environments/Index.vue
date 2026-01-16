@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import { Server, Loader2, AlertCircle, Trash2, Pencil, Eye } from 'lucide-vue-next';
+import { Button, Badge, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableEmpty } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -108,115 +109,121 @@ onMounted(() => {
     <div>
         <div class="flex justify-between items-center mb-8">
             <Heading title="Environments" />
-            <Link
-                href="/environments/create"
-                class="bg-lime-400 hover:bg-lime-300 text-zinc-950 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-                Add environment
-            </Link>
+            <Button as-child>
+                <Link href="/environments/create">
+                    Add environment
+                </Link>
+            </Button>
         </div>
 
-        <div>
-            <table class="table-catalyst">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th class="pl-6">Host</th>
-                        <th class="pl-6">Status</th>
-                        <th class="pl-6">Last connected</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="environment in environments" :key="environment.id">
-                        <td class="whitespace-nowrap">
-                            <div class="flex items-center">
-                                <span class="font-medium text-white">{{ environment.name }}</span>
-                                <!-- TLD Badge -->
-                                <span
-                                    v-if="getTld(environment.id)"
-                                    class="ml-2 badge font-mono"
-                                    :class="isConflict(environment.id) ? 'badge-red' : 'badge-zinc'"
-                                    :title="isConflict(environment.id)
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Host</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Last connected</TableHead>
+                    <TableHead class="text-right">Actions</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                <TableRow v-for="environment in environments" :key="environment.id">
+                    <TableCell class="whitespace-nowrap">
+                        <div class="flex items-center">
+                            <span class="font-medium text-foreground">{{ environment.name }}</span>
+                            <!-- TLD Badge -->
+                            <Badge
+                                v-if="getTld(environment.id)"
+                                class="ml-2 font-mono"
+                                :variant="isConflict(environment.id) ? 'destructive' : 'secondary'"
+                                :title="
+                                    isConflict(environment.id)
                                         ? `Warning: ${getConflictCount(environment.id)} environments use .${getTld(environment.id)} - this may cause DNS conflicts`
-                                        : ''"
-                                >
-                                    .{{ getTld(environment.id) }}
-                                </span>
-                                <span
-                                    v-if="environment.is_local"
-                                    class="ml-2 badge badge-lime"
-                                >
-                                    Local
-                                </span>
-                            </div>
-                        </td>
-                        <td class="pl-6 whitespace-nowrap text-zinc-400">
-                            <template v-if="environment.is_local">localhost</template>
-                            <template v-else>{{ environment.user }}@{{ environment.host }}:{{ environment.port }}</template>
-                        </td>
-                        <td class="pl-6 whitespace-nowrap">
-                            <!-- Provisioning Status -->
-                            <span
-                                v-if="environment.status === 'provisioning'"
-                                class="inline-flex items-center text-sm text-blue-400"
+                                        : ''
+                                "
                             >
-                                <Loader2 class="w-3.5 h-3.5 mr-2 animate-spin" />
-                                Provisioning ({{ environment.provisioning_step ?? 0 }}/{{ environment.provisioning_total_steps ?? 14 }})
-                            </span>
-                            <!-- Error Status -->
-                            <span
-                                v-else-if="environment.status === 'error'"
-                                class="inline-flex items-center text-sm text-red-400"
-                            >
-                                <AlertCircle class="w-3.5 h-3.5 mr-2" />
-                                Error
-                            </span>
-                            <!-- Active Status -->
-                            <span v-else class="inline-flex items-center text-sm text-lime-400">
-                                <span class="w-2 h-2 rounded-full bg-lime-400 mr-2"></span>
-                                Active
-                            </span>
-                        </td>
-                        <td class="pl-6 whitespace-nowrap text-zinc-400">
-                            {{ formatLastConnected(environment.last_connected_at) }}
-                        </td>
-                        <td class="whitespace-nowrap">
-                            <div class="flex items-center justify-end gap-1">
+                                .{{ getTld(environment.id) }}
+                            </Badge>
+                            <Badge v-if="environment.is_local" class="ml-2 bg-lime-400/10 text-lime-300 border-lime-400/20">
+                                Local
+                            </Badge>
+                        </div>
+                    </TableCell>
+                    <TableCell class="whitespace-nowrap text-muted-foreground">
+                        <template v-if="environment.is_local">localhost</template>
+                        <template v-else
+                            >{{ environment.user }}@{{ environment.host }}:{{
+                                environment.port
+                            }}</template
+                        >
+                    </TableCell>
+                    <TableCell class="whitespace-nowrap">
+                        <!-- Provisioning Status -->
+                        <span
+                            v-if="environment.status === 'provisioning'"
+                            class="inline-flex items-center text-sm text-blue-400"
+                        >
+                            <Loader2 class="w-3.5 h-3.5 mr-2 animate-spin" />
+                            Provisioning ({{ environment.provisioning_step ?? 0 }}/{{
+                                environment.provisioning_total_steps ?? 14
+                            }})
+                        </span>
+                        <!-- Error Status -->
+                        <span
+                            v-else-if="environment.status === 'error'"
+                            class="inline-flex items-center text-sm text-red-400"
+                        >
+                            <AlertCircle class="w-3.5 h-3.5 mr-2" />
+                            Error
+                        </span>
+                        <!-- Active Status -->
+                        <span v-else class="inline-flex items-center text-sm text-lime-400">
+                            <span class="w-2 h-2 rounded-full bg-lime-400 mr-2"></span>
+                            Active
+                        </span>
+                    </TableCell>
+                    <TableCell class="whitespace-nowrap text-muted-foreground">
+                        {{ formatLastConnected(environment.last_connected_at) }}
+                    </TableCell>
+                    <TableCell class="whitespace-nowrap text-right">
+                        <div class="flex items-center justify-end gap-1">
+                            <Button as-child variant="ghost" size="icon-sm">
                                 <Link
                                     :href="`/environments/${environment.id}`"
-                                    class="text-zinc-500 hover:text-white p-1.5 rounded transition-colors hover:bg-white/5"
                                     title="View"
                                 >
                                     <Eye class="w-4 h-4" />
                                 </Link>
+                            </Button>
+                            <Button as-child variant="ghost" size="icon-sm">
                                 <Link
                                     :href="`/environments/${environment.id}/edit`"
-                                    class="text-zinc-500 hover:text-white p-1.5 rounded transition-colors hover:bg-white/5"
                                     title="Edit"
                                 >
                                     <Pencil class="w-4 h-4" />
                                 </Link>
-                                <button
-                                    @click="deleteEnvironment(environment)"
-                                    class="text-zinc-500 hover:text-red-400 p-1.5 rounded transition-colors hover:bg-white/5"
-                                    title="Delete"
-                                >
-                                    <Trash2 class="w-4 h-4" />
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    <!-- Empty State -->
-                    <tr v-if="environments.length === 0">
-                        <td colspan="5" class="py-12 text-center">
-                            <Server class="w-12 h-12 mx-auto text-zinc-600 mb-4" />
-                            <p class="text-zinc-400 mb-2">No environments configured yet</p>
-                            <p class="text-sm text-zinc-500">Add a local or external environment to get started</p>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+                            </Button>
+                            <Button
+                                @click="deleteEnvironment(environment)"
+                                variant="ghost"
+                                size="icon-sm"
+                                class="text-muted-foreground hover:text-red-400"
+                                title="Delete"
+                            >
+                                <Trash2 class="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </TableCell>
+                </TableRow>
+                <!-- Empty State -->
+                <TableEmpty v-if="environments.length === 0" :colspan="5">
+                    <Server class="w-12 h-12 mx-auto text-zinc-600 mb-4" />
+                    <p class="text-zinc-400 mb-2">No environments configured yet</p>
+                    <p class="text-sm text-zinc-500">
+                        Add a local or external environment to get started
+                    </p>
+                </TableEmpty>
+            </TableBody>
+        </Table>
     </div>
 </template>

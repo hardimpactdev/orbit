@@ -17,6 +17,7 @@ You are an autonomous coding agent. Each iteration is a fresh context.
 ## Progress Format
 
 APPEND to progress.txt:
+
 ```
 ## [Date] - [Story ID]: [Title]
 **Changes:** [files changed]
@@ -27,6 +28,7 @@ APPEND to progress.txt:
 ## Stop Condition
 
 If ALL stories have `passes: true`:
+
 ```
 <promise>COMPLETE</promise>
 ```

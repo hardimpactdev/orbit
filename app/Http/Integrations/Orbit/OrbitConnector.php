@@ -43,6 +43,11 @@ class OrbitConnector extends Connector
         return [
             'timeout' => $this->timeout,
             'verify' => false, // Allow self-signed certificates
+            'curl' => [
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
+            ],
         ];
     }
 

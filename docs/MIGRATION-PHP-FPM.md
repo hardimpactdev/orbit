@@ -7,12 +7,14 @@
 This document outlines the completed migration from the FrankenPHP container-based architecture to PHP-FPM running directly on the host machine with Caddy as the web server.
 
 **Achieved Goals:**
+
 - Simplified architecture by removing dual-Caddy setup
 - Enabled direct CLI/Bun/git access from PHP processes
 - Supports both macOS and Linux with unified approach
 - Multi-PHP version support via FPM pools
 
 **Inspiration:** This migration adopts patterns from [Laravel Valet](https://github.com/laravel/valet), specifically:
+
 - Stub template pattern for FPM pool configuration ([PhpFpm.php](https://github.com/laravel/valet/blob/master/cli/Valet/PhpFpm.php))
 - Version normalization logic
 - Socket naming conventions
@@ -53,6 +55,7 @@ Valet is macOS-only and Nginx-based; we adapt these patterns for cross-platform 
 ```
 
 **Problems with current architecture:**
+
 1. Dual Caddy (external container + embedded in FrankenPHP) adds complexity
 2. PHP processes can't access host CLI tools without complex volume mounts
 3. Horizon needs elaborate PATH and binary mounts to work
@@ -95,6 +98,7 @@ Valet is macOS-only and Nginx-based; we adapt these patterns for cross-platform 
 ```
 
 **Benefits:**
+
 1. Single Caddy instance on host (no dual-Caddy)
 2. PHP-FPM has direct access to CLI, Bun, git, composer
 3. Horizon runs natively with full host access
@@ -107,29 +111,29 @@ Valet is macOS-only and Nginx-based; we adapt these patterns for cross-platform 
 
 ### Services Moving to Host
 
-| Service | Current | Target | Reason |
-|---------|---------|--------|--------|
-| **PHP** | FrankenPHP containers (3x) | PHP-FPM pools on host | Direct CLI/tool access |
-| **Caddy** | Container + embedded | Single binary on host | Direct FPM socket access |
-| **Horizon** | Container with mounts | systemd/launchd service | Native host access |
+| Service     | Current                    | Target                  | Reason                   |
+| ----------- | -------------------------- | ----------------------- | ------------------------ |
+| **PHP**     | FrankenPHP containers (3x) | PHP-FPM pools on host   | Direct CLI/tool access   |
+| **Caddy**   | Container + embedded       | Single binary on host   | Direct FPM socket access |
+| **Horizon** | Container with mounts      | systemd/launchd service | Native host access       |
 
 ### Services Staying Containerized
 
-| Service | Reason |
-|---------|--------|
-| **Postgres** | Data isolation, easy version management |
-| **Redis** | Simple service, container is fine |
-| **Mailpit** | Self-contained email testing |
-| **Reverb** | WebSocket server, no host interaction needed |
-| **dnsmasq** | Needs host network for port 53, but container is fine |
+| Service      | Reason                                                |
+| ------------ | ----------------------------------------------------- |
+| **Postgres** | Data isolation, easy version management               |
+| **Redis**    | Simple service, container is fine                     |
+| **Mailpit**  | Self-contained email testing                          |
+| **Reverb**   | WebSocket server, no host interaction needed          |
+| **dnsmasq**  | Needs host network for port 53, but container is fine |
 
 ### Services Being Removed
 
-| Service | Replacement |
-|---------|-------------|
-| FrankenPHP 8.3 container | PHP-FPM 8.3 pool |
-| FrankenPHP 8.4 container | PHP-FPM 8.4 pool |
-| FrankenPHP 8.5 container | PHP-FPM 8.5 pool |
+| Service                  | Replacement          |
+| ------------------------ | -------------------- |
+| FrankenPHP 8.3 container | PHP-FPM 8.3 pool     |
+| FrankenPHP 8.4 container | PHP-FPM 8.4 pool     |
+| FrankenPHP 8.5 container | PHP-FPM 8.5 pool     |
 | External Caddy container | Caddy binary on host |
 
 ---
@@ -139,6 +143,7 @@ Valet is macOS-only and Nginx-based; we adapt these patterns for cross-platform 
 ### Linux (Ubuntu/Debian)
 
 **PHP Installation via Ondřej Surý PPA:**
+
 ```bash
 # Add repository
 sudo add-apt-repository ppa:ondrej/php -y
@@ -165,17 +170,20 @@ done
 ```
 
 **Default socket locations:**
+
 - `/run/php/php8.4-fpm.sock`
 - `/run/php/php8.3-fpm.sock`
 - `/run/php/php8.2-fpm.sock`
 
 **Service management:**
+
 ```bash
 sudo systemctl start php8.4-fpm
 sudo systemctl enable php8.4-fpm
 ```
 
 **Caddy Installation:**
+
 ```bash
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -187,6 +195,7 @@ sudo apt install caddy
 ### macOS
 
 **Prerequisites: Homebrew**
+
 ```bash
 # Check if Homebrew is installed
 if ! command -v brew &> /dev/null; then
@@ -195,6 +204,7 @@ fi
 ```
 
 **PHP Installation via shivammathur/php tap:**
+
 ```bash
 brew tap shivammathur/php
 
@@ -213,6 +223,7 @@ brew services start php@8.5
 Homebrew PHP-FPM defaults to TCP ports. We'll create custom pool configs to use Unix sockets in a consistent location.
 
 **Caddy Installation:**
+
 ```bash
 brew install caddy
 brew services start caddy
@@ -257,11 +268,13 @@ class PhpManager
 #### 1.2 Create Platform Adapters
 
 **File:** `app/Services/Platform/LinuxAdapter.php`
+
 - Uses `apt` and Ondřej PPA
 - System sockets at `/run/php/`
 - Service management via `systemctl`
 
 **File:** `app/Services/Platform/MacAdapter.php`
+
 - Uses Homebrew + shivammathur/php
 - Custom sockets at `~/.config/orbit/php/`
 - Service management via `brew services`
@@ -271,6 +284,7 @@ class PhpManager
 Laravel Valet's [PhpFpm.php](https://github.com/laravel/valet/blob/master/cli/Valet/PhpFpm.php) uses a stub template pattern for FPM pool configuration. We adopt this pattern for consistency and maintainability.
 
 **Why stubs instead of hardcoded strings:**
+
 - Easier to read and modify
 - Consistent placeholder substitution
 - Can be versioned and tested independently
@@ -439,12 +453,12 @@ class PhpManager
 
 **Version normalization (from Valet):**
 
-| Input | Output |
-|-------|--------|
-| `8.4` | `84` |
-| `php8.4` | `84` |
-| `php@8.4` | `84` |
-| `84` | `84` |
+| Input     | Output |
+| --------- | ------ |
+| `8.4`     | `84`   |
+| `php8.4`  | `84`   |
+| `php@8.4` | `84`   |
+| `84`      | `84`   |
 
 This normalization is used for socket naming (`php84.sock`) and pool names (`[launchpad-84]`).
 
@@ -462,6 +476,7 @@ This normalization is used for socket naming (`php84.sock`) and pool names (`[la
 ```
 
 **New Caddyfile format:**
+
 ```caddyfile
 {
     local_certs
@@ -482,14 +497,17 @@ mysite.ccc {
 #### 1.4 Update DockerManager
 
 **Remove:**
+
 - `php-83`, `php-84`, `php-85` container management
 - `PhpComposeGenerator` service
 - FrankenPHP Dockerfile generation
 
 **Add:**
+
 - `caddy` container removal (Caddy moves to host)
 
 **Keep:**
+
 - `postgres`, `redis`, `mailpit`, `reverb`, `dns` containers
 
 #### 1.5 Create CaddyManager Service
@@ -497,6 +515,7 @@ mysite.ccc {
 **File:** `app/Services/CaddyManager.php`
 
 Manages host Caddy installation:
+
 ```php
 public function install(): bool;
 public function isInstalled(): bool;
@@ -514,6 +533,7 @@ public function validateConfig(): bool;
 **File:** `app/Services/HorizonManager.php`
 
 Manages Horizon as a system service:
+
 ```php
 public function install(): bool;  // Create systemd/launchd service
 public function start(): bool;
@@ -528,16 +548,16 @@ public function getLogs(int $lines = 100): string;
 
 #### 1.7 Update Commands
 
-| Command | Changes |
-|---------|---------|
-| `init` | Install PHP-FPM + Caddy instead of building FrankenPHP images |
-| `start` | Start PHP-FPM pools + host Caddy + containers |
-| `stop` | Stop PHP-FPM pools + host Caddy + containers |
-| `restart` | Restart all services |
-| `status` | Show PHP-FPM pool status + host Caddy + containers |
-| `rebuild` | Remove (no more image building) |
-| `php` | Update FPM pool config instead of container routing |
-| `logs` | Add Caddy/PHP-FPM log viewing |
+| Command   | Changes                                                       |
+| --------- | ------------------------------------------------------------- |
+| `init`    | Install PHP-FPM + Caddy instead of building FrankenPHP images |
+| `start`   | Start PHP-FPM pools + host Caddy + containers                 |
+| `stop`    | Stop PHP-FPM pools + host Caddy + containers                  |
+| `restart` | Restart all services                                          |
+| `status`  | Show PHP-FPM pool status + host Caddy + containers            |
+| `rebuild` | Remove (no more image building)                               |
+| `php`     | Update FPM pool config instead of container routing           |
+| `logs`    | Add Caddy/PHP-FPM log viewing                                 |
 
 #### 1.8 Update Configuration
 
@@ -570,6 +590,7 @@ public function getLogs(int $lines = 100): string;
 **Remove step:** "Install PHP via php.new (herd-lite)"
 
 **Add steps:**
+
 1. Add Ondřej PPA (Linux only)
 2. Install PHP versions via package manager
 3. Configure PHP-FPM pools
@@ -577,6 +598,7 @@ public function getLogs(int $lines = 100): string;
 5. Configure Caddy
 
 **Updated provisioning flow:**
+
 ```
 1. Clear old SSH host keys
 2. Test root SSH connection
@@ -648,9 +670,9 @@ env[HOME] = /home/launchpad
 
 #### 3.2 Socket Path Convention
 
-| Platform | Socket Path |
-|----------|-------------|
-| Linux (system) | `/run/php/php8.4-fpm.sock` |
+| Platform       | Socket Path                      |
+| -------------- | -------------------------------- |
+| Linux (system) | `/run/php/php8.4-fpm.sock`       |
 | Linux (custom) | `~/.config/orbit/php/php84.sock` |
 | macOS (custom) | `~/.config/orbit/php/php84.sock` |
 
@@ -779,47 +801,47 @@ public function isUsingFrankenPhp(): bool
 
 ### orbit-cli (Remote Server)
 
-| Action | File/Directory |
-|--------|----------------|
-| **CREATE** | `app/Services/PhpManager.php` |
-| **CREATE** | `app/Services/Platform/LinuxAdapter.php` |
-| **CREATE** | `app/Services/Platform/MacAdapter.php` |
+| Action     | File/Directory                                          |
+| ---------- | ------------------------------------------------------- |
+| **CREATE** | `app/Services/PhpManager.php`                           |
+| **CREATE** | `app/Services/Platform/LinuxAdapter.php`                |
+| **CREATE** | `app/Services/Platform/MacAdapter.php`                  |
 | **CREATE** | `app/Services/Platform/PlatformAdapter.php` (interface) |
-| **CREATE** | `app/Services/CaddyManager.php` |
-| **CREATE** | `app/Services/HorizonManager.php` |
-| **CREATE** | `app/Commands/MigrateToFpmCommand.php` |
-| **CREATE** | `stubs/php-fpm-pool.conf.stub` (Valet-inspired) |
-| **CREATE** | `stubs/horizon-systemd.service.stub` |
-| **CREATE** | `stubs/horizon-launchd.plist.stub` |
-| **CREATE** | `stubs/caddyfile-site.stub` (optional) |
-| **MODIFY** | `app/Services/CaddyfileGenerator.php` |
-| **MODIFY** | `app/Services/DockerManager.php` |
-| **MODIFY** | `app/Commands/InitCommand.php` |
-| **MODIFY** | `app/Commands/StartCommand.php` |
-| **MODIFY** | `app/Commands/StopCommand.php` |
-| **MODIFY** | `app/Commands/StatusCommand.php` |
-| **MODIFY** | `app/Commands/PhpCommand.php` |
-| **DELETE** | `app/Services/PhpComposeGenerator.php` |
-| **DELETE** | `~/.config/orbit/php/docker-compose.yml` |
-| **DELETE** | `~/.config/orbit/php/Dockerfile.php*` |
-| **DELETE** | `~/.config/orbit/caddy/docker-compose.yml` |
+| **CREATE** | `app/Services/CaddyManager.php`                         |
+| **CREATE** | `app/Services/HorizonManager.php`                       |
+| **CREATE** | `app/Commands/MigrateToFpmCommand.php`                  |
+| **CREATE** | `stubs/php-fpm-pool.conf.stub` (Valet-inspired)         |
+| **CREATE** | `stubs/horizon-systemd.service.stub`                    |
+| **CREATE** | `stubs/horizon-launchd.plist.stub`                      |
+| **CREATE** | `stubs/caddyfile-site.stub` (optional)                  |
+| **MODIFY** | `app/Services/CaddyfileGenerator.php`                   |
+| **MODIFY** | `app/Services/DockerManager.php`                        |
+| **MODIFY** | `app/Commands/InitCommand.php`                          |
+| **MODIFY** | `app/Commands/StartCommand.php`                         |
+| **MODIFY** | `app/Commands/StopCommand.php`                          |
+| **MODIFY** | `app/Commands/StatusCommand.php`                        |
+| **MODIFY** | `app/Commands/PhpCommand.php`                           |
+| **DELETE** | `app/Services/PhpComposeGenerator.php`                  |
+| **DELETE** | `~/.config/orbit/php/docker-compose.yml`                |
+| **DELETE** | `~/.config/orbit/php/Dockerfile.php*`                   |
+| **DELETE** | `~/.config/orbit/caddy/docker-compose.yml`              |
 
 ### orbit-desktop (Local)
 
-| Action | File |
-|--------|------|
+| Action     | File                                   |
+| ---------- | -------------------------------------- |
 | **MODIFY** | `app/Services/ProvisioningService.php` |
-| **MODIFY** | `app/Services/SshService.php` |
+| **MODIFY** | `app/Services/SshService.php`          |
 | **MODIFY** | `CLAUDE.md` (update architecture docs) |
 
 ### Config Files (Created by CLI)
 
-| File | Purpose |
-|------|---------|
-| `~/.config/orbit/php/php82-fpm.conf` | PHP 8.2 FPM pool |
-| `~/.config/orbit/php/php83-fpm.conf` | PHP 8.3 FPM pool |
-| `~/.config/orbit/php/php84-fpm.conf` | PHP 8.4 FPM pool |
-| `~/.config/orbit/caddy/Caddyfile` | Main Caddy config |
+| File                                            | Purpose                 |
+| ----------------------------------------------- | ----------------------- |
+| `~/.config/orbit/php/php82-fpm.conf`            | PHP 8.2 FPM pool        |
+| `~/.config/orbit/php/php83-fpm.conf`            | PHP 8.3 FPM pool        |
+| `~/.config/orbit/php/php84-fpm.conf`            | PHP 8.4 FPM pool        |
+| `~/.config/orbit/caddy/Caddyfile`               | Main Caddy config       |
 | `/etc/systemd/system/launchpad-horizon.service` | Horizon service (Linux) |
 
 ---
@@ -829,47 +851,47 @@ public function isUsingFrankenPhp(): bool
 ### Unit Tests
 
 1. **PhpManager tests**
-   - Version detection
-   - Socket path generation
-   - Pool configuration
+    - Version detection
+    - Socket path generation
+    - Pool configuration
 
 2. **CaddyfileGenerator tests**
-   - FPM socket directive generation
-   - Multi-site configuration
-   - Worktree subdomain generation
+    - FPM socket directive generation
+    - Multi-site configuration
+    - Worktree subdomain generation
 
 3. **Platform adapter tests**
-   - Linux package commands
-   - macOS Homebrew commands
+    - Linux package commands
+    - macOS Homebrew commands
 
 ### Integration Tests
 
 1. **Full init flow**
-   - Fresh install on Linux VM
-   - Fresh install on macOS
+    - Fresh install on Linux VM
+    - Fresh install on macOS
 
 2. **Site creation**
-   - Create site, verify Caddy routes to correct FPM pool
-   - Change PHP version, verify switch works
+    - Create site, verify Caddy routes to correct FPM pool
+    - Change PHP version, verify switch works
 
 3. **Service management**
-   - Start/stop/restart all services
-   - Individual PHP-FPM pool control
+    - Start/stop/restart all services
+    - Individual PHP-FPM pool control
 
 4. **Migration test**
-   - Migrate existing FrankenPHP setup to FPM
-   - Verify all sites still work
+    - Migrate existing FrankenPHP setup to FPM
+    - Verify all sites still work
 
 ### E2E Tests
 
 1. **Project provisioning**
-   - Create project via desktop app
-   - Verify Horizon processes job
-   - Verify site accessible
+    - Create project via desktop app
+    - Verify Horizon processes job
+    - Verify site accessible
 
 2. **PHP version switching**
-   - Change PHP version via desktop
-   - Verify site uses new version
+    - Change PHP version via desktop
+    - Verify site uses new version
 
 ---
 
@@ -900,22 +922,26 @@ launchpad migrate:rollback
 All phases have been completed:
 
 ### Core Infrastructure (Completed)
+
 - [x] Created PhpManager service with platform adapters
 - [x] Created CaddyManager service
 - [x] Updated CaddyfileGenerator for FPM
 
 ### Command Updates (Completed)
+
 - [x] Updated init command
 - [x] Updated start/stop/restart commands
 - [x] Updated status command
 - [x] Created migrate:to-fpm command
 
 ### Horizon & Desktop (Completed)
+
 - [x] Created HorizonManager service
 - [x] Updated desktop ProvisioningService
 - [x] Updated SSH PATH configuration
 
 ### Testing & Documentation (Completed)
+
 - [x] Unit tests written
 - [x] Integration tests on Linux VM
 - [x] Updated CLAUDE.md files
@@ -926,18 +952,18 @@ All phases have been completed:
 ## Decisions Made
 
 1. **Custom FPM pools vs system pools?**
-   - **Decision:** Custom pools for consistency
-   - Sockets at `~/.config/orbit/php/php{version}.sock`
+    - **Decision:** Custom pools for consistency
+    - Sockets at `~/.config/orbit/php/php{version}.sock`
 
 2. **Caddy data directory?**
-   - **Decision:** User directory for non-root operation
-   - Data at `~/.config/orbit/caddy/data`
+    - **Decision:** User directory for non-root operation
+    - Data at `~/.config/orbit/caddy/data`
 
 3. **PHP version for Horizon?**
-   - **Decision:** Uses default PHP version from config
+    - **Decision:** Uses default PHP version from config
 
 4. **Keep dnsmasq in container?**
-   - **Decision:** Keep in container (host network mode)
+    - **Decision:** Keep in container (host network mode)
 
 ---
 

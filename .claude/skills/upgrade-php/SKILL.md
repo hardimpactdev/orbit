@@ -105,6 +105,7 @@ Wait for containers to become healthy (may take 30-60 seconds on first build).
 ### 7. Update Desktop App (Optional)
 
 The desktop app dynamically detects available PHP versions from running Docker containers, so no code changes are needed. The new version will appear automatically in:
+
 - Settings page: Default PHP version dropdown
 - Projects page: Per-project PHP version dropdown
 
@@ -119,24 +120,29 @@ To add PHP 8.6:
 ## Troubleshooting
 
 ### Image Not Found
+
 If `dunglas/frankenphp:php{VERSION}` doesn't exist, the PHP version may not be released yet. Check https://hub.docker.com/r/dunglas/frankenphp/tags for available versions.
 
 ### Container Build Fails
+
 Check Docker build logs:
+
 ```bash
 ssh launchpad@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
 ```
 
 ### Container Not Starting
+
 Check container logs:
+
 ```bash
 ssh launchpad@ai "docker logs orbit-php-{VERSION_NO_DOT}"
 ```
 
 ## Files Modified
 
-| Location | File | Change |
-|----------|------|--------|
-| Remote config | `~/.config/orbit/php/Dockerfile.php{XX}` | Created |
-| Remote CLI | `~/projects/orbit-cli/app/Services/PhpComposeGenerator.php` | Add service |
-| Remote CLI | `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php` | Add reload |
+| Location      | File                                                        | Change      |
+| ------------- | ----------------------------------------------------------- | ----------- |
+| Remote config | `~/.config/orbit/php/Dockerfile.php{XX}`                    | Created     |
+| Remote CLI    | `~/projects/orbit-cli/app/Services/PhpComposeGenerator.php` | Add service |
+| Remote CLI    | `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php`  | Add reload  |

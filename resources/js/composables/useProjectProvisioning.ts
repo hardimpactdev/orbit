@@ -192,10 +192,12 @@ export function useProjectProvisioning(environmentId: number) {
 
         // Subscribe to project-specific channel for deletion events
         if (echo) {
-            echo.channel(`project.${slug}`)
-                .listen('.project.deletion.status', (event: DeletionEvent) => {
+            echo.channel(`project.${slug}`).listen(
+                '.project.deletion.status',
+                (event: DeletionEvent) => {
                     handleDeletionEvent(event);
-                });
+                },
+            );
         }
     }
 
@@ -236,10 +238,12 @@ export function useProjectProvisioning(environmentId: number) {
 
         // Also subscribe to project-specific channel
         if (echo) {
-            echo.channel(`project.${slug}`)
-                .listen('.project.provision.status', (event: ProvisionEvent) => {
+            echo.channel(`project.${slug}`).listen(
+                '.project.provision.status',
+                (event: ProvisionEvent) => {
                     handleProvisionEvent(event);
-                });
+                },
+            );
         }
     }
 

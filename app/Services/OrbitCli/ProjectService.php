@@ -42,7 +42,7 @@ class ProjectService
     /**
      * Create a new project via the CLI.
      *
-     * @param  array  $options  Array containing: name, template (optional), is_template (optional), directory (optional), visibility (optional), db_driver, session_driver, cache_driver, queue_driver
+     * @param  array  $options  Array containing: name, org (optional), template (optional), is_template (optional), directory (optional), visibility (optional), db_driver, session_driver, cache_driver, queue_driver
      */
     public function createProject(Environment $environment, array $options): array
     {
@@ -51,6 +51,11 @@ class ProjectService
             'name' => $options['name'],
             'visibility' => $options['visibility'] ?? 'private',
         ];
+
+        // GitHub organization to create repo under (defaults to user's personal account if not set)
+        if (! empty($options['org'])) {
+            $payload['org'] = $options['org'];
+        }
 
         // Handle template vs clone
         if (! empty($options['template'])) {
@@ -273,6 +278,41 @@ class ProjectService
         }
 
         return null;
+    }
+
+    /**
+     * Get GitHub organizations the user belongs to.
+     * Returns array of orgs with login and avatar_url.
+     *
+     * @return array{success: bool, data?: array<array{login: string, avatar_url: string}>, error?: string}
+     */
+    public function getGitHubOrgs(Environment $environment): array
+    {
+        // Query gh CLI for user's organizations
+        $command = "gh api user/orgs --jq '[.[] | {login: .login, avatar_url: .avatar_url}]' 2>/dev/null";
+
+        if ($environment->is_local) {
+            $result = Process::timeout(10)->run($command);
+            if ($result->successful() && trim($result->output())) {
+                $orgs = json_decode(trim($result->output()), true);
+                if (is_array($orgs)) {
+                    return ['success' => true, 'data' => $orgs];
+                }
+            }
+
+            return ['success' => true, 'data' => []];
+        }
+
+        // For remote environments, use SSH
+        $result = $this->ssh->execute($environment, $command, 10);
+        if ($result['success'] && ! empty($result['output'])) {
+            $orgs = json_decode(trim((string) $result['output']), true);
+            if (is_array($orgs)) {
+                return ['success' => true, 'data' => $orgs];
+            }
+        }
+
+        return ['success' => true, 'data' => []];
     }
 
     /**

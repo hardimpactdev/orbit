@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { ExternalLink, Zap } from 'lucide-vue-next';
+import { Button, Badge } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -26,8 +27,10 @@ const testConnection = async () => {
         const response = await fetch(`/environments/${props.environment.id}/test-connection`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                'Accept': 'application/json',
+                'X-CSRF-TOKEN':
+                    document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                    '',
+                Accept: 'application/json',
             },
         });
 
@@ -47,45 +50,37 @@ const statusColor = {
 </script>
 
 <template>
-    <div class="border border-zinc-800 rounded-lg p-4 hover:border-zinc-700 transition-colors">
+    <div class="border border-border rounded-lg p-4 hover:border-muted-foreground/30 transition-colors">
         <div class="flex justify-between items-start mb-3">
             <div>
-                <h3 class="font-semibold text-white">{{ environment.name }}</h3>
-                <p class="text-sm text-zinc-500">
+                <h3 class="font-semibold text-foreground">{{ environment.name }}</h3>
+                <p class="text-sm text-muted-foreground">
                     <template v-if="environment.is_local">Local</template>
                     <template v-else>{{ environment.user }}@{{ environment.host }}</template>
                 </p>
             </div>
             <div class="flex items-center space-x-2">
-                <span
-                    v-if="environment.is_default"
-                    class="badge badge-blue"
-                >
-                    Default
-                </span>
-                <span
-                    class="w-3 h-3 rounded-full transition-colors"
-                    :class="statusColor[status]"
-                />
+                <Badge v-if="environment.is_default" class="bg-blue-500/15 text-blue-400 border-blue-400/20">Default</Badge>
+                <span class="w-3 h-3 rounded-full transition-colors" :class="statusColor[status]" />
             </div>
         </div>
 
         <div class="flex gap-2">
-            <Link
-                :href="`/environments/${environment.id}`"
-                class="flex-1 text-center py-2 text-sm bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 hover:text-white flex items-center justify-center transition-colors"
-            >
-                <ExternalLink class="w-4 h-4 mr-2" />
-                View
-            </Link>
-            <button
+            <Button as-child variant="secondary" class="flex-1">
+                <Link :href="`/environments/${environment.id}`">
+                    <ExternalLink class="w-4 h-4 mr-2" />
+                    View
+                </Link>
+            </Button>
+            <Button
                 @click="testConnection"
                 :disabled="status === 'testing'"
-                class="flex-1 text-center py-2 text-sm bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 hover:text-white disabled:opacity-50 flex items-center justify-center transition-colors"
+                variant="secondary"
+                class="flex-1"
             >
                 <Zap class="w-4 h-4 mr-2" />
                 Test
-            </button>
+            </Button>
         </div>
     </div>
 </template>

@@ -13,7 +13,7 @@ import { toast } from 'vue-sonner';
  */
 const api: AxiosInstance = axios.create({
     headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
     },
@@ -66,7 +66,8 @@ api.interceptors.response.use(
         } else if (error.request) {
             // Request made but no response received
             toast.error('Connection Error', {
-                description: 'Could not connect to the server. Please check if the environment is running.',
+                description:
+                    'Could not connect to the server. Please check if the environment is running.',
             });
         } else {
             // Request setup error
@@ -76,7 +77,7 @@ api.interceptors.response.use(
         }
 
         return Promise.reject(error);
-    }
+    },
 );
 
 /**
@@ -98,7 +99,7 @@ export { api };
  */
 export async function apiRequest<T = unknown>(
     config: AxiosRequestConfig,
-    showErrors = true
+    showErrors = true,
 ): Promise<T | null> {
     try {
         const response = await api.request<T>(config);

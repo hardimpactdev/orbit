@@ -2,7 +2,18 @@
 import { ref, onMounted, computed } from 'vue';
 import Modal from './Modal.vue';
 import { useServicesStore } from '@/stores/services';
-import { Loader2, Plus, Server, Database, Mail, Globe, Wifi, Container, Check } from 'lucide-vue-next';
+import {
+    Loader2,
+    Plus,
+    Server,
+    Database,
+    Mail,
+    Globe,
+    Wifi,
+    Container,
+    Check,
+} from 'lucide-vue-next';
+import { Button } from '@hardimpactdev/craft-ui';
 
 interface ServiceTemplate {
     name: string;
@@ -45,7 +56,7 @@ const servicesByCategory = computed(() => {
         utility: [],
     };
 
-    availableServices.value.forEach(service => {
+    availableServices.value.forEach((service) => {
         if (result[service.category]) {
             result[service.category].push(service);
         } else {
@@ -90,11 +101,16 @@ const enableService = async (serviceName: string) => {
 
 const getIcon = (category: string) => {
     switch (category) {
-        case 'core': return Globe;
-        case 'database': return Database;
-        case 'php': return Container;
-        case 'utility': return Mail;
-        default: return Server;
+        case 'core':
+            return Globe;
+        case 'database':
+            return Database;
+        case 'php':
+            return Container;
+        case 'utility':
+            return Mail;
+        default:
+            return Server;
     }
 };
 
@@ -103,7 +119,6 @@ onMounted(() => {
         fetchAvailable();
     }
 });
-
 </script>
 
 <template>
@@ -122,7 +137,9 @@ onMounted(() => {
             <div v-else class="space-y-8">
                 <template v-for="category in categories" :key="category.key">
                     <div v-if="servicesByCategory[category.key].length > 0">
-                        <h4 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 px-1">
+                        <h4
+                            class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 px-1"
+                        >
                             {{ category.label }}
                         </h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -133,20 +150,31 @@ onMounted(() => {
                             >
                                 <div>
                                     <div class="flex items-start justify-between mb-2">
-                                        <div class="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-lime-400 group-hover:bg-lime-400/10 transition-colors">
-                                            <component :is="getIcon(service.category)" class="w-5 h-5" />
+                                        <div
+                                            class="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-lime-400 group-hover:bg-lime-400/10 transition-colors"
+                                        >
+                                            <component
+                                                :is="getIcon(service.category)"
+                                                class="w-5 h-5"
+                                            />
                                         </div>
-                                        <span v-if="service.required" class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">
+                                        <span
+                                            v-if="service.required"
+                                            class="text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700"
+                                        >
                                             Required
                                         </span>
                                     </div>
                                     <h5 class="text-white font-medium mb-1">{{ service.label }}</h5>
-                                    <p class="text-sm text-zinc-500 line-clamp-2 mb-4">{{ service.description }}</p>
+                                    <p class="text-sm text-zinc-500 line-clamp-2 mb-4">
+                                        {{ service.description }}
+                                    </p>
                                 </div>
-                                <button
+                                <Button
                                     @click="enableService(service.name)"
                                     :disabled="enabling !== null"
-                                    class="w-full btn btn-secondary py-2 justify-center"
+                                    variant="secondary"
+                                    class="w-full justify-center"
                                 >
                                     <template v-if="enabling === service.name">
                                         <Loader2 class="w-4 h-4 animate-spin mr-2" />
@@ -156,7 +184,7 @@ onMounted(() => {
                                         <Plus class="w-4 h-4 mr-2" />
                                         Add Service
                                     </template>
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     </div>

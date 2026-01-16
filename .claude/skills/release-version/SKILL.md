@@ -37,6 +37,7 @@ This creates `builds/orbit.phar`.
 ### 4. Determine Version Number
 
 Follow semantic versioning (MAJOR.MINOR.PATCH):
+
 - **MAJOR**: Breaking changes
 - **MINOR**: New features, backwards compatible
 - **PATCH**: Bug fixes, backwards compatible

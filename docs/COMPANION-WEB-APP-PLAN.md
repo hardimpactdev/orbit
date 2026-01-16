@@ -5,6 +5,7 @@ This document captures the complete plan for implementing a Laravel companion we
 ## Problem Statement
 
 The current async project creation flow is complex and fragile:
+
 - CLI uses `at now` to spawn background processes
 - Status broadcasts via Reverb from background process
 - Error handling is difficult
@@ -13,6 +14,7 @@ The current async project creation flow is complex and fragile:
 ## Solution Overview
 
 Ship a Laravel companion web app alongside the CLI that:
+
 - Handles async operations via proper Laravel queues
 - Uses Horizon for job management and auto-restart
 - Broadcasts status updates via Reverb (already working)
@@ -60,6 +62,7 @@ orbit-cli/
 ```
 
 **Why same repo?**
+
 - CLI and web app stay in sync
 - Single version, single release
 - No coordination between separate repos
@@ -88,18 +91,18 @@ After `launchpad init`, the following services run:
 
 ### Containers (Docker)
 
-| Service | Purpose | Restart Policy |
-|---------|---------|----------------|
-| FrankenPHP | Serves web app + all user projects | `unless-stopped` |
-| Redis | Queues, cache, Horizon data, failed jobs | `unless-stopped` |
-| Reverb | WebSocket broadcasting | `unless-stopped` |
-| DNS | `*.{tld}` resolution | `unless-stopped` |
-| Postgres | Database for user projects (optional but included) | `unless-stopped` |
+| Service    | Purpose                                            | Restart Policy   |
+| ---------- | -------------------------------------------------- | ---------------- |
+| FrankenPHP | Serves web app + all user projects                 | `unless-stopped` |
+| Redis      | Queues, cache, Horizon data, failed jobs           | `unless-stopped` |
+| Reverb     | WebSocket broadcasting                             | `unless-stopped` |
+| DNS        | `*.{tld}` resolution                               | `unless-stopped` |
+| Postgres   | Database for user projects (optional but included) | `unless-stopped` |
 
 ### Host Processes
 
-| Process | Purpose | Management |
-|---------|---------|------------|
+| Process | Purpose                      | Management        |
+| ------- | ---------------------------- | ----------------- |
 | Horizon | Queue worker, job management | Cron-based ensure |
 
 ## Horizon - Queue Management
@@ -116,6 +119,7 @@ After `launchpad init`, the following services run:
 **Horizon runs on the HOST, not in a container.**
 
 Why? Jobs need to call `launchpad` CLI commands, which need access to:
+
 - Docker socket
 - Host filesystem
 - Caddy configs
@@ -154,6 +158,7 @@ private function isHorizonRunning(): bool
 ```
 
 **Why this works:**
+
 - No Redis config duplication
 - Handles authentication automatically
 - Tests the actual thing (Horizon working), not a proxy
@@ -191,21 +196,23 @@ public function handle()
 
 ### Handles All Recovery Scenarios
 
-| Scenario | What Happens |
-|----------|--------------|
-| Server reboot | Cron runs within 1 min, starts everything |
-| Horizon crashes | Cron detects, restarts Horizon |
-| Container crashes | Docker restart policy handles it |
+| Scenario            | What Happens                                     |
+| ------------------- | ------------------------------------------------ |
+| Server reboot       | Cron runs within 1 min, starts everything        |
+| Horizon crashes     | Cron detects, restarts Horizon                   |
+| Container crashes   | Docker restart policy handles it                 |
 | Redis not ready yet | Horizon fails to start, cron retries next minute |
 
 ### Race Condition Handling
 
 After reboot, there's a dependency chain:
+
 ```
 Docker daemon → Redis container → Horizon
 ```
 
 The ensure command handles this gracefully:
+
 1. Docker not ready → skip, try next minute
 2. Containers starting → start them, continue
 3. Horizon can't connect to Redis → fails fast
@@ -286,12 +293,14 @@ REVERB_SCHEME=https
 ### No Database Required
 
 The companion web app is stateless:
+
 - Jobs stored in Redis
 - Failed jobs tracked by Horizon in Redis
 - No persistent data to manage
 - App files can be replaced anytime
 
 **Benefits:**
+
 - No migrations to run
 - No database backups needed
 - Simple updates (just overwrite files)
@@ -299,12 +308,12 @@ The companion web app is stateless:
 
 ### What's in Redis
 
-| Data | Purpose |
-|------|---------|
-| Pending jobs | Queue waiting to be processed |
-| Active jobs | Currently being processed |
-| Failed jobs | Horizon's failure tracking |
-| Horizon metrics | Dashboard data |
+| Data            | Purpose                       |
+| --------------- | ----------------------------- |
+| Pending jobs    | Queue waiting to be processed |
+| Active jobs     | Currently being processed     |
+| Failed jobs     | Horizon's failure tracking    |
+| Horizon metrics | Dashboard data                |
 
 If Redis is flushed, job history is lost. For a dev tool, this is acceptable.
 
@@ -319,6 +328,7 @@ If Redis is flushed, job history is lost. For a dev tool, this is acceptable.
 ### FrankenPHP Configuration
 
 During `launchpad init`, FrankenPHP/Caddy is configured to serve:
+
 - `orbit.{tld}` → `~/.config/orbit/web/public`
 - `*.{tld}` → User projects as usual
 
@@ -367,15 +377,16 @@ class CreateProjectJob implements ShouldQueue
 
 ### Why This Works
 
-| Scenario | What Happens |
-|----------|--------------|
-| Step fails | catch block broadcasts `failed`, re-throws |
+| Scenario         | What Happens                               |
+| ---------------- | ------------------------------------------ |
+| Step fails       | catch block broadcasts `failed`, re-throws |
 | Unexpected crash | `failed()` method broadcasts automatically |
-| Success | broadcasts `ready` |
+| Success          | broadcasts `ready`                         |
 
 ### Desktop Already Handles This
 
 The existing `useProjectProvisioning.ts` composable:
+
 - Listens for `failed` status
 - Displays error message
 - Has polling fallback if WebSocket fails
@@ -495,10 +506,10 @@ class ProjectController extends Controller
 
 ### What Changes
 
-| Current | New |
-|---------|-----|
+| Current                                 | New                            |
+| --------------------------------------- | ------------------------------ |
 | SSH → CLI → `at now` background process | HTTP → Web app API → Queue job |
-| Complex, fragile | Standard Laravel patterns |
+| Complex, fragile                        | Standard Laravel patterns      |
 
 ### What Stays the Same
 
@@ -510,6 +521,7 @@ class ProjectController extends Controller
 ### URL Discovery
 
 Desktop already knows the environment's TLD. The web app URL is always:
+
 ```
 https://orbit.{tld}
 ```
@@ -536,6 +548,7 @@ if ($request->header('Authorization') !== 'Bearer ' . config('launchpad.api_toke
 ```
 
 Token would be:
+
 - Generated on `launchpad init`
 - Stored in `~/.config/orbit/api_token`
 - Desktop retrieves it and includes in requests
@@ -550,6 +563,7 @@ Token would be:
 ### Cron Job Ownership
 
 The ensure cron runs as `launchpad` user:
+
 - Has Docker group membership
 - Owns the web app files
 - Can run Horizon
@@ -591,6 +605,7 @@ tail -f ~/.config/orbit/logs/horizon.log
 ## Summary
 
 This plan provides:
+
 - **Clean separation**: CLI for commands, web app for async
 - **Reliable queuing**: Laravel + Horizon, battle-tested
 - **Auto-recovery**: Cron-based ensure handles crashes and reboots

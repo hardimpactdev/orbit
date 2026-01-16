@@ -97,6 +97,7 @@ Route::prefix('environments/{environment}')->name('environments.')->group(functi
     Route::get('projects/{projectSlug}/provision-status', [EnvironmentController::class, 'provisionStatus'])->name('projects.provision-status');
     Route::post('template-defaults', [EnvironmentController::class, 'templateDefaults'])->name('template-defaults');
     Route::get('github-user', [EnvironmentController::class, 'githubUser'])->name('github-user');
+    Route::get('github-orgs', [EnvironmentController::class, 'githubOrgs'])->name('github-orgs');
     Route::post('github-repo-exists', [EnvironmentController::class, 'githubRepoExists'])->name('github-repo-exists');
     Route::get('linear-teams', [EnvironmentController::class, 'linearTeams'])->name('linear-teams');
 

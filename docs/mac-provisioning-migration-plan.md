@@ -93,40 +93,40 @@ public function handle(): int
 
 ### Mac Setup Steps (15 steps)
 
-| Step | Name | Description |
-|------|------|-------------|
-| 1 | Detect system | Verify macOS, check architecture (Apple Silicon) |
-| 2 | Check/Install Homebrew | Install if missing via official script |
-| 3 | Check/Install OrbStack | Install via `brew install --cask orbstack` |
-| 4 | Add PHP tap | `brew tap shivammathur/php` |
-| 5 | Install PHP versions | `brew install shivammathur/php/php@8.4` etc |
-| 6 | Install Caddy | `brew install caddy` |
-| 7 | Install support tools | Bun, Composer if missing |
-| 8 | Create directories | `~/.config/orbit/`, `~/projects/` |
-| 9 | Configure PHP-FPM | Generate pool configs, create symlinks |
-| 10 | Configure Caddy | Generate Caddyfile, setup system import |
-| 11 | Configure DNS | Smart detection, create `/etc/resolver/{tld}` |
-| 12 | Start PHP-FPM | `brew services start php@{version}` |
-| 13 | Start Caddy | `brew services start caddy` |
-| 14 | Init Docker services | Create network, start postgres/redis/mailpit/reverb/dns |
-| 15 | Install Horizon | Generate launchd plist, load service |
+| Step | Name                   | Description                                             |
+| ---- | ---------------------- | ------------------------------------------------------- |
+| 1    | Detect system          | Verify macOS, check architecture (Apple Silicon)        |
+| 2    | Check/Install Homebrew | Install if missing via official script                  |
+| 3    | Check/Install OrbStack | Install via `brew install --cask orbstack`              |
+| 4    | Add PHP tap            | `brew tap shivammathur/php`                             |
+| 5    | Install PHP versions   | `brew install shivammathur/php/php@8.4` etc             |
+| 6    | Install Caddy          | `brew install caddy`                                    |
+| 7    | Install support tools  | Bun, Composer if missing                                |
+| 8    | Create directories     | `~/.config/orbit/`, `~/projects/`                       |
+| 9    | Configure PHP-FPM      | Generate pool configs, create symlinks                  |
+| 10   | Configure Caddy        | Generate Caddyfile, setup system import                 |
+| 11   | Configure DNS          | Smart detection, create `/etc/resolver/{tld}`           |
+| 12   | Start PHP-FPM          | `brew services start php@{version}`                     |
+| 13   | Start Caddy            | `brew services start caddy`                             |
+| 14   | Init Docker services   | Create network, start postgres/redis/mailpit/reverb/dns |
+| 15   | Install Horizon        | Generate launchd plist, load service                    |
 
 ### Linux Setup Steps (12 steps)
 
-| Step | Name | Description |
-|------|------|-------------|
-| 1 | Detect system | Verify Linux, check distro |
-| 2 | Check/Install Docker | Install via official script if missing |
-| 3 | Add Ondřej PPA | `add-apt-repository ppa:ondrej/php` |
-| 4 | Install PHP-FPM | `apt install php8.x-fpm` with extensions |
-| 5 | Install Caddy | Add repo, `apt install caddy` |
-| 6 | Install support tools | Bun, Composer if missing |
-| 7 | Create directories | `~/.config/orbit/`, `~/projects/` |
-| 8 | Configure PHP-FPM | Generate pool configs, symlink |
-| 9 | Configure Caddy | Generate Caddyfile |
-| 10 | Start PHP-FPM | `systemctl start php8.x-fpm` |
-| 11 | Start Caddy | `systemctl start caddy` |
-| 12 | Install Horizon | Generate systemd unit, enable service |
+| Step | Name                  | Description                              |
+| ---- | --------------------- | ---------------------------------------- |
+| 1    | Detect system         | Verify Linux, check distro               |
+| 2    | Check/Install Docker  | Install via official script if missing   |
+| 3    | Add Ondřej PPA        | `add-apt-repository ppa:ondrej/php`      |
+| 4    | Install PHP-FPM       | `apt install php8.x-fpm` with extensions |
+| 5    | Install Caddy         | Add repo, `apt install caddy`            |
+| 6    | Install support tools | Bun, Composer if missing                 |
+| 7    | Create directories    | `~/.config/orbit/`, `~/projects/`        |
+| 8    | Configure PHP-FPM     | Generate pool configs, symlink           |
+| 9    | Configure Caddy       | Generate Caddyfile                       |
+| 10   | Start PHP-FPM         | `systemctl start php8.x-fpm`             |
+| 11   | Start Caddy           | `systemctl start caddy`                  |
+| 12   | Install Horizon       | Generate systemd unit, enable service    |
 
 ### JSON Progress Output
 
@@ -147,6 +147,7 @@ When `--json` flag is used, output one JSON object per line:
 ```
 
 Error output:
+
 ```json
 {"type":"step","step":5,"total":15,"name":"Installing PHP","status":"error","error":"Failed to install PHP 8.5: brew returned exit code 1"}
 {"type":"complete","success":false,"error":"Setup failed at step 5"}
@@ -261,6 +262,7 @@ app/Commands/
 ### Minimal Changes Required
 
 The desktop app just needs to:
+
 1. Invoke `launchpad setup --json`
 2. Parse JSON lines from stdout
 3. Update UI with progress
@@ -369,7 +371,7 @@ const localChecklistItems = [
 ];
 
 const checklistItems = computed(() =>
-    props.server.is_local ? localChecklistItems : remoteChecklistItems
+    props.server.is_local ? localChecklistItems : remoteChecklistItems,
 );
 ```
 
@@ -399,19 +401,20 @@ const checklistItems = computed(() =>
 
 Remove redundant Mac-specific files from desktop app (now handled by CLI):
 
-| File | Status |
-|------|--------|
-| `app/Services/MacPhpFpmService.php` | Remove |
-| `app/Services/MacBrewService.php` | Remove |
-| `app/Services/MacHorizonService.php` | Remove |
-| `app/Services/CaddyfileGenerator.php` | Remove |
+| File                                           | Status |
+| ---------------------------------------------- | ------ |
+| `app/Services/MacPhpFpmService.php`            | Remove |
+| `app/Services/MacBrewService.php`              | Remove |
+| `app/Services/MacHorizonService.php`           | Remove |
+| `app/Services/CaddyfileGenerator.php`          | Remove |
 | `app/Console/Commands/MigrateToFpmCommand.php` | Remove |
-| `app/Console/Commands/DoctorCommand.php` | Remove |
-| `app/Console/Commands/StatusCommand.php` | Remove |
-| `resources/stubs/mac-fpm-pool.stub` | Remove |
-| `resources/stubs/horizon-launchd.plist.stub` | Remove |
+| `app/Console/Commands/DoctorCommand.php`       | Remove |
+| `app/Console/Commands/StatusCommand.php`       | Remove |
+| `resources/stubs/mac-fpm-pool.stub`            | Remove |
+| `resources/stubs/horizon-launchd.plist.stub`   | Remove |
 
 **Keep:**
+
 - `app/Services/DnsResolverService.php` - Creates `/etc/resolver/` files on the Mac where desktop runs
 
 ### Phase 4: Release
@@ -442,11 +445,11 @@ php launchpad setup --json
 1. Create new local environment in desktop app
 2. Observe progress UI updates
 3. Verify all services running:
-   ```bash
-   brew services list | grep -E 'php|caddy'
-   launchctl list | grep horizon
-   docker ps
-   ```
+    ```bash
+    brew services list | grep -E 'php|caddy'
+    launchctl list | grep horizon
+    docker ps
+    ```
 4. Test DNS: `dig orbit.test @127.0.0.1`
 5. Open https://orbit.test
 
@@ -454,15 +457,15 @@ php launchpad setup --json
 
 ## Key Design Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| **CLI owns all provisioning logic** | Desktop app stays simple, CLI can be used standalone |
+| Decision                              | Rationale                                                       |
+| ------------------------------------- | --------------------------------------------------------------- |
+| **CLI owns all provisioning logic**   | Desktop app stays simple, CLI can be used standalone            |
 | **Unified `launchpad setup` command** | Auto-detects platform, no need for `setup:mac` vs `setup:linux` |
-| **JSON output format** | Enables any client (desktop, CI, scripts) to track progress |
-| **OrbStack over Docker Desktop** | Better performance on Mac, but falls back to Docker Desktop |
-| **Idempotent steps** | Safe to re-run, checks before each action |
-| **Simple sudo calls** | Let macOS handle auth naturally (Touch ID if configured) |
-| **Smart Herd detection** | Avoids TLD conflicts, suggests alternatives |
+| **JSON output format**                | Enables any client (desktop, CI, scripts) to track progress     |
+| **OrbStack over Docker Desktop**      | Better performance on Mac, but falls back to Docker Desktop     |
+| **Idempotent steps**                  | Safe to re-run, checks before each action                       |
+| **Simple sudo calls**                 | Let macOS handle auth naturally (Touch ID if configured)        |
+| **Smart Herd detection**              | Avoids TLD conflicts, suggests alternatives                     |
 
 ---
 

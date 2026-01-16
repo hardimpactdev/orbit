@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import { ChevronLeft, AlertTriangle } from 'lucide-vue-next';
+import { Button, Input, Label } from '@hardimpactdev/craft-ui';
 
 interface Environment {
     id: number;
@@ -87,9 +88,11 @@ const saveTldConfig = async (): Promise<{ success: boolean; error?: string }> =>
         const response = await fetch(`/environments/${props.server.id}/config`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '',
+                'X-CSRF-TOKEN':
+                    document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ||
+                    '',
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
+                Accept: 'application/json',
             },
             body: JSON.stringify({
                 paths: currentConfig.value.paths || [],
@@ -137,7 +140,10 @@ onMounted(() => {
 
     <div>
         <div class="mb-6">
-            <Link href="/servers" class="text-zinc-400 hover:text-white flex items-center transition-colors text-sm">
+            <Link
+                href="/servers"
+                class="text-zinc-400 hover:text-white flex items-center transition-colors text-sm"
+            >
                 <ChevronLeft class="w-4 h-4 mr-1" />
                 Back to Environments
             </Link>
@@ -148,15 +154,11 @@ onMounted(() => {
         <form @submit.prevent="submit" class="mt-8 max-w-lg">
             <div class="space-y-6">
                 <div>
-                    <label for="name" class="block text-sm font-medium text-zinc-400 mb-2">Name</label>
-                    <input
-                        v-model="form.name"
-                        type="text"
-                        id="name"
-                        required
-                        class="w-full"
-                    />
-                    <p v-if="form.errors.name" class="mt-2 text-sm text-red-400">{{ form.errors.name }}</p>
+                    <Label for="name" class="text-muted-foreground mb-2">Name</Label>
+                    <Input v-model="form.name" type="text" id="name" required class="w-full" />
+                    <p v-if="form.errors.name" class="mt-2 text-sm text-red-400">
+                        {{ form.errors.name }}
+                    </p>
                 </div>
 
                 <div class="flex items-center">
@@ -166,59 +168,50 @@ onMounted(() => {
                         id="is_local"
                         class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-lime-400 focus:ring-lime-400/20 focus:ring-offset-0"
                     />
-                    <label for="is_local" class="ml-2 text-sm text-zinc-400">
+                    <Label for="is_local" class="ml-2 text-muted-foreground">
                         This is a local environment
-                    </label>
+                    </Label>
                 </div>
 
                 <!-- Remote fields -->
                 <div v-show="!form.is_local" class="space-y-6">
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label for="host" class="block text-sm font-medium text-zinc-400 mb-2">Host</label>
-                            <input
-                                v-model="form.host"
-                                type="text"
-                                id="host"
-                                class="w-full"
-                            />
-                            <p v-if="form.errors.host" class="mt-2 text-sm text-red-400">{{ form.errors.host }}</p>
+                            <Label for="host" class="text-muted-foreground mb-2">Host</Label>
+                            <Input v-model="form.host" type="text" id="host" class="w-full" />
+                            <p v-if="form.errors.host" class="mt-2 text-sm text-red-400">
+                                {{ form.errors.host }}
+                            </p>
                         </div>
 
                         <div>
-                            <label for="port" class="block text-sm font-medium text-zinc-400 mb-2">Port</label>
-                            <input
-                                v-model="form.port"
-                                type="number"
-                                id="port"
-                                class="w-full"
-                            />
-                            <p v-if="form.errors.port" class="mt-2 text-sm text-red-400">{{ form.errors.port }}</p>
+                            <Label for="port" class="text-muted-foreground mb-2">Port</Label>
+                            <Input v-model="form.port" type="number" id="port" class="w-full" />
+                            <p v-if="form.errors.port" class="mt-2 text-sm text-red-400">
+                                {{ form.errors.port }}
+                            </p>
                         </div>
                     </div>
 
                     <div>
-                        <label for="user" class="block text-sm font-medium text-zinc-400 mb-2">SSH User</label>
-                        <input
-                            v-model="form.user"
-                            type="text"
-                            id="user"
-                            class="w-full"
-                        />
-                        <p v-if="form.errors.user" class="mt-2 text-sm text-red-400">{{ form.errors.user }}</p>
+                        <Label for="user" class="text-muted-foreground mb-2">SSH User</Label>
+                        <Input v-model="form.user" type="text" id="user" class="w-full" />
+                        <p v-if="form.errors.user" class="mt-2 text-sm text-red-400">
+                            {{ form.errors.user }}
+                        </p>
                     </div>
                 </div>
 
                 <!-- TLD Configuration -->
-                <div class="pt-6 border-t border-zinc-800">
-                    <h3 class="text-sm font-medium text-white mb-4">DNS Configuration</h3>
+                <div class="pt-6 border-t border-border">
+                    <h3 class="text-sm font-medium text-foreground mb-4">DNS Configuration</h3>
                     <div>
-                        <label for="tld" class="block text-sm font-medium text-zinc-400 mb-2">
+                        <Label for="tld" class="text-muted-foreground mb-2">
                             TLD (Top-Level Domain)
-                        </label>
+                        </Label>
                         <div class="flex items-center">
-                            <span class="text-zinc-500 mr-1">.</span>
-                            <input
+                            <span class="text-muted-foreground mr-1">.</span>
+                            <Input
                                 v-model="tld"
                                 type="text"
                                 id="tld"
@@ -226,34 +219,33 @@ onMounted(() => {
                                 class="w-32 font-mono"
                             />
                         </div>
-                        <p class="mt-2 text-sm text-zinc-500">
-                            Sites will be accessible at <span class="font-mono text-zinc-400">sitename.{{ tldPreview }}</span>
+                        <p class="mt-2 text-sm text-muted-foreground">
+                            Sites will be accessible at
+                            <span class="font-mono text-foreground">sitename.{{ tldPreview }}</span>
                         </p>
-                        <p v-if="tldLoading" class="mt-2 text-sm text-zinc-500">
+                        <p v-if="tldLoading" class="mt-2 text-sm text-muted-foreground">
                             Loading current TLD...
                         </p>
                         <p v-if="hasConflict" class="mt-2 text-sm text-amber-400 flex items-center">
                             <AlertTriangle class="w-4 h-4 mr-1" />
-                            Another environment is using .{{ tldPreview }} - this may cause DNS conflicts
+                            Another environment is using .{{ tldPreview }} - this may cause DNS
+                            conflicts
                         </p>
                     </div>
                 </div>
             </div>
 
             <div class="mt-8 flex gap-3">
-                <button
+                <Button
                     type="submit"
                     :disabled="form.processing"
-                    class="btn btn-secondary disabled:opacity-50"
+                    variant="secondary"
                 >
                     Save Changes
-                </button>
-                <Link
-                    href="/servers"
-                    class="btn btn-plain"
-                >
-                    Cancel
-                </Link>
+                </Button>
+                <Button as-child variant="ghost">
+                    <Link href="/servers">Cancel</Link>
+                </Button>
             </div>
         </form>
     </div>

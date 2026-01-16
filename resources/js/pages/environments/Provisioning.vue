@@ -37,15 +37,13 @@ let isProvisioning = false;
 let lastLogLength = 0;
 
 const progress = computed(() => {
-    return totalSteps.value > 0
-        ? Math.round((currentStep.value / totalSteps.value) * 100)
-        : 0;
+    return totalSteps.value > 0 ? Math.round((currentStep.value / totalSteps.value) * 100) : 0;
 });
 
 const isError = computed(() => status.value === 'error');
 
 const currentStepText = computed(() => {
-    const steps = log.value.filter(e => e.step);
+    const steps = log.value.filter((e) => e.step);
     return steps.length > 0 ? steps[steps.length - 1].step : 'Starting...';
 });
 
@@ -77,7 +75,7 @@ const getChecklistStatus = (itemStep: number) => {
     if (currentStep.value >= itemStep) return 'completed';
     // If we're past the previous checkpoint but not at this one yet, show spinner
     const items = checklistItems.value;
-    const prevItem = items.filter(i => i.step < itemStep).pop();
+    const prevItem = items.filter((i) => i.step < itemStep).pop();
     if (prevItem && currentStep.value >= prevItem.step) return 'in-progress';
     if (currentStep.value > 0) return 'pending';
     return 'pending';
@@ -91,7 +89,9 @@ async function startProvisioning() {
         await fetch(`/provision/${props.server.id}/run`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '',
+                'X-CSRF-TOKEN':
+                    document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ||
+                    '',
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ ssh_public_key: props.sshPublicKey }),
@@ -205,7 +205,9 @@ onUnmounted(() => {
                         {{ isError ? 'Provisioning Failed' : 'Setting up Environment' }}
                     </h3>
                     <p class="text-gray-500 dark:text-gray-400">
-                        {{ isError ? error : 'Installing the Orbit stack on the remote machine...' }}
+                        {{
+                            isError ? error : 'Installing the Orbit stack on the remote machine...'
+                        }}
                     </p>
                 </div>
             </div>
@@ -226,7 +228,10 @@ onUnmounted(() => {
             </div>
 
             <!-- Current Step -->
-            <div v-if="!isError" class="flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 mb-4">
+            <div
+                v-if="!isError"
+                class="flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 mb-4"
+            >
                 <Loader2 class="w-4 h-4 mr-2 animate-spin" />
                 <span>{{ currentStepText }}</span>
             </div>
@@ -237,15 +242,33 @@ onUnmounted(() => {
                 class="bg-gray-100 dark:bg-gray-900 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-sm"
             >
                 <template v-for="(entry, index) in log" :key="index">
-                    <div v-if="entry.step" class="flex items-center" :class="index === log.filter(e => e.step).length - 1 && !isError ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'">
-                        <Loader2 v-if="index === log.filter(e => e.step).length - 1 && !isError && status === 'provisioning'" class="w-4 h-4 mr-2 flex-shrink-0 animate-spin" />
+                    <div
+                        v-if="entry.step"
+                        class="flex items-center"
+                        :class="
+                            index === log.filter((e) => e.step).length - 1 && !isError
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-green-600 dark:text-green-400'
+                        "
+                    >
+                        <Loader2
+                            v-if="
+                                index === log.filter((e) => e.step).length - 1 &&
+                                !isError &&
+                                status === 'provisioning'
+                            "
+                            class="w-4 h-4 mr-2 flex-shrink-0 animate-spin"
+                        />
                         <Check v-else class="w-4 h-4 mr-2 flex-shrink-0" />
                         {{ entry.step }}
                     </div>
                     <div v-else-if="entry.info" class="text-gray-500 dark:text-gray-400 pl-6">
                         {{ entry.info }}
                     </div>
-                    <div v-else-if="entry.error" class="flex items-center text-red-600 dark:text-red-400">
+                    <div
+                        v-else-if="entry.error"
+                        class="flex items-center text-red-600 dark:text-red-400"
+                    >
                         <X class="w-4 h-4 mr-2 flex-shrink-0" />
                         {{ entry.error }}
                     </div>
@@ -274,13 +297,19 @@ onUnmounted(() => {
         <!-- What's Being Installed -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-                {{ server.is_local ? 'What\'s being installed (Mac)' : 'What\'s being installed' }}
+                {{ server.is_local ? "What's being installed (Mac)" : "What's being installed" }}
             </h3>
             <ul class="space-y-2 text-gray-600 dark:text-gray-400">
                 <li v-for="item in checklistItems" :key="item.step" class="flex items-center">
                     <span class="mr-2">
-                        <Check v-if="getChecklistStatus(item.step) === 'completed'" class="w-5 h-5 text-green-500" />
-                        <Loader2 v-else-if="getChecklistStatus(item.step) === 'in-progress'" class="w-5 h-5 text-blue-500 animate-spin" />
+                        <Check
+                            v-if="getChecklistStatus(item.step) === 'completed'"
+                            class="w-5 h-5 text-green-500"
+                        />
+                        <Loader2
+                            v-else-if="getChecklistStatus(item.step) === 'in-progress'"
+                            class="w-5 h-5 text-blue-500 animate-spin"
+                        />
                         <div v-else class="w-5 h-5 rounded-full border-2 border-gray-300" />
                     </span>
                     {{ item.label }}

@@ -76,7 +76,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
             :class="collapsed ? 'justify-center' : ''"
             :title="collapsed ? 'Add Environment' : undefined"
         >
-            <div class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-dashed border-zinc-600">
+            <div
+                class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-dashed border-zinc-600"
+            >
                 <Plus class="w-4 h-4 text-zinc-500" />
             </div>
             <template v-if="!collapsed">
@@ -92,12 +94,16 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
             :class="collapsed ? 'justify-center' : ''"
             :title="collapsed ? displayName : undefined"
         >
-            <div class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+            <div
+                class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0"
+            >
                 <Monitor v-if="currentEnvironment?.is_local" class="w-4 h-4 text-zinc-400" />
                 <Server v-else class="w-4 h-4 text-zinc-400" />
             </div>
             <template v-if="!collapsed">
-                <span class="flex-1 text-sm font-medium text-white truncate">{{ displayName }}</span>
+                <span class="flex-1 text-sm font-medium text-white truncate">{{
+                    displayName
+                }}</span>
                 <ChevronDown
                     class="w-4 h-4 text-zinc-500 transition-transform"
                     :class="{ 'rotate-180': isOpen }"
@@ -127,7 +133,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
                         @click="selectEnvironment(env)"
                         class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
                     >
-                        <div class="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                        <div
+                            class="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center flex-shrink-0"
+                        >
                             <Monitor v-if="env.is_local" class="w-3.5 h-3.5 text-zinc-400" />
                             <Server v-else class="w-3.5 h-3.5 text-zinc-400" />
                         </div>

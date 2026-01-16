@@ -9,6 +9,7 @@ This plan migrates the local Mac development environment from the current setup 
 ## Current State (Remote Server - Completed)
 
 The Ubuntu VPS (ai) is now running:
+
 - **PHP-FPM**: 8.4 and 8.5 pools with Unix sockets
 - **Caddy**: Host binary (systemd service)
 - **Horizon**: systemd service
@@ -119,6 +120,7 @@ launchpad migrate:to-fpm --force
 ```
 
 **What the CLI creates:**
+
 - Pool configs at `/opt/homebrew/etc/php/8x/php-fpm.d/launchpad-8x.conf`
 - Sockets at `~/.config/orbit/php/php8x.sock`
 - Logs at `~/.config/orbit/logs/php8x-fpm.log`
@@ -164,16 +166,16 @@ curl -sk https://your-site.test/
 
 ## Key Differences: Linux vs macOS
 
-| Component | Linux (Ubuntu) | macOS |
-|-----------|----------------|-------|
-| PHP Source | Ondřej PPA (`apt`) | shivammathur/php (`brew`) |
-| PHP-FPM Service | `systemctl` | `brew services` |
-| Caddy Service | `systemctl` | `brew services` |
-| Horizon Service | systemd unit file | launchd plist |
-| Default User | `launchpad` | Your username |
-| PHP Binary Path | `/usr/bin/php8.x` | `/opt/homebrew/opt/php@8.x/bin/php` |
-| Socket Permissions | `launchpad:launchpad` | `$USER:staff` |
-| Pool Config Dir | `/etc/php/8.x/fpm/pool.d/` | `/opt/homebrew/etc/php/8.x/php-fpm.d/` |
+| Component          | Linux (Ubuntu)             | macOS                                  |
+| ------------------ | -------------------------- | -------------------------------------- |
+| PHP Source         | Ondřej PPA (`apt`)         | shivammathur/php (`brew`)              |
+| PHP-FPM Service    | `systemctl`                | `brew services`                        |
+| Caddy Service      | `systemctl`                | `brew services`                        |
+| Horizon Service    | systemd unit file          | launchd plist                          |
+| Default User       | `launchpad`                | Your username                          |
+| PHP Binary Path    | `/usr/bin/php8.x`          | `/opt/homebrew/opt/php@8.x/bin/php`    |
+| Socket Permissions | `launchpad:launchpad`      | `$USER:staff`                          |
+| Pool Config Dir    | `/etc/php/8.x/fpm/pool.d/` | `/opt/homebrew/etc/php/8.x/php-fpm.d/` |
 
 ---
 
