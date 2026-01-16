@@ -23,14 +23,14 @@ The Ubuntu VPS (ai) is now running:
 │                                                                  │
 │   ┌─────────────────┐     ┌─────────────────────────────────┐   │
 │   │  Caddy (host)   │────▶│ PHP-FPM Pools (Homebrew)        │   │
-│   │  brew services  │     │  ~/.config/launchpad/php/       │   │
+│   │  brew services  │     │  ~/.config/orbit/php/       │   │
 │   │                 │     │  ├── php85.sock                 │   │
 │   └─────────────────┘     │  ├── php84.sock                 │   │
 │                           │  └── php83.sock                 │   │
 │                           └─────────────────────────────────┘   │
 │                                                                  │
 │   ┌─────────────────┐     ┌─────────────────┐                   │
-│   │ Horizon (host)  │     │ Launchpad CLI   │                   │
+│   │ Horizon (host)  │     │ Orbit CLI   │                   │
 │   │    launchd      │     │ ~/.local/bin    │                   │
 │   └─────────────────┘     └─────────────────┘                   │
 │                                                                  │
@@ -53,7 +53,7 @@ The Ubuntu VPS (ai) is now running:
 
 - Homebrew installed
 - Docker Desktop running
-- Launchpad CLI installed at `~/.local/bin/launchpad`
+- Orbit CLI installed at `~/.local/bin/orbit`
 
 ---
 
@@ -88,14 +88,14 @@ brew install caddy
 caddy version
 ```
 
-### Phase 3: Update Launchpad CLI
+### Phase 3: Update Orbit CLI
 
 Ensure the local CLI is updated to support the PHP-FPM architecture:
 
 ```bash
 # Update CLI from GitHub releases
-curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar
-chmod +x ~/.local/bin/launchpad
+curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar
+chmod +x ~/.local/bin/orbit
 ```
 
 ### Phase 4: Run Migration Command
@@ -120,10 +120,10 @@ launchpad migrate:to-fpm --force
 
 **What the CLI creates:**
 - Pool configs at `/opt/homebrew/etc/php/8x/php-fpm.d/launchpad-8x.conf`
-- Sockets at `~/.config/launchpad/php/php8x.sock`
-- Logs at `~/.config/launchpad/logs/php8x-fpm.log`
-- Horizon plist at `~/Library/LaunchAgents/com.launchpad.horizon.plist`
-- Caddyfile at `~/.config/launchpad/caddy/Caddyfile`
+- Sockets at `~/.config/orbit/php/php8x.sock`
+- Logs at `~/.config/orbit/logs/php8x-fpm.log`
+- Horizon plist at `~/Library/LaunchAgents/com.orbit.horizon.plist`
+- Caddyfile at `~/.config/orbit/caddy/Caddyfile`
 
 ### Phase 5: Trust Local CA Certificate
 
@@ -154,7 +154,7 @@ launchpad status
 #   mailpit: running (docker)
 
 # Verify sockets are created
-ls -la ~/.config/launchpad/php/*.sock
+ls -la ~/.config/orbit/php/*.sock
 
 # Test a site
 curl -sk https://your-site.test/
@@ -186,7 +186,7 @@ curl -sk https://your-site.test/
 tail -f /opt/homebrew/var/log/php-fpm.log
 
 # Check pool-specific logs
-tail -f ~/.config/launchpad/logs/php85-fpm.log
+tail -f ~/.config/orbit/logs/php85-fpm.log
 
 # Check if service is running
 brew services list | grep php
@@ -202,7 +202,7 @@ brew services restart php@8.5
 
 ```bash
 # Ensure socket has correct permissions
-chmod 660 ~/.config/launchpad/php/*.sock
+chmod 660 ~/.config/orbit/php/*.sock
 
 # Add your user to the socket group if needed
 # (Usually not needed on macOS with staff group)
@@ -215,7 +215,7 @@ chmod 660 ~/.config/launchpad/php/*.sock
 tail -f /opt/homebrew/var/log/caddy.log
 
 # Verify socket exists
-ls -la ~/.config/launchpad/php/php85.sock
+ls -la ~/.config/orbit/php/php85.sock
 
 # Check PHP-FPM is running
 pgrep -f php-fpm
@@ -225,20 +225,20 @@ pgrep -f php-fpm
 
 ```bash
 # Plist location
-ls -la ~/Library/LaunchAgents/com.launchpad.horizon.plist
+ls -la ~/Library/LaunchAgents/com.orbit.horizon.plist
 
 # Check launchd status
 launchctl list | grep horizon
 
 # Manual load/unload
-launchctl unload ~/Library/LaunchAgents/com.launchpad.horizon.plist
-launchctl load -w ~/Library/LaunchAgents/com.launchpad.horizon.plist
+launchctl unload ~/Library/LaunchAgents/com.orbit.horizon.plist
+launchctl load -w ~/Library/LaunchAgents/com.orbit.horizon.plist
 
 # View logs
-tail -f ~/.config/launchpad/logs/horizon.log
+tail -f ~/.config/orbit/logs/horizon.log
 
 # Manually start for debugging
-php ~/.config/launchpad/web/artisan horizon
+php ~/.config/orbit/web/artisan horizon
 ```
 
 ---
@@ -257,7 +257,7 @@ brew services stop php@8.3
 brew services stop caddy
 
 # Unload Horizon
-launchctl unload ~/Library/LaunchAgents/com.launchpad.horizon.plist
+launchctl unload ~/Library/LaunchAgents/com.orbit.horizon.plist
 
 # Remove symlinked pool configs if they interfere
 rm -f /opt/homebrew/etc/php/8.5/php-fpm.d/launchpad-*.conf
@@ -273,7 +273,7 @@ rm -f /opt/homebrew/etc/php/8.3/php-fpm.d/launchpad-*.conf
 ## Post-Migration Checklist
 
 - [ ] All PHP versions installed and running
-- [ ] PHP-FPM sockets created at `~/.config/launchpad/php/`
+- [ ] PHP-FPM sockets created at `~/.config/orbit/php/`
 - [ ] Caddy running and serving sites
 - [ ] Horizon processing queue jobs
 - [ ] Docker services (postgres, redis, etc.) running

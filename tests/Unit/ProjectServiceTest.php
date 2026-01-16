@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Integrations\Launchpad\LaunchpadConnector;
+use App\Http\Integrations\Orbit\OrbitConnector;
 use App\Models\Environment;
-use App\Services\LaunchpadCli\ConfigurationService;
-use App\Services\LaunchpadCli\ProjectService;
-use App\Services\LaunchpadCli\Shared\CommandService;
-use App\Services\LaunchpadCli\Shared\ConnectorService;
+use App\Services\OrbitCli\ConfigurationService;
+use App\Services\OrbitCli\ProjectService;
+use App\Services\OrbitCli\Shared\CommandService;
+use App\Services\OrbitCli\Shared\ConnectorService;
 use App\Services\SshService;
 
 beforeEach(function () {
@@ -40,7 +40,7 @@ beforeEach(function () {
 
 afterEach(function () {
     // Clear the mock client after each test
-    LaunchpadConnector::clearMockClient();
+    OrbitConnector::clearMockClient();
 });
 
 describe('createProject', function () {

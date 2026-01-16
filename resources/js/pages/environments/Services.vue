@@ -83,7 +83,7 @@ let logsInterval: ReturnType<typeof setInterval> | null = null;
 const serviceMeta: Record<string, ServiceMeta> = {
     'dns': {
         name: 'DNS Server',
-        description: 'Resolves local domains to Launchpad',
+        description: 'Resolves local domains to Orbit',
         icon: Globe,
         ports: '53',
         category: 'core',
@@ -464,7 +464,7 @@ onMounted(async () => {
     // Connect Echo for real-time updates
     const echo = connect(props.environment);
     if (echo) {
-        echo.channel('launchpad')
+        echo.channel('orbit')
             .listen('.service.status.changed', (event: ServiceStatusEvent) => {
                 store.handleServiceStatusChanged(
                     event.job_id,
@@ -567,7 +567,7 @@ onUnmounted(() => {
                                 @click="openPhpIni"
                                 :disabled="!localPhpIniPath"
                                 class="btn btn-plain p-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
-                                title="Open Launchpad php.ini"
+                                title="Open Orbit php.ini"
                             >
                                 <Settings class="w-4 h-4" />
                             </button>

@@ -6,7 +6,7 @@ allowed-tools: Bash(ssh:*), Read, Edit
 
 # Upgrade PHP Version
 
-Add support for a new PHP version to the Launchpad stack. This involves updating the CLI on the remote server and rebuilding containers.
+Add support for a new PHP version to the Orbit stack. This involves updating the CLI on the remote server and rebuilding containers.
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ If the image doesn't exist, inform the user and stop.
 Create a new Dockerfile for the PHP version in the config directory:
 
 ```bash
-ssh launchpad@ai "cat > ~/.config/launchpad/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
+ssh launchpad@ai "cat > ~/.config/orbit/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
 FROM dunglas/frankenphp:php{VERSION}
 
 RUN install-php-extensions     redis     pdo_pgsql     pdo_mysql     pcntl     intl     exif     gd     zip     bcmath
@@ -49,7 +49,7 @@ Replace `{VERSION}` with e.g., `8.6` and `{VERSION_NO_DOT}` with e.g., `86`.
 ### 3. Update PhpComposeGenerator.php
 
 Read the current file and add the new PHP service. The file is at:
-`~/projects/launchpad-cli/app/Services/PhpComposeGenerator.php`
+`~/projects/orbit-cli/app/Services/PhpComposeGenerator.php`
 
 Add a new service block following the existing pattern:
 
@@ -59,7 +59,7 @@ Add a new service block following the existing pattern:
       context: .
       dockerfile: Dockerfile.php{VERSION_NO_DOT}
     image: launchpad-php:{VERSION}
-    container_name: launchpad-php-{VERSION_NO_DOT}
+    container_name: orbit-php-{VERSION_NO_DOT}
     ports:
       - \"{PORT}:8080\"
     volumes:
@@ -74,12 +74,12 @@ Port numbers follow the pattern: 8083 for PHP 8.3, 8084 for PHP 8.4, 8085 for PH
 
 ### 4. Update CaddyfileGenerator.php
 
-Read and update `~/projects/launchpad-cli/app/Services/CaddyfileGenerator.php`.
+Read and update `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php`.
 
 Find the `reloadPhp()` method and add a reload command for the new container:
 
 ```php
-$result{VERSION_NO_DOT} = Process::run('docker exec launchpad-php-{VERSION_NO_DOT} frankenphp reload --config /etc/frankenphp/Caddyfile 2>/dev/null');
+$result{VERSION_NO_DOT} = Process::run('docker exec orbit-php-{VERSION_NO_DOT} frankenphp reload --config /etc/frankenphp/Caddyfile 2>/dev/null');
 ```
 
 Update the return statement to include the new result.
@@ -89,7 +89,7 @@ Update the return statement to include the new result.
 Run the CLI from source to regenerate configs and restart:
 
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && php launchpad restart"
+ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad restart"
 ```
 
 ### 6. Verify Containers
@@ -97,7 +97,7 @@ ssh launchpad@ai "cd ~/projects/launchpad-cli && php launchpad restart"
 Confirm all PHP containers are running:
 
 ```bash
-ssh launchpad@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=launchpad-php-'"
+ssh launchpad@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=orbit-php-'"
 ```
 
 Wait for containers to become healthy (may take 30-60 seconds on first build).
@@ -124,19 +124,19 @@ If `dunglas/frankenphp:php{VERSION}` doesn't exist, the PHP version may not be r
 ### Container Build Fails
 Check Docker build logs:
 ```bash
-ssh launchpad@ai "cd ~/.config/launchpad/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
+ssh launchpad@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
 ```
 
 ### Container Not Starting
 Check container logs:
 ```bash
-ssh launchpad@ai "docker logs launchpad-php-{VERSION_NO_DOT}"
+ssh launchpad@ai "docker logs orbit-php-{VERSION_NO_DOT}"
 ```
 
 ## Files Modified
 
 | Location | File | Change |
 |----------|------|--------|
-| Remote config | `~/.config/launchpad/php/Dockerfile.php{XX}` | Created |
-| Remote CLI | `~/projects/launchpad-cli/app/Services/PhpComposeGenerator.php` | Add service |
-| Remote CLI | `~/projects/launchpad-cli/app/Services/CaddyfileGenerator.php` | Add reload |
+| Remote config | `~/.config/orbit/php/Dockerfile.php{XX}` | Created |
+| Remote CLI | `~/projects/orbit-cli/app/Services/PhpComposeGenerator.php` | Add service |
+| Remote CLI | `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php` | Add reload |

@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Environment;
 use App\Models\SshKey;
-use App\Services\LaunchpadCli\ServiceControlService;
+use App\Services\OrbitCli\ServiceControlService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery\MockInterface;
 use Tests\TestCase;
@@ -113,7 +113,7 @@ class ServiceControlTest extends TestCase
     public function test_dynamic_php_versions_in_config(): void
     {
         // Mock getConfig to return available_php_versions
-        $this->mock(\App\Services\LaunchpadCli\ConfigurationService::class, function (MockInterface $mock) {
+        $this->mock(\App\Services\OrbitCli\ConfigurationService::class, function (MockInterface $mock) {
             $mock->shouldReceive('getConfig')
                 ->with(\Mockery::on(fn ($e) => $e->id === $this->environment->id))
                 ->once()

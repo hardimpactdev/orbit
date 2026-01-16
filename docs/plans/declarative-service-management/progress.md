@@ -1,12 +1,12 @@
 # Declarative Service Management - Progress Log
 
-## Epic: launchpad-desktop-8tv
+## Epic: orbit-desktop-8tv
 
 Track learnings, blockers, and decisions during implementation.
 
 ---
 
-## Phase 1: DTOs and Template Loader (launchpad-desktop-8tv.1)
+## Phase 1: DTOs and Template Loader (orbit-desktop-8tv.1)
 
 **Status:** Not started
 
@@ -21,7 +21,7 @@ Track learnings, blockers, and decisions during implementation.
 
 ---
 
-## Phase 2: Compose Generator and Service Manager (launchpad-desktop-8tv.2)
+## Phase 2: Compose Generator and Service Manager (orbit-desktop-8tv.2)
 
 **Status:** Not started
 
@@ -36,7 +36,7 @@ Track learnings, blockers, and decisions during implementation.
 
 ---
 
-## Phase 3: CLI Commands (launchpad-desktop-8tv.3)
+## Phase 3: CLI Commands (orbit-desktop-8tv.3)
 
 **Status:** Not started
 
@@ -51,7 +51,7 @@ Track learnings, blockers, and decisions during implementation.
 
 ---
 
-## Phase 4: Service Templates (launchpad-desktop-8tv.4)
+## Phase 4: Service Templates (orbit-desktop-8tv.4)
 
 **Status:** Not started
 
@@ -66,7 +66,7 @@ Track learnings, blockers, and decisions during implementation.
 
 ---
 
-## Phase 5: Update Existing Commands & Remove Legacy (launchpad-desktop-8tv.5)
+## Phase 5: Update Existing Commands & Remove Legacy (orbit-desktop-8tv.5)
 
 **Status:** Complete
 
@@ -93,11 +93,11 @@ Track learnings, blockers, and decisions during implementation.
 
 | Phase | Task ID | Status |
 |-------|---------|--------|
-| 1. DTOs and Template Loader | launchpad-desktop-8tv.1 | Not started |
-| 2. Compose Generator and Service Manager | launchpad-desktop-8tv.2 | Not started |
-| 3. CLI Commands | launchpad-desktop-8tv.3 | Not started |
-| 4. Service Templates | launchpad-desktop-8tv.4 | Not started |
-| 5. Update Existing Commands & Remove Legacy | launchpad-desktop-8tv.5 | Complete |
+| 1. DTOs and Template Loader | orbit-desktop-8tv.1 | Not started |
+| 2. Compose Generator and Service Manager | orbit-desktop-8tv.2 | Not started |
+| 3. CLI Commands | orbit-desktop-8tv.3 | Not started |
+| 4. Service Templates | orbit-desktop-8tv.4 | Not started |
+| 5. Update Existing Commands & Remove Legacy | orbit-desktop-8tv.5 | Complete |
 
 ### 2026-01-14 - Phase 2.7: Remote API Controller
 **Status:** Complete
@@ -111,5 +111,5 @@ Track learnings, blockers, and decisions during implementation.
 - Verified route registration via `php artisan route:list` on the remote machine.
 
 **Verification results:**
-- ssh launchpad@ai "test -f ~/projects/launchpad-cli/web/app/Http/Controllers/Api/ServiceController.php" -> File exists ✓
+- ssh launchpad@ai "test -f ~/projects/orbit-cli/web/app/Http/Controllers/Api/ServiceController.php" -> File exists ✓
 - php artisan route:list --path=api/services -> All 6 routes registered ✓

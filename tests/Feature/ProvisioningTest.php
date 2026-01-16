@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\Environment;
-use App\Services\LaunchpadCli\ConfigurationService;
-use App\Services\LaunchpadCli\ProjectService;
+use App\Services\OrbitCli\ConfigurationService;
+use App\Services\OrbitCli\ProjectService;
 
 beforeEach(function () {
     createEnvironment();
@@ -126,7 +126,7 @@ test('reverb config endpoint returns config when enabled', function () {
                     'host' => 'reverb.ccc',
                     'port' => 443,
                     'scheme' => 'https',
-                    'app_key' => 'launchpad-key',
+                    'app_key' => 'orbit-key',
                 ],
             ]);
     });

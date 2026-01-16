@@ -238,7 +238,7 @@ defineProps<{
 ## Architecture Patterns
 
 ### Frontend-Backend Communication
-- **Remote environments**: Vue calls remote API directly (`https://launchpad.{tld}/api/...`)
+- **Remote environments**: Vue calls remote API directly (`https://orbit.{tld}/api/...`)
 - **Local environments**: Calls through NativePHP backend via Inertia/HTTP
 - **RemoteApiUrl**: Controller passes `remoteApiUrl` prop to Vue pages
 

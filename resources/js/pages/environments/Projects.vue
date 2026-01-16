@@ -177,7 +177,7 @@ function handleApiError(error: string | undefined, context: string) {
     const errorMsg = error || 'Unknown error';
     if (errorMsg.includes('Connection error')) {
         toast.error('Connection Error', {
-            description: 'Could not connect to the environment. Please check if Launchpad is running.',
+            description: 'Could not connect to the environment. Please check if Orbit is running.',
         });
     } else {
         toast.error(`Failed to ${context}`, {

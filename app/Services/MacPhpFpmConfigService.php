@@ -40,7 +40,7 @@ class MacPhpFpmConfigService
 
         $globalIniCreated = $this->ensureFileExists(
             $globalIniPath,
-            "; Launchpad global PHP settings\n"
+            "; Orbit global PHP settings\n"
             ."; Shared across all installed Homebrew PHP versions (CLI + FPM)\n"
             ."; Add directives here (e.g. memory_limit=512M)\n"
         );
@@ -52,7 +52,7 @@ class MacPhpFpmConfigService
                 continue;
             }
 
-            $link = $confDir.'/99-launchpad.ini';
+            $link = $confDir.'/99-orbit.ini';
             $changedAny = $changedAny || $this->ensureSymlink($link, $globalIniPath);
         }
 
@@ -77,7 +77,7 @@ class MacPhpFpmConfigService
             return null;
         }
 
-        return rtrim($home, '/').'/.config/launchpad/php/launchpad.ini';
+        return rtrim($home, '/').'/.config/orbit/php/orbit.ini';
     }
 
     public function getHomebrewPrefix(): ?string
@@ -168,8 +168,8 @@ class MacPhpFpmConfigService
             return ['success' => false, 'error' => 'Unable to determine home directory'];
         }
 
-        $scriptPath = rtrim($home, '/').'/.config/launchpad/php/reload-php-fpm.sh';
-        $logDir = rtrim($home, '/').'/Library/Logs/launchpad';
+        $scriptPath = rtrim($home, '/').'/.config/orbit/php/reload-php-fpm.sh';
+        $logDir = rtrim($home, '/').'/Library/Logs/orbit';
         $logPath = $logDir.'/php-fpm-reload.log';
 
         if (! is_dir($logDir)) {
@@ -226,14 +226,14 @@ class MacPhpFpmConfigService
             $watchPathsXml .= "        <string>{$path}</string>\n";
         }
 
-        $plistPath = $launchAgentsDir.'/com.launchpad.php-fpm-reload.plist';
+        $plistPath = $launchAgentsDir.'/com.orbit.php-fpm-reload.plist';
         $plist = <<<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.launchpad.php-fpm-reload</string>
+    <string>com.orbit.php-fpm-reload</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -268,7 +268,7 @@ PLIST;
             return ['success' => false, 'error' => 'Failed to determine user id'];
         }
 
-        $serviceTarget = "gui/{$uid}/com.launchpad.php-fpm-reload";
+        $serviceTarget = "gui/{$uid}/com.orbit.php-fpm-reload";
         $print = Process::run(['launchctl', 'print', $serviceTarget]);
         $needsReload = $plistChanged || ! $print->successful();
 

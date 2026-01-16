@@ -97,7 +97,7 @@ export const useServicesStore = defineStore('services', {
 
     async fetchServices(apiUrl: string) {
       try {
-        // Use /status endpoint (works for both local NativePHP and remote Launchpad)
+        // Use /status endpoint (works for both local NativePHP and remote Orbit)
         const response = await fetch(`${apiUrl}/status`)
         
         if (!response.ok) {
@@ -304,7 +304,7 @@ export const useServicesStore = defineStore('services', {
   },
 
   persist: {
-    key: 'launchpad-services',
+    key: 'orbit-services',
     pick: ['environments'],
   },
 })

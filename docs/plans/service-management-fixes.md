@@ -274,7 +274,7 @@ The CLI already has these managers for host services:
 **HorizonManager** (`app/Services/HorizonManager.php`):
 - `start()`, `stop()`, `restart()`
 - `isRunning()`, `isInstalled()`
-- Mac: uses `launchctl` with plist at `~/Library/LaunchAgents/com.launchpad.horizon.plist`
+- Mac: uses `launchctl` with plist at `~/Library/LaunchAgents/com.orbit.horizon.plist`
 - Linux: uses `systemctl` with service `launchpad-horizon`
 
 ### StatusCommand Output
@@ -305,6 +305,6 @@ SSH_AUTH_SOCK=$(launchctl getenv SSH_AUTH_SOCK) ssh launchpad@ai "command"
 ## Questions Resolved
 
 1. **PHP versions:** Dynamically detected via `PhpManager::getInstalledVersions()`
-2. **Horizon plist:** Confirmed at `~/Library/LaunchAgents/com.launchpad.horizon.plist` (Mac), `launchpad-horizon.service` (Linux)
+2. **Horizon plist:** Confirmed at `~/Library/LaunchAgents/com.orbit.horizon.plist` (Mac), `launchpad-horizon.service` (Linux)
 3. **Remote environments:** Also use host services (Caddy, PHP-FPM) - not Docker
 4. **Caddy:** Runs on host for both Mac AND Linux (not in Docker container)

@@ -464,10 +464,10 @@ onUnmounted(() => {
             </div>
         </div>
 
-        <!-- Launchpad Installation -->
+        <!-- Orbit Installation -->
         <div class="border border-zinc-800 rounded-lg mb-6">
             <div class="p-5">
-                <h3 class="text-sm font-medium text-white mb-4">Launchpad Installation</h3>
+                <h3 class="text-sm font-medium text-white mb-4">Orbit Installation</h3>
                 <template v-if="installation.installed">
                     <div class="flex items-center text-lime-400">
                         <Check class="w-4 h-4 mr-2" />
@@ -478,7 +478,7 @@ onUnmounted(() => {
                 <template v-else>
                     <div class="flex items-center text-yellow-400 mb-3">
                         <AlertTriangle class="w-4 h-4 mr-2" />
-                        Launchpad CLI not found
+                        Orbit CLI not found
                     </div>
                     <button
                         v-if="environment.is_local"
@@ -488,10 +488,10 @@ onUnmounted(() => {
                     >
                         <Loader2 v-if="cliInstalling" class="w-4 h-4 animate-spin" />
                         <Download v-else class="w-4 h-4" />
-                        {{ cliInstalling ? 'Installing...' : 'Install Launchpad CLI' }}
+                        {{ cliInstalling ? 'Installing...' : 'Install Orbit CLI' }}
                     </button>
                     <p v-else class="text-zinc-500 text-sm">
-                        Install launchpad on this environment to manage sites.
+                        Install orbit on this environment to manage sites.
                     </p>
                 </template>
             </div>

@@ -9,7 +9,7 @@
 
 ## Iteration Log
 
-### 2026-01-15 - Install Pinia and persistence plugin (launchpad-desktop-3w4)
+### 2026-01-15 - Install Pinia and persistence plugin (orbit-desktop-3w4)
 **Status:** Complete
 **Files changed:**
 - package.json
@@ -24,14 +24,14 @@
 - App setup file imports and configures pinia with persistence ✓
 - npm run typecheck -> exits 0 ✓
 
-### 2026-01-15 - Create Echo composable for Reverb (launchpad-desktop-ghw)
+### 2026-01-15 - Create Echo composable for Reverb (orbit-desktop-ghw)
 **Status:** Complete
 **Files changed:**
 - resources/js/composables/useEcho.ts
 
 **Learnings:**
 - `laravel-echo` requires a generic type argument (e.g., `Echo<'reverb'>`) in this TypeScript environment.
-- Reverb connections use the `launchpad.{tld}` host pattern on port 8080.
+- Reverb connections use the `orbit.{tld}` host pattern on port 8080.
 
 **Verification results:**
 - resources/js/composables/useEcho.ts created ✓

@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Environment;
-use App\Services\LaunchpadCli\ConfigurationService;
-use App\Services\LaunchpadCli\StatusService;
+use App\Services\OrbitCli\ConfigurationService;
+use App\Services\OrbitCli\StatusService;
 
 class DoctorService
 {
@@ -31,7 +31,7 @@ class DoctorService
         // 3. Docker Services
         $checks['docker'] = $this->checkDockerServices($environment);
 
-        // 4. Launchpad Web App (API)
+        // 4. Orbit Web App (API)
         $checks['api'] = $this->checkApiConnectivity($environment);
 
         // 5. Environment DNS (DNS working on the environment's server)
@@ -88,7 +88,7 @@ class DoctorService
     }
 
     /**
-     * Check if the launchpad CLI is installed and get its version.
+     * Check if the orbit CLI is installed and get its version.
      */
     protected function checkCliInstallation(Environment $environment): array
     {
@@ -97,16 +97,16 @@ class DoctorService
         if (! $installation['installed']) {
             return [
                 'status' => 'error',
-                'message' => 'Launchpad CLI not installed',
+                'message' => 'Orbit CLI not installed',
                 'details' => [
-                    'suggestion' => 'Install CLI from https://github.com/nckrtl/launchpad-cli/releases',
+                    'suggestion' => 'Install CLI from https://github.com/nckrtl/orbit-cli/releases',
                 ],
             ];
         }
 
         return [
             'status' => 'ok',
-            'message' => 'Launchpad CLI installed',
+            'message' => 'Orbit CLI installed',
             'details' => [
                 'version' => $installation['version'] ?? 'unknown',
                 'path' => $installation['path'] ?? 'unknown',
@@ -127,7 +127,7 @@ class DoctorService
             if (! $environment->is_local) {
                 $result = $this->ssh->execute(
                     $environment,
-                    "sg docker -c 'docker ps --filter name=launchpad- --format \"{{.Names}}: {{.Status}}\"'",
+                    "sg docker -c 'docker ps --filter name=orbit- --format \"{{.Names}}: {{.Status}}\"'",
                     15
                 );
 
@@ -178,7 +178,7 @@ class DoctorService
     }
 
     /**
-     * Check API connectivity (launchpad web app).
+     * Check API connectivity (orbit web app).
      */
     protected function checkApiConnectivity(Environment $environment): array
     {
@@ -203,10 +203,10 @@ class DoctorService
         if (str_contains($error, 'Connection error') || str_contains($error, 'cURL error')) {
             return [
                 'status' => 'error',
-                'message' => 'API unreachable - launchpad web app may not be running',
+                'message' => 'API unreachable - orbit web app may not be running',
                 'details' => [
                     'error' => $error,
-                    'suggestion' => 'Ensure launchpad services are started and the web app is accessible',
+                    'suggestion' => 'Ensure orbit services are started and the web app is accessible',
                 ],
             ];
         }
@@ -250,10 +250,10 @@ class DoctorService
             ];
         }
 
-        // For remote, try to resolve launchpad.{tld} via SSH
+        // For remote, try to resolve orbit.{tld} via SSH
         $result = $this->ssh->execute(
             $environment,
-            "getent hosts launchpad.{$tld} 2>/dev/null || host launchpad.{$tld} 127.0.0.1 2>/dev/null | head -1",
+            "getent hosts orbit.{$tld} 2>/dev/null || host orbit.{$tld} 127.0.0.1 2>/dev/null | head -1",
             10
         );
 
@@ -270,7 +270,7 @@ class DoctorService
         // Check if dnsmasq container is running
         $dnsCheck = $this->ssh->execute(
             $environment,
-            "sg docker -c 'docker ps --filter name=launchpad-dns --format \"{{.Status}}\"'",
+            "sg docker -c 'docker ps --filter name=orbit-dns --format \"{{.Status}}\"'",
             10
         );
 
@@ -288,7 +288,7 @@ class DoctorService
             'status' => 'error',
             'message' => 'DNS not resolving for .{$tld} domains',
             'details' => [
-                'suggestion' => 'Check that launchpad-dns container is running and configured correctly',
+                'suggestion' => 'Check that orbit-dns container is running and configured correctly',
             ],
         ];
     }
@@ -300,7 +300,7 @@ class DoctorService
     protected function checkLocalDns(Environment $environment): array
     {
         $tld = $environment->tld ?? 'test';
-        $testDomain = "launchpad.{$tld}";
+        $testDomain = "orbit.{$tld}";
 
         // First check if resolver file exists
         $resolverPath = "/etc/resolver/{$tld}";

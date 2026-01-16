@@ -415,9 +415,9 @@ onMounted(() => {
 
         <hr class="border-zinc-800" />
 
-        <!-- Launchpad Configuration Section -->
+        <!-- Orbit Configuration Section -->
         <div class="py-6">
-            <h2 class="text-lg font-medium text-white mb-6">Launchpad Configuration</h2>
+            <h2 class="text-lg font-medium text-white mb-6">Orbit Configuration</h2>
 
             <div v-if="configLoading" class="text-zinc-500 text-sm">
                 <Loader2 class="w-4 h-4 inline animate-spin mr-2" />

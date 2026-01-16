@@ -11,19 +11,19 @@ class CliUpdateService
 
     protected string $userPath;
 
-    protected string $downloadUrl = 'https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar';
+    protected string $downloadUrl = 'https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar';
 
     public function __construct()
     {
         // Bundled CLI path (included with the app)
-        $this->bundledPath = base_path('bin/launchpad.phar');
+        $this->bundledPath = base_path('bin/orbit.phar');
 
         // User-installed CLI path (for updates)
         $home = getenv('HOME');
         if ($home === false) {
             $home = $_SERVER['HOME'] ?? $_ENV['HOME'] ?? posix_getpwuid(posix_getuid())['dir'] ?? '/tmp';
         }
-        $this->userPath = $home.'/.local/bin/launchpad';
+        $this->userPath = $home.'/.local/bin/orbit';
     }
 
     public function isInstalled(): bool
@@ -89,7 +89,7 @@ class CliUpdateService
             }
 
             // Download the phar file
-            Log::info("Downloading Launchpad CLI from {$this->downloadUrl}");
+            Log::info("Downloading Orbit CLI from {$this->downloadUrl}");
 
             $response = Http::withOptions([
                 'allow_redirects' => true,
@@ -119,7 +119,7 @@ class CliUpdateService
                 ];
             }
 
-            Log::info("Launchpad CLI installed successfully at {$this->userPath}");
+            Log::info("Orbit CLI installed successfully at {$this->userPath}");
 
             return [
                 'success' => true,
@@ -127,7 +127,7 @@ class CliUpdateService
                 'version' => $this->getVersion(),
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to install Launchpad CLI: {$e->getMessage()}");
+            Log::error("Failed to install Orbit CLI: {$e->getMessage()}");
 
             return [
                 'success' => false,

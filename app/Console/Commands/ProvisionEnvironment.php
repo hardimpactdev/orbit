@@ -10,7 +10,7 @@ class ProvisionEnvironment extends Command
 {
     protected $signature = 'environment:provision {environment} {ssh_public_key}';
 
-    protected $description = 'Provision an environment with the Launchpad stack';
+    protected $description = 'Provision an environment with the Orbit stack';
 
     public function handle(ProvisioningService $provisioning): int
     {

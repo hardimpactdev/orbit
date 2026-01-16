@@ -333,7 +333,7 @@ onMounted(() => {
             <div class="border border-zinc-800 rounded-lg p-6">
                 <h3 class="text-sm font-medium text-white mb-4">MCP Integration</h3>
                 <p class="text-sm text-zinc-400 mb-4">
-                    The orchestrator's MCP service is available to launchpad-cli for AI-assisted operations.
+                    The orchestrator's MCP service is available to orbit-cli for AI-assisted operations.
                 </p>
                 <div class="bg-zinc-900 rounded-lg p-4 font-mono text-sm text-zinc-300">
                     <div class="text-zinc-500"># MCP endpoint</div>

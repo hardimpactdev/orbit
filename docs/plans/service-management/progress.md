@@ -4,14 +4,14 @@
 
 [To be filled by implementer with discovered patterns]
 
-### CLI Patterns (launchpad-cli)
+### CLI Patterns (orbit-cli)
 - Command structure and JSON output format
 - ServiceManager pattern for orchestrating operations
 - Template loading and validation approach
 - Docker compose generation strategy
 - Error handling for required vs optional services
 
-### Desktop Patterns (launchpad-desktop)
+### Desktop Patterns (orbit-desktop)
 - LaunchpadService vs ServiceControlService split
 - Saloon request structure for remote API
 - Vue modal component patterns
@@ -25,10 +25,10 @@
 ## Iteration Log
 
 ### 2026-01-13 - Initial Setup
-- Created epic: launchpad-desktop-zaq
+- Created epic: orbit-desktop-zaq
 - Created 9 implementation and verification tasks
 - Set up dependency chain: Phase 1 → Phase 2
-- Ready tasks: launchpad-desktop-k5b (Phase 1.1-1.4: CLI Core Infrastructure)
+- Ready tasks: orbit-desktop-k5b (Phase 1.1-1.4: CLI Core Infrastructure)
 
 **Next steps:**
 1. Start with Phase 1.1-1.4 (CLI Core Infrastructure)
@@ -53,11 +53,11 @@
 
 ### 2026-01-14 - Phase 1.5-1.6: CLI Commands and Integration
 **Status:** Complete
-**Files changed (on remote launchpad-cli):**
+**Files changed (on remote orbit-cli):**
 - app/Commands/Service/ServiceListCommand.php
 - app/Services/ServiceManager.php
 - stubs/services.yaml.stub
-- ~/.config/launchpad/services.yaml
+- ~/.config/orbit/services.yaml
 
 **Learnings:**
 - ServiceManager::disable now checks if a service is marked as required in its template.
@@ -109,7 +109,7 @@
 - grep -c "showAddServiceModal|showConfigureModal" resources/js/pages/environments/Services.vue -> 8 ✓
 - test -f resources/js/components/AddServiceModal.vue && test -f resources/js/components/ConfigureServiceModal.vue -> exit code 0 ✓
 
-### 2026-01-15 - Refactor Services.vue to use Pinia + Echo (launchpad-desktop-hhb)
+### 2026-01-15 - Refactor Services.vue to use Pinia + Echo (orbit-desktop-hhb)
 **Status:** Complete
 **Files changed:**
 - resources/js/pages/environments/Services.vue

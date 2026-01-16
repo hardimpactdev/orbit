@@ -17,7 +17,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     public function boot(): void
     {
         Window::open()
-            ->title('Launchpad')
+            ->title('Orbit')
             ->width(1200)
             ->height(800)
             ->minWidth(800)
@@ -51,7 +51,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             ->showDockIcon()
             ->withContextMenu(
                 Menu::new()
-                    ->label('Open Launchpad')
+                    ->label('Open Orbit')
                     ->link(url('/'))
                     ->separator()
                     ->label('New Project')

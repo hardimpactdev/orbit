@@ -1,6 +1,6 @@
 # Launchpad Companion Web App - Implementation Plan
 
-This document captures the complete plan for implementing a Laravel companion web app to handle async operations (primarily job queuing) for the launchpad-cli.
+This document captures the complete plan for implementing a Laravel companion web app to handle async operations (primarily job queuing) for the orbit-cli.
 
 ## Problem Statement
 
@@ -25,7 +25,7 @@ Ship a Laravel companion web app alongside the CLI that:
 ```
 Desktop App
     │
-    └── HTTP/WebSocket to launchpad.{tld}
+    └── HTTP/WebSocket to orbit.{tld}
             │
             ├── Simple queries → immediate response
             │
@@ -38,10 +38,10 @@ Desktop App
 
 ### Repository Structure
 
-The companion web app lives inside the launchpad-cli repository:
+The companion web app lives inside the orbit-cli repository:
 
 ```
-launchpad-cli/
+orbit-cli/
 ├── app/
 │   └── Commands/           ← CLI commands (Laravel Zero)
 ├── web/                    ← Companion Laravel app
@@ -56,7 +56,7 @@ launchpad-cli/
 │   ├── composer.json
 │   └── ...
 └── builds/
-    └── launchpad.phar      ← Built CLI binary
+    └── orbit.phar      ← Built CLI binary
 ```
 
 **Why same repo?**
@@ -67,7 +67,7 @@ launchpad-cli/
 ### Deployment Structure
 
 ```
-~/.config/launchpad/
+~/.config/orbit/
 ├── web/                    ← Laravel app (replaced on update)
 │   ├── app/
 │   ├── artisan
@@ -134,7 +134,7 @@ public function ensureHorizonRunning(): void
     $this->info('Starting Horizon...');
 
     // Start Horizon in background
-    Process::start('php ~/.config/launchpad/web/artisan horizon');
+    Process::start('php ~/.config/orbit/web/artisan horizon');
 
     // Give it time to either connect or fail
     sleep(3);
@@ -148,7 +148,7 @@ public function ensureHorizonRunning(): void
 
 private function isHorizonRunning(): bool
 {
-    $result = Process::run('php ~/.config/launchpad/web/artisan horizon:status');
+    $result = Process::run('php ~/.config/orbit/web/artisan horizon:status');
     return str_contains($result->output(), 'Horizon is running');
 }
 ```
@@ -163,7 +163,7 @@ private function isHorizonRunning(): bool
 ### Single Cron Entry
 
 ```cron
-* * * * * launchpad ensure >> ~/.config/launchpad/logs/ensure.log 2>&1
+* * * * * launchpad ensure >> ~/.config/orbit/logs/ensure.log 2>&1
 ```
 
 Installed during `launchpad init` in the `launchpad` user's crontab.
@@ -220,10 +220,10 @@ Within 2-3 minutes of reboot, everything is up.
 ```bash
 launchpad init
 # 1. Start Docker containers (FrankenPHP, Redis, Reverb, DNS, Postgres)
-# 2. Copy bundled web/ to ~/.config/launchpad/web/
+# 2. Copy bundled web/ to ~/.config/orbit/web/
 # 3. Generate .env with known values
 # 4. Run composer install (platform-specific dependencies)
-# 5. Configure FrankenPHP to serve launchpad.{tld}
+# 5. Configure FrankenPHP to serve orbit.{tld}
 # 6. Install cron job: * * * * * launchpad ensure
 # 7. Start Horizon
 ```
@@ -233,7 +233,7 @@ launchpad init
 ```bash
 launchpad update
 # 1. Download new CLI binary
-# 2. Copy web/ to ~/.config/launchpad/web/ (overwrite all files)
+# 2. Copy web/ to ~/.config/orbit/web/ (overwrite all files)
 # 3. Regenerate .env (we know all values)
 # 4. Run composer install (in case dependencies changed)
 # 5. Restart Horizon (picks up new code)
@@ -310,16 +310,16 @@ If Redis is flushed, job history is lost. For a dev tool, this is acceptable.
 
 ## Reserved Domain
 
-### `launchpad.{tld}` is Reserved
+### `orbit.{tld}` is Reserved
 
 - Users cannot create projects named "launchpad"
 - CLI validates project names and rejects "launchpad"
-- The domain `launchpad.{tld}` always serves the companion web app
+- The domain `orbit.{tld}` always serves the companion web app
 
 ### FrankenPHP Configuration
 
 During `launchpad init`, FrankenPHP/Caddy is configured to serve:
-- `launchpad.{tld}` → `~/.config/launchpad/web/public`
+- `orbit.{tld}` → `~/.config/orbit/web/public`
 - `*.{tld}` → User projects as usual
 
 ## Error Handling
@@ -511,7 +511,7 @@ class ProjectController extends Controller
 
 Desktop already knows the environment's TLD. The web app URL is always:
 ```
-https://launchpad.{tld}
+https://orbit.{tld}
 ```
 
 No additional configuration needed.
@@ -537,7 +537,7 @@ if ($request->header('Authorization') !== 'Bearer ' . config('launchpad.api_toke
 
 Token would be:
 - Generated on `launchpad init`
-- Stored in `~/.config/launchpad/api_token`
+- Stored in `~/.config/orbit/api_token`
 - Desktop retrieves it and includes in requests
 
 ## User Model
@@ -567,7 +567,7 @@ docker ps | grep launchpad
 launchpad horizon:status
 
 # Check web app
-curl https://launchpad.{tld}/api/health
+curl https://orbit.{tld}/api/health
 
 # Check cron
 crontab -l | grep launchpad
@@ -577,15 +577,15 @@ crontab -l | grep launchpad
 
 ```bash
 # Via API
-curl -X POST https://launchpad.{tld}/api/projects \
+curl -X POST https://orbit.{tld}/api/projects \
   -H "Content-Type: application/json" \
   -d '{"slug":"test-project","template":"laravel/laravel","db_driver":"pgsql","visibility":"private"}'
 
 # Watch Horizon
-php ~/.config/launchpad/web/artisan horizon:status
+php ~/.config/orbit/web/artisan horizon:status
 
 # Check logs
-tail -f ~/.config/launchpad/logs/horizon.log
+tail -f ~/.config/orbit/logs/horizon.log
 ```
 
 ## Summary

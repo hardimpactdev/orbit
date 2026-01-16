@@ -10,7 +10,7 @@ const pinia = createPinia();
 pinia.use(piniaPluginPersistedstate);
 
 createInertiaApp({
-    title: (title) => title ? `${title} - Launchpad` : 'Launchpad',
+    title: (title) => title ? `${title} - Orbit` : 'Orbit',
     resolve: async (name) => {
         const page = await resolvePageComponent(
             `./pages/${name}.vue`,

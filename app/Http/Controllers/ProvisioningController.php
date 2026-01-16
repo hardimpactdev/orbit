@@ -97,7 +97,7 @@ class ProvisioningController extends Controller
         if (! $cliUpdate->isInstalled()) {
             return response()->json([
                 'success' => false,
-                'error' => 'Launchpad CLI not installed. Please install it first.',
+                'error' => 'Orbit CLI not installed. Please install it first.',
             ], 400);
         }
 

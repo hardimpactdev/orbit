@@ -2,7 +2,7 @@
 
 ## Codebase Patterns
 
-### Desktop Patterns (launchpad-desktop)
+### Desktop Patterns (orbit-desktop)
 - Vue components use a shared `getApiUrl` helper to switch between local backend and direct remote API calls.
 - Event handlers in Vue templates should use arrow functions `() => loadStatus()` when the emitted event arguments don't match the handler signature, to avoid type errors.
 

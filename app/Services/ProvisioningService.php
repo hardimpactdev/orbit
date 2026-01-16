@@ -16,26 +16,26 @@ class ProvisioningService
 
     protected int $totalSteps = 17;
 
-    protected string $cliDownloadUrl = 'https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar';
+    protected string $cliDownloadUrl = 'https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar';
 
     protected array $steps = [
         1 => 'Clearing old SSH host keys',
         2 => 'Testing root SSH connection',
-        3 => 'Creating launchpad user',
+        3 => 'Creating orbit user',
         4 => 'Setting up SSH key',
         5 => 'Configuring passwordless sudo',
         6 => 'Securing SSH configuration',
-        7 => 'Testing launchpad user connection',
+        7 => 'Testing orbit user connection',
         8 => 'Installing Docker',
         9 => 'Configuring DNS',
         10 => 'Adding Ondřej PPA',
         11 => 'Installing PHP-FPM versions',
         12 => 'Configuring PHP-FPM pools',
         13 => 'Installing Caddy',
-        14 => 'Installing launchpad CLI',
+        14 => 'Installing orbit CLI',
         15 => 'Creating directory structure',
-        16 => 'Initializing launchpad stack',
-        17 => 'Starting launchpad services',
+        16 => 'Initializing orbit stack',
+        17 => 'Starting orbit services',
     ];
 
     public function provision(Environment $environment, string $sshPublicKey): bool
@@ -64,17 +64,17 @@ class ProvisioningService
                 return $this->failure('Cannot connect as root. Ensure root SSH access is available.');
             }
 
-            // Step 3: Create launchpad user
+            // Step 3: Create orbit user
             if (! $this->runStep(3, fn (): bool => $this->createUser())) {
-                return $this->failure('Failed to create launchpad user');
+                return $this->failure('Failed to create orbit user');
             }
 
-            // Step 4: Setup SSH key for launchpad user
+            // Step 4: Setup SSH key for orbit user
             if (! $this->runStep(4, fn (): bool => $this->setupSshKey())) {
                 return $this->failure('Failed to setup SSH key');
             }
 
-            // Step 5: Configure sudo for launchpad user
+            // Step 5: Configure sudo for orbit user
             if (! $this->runStep(5, fn (): bool => $this->configureSudo())) {
                 return $this->failure('Failed to configure sudo');
             }
@@ -84,9 +84,9 @@ class ProvisioningService
                 return $this->failure('Failed to secure SSH');
             }
 
-            // Step 7: Test launchpad user connection
-            if (! $this->runStep(7, fn (): bool => $this->testLaunchpadConnection())) {
-                return $this->failure('Cannot connect as launchpad user');
+            // Step 7: Test orbit user connection
+            if (! $this->runStep(7, fn (): bool => $this->testOrbitConnection())) {
+                return $this->failure('Cannot connect as orbit user');
             }
 
             // Step 8: Install Docker
@@ -119,9 +119,9 @@ class ProvisioningService
                 return $this->failure('Failed to install Caddy');
             }
 
-            // Step 14: Install launchpad CLI
+            // Step 14: Install orbit CLI
             if (! $this->runStep(14, fn (): bool => $this->installCli())) {
-                return $this->failure('Failed to install launchpad CLI');
+                return $this->failure('Failed to install orbit CLI');
             }
 
             // Step 15: Create directory structure
@@ -129,14 +129,14 @@ class ProvisioningService
                 return $this->failure('Failed to create directories');
             }
 
-            // Step 16: Initialize launchpad
-            if (! $this->runStep(16, fn (): bool => $this->initializeLaunchpad())) {
-                return $this->failure('Failed to initialize launchpad');
+            // Step 16: Initialize orbit
+            if (! $this->runStep(16, fn (): bool => $this->initializeOrbit())) {
+                return $this->failure('Failed to initialize orbit');
             }
 
-            // Step 17: Start launchpad
-            if (! $this->runStep(17, fn (): bool => $this->startLaunchpad())) {
-                return $this->failure('Failed to start launchpad');
+            // Step 17: Start orbit
+            if (! $this->runStep(17, fn (): bool => $this->startOrbit())) {
+                return $this->failure('Failed to start orbit');
             }
 
             // Success! Clear provisioning log since it's no longer needed
@@ -219,7 +219,7 @@ class ProvisioningService
         ];
     }
 
-    protected function runAsLaunchpad(string $command, int $timeout = 120): array
+    protected function runAsLaunchpadUser(string $command, int $timeout = 120): array
     {
         $sshCommand = $this->buildSshCommand('launchpad', $command);
         $result = Process::timeout($timeout)->run($sshCommand);
@@ -323,7 +323,7 @@ BASH;
 
     protected function configureSudo(): bool
     {
-        // Add launchpad to sudo group and configure passwordless sudo
+        // Add SSH user to sudo group and configure passwordless sudo
         $commands = [
             'usermod -aG sudo launchpad 2>/dev/null || usermod -aG wheel launchpad 2>/dev/null || true',
             "echo 'launchpad ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/launchpad",
@@ -362,9 +362,9 @@ BASH;
         return $result['success'];
     }
 
-    protected function testLaunchpadConnection(): bool
+    protected function testOrbitConnection(): bool
     {
-        $result = $this->runAsLaunchpad('echo "connected"');
+        $result = $this->runAsLaunchpadUser('echo "connected"');
 
         return $result['success'] && str_contains((string) $result['output'], 'connected');
     }
@@ -372,12 +372,12 @@ BASH;
     protected function installDocker(): bool
     {
         // Check if Docker is already installed
-        $check = $this->runAsLaunchpad('docker --version 2>/dev/null && echo "docker_found" || echo "docker_not_found"');
+        $check = $this->runAsLaunchpadUser('docker --version 2>/dev/null && echo "docker_found" || echo "docker_not_found"');
 
         if (str_contains((string) $check['output'], 'docker_found')) {
             $this->logInfo('Docker already installed');
-            // Ensure launchpad user is in docker group
-            $this->runAsLaunchpad('sudo usermod -aG docker launchpad');
+            // Ensure orbit user is in docker group
+            $this->runAsLaunchpadUser('sudo usermod -aG docker launchpad');
 
             return true;
         }
@@ -390,7 +390,7 @@ BASH;
             'sudo systemctl start docker',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $installCommands), 300);
+        $result = $this->runAsLaunchpadUser(implode(' && ', $installCommands), 300);
 
         if (! $result['success']) {
             $this->logError('Docker installation output: '.$result['error']);
@@ -403,7 +403,7 @@ BASH;
 
     protected function configureDns(): bool
     {
-        // Disable systemd-resolved (it uses port 53 which launchpad DNS needs)
+        // Disable systemd-resolved (it uses port 53 which Orbit DNS needs)
         // and set DNS to 1.1.1.1
         $commands = [
             'sudo systemctl stop systemd-resolved 2>/dev/null || true',
@@ -413,7 +413,7 @@ BASH;
             'echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $commands));
+        $result = $this->runAsLaunchpadUser(implode(' && ', $commands));
 
         if (! $result['success']) {
             $this->logError('DNS configuration output: '.$result['error']);
@@ -427,7 +427,7 @@ BASH;
     protected function addOndrejPpa(): bool
     {
         // Check if PPA is already added
-        $check = $this->runAsLaunchpad('apt-cache policy | grep -q "ondrej/php" && echo "exists" || echo "missing"');
+        $check = $this->runAsLaunchpadUser('apt-cache policy | grep -q "ondrej/php" && echo "exists" || echo "missing"');
 
         if (str_contains((string) $check['output'], 'exists')) {
             $this->logInfo('Ondřej PPA already added');
@@ -441,7 +441,7 @@ BASH;
             'sudo apt update',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $commands), 120);
+        $result = $this->runAsLaunchpadUser(implode(' && ', $commands), 120);
 
         if (! $result['success']) {
             $this->logError('PPA addition output: '.$result['output'].$result['error']);
@@ -463,7 +463,7 @@ BASH;
 
         foreach ($versions as $version) {
             // Check if already installed
-            $check = $this->runAsLaunchpad("dpkg -l | grep -q 'php{$version}-fpm' && echo 'installed' || echo 'missing'");
+            $check = $this->runAsLaunchpadUser("dpkg -l | grep -q 'php{$version}-fpm' && echo 'installed' || echo 'missing'");
 
             if (str_contains((string) $check['output'], 'installed')) {
                 $this->logInfo("PHP {$version} already installed");
@@ -481,7 +481,7 @@ BASH;
             $this->logInfo("Installing PHP {$version} with extensions");
 
             // Install packages
-            $result = $this->runAsLaunchpad("sudo DEBIAN_FRONTEND=noninteractive apt install -y {$packageList}", 300);
+            $result = $this->runAsLaunchpadUser("sudo DEBIAN_FRONTEND=noninteractive apt install -y {$packageList}", 300);
 
             if (! $result['success']) {
                 $this->logError("PHP {$version} installation output: ".$result['output'].$result['error']);
@@ -497,11 +497,11 @@ BASH;
     {
         $versions = ['8.2', '8.3', '8.4'];
 
-        // Keep Launchpad-managed PHP config in one place so it can be shared across versions.
-        $this->runAsLaunchpad('mkdir -p ~/.config/launchpad/php ~/.config/launchpad/logs');
+        // Keep Orbit-managed PHP config in one place so it can be shared across versions.
+        $this->runAsLaunchpadUser('mkdir -p ~/.config/orbit/php ~/.config/orbit/logs');
 
-        $globalIniPath = '/home/launchpad/.config/launchpad/php/launchpad.ini';
-        $globalIni = "; Launchpad global PHP settings\n"
+        $globalIniPath = '/home/launchpad/.config/orbit/php/orbit.ini';
+        $globalIni = "; Orbit global PHP settings\n"
             ."; Shared across all installed PHP versions (CLI + FPM)\n"
             ."; Add directives here (e.g. memory_limit=512M)\n";
 
@@ -509,7 +509,7 @@ BASH;
 
         $globalIniResult = $this->ensureRemoteFile($globalIniPath, $globalIni, false);
         if (! $globalIniResult['success']) {
-            $this->logError('Failed to write Launchpad global PHP ini');
+            $this->logError('Failed to write Orbit global PHP ini');
 
             return false;
         }
@@ -517,15 +517,15 @@ BASH;
 
         foreach ($versions as $version) {
             $normalized = str_replace('.', '', $version); // "8.4" -> "84"
-            $socketPath = "/home/launchpad/.config/launchpad/php/php{$normalized}.sock";
-            $logPath = "/home/launchpad/.config/launchpad/logs/php{$normalized}-fpm.log";
+            $socketPath = "/home/launchpad/.config/orbit/php/php{$normalized}.sock";
+            $logPath = "/home/launchpad/.config/orbit/logs/php{$normalized}-fpm.log";
 
             // Create custom pool configuration
             $poolConfig = <<<INI
-; Launchpad PHP-FPM Pool Configuration
-; Generated by launchpad-desktop provisioning
+; Orbit PHP-FPM Pool Configuration
+; Generated by orbit-desktop provisioning
 
-[launchpad-{$normalized}]
+[orbit-{$normalized}]
 user = launchpad
 group = launchpad
 
@@ -555,7 +555,7 @@ env[HOME] = /home/launchpad
 env[USER] = launchpad
 INI;
 
-            $poolConfigPath = "/home/launchpad/.config/launchpad/php/php{$normalized}-fpm.conf";
+            $poolConfigPath = "/home/launchpad/.config/orbit/php/php{$normalized}-fpm.conf";
 
             $poolWriteResult = $this->ensureRemoteFile($poolConfigPath, $poolConfig, false);
             if (! $poolWriteResult['success']) {
@@ -566,7 +566,7 @@ INI;
             $changedAny = $changedAny || $poolWriteResult['changed'];
 
             // Include our pool in the PHP-FPM config (symlinked into pool.d)
-            $poolLink = "/etc/php/{$version}/fpm/pool.d/launchpad.conf";
+            $poolLink = "/etc/php/{$version}/fpm/pool.d/orbit.conf";
             $poolSymlinkResult = $this->ensureRemoteSymlink($poolConfigPath, $poolLink, true);
             if (! $poolSymlinkResult['success']) {
                 $this->logError("Failed to symlink pool config for PHP {$version}");
@@ -576,12 +576,12 @@ INI;
             $changedAny = $changedAny || $poolSymlinkResult['changed'];
 
             // Use a single global ini file across all versions.
-            $fpmIniLink = "/etc/php/{$version}/fpm/conf.d/99-launchpad.ini";
-            $cliIniLink = "/etc/php/{$version}/cli/conf.d/99-launchpad.ini";
+            $fpmIniLink = "/etc/php/{$version}/fpm/conf.d/99-orbit.ini";
+            $cliIniLink = "/etc/php/{$version}/cli/conf.d/99-orbit.ini";
 
             $fpmIniSymlinkResult = $this->ensureRemoteSymlink($globalIniPath, $fpmIniLink, true);
             if (! $fpmIniSymlinkResult['success']) {
-                $this->logError("Failed to symlink Launchpad ini for PHP {$version} (FPM)");
+                $this->logError("Failed to symlink Orbit ini for PHP {$version} (FPM)");
 
                 return false;
             }
@@ -589,7 +589,7 @@ INI;
 
             $cliIniSymlinkResult = $this->ensureRemoteSymlink($globalIniPath, $cliIniLink, true);
             if (! $cliIniSymlinkResult['success']) {
-                $this->logError("Failed to symlink Launchpad ini for PHP {$version} (CLI)");
+                $this->logError("Failed to symlink Orbit ini for PHP {$version} (CLI)");
 
                 return false;
             }
@@ -597,7 +597,7 @@ INI;
 
             // Start and enable PHP-FPM service
             $this->logInfo("Starting PHP-FPM {$version}");
-            $startResult = $this->runAsLaunchpad("sudo systemctl enable php{$version}-fpm && sudo systemctl start php{$version}-fpm");
+            $startResult = $this->runAsLaunchpadUser("sudo systemctl enable php{$version}-fpm && sudo systemctl start php{$version}-fpm");
 
             if (! $startResult['success']) {
                 $this->logError("Failed to start PHP-FPM {$version}: ".$startResult['error']);
@@ -630,7 +630,7 @@ INI;
             ? 'sudo sh -c '.escapeshellarg($getHashScript)
             : $getHashScript;
 
-        $currentHashResult = $this->runAsLaunchpad($getHashCommand);
+        $currentHashResult = $this->runAsLaunchpadUser($getHashCommand);
         if (! $currentHashResult['success']) {
             return ['success' => false, 'changed' => false];
         }
@@ -647,7 +647,7 @@ INI;
             ? "printf %s {$base64Arg} | base64 -d | sudo tee {$pathArg} >/dev/null"
             : "printf %s {$base64Arg} | base64 -d > {$pathArg}";
 
-        $writeResult = $this->runAsLaunchpad($writeCommand);
+        $writeResult = $this->runAsLaunchpadUser($writeCommand);
         if (! $writeResult['success']) {
             return ['success' => false, 'changed' => false];
         }
@@ -666,7 +666,7 @@ INI;
             ? 'sudo sh -c '.escapeshellarg($linkCheckScript)
             : 'sh -c '.escapeshellarg($linkCheckScript);
 
-        $result = $this->runAsLaunchpad($command);
+        $result = $this->runAsLaunchpadUser($command);
         if (! $result['success']) {
             return ['success' => false, 'changed' => false];
         }
@@ -678,17 +678,17 @@ INI;
 
     protected function reloadPhpFpm(string $version): void
     {
-        $reload = $this->runAsLaunchpad("sudo systemctl reload php{$version}-fpm");
+        $reload = $this->runAsLaunchpadUser("sudo systemctl reload php{$version}-fpm");
         if ($reload['success']) {
             return;
         }
 
-        $this->runAsLaunchpad("sudo systemctl restart php{$version}-fpm");
+        $this->runAsLaunchpadUser("sudo systemctl restart php{$version}-fpm");
     }
 
     protected function installPhpFpmReloadWatcher(array $versions, string $globalIniPath): bool
     {
-        $scriptPath = '/usr/local/bin/launchpad-reload-php-fpm';
+        $scriptPath = '/usr/local/bin/orbit-reload-php-fpm';
         $scriptLines = [
             '#!/usr/bin/env bash',
             'set -euo pipefail',
@@ -710,15 +710,15 @@ INI;
         }
 
         if ($scriptResult['changed']) {
-            $this->runAsLaunchpad('sudo chmod +x '.escapeshellarg($scriptPath));
+            $this->runAsLaunchpadUser('sudo chmod +x '.escapeshellarg($scriptPath));
         }
 
-        $servicePath = '/etc/systemd/system/launchpad-php-fpm-reload.service';
-        $pathPath = '/etc/systemd/system/launchpad-php-fpm-reload.path';
+        $servicePath = '/etc/systemd/system/orbit-php-fpm-reload.service';
+        $pathPath = '/etc/systemd/system/orbit-php-fpm-reload.path';
 
         $serviceUnit = <<<UNIT
 [Unit]
-Description=Launchpad reload PHP-FPM when configs change
+Description=Orbit reload PHP-FPM when configs change
 
 [Service]
 Type=oneshot
@@ -734,7 +734,7 @@ UNIT;
 
         $pathLines = [
             '[Unit]',
-            'Description=Launchpad watch PHP config changes',
+            'Description=Orbit watch PHP config changes',
             '',
             '[Path]',
             "PathModified={$globalIniPath}",
@@ -747,7 +747,7 @@ UNIT;
             $pathLines[] = "PathModified=/etc/php/{$version}/fpm/pool.d/";
         }
 
-        $pathLines[] = 'Unit=launchpad-php-fpm-reload.service';
+        $pathLines[] = 'Unit=orbit-php-fpm-reload.service';
         $pathLines[] = '';
         $pathLines[] = '[Install]';
         $pathLines[] = 'WantedBy=multi-user.target';
@@ -762,10 +762,10 @@ UNIT;
         }
 
         if ($serviceResult['changed'] || $pathResult['changed']) {
-            $this->runAsLaunchpad('sudo systemctl daemon-reload');
+            $this->runAsLaunchpadUser('sudo systemctl daemon-reload');
         }
 
-        $enableResult = $this->runAsLaunchpad('sudo systemctl enable --now launchpad-php-fpm-reload.path');
+        $enableResult = $this->runAsLaunchpadUser('sudo systemctl enable --now orbit-php-fpm-reload.path');
         if (! $enableResult['success']) {
             $this->logError('Failed to enable PHP-FPM reload watcher: '.$enableResult['error']);
 
@@ -778,7 +778,7 @@ UNIT;
     protected function installCaddy(): bool
     {
         // Check if Caddy is already installed
-        $check = $this->runAsLaunchpad('command -v caddy >/dev/null 2>&1 && echo "installed" || echo "missing"');
+        $check = $this->runAsLaunchpadUser('command -v caddy >/dev/null 2>&1 && echo "installed" || echo "missing"');
 
         if (str_contains((string) $check['output'], 'installed')) {
             $this->logInfo('Caddy already installed');
@@ -795,7 +795,7 @@ UNIT;
             'sudo apt install -y caddy',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $commands), 180);
+        $result = $this->runAsLaunchpadUser(implode(' && ', $commands), 180);
 
         if (! $result['success']) {
             $this->logError('Caddy installation output: '.$result['output'].$result['error']);
@@ -804,7 +804,7 @@ UNIT;
         }
 
         // Verify installation
-        $verify = $this->runAsLaunchpad('caddy version');
+        $verify = $this->runAsLaunchpadUser('caddy version');
 
         return $verify['success'];
     }
@@ -813,11 +813,11 @@ UNIT;
     {
         $commands = [
             'mkdir -p ~/.local/bin',
-            "curl -L -o ~/.local/bin/launchpad {$this->cliDownloadUrl}",
-            'chmod +x ~/.local/bin/launchpad',
+            "curl -L -o ~/.local/bin/orbit {$this->cliDownloadUrl}",
+            'chmod +x ~/.local/bin/orbit',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $commands));
+        $result = $this->runAsLaunchpadUser(implode(' && ', $commands));
 
         if (! $result['success']) {
             $this->logError('CLI installation output: '.$result['error']);
@@ -826,7 +826,7 @@ UNIT;
         }
 
         // Verify installation
-        $verify = $this->runAsLaunchpad('php ~/.local/bin/launchpad --version');
+        $verify = $this->runAsLaunchpadUser('php ~/.local/bin/orbit --version');
 
         return $verify['success'];
     }
@@ -837,34 +837,34 @@ UNIT;
             'mkdir -p ~/projects',
         ];
 
-        $result = $this->runAsLaunchpad(implode(' && ', $commands));
+        $result = $this->runAsLaunchpadUser(implode(' && ', $commands));
 
         return $result['success'];
     }
 
-    protected function initializeLaunchpad(): bool
+    protected function initializeOrbit(): bool
     {
         // Need to use sg (switch group) to pick up docker group membership
-        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad init"', 600);
+        $result = $this->runAsLaunchpadUser('sg docker -c "php ~/.local/bin/orbit.init"', 600);
 
         if (! $result['success']) {
-            $this->logError('Launchpad init output: '.$result['output'].$result['error']);
+            $this->logError('Orbit init output: '.$result['output'].$result['error']);
 
             return false;
         }
 
         // Create Docker network (CLI init has a bug where it doesn't persist the network)
-        $this->runAsLaunchpad('sg docker -c "docker network create launchpad 2>/dev/null || true"');
+        $this->runAsLaunchpadUser('sg docker -c "docker network create orbit 2>/dev/null || true"');
 
         return true;
     }
 
-    protected function startLaunchpad(): bool
+    protected function startOrbit(): bool
     {
-        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad start"', 120);
+        $result = $this->runAsLaunchpadUser('sg docker -c "php ~/.local/bin/orbit start"', 120);
 
         if (! $result['success']) {
-            $this->logError('Launchpad start output: '.$result['output'].$result['error']);
+            $this->logError('Orbit start output: '.$result['output'].$result['error']);
 
             return false;
         }
@@ -872,9 +872,9 @@ UNIT;
         return true;
     }
 
-    public function getLaunchpadStatus(): ?array
+    public function getOrbitStatus(): ?array
     {
-        $result = $this->runAsLaunchpad('sg docker -c "php ~/.local/bin/launchpad status --json"');
+        $result = $this->runAsLaunchpadUser('sg docker -c "php ~/.local/bin/orbit status --json"');
 
         if (! $result['success']) {
             return null;
@@ -884,15 +884,15 @@ UNIT;
     }
 
     /**
-     * Check if an environment already has Launchpad configured.
+     * Check if an environment already has Orbit configured.
      * Returns info about existing setup or null if not configured.
      */
     public static function checkExistingSetup(string $host, string $user = 'root'): array
     {
         $result = [
-            'has_launchpad' => false,
-            'has_launchpad_user' => false,
-            'launchpad_running' => false,
+            'has_orbit' => false,
+            'has_orbit_user' => false,
+            'orbit_running' => false,
             'can_connect' => false,
             'connected_as' => null,
             'error' => null,
@@ -906,26 +906,26 @@ UNIT;
         ];
         $options = implode(' ', $sshOptions);
 
-        // First, try connecting as the launchpad user (in case already provisioned)
-        $launchpadCheck = Process::timeout(15)->run(
+        // First, try connecting as the orbit user (in case already provisioned)
+        $orbitCheck = Process::timeout(15)->run(
             "ssh {$options} launchpad@{$host} 'echo connected'"
         );
 
-        if ($launchpadCheck->successful() && str_contains($launchpadCheck->output(), 'connected')) {
+        if ($orbitCheck->successful() && str_contains($orbitCheck->output(), 'connected')) {
             $result['can_connect'] = true;
             $result['connected_as'] = 'launchpad';
-            $result['has_launchpad_user'] = true;
+            $result['has_orbit_user'] = true;
 
-            // Check if launchpad CLI is installed and get status
+            // Check if orbit CLI is installed and get status
             $statusCheck = Process::timeout(30)->run(
-                "ssh {$options} launchpad@{$host} 'php ~/.local/bin/launchpad status --json 2>/dev/null'"
+                "ssh {$options} launchpad@{$host} 'php ~/.local/bin/orbit status --json 2>/dev/null'"
             );
 
             if ($statusCheck->successful()) {
                 $status = json_decode($statusCheck->output(), true);
                 if ($status) {
-                    $result['has_launchpad'] = true;
-                    $result['launchpad_running'] = ($status['status'] ?? '') === 'running';
+                    $result['has_orbit'] = true;
+                    $result['orbit_running'] = ($status['status'] ?? '') === 'running';
                     $result['status'] = $status;
                 }
             } else {
@@ -934,7 +934,7 @@ UNIT;
                     "ssh {$options} launchpad@{$host} 'test -f ~/.local/bin/launchpad && echo exists'"
                 );
                 if ($cliCheck->successful() && str_contains($cliCheck->output(), 'exists')) {
-                    $result['has_launchpad'] = true;
+                    $result['has_orbit'] = true;
                 }
             }
 
@@ -950,13 +950,13 @@ UNIT;
             $result['can_connect'] = true;
             $result['connected_as'] = $user;
 
-            // Check if launchpad user exists
+            // Check if orbit user exists
             $userCheck = Process::timeout(15)->run(
                 "ssh {$options} {$user}@{$host} 'id launchpad >/dev/null 2>&1 && echo exists || echo missing'"
             );
 
             if (str_contains($userCheck->output(), 'exists')) {
-                $result['has_launchpad_user'] = true;
+                $result['has_orbit_user'] = true;
             }
 
             return $result;

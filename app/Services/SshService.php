@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Process;
 class SshService
 {
     // Use /tmp for control sockets to avoid path length issues
-    protected string $controlDir = '/tmp/launchpad-ssh';
+    protected string $controlDir = '/tmp/orbit-ssh';
 
     protected int $controlPersist = 600;
 

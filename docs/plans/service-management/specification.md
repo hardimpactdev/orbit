@@ -23,7 +23,7 @@ Desktop UI (Vue) → NativePHP → LaunchpadService → CLI Commands → Service
 
 ### Phase 1: CLI Service Management System
 
-**Location:** Remote server `ssh launchpad@ai:~/projects/launchpad-cli/`
+**Location:** Remote server `ssh launchpad@ai:~/projects/orbit-cli/`
 
 #### Step 1.1: Create Service Template DTOs and Loader
 
@@ -147,7 +147,7 @@ config:
 
 docker:
   image: postgres:${version}
-  container_name: launchpad-postgres
+  container_name: orbit-postgres
   ports:
     - "${port}:5432"
   environment:
@@ -248,27 +248,27 @@ services:
 ```bash
 # On remote server
 ssh launchpad@ai
-cd ~/projects/launchpad-cli
+cd ~/projects/orbit-cli
 
 # Build phar
 ~/.config/composer/vendor/bin/box compile
 
 # Create GitHub release
-gh release create v1.x.x builds/launchpad.phar \
+gh release create v1.x.x builds/orbit.phar \
   --title "v1.x.x - Service Management" \
   --notes "Add declarative service management with templates"
 
 # Update CLI on dev server
-curl -L -o ~/.local/bin/launchpad \
-  https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar
-chmod +x ~/.local/bin/launchpad
+curl -L -o ~/.local/bin/orbit \
+  https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar
+chmod +x ~/.local/bin/orbit
 ```
 
 ---
 
 ### Phase 2: Desktop App UI Layer
 
-**Location:** Local `launchpad-desktop` repository
+**Location:** Local `orbit-desktop` repository
 
 #### Step 2.1: Update Backend Services
 
@@ -577,7 +577,7 @@ const saveConfig = async () => {
 
 #### Step 2.7: Update Remote API Routes
 
-**Note:** These routes need to be added to the CLI web app at `~/projects/launchpad-cli/web/`
+**Note:** These routes need to be added to the CLI web app at `~/projects/orbit-cli/web/`
 
 **File to modify:** `routes/api.php` (in CLI web app)
 
@@ -691,7 +691,7 @@ Each service template defines a `configSchema` that specifies:
 ```bash
 # SSH to remote server
 ssh launchpad@ai
-cd ~/projects/launchpad-cli
+cd ~/projects/orbit-cli
 
 # Test template loading
 php launchpad service:list --available
@@ -703,8 +703,8 @@ php launchpad service:enable mysql --json
 php launchpad service:configure mysql --set port=3307 --set version=8.0 --json
 
 # Check generated files
-cat ~/.config/launchpad/services.yaml
-cat ~/.config/launchpad/docker-compose.yaml
+cat ~/.config/orbit/services.yaml
+cat ~/.config/orbit/docker-compose.yaml
 
 # Start services
 php launchpad start
@@ -748,4 +748,4 @@ php launchpad service:disable dns --json
 - **Backward compatibility**: Existing environments need migration to generate services.yaml from current running containers
 - **Configuration changes**: Require service restart to apply (inform user in UI)
 - **Service dependencies**: ComposeGenerator should handle `depends_on` for proper startup order
-- **Data persistence**: Service data in `~/.config/launchpad/service-data/{service}/` persists across enable/disable
+- **Data persistence**: Service data in `~/.config/orbit/service-data/{service}/` persists across enable/disable

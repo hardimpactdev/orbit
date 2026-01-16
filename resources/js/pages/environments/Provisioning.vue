@@ -50,12 +50,12 @@ const currentStepText = computed(() => {
 });
 
 const remoteChecklistItems = [
-    { step: 3, label: 'Launchpad user with sudo access' },
+    { step: 3, label: 'Orbit user with sudo access' },
     { step: 6, label: 'Secure SSH configuration (key-only, no root login)' },
     { step: 8, label: 'Docker with containerized services' },
     { step: 11, label: 'PHP-FPM 8.2, 8.3 & 8.4 via Ondřej PPA' },
     { step: 13, label: 'Caddy web server' },
-    { step: 17, label: 'Launchpad stack (PostgreSQL, Redis, Mailpit)' },
+    { step: 17, label: 'Orbit stack (PostgreSQL, Redis, Mailpit)' },
 ];
 
 const localChecklistItems = [
@@ -205,7 +205,7 @@ onUnmounted(() => {
                         {{ isError ? 'Provisioning Failed' : 'Setting up Environment' }}
                     </h3>
                     <p class="text-gray-500 dark:text-gray-400">
-                        {{ isError ? error : 'Installing the Launchpad stack on the remote machine...' }}
+                        {{ isError ? error : 'Installing the Orbit stack on the remote machine...' }}
                     </p>
                 </div>
             </div>

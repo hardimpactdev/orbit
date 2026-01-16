@@ -7,14 +7,14 @@ use App\Models\Setting;
 use App\Models\TemplateFavorite;
 use App\Services\DnsResolverService;
 use App\Services\DoctorService;
-use App\Services\LaunchpadCli\ConfigurationService;
-use App\Services\LaunchpadCli\OrchestratorService;
-use App\Services\LaunchpadCli\PackageService;
-use App\Services\LaunchpadCli\ProjectService;
-use App\Services\LaunchpadCli\ServiceControlService;
-use App\Services\LaunchpadCli\StatusService;
-use App\Services\LaunchpadCli\WorkspaceService;
-use App\Services\LaunchpadCli\WorktreeService;
+use App\Services\OrbitCli\ConfigurationService;
+use App\Services\OrbitCli\OrchestratorService;
+use App\Services\OrbitCli\PackageService;
+use App\Services\OrbitCli\ProjectService;
+use App\Services\OrbitCli\ServiceControlService;
+use App\Services\OrbitCli\StatusService;
+use App\Services\OrbitCli\WorkspaceService;
+use App\Services\OrbitCli\WorktreeService;
 use App\Services\MacPhpFpmConfigService;
 use App\Services\SshService;
 use Illuminate\Http\Request;
@@ -38,13 +38,13 @@ class EnvironmentController extends Controller
 
     /**
      * Get the remote API URL for direct frontend calls.
-     * For remote environments with a known TLD, returns https://launchpad.{tld}/api
+     * For remote environments with a known TLD, returns https://orbit.{tld}/api
      * This allows the frontend to bypass the single-threaded NativePHP server.
      */
     protected function getRemoteApiUrl(Environment $environment): ?string
     {
         if (! $environment->is_local && $environment->tld) {
-            return "https://launchpad.{$environment->tld}/api";
+            return "https://orbit.{$environment->tld}/api";
         }
 
         return null;
@@ -336,7 +336,7 @@ class EnvironmentController extends Controller
             'orchestrator_url' => $validated['orchestrator_url'],
         ]);
 
-        // Update launchpad CLI config with orchestrator URL
+        // Update orbit CLI config with orchestrator URL
         $this->orchestrator->setOrchestratorUrl($environment, $validated['orchestrator_url']);
 
         return redirect()->back()->with('success', 'Orchestrator enabled successfully.');
@@ -352,7 +352,7 @@ class EnvironmentController extends Controller
             'orchestrator_url' => null,
         ]);
 
-        // Remove orchestrator URL from launchpad CLI config
+        // Remove orchestrator URL from orbit CLI config
         $this->orchestrator->removeOrchestratorUrl($environment);
 
         return redirect()->back()->with('success', 'Orchestrator disconnected.');

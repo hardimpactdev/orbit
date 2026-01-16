@@ -33,12 +33,12 @@ export function useEcho() {
     // Disconnect from previous environment
     disconnect()
 
-    const reverbHost = `launchpad.${environment.tld}`
+    const reverbHost = `orbit.${environment.tld}`
     
     try {
       echoInstance = new Echo({
         broadcaster: 'reverb',
-        key: 'launchpad-key',
+        key: 'orbit-key',
         wsHost: reverbHost,
         wsPort: 8080,
         wssPort: 8080,

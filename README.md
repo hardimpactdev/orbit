@@ -1,6 +1,6 @@
-# Launchpad Desktop
+# Orbit Desktop
 
-A NativePHP/Electron desktop application for managing local and remote [Launchpad CLI](https://github.com/nckrtl/launchpad-cli) installations.
+A NativePHP/Electron desktop application for managing local and remote [Orbit CLI](https://github.com/nckrtl/orbit-cli) installations.
 
 > **Note:** This is a **macOS-only** application. It relies on macOS-specific features like `/etc/resolver/` for DNS management and Touch ID for sudo authentication. Remote environments can run any Linux distribution.
 
@@ -8,7 +8,7 @@ A NativePHP/Electron desktop application for managing local and remote [Launchpa
 
 - **Local Environment Management**: Control your local Launchpad installation directly
 - **Remote Server Management**: Manage remote Launchpad installations via SSH
-- **Server Provisioning**: Provision new Ubuntu servers with the complete Launchpad stack (PHP-FPM, Caddy, Docker services)
+- **Server Provisioning**: Provision new Ubuntu servers with the complete Orbit stack (PHP-FPM, Caddy, Docker services)
 - **Automatic DNS Setup**: Configures macOS DNS resolvers with Touch ID authentication
 - **Multi-Editor Support**: Open projects in Cursor, VS Code, Windsurf, Zed, and more
 - **Real-time Status**: WebSocket-based updates for project provisioning and service status
@@ -24,8 +24,8 @@ A NativePHP/Electron desktop application for managing local and remote [Launchpa
 
 ```bash
 # Clone the repository
-git clone https://github.com/nckrtl/launchpad-desktop.git
-cd launchpad-desktop
+git clone https://github.com/nckrtl/orbit-desktop.git
+cd orbit-desktop
 
 # Install dependencies
 composer install
@@ -49,9 +49,9 @@ This enables Touch ID for sudo commands, which the app uses to manage `/etc/reso
 
 ### Architecture
 
-The Launchpad stack uses **PHP-FPM on the host** with **Caddy** as the web server:
+The Orbit stack uses **PHP-FPM on the host** with **Caddy** as the web server:
 
-- **PHP-FPM**: Multiple pools (8.4, 8.5) with Unix sockets at `~/.config/launchpad/php/`
+- **PHP-FPM**: Multiple pools (8.4, 8.5) with Unix sockets at `~/.config/orbit/php/`
 - **Caddy**: Single binary on host serving sites with automatic HTTPS
 - **Horizon**: Queue worker as systemd (Linux) or launchd (macOS) service
 - **Docker**: PostgreSQL, Redis, Mailpit, Reverb, dnsmasq remain containerized
@@ -67,7 +67,7 @@ When you configure a TLD (e.g., `.test`, `.ccc`) for an environment:
 ### Communication
 
 - **Local environments**: Direct PHP process execution
-- **Remote environments**: Direct API calls to `https://launchpad.{tld}/api/...` for performance, SSH for provisioning
+- **Remote environments**: Direct API calls to `https://orbit.{tld}/api/...` for performance, SSH for provisioning
 
 ## Development
 
@@ -84,7 +84,7 @@ php artisan migrate
 
 ## Related Projects
 
-- [Launchpad CLI](https://github.com/nckrtl/launchpad-cli) - The command-line tool this app controls
+- [Orbit CLI](https://github.com/nckrtl/orbit-cli) - The command-line tool this app controls
 
 ## License
 

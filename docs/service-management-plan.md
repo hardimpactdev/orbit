@@ -1,8 +1,8 @@
-# Declarative Service Management for Launchpad CLI
+# Declarative Service Management for Orbit CLI
 
 ## Summary
 
-Add a declarative service management system to launchpad-cli that replaces hardcoded service definitions with YAML-based templates. Users configure services via `services.yaml`, and the system generates a unified `docker-compose.yaml`.
+Add a declarative service management system to orbit-cli that replaces hardcoded service definitions with YAML-based templates. Users configure services via `services.yaml`, and the system generates a unified `docker-compose.yaml`.
 
 ## Current State
 
@@ -24,7 +24,7 @@ Generated (docker-compose.yaml)
 
 ## File Structure
 
-**CLI Source** (`~/projects/launchpad-cli/`):
+**CLI Source** (`~/projects/orbit-cli/`):
 ```
 stubs/
 ├── templates/                    # NEW: Service templates
@@ -53,7 +53,7 @@ app/
     └── ServiceTemplate.php       # NEW: DTO
 ```
 
-**Runtime Config** (`~/.config/launchpad/`):
+**Runtime Config** (`~/.config/orbit/`):
 ```
 services.yaml              # User's enabled services + config
 docker-compose.yaml        # GENERATED from templates
@@ -262,14 +262,14 @@ networks:
 services:
   postgres:
     image: postgres:17
-    container_name: launchpad-postgres
+    container_name: orbit-postgres
     ports:
       - "5432:5432"
     environment:
       POSTGRES_USER: launchpad
       POSTGRES_PASSWORD: launchpad
     volumes:
-      - /home/launchpad/.config/launchpad/service-data/postgres:/var/lib/postgresql/data
+      - /home/launchpad/.config/orbit/service-data/postgres:/var/lib/postgresql/data
     networks:
       - launchpad
     healthcheck:
@@ -280,11 +280,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: launchpad-redis
+    container_name: orbit-redis
     ports:
       - "6379:6379"
     volumes:
-      - /home/launchpad/.config/launchpad/service-data/redis:/data
+      - /home/launchpad/.config/orbit/service-data/redis:/data
     networks:
       - launchpad
 
@@ -296,7 +296,7 @@ services:
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
     volumes:
-      - /home/launchpad/.config/launchpad/service-data/mysql:/var/lib/mysql
+      - /home/launchpad/.config/orbit/service-data/mysql:/var/lib/mysql
     networks:
       - launchpad
 ```
@@ -338,8 +338,8 @@ This is a breaking change that replaces the legacy stub-based system entirely:
    launchpad init
 
    # Check generated files
-   cat ~/.config/launchpad/services.yaml
-   cat ~/.config/launchpad/docker-compose.yaml
+   cat ~/.config/orbit/services.yaml
+   cat ~/.config/orbit/docker-compose.yaml
 
    # List services
    launchpad service:list

@@ -1,4 +1,4 @@
-# Launchpad CLI Auto-Provisioning Plan
+# Orbit CLI Auto-Provisioning Plan
 
 > **Status**: Planned (not yet implemented)
 > **Created**: 2026-01-12
@@ -6,13 +6,13 @@
 
 ## Overview
 
-Add a unified `launchpad setup` command to the CLI that auto-detects the platform (Mac/Linux) and provisions the full Launchpad stack. The desktop app remains a "dumb UI shell" that simply invokes this CLI command and displays progress.
+Add a unified `launchpad setup` command to the CLI that auto-detects the platform (Mac/Linux) and provisions the full Orbit stack. The desktop app remains a "dumb UI shell" that simply invokes this CLI command and displays progress.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Desktop App (launchpad-desktop)                                │
+│  Desktop App (orbit-desktop)                                │
 │  - Invokes: launchpad setup --json                              │
 │  - Parses JSON progress output                                  │
 │  - Displays progress in UI                                      │
@@ -21,7 +21,7 @@ Add a unified `launchpad setup` command to the CLI that auto-detects the platfor
                         │ or SSH (remote)
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Launchpad CLI (~/projects/launchpad-cli/)                      │
+│  Orbit CLI (~/projects/orbit-cli/)                      │
 │                                                                 │
 │  launchpad setup [--tld=test] [--json]                          │
 │      │                                                          │
@@ -53,11 +53,11 @@ Add a unified `launchpad setup` command to the CLI that auto-detects the platfor
 
 ---
 
-## CLI Implementation (launchpad-cli)
+## CLI Implementation (orbit-cli)
 
 ### Location
 
-All CLI changes in: `ssh launchpad@ai:~/projects/launchpad-cli/`
+All CLI changes in: `ssh launchpad@ai:~/projects/orbit-cli/`
 
 ### New Command: `SetupCommand.php`
 
@@ -102,7 +102,7 @@ public function handle(): int
 | 5 | Install PHP versions | `brew install shivammathur/php/php@8.4` etc |
 | 6 | Install Caddy | `brew install caddy` |
 | 7 | Install support tools | Bun, Composer if missing |
-| 8 | Create directories | `~/.config/launchpad/`, `~/projects/` |
+| 8 | Create directories | `~/.config/orbit/`, `~/projects/` |
 | 9 | Configure PHP-FPM | Generate pool configs, create symlinks |
 | 10 | Configure Caddy | Generate Caddyfile, setup system import |
 | 11 | Configure DNS | Smart detection, create `/etc/resolver/{tld}` |
@@ -121,7 +121,7 @@ public function handle(): int
 | 4 | Install PHP-FPM | `apt install php8.x-fpm` with extensions |
 | 5 | Install Caddy | Add repo, `apt install caddy` |
 | 6 | Install support tools | Bun, Composer if missing |
-| 7 | Create directories | `~/.config/launchpad/`, `~/projects/` |
+| 7 | Create directories | `~/.config/orbit/`, `~/projects/` |
 | 8 | Configure PHP-FPM | Generate pool configs, symlink |
 | 9 | Configure Caddy | Generate Caddyfile |
 | 10 | Start PHP-FPM | `systemctl start php8.x-fpm` |
@@ -256,7 +256,7 @@ app/Commands/
 
 ---
 
-## Desktop App Changes (launchpad-desktop)
+## Desktop App Changes (orbit-desktop)
 
 ### Minimal Changes Required
 
@@ -377,7 +377,7 @@ const checklistItems = computed(() =>
 
 ## Implementation Order
 
-### Phase 1: CLI Command (in launchpad-cli)
+### Phase 1: CLI Command (in orbit-cli)
 
 1. Create `SetupCommand.php` with platform detection
 2. Create `Setup/MacSetup.php` with all Mac provisioning steps
@@ -428,12 +428,12 @@ Remove redundant Mac-specific files from desktop app (now handled by CLI):
 
 ```bash
 ssh launchpad@ai
-cd ~/projects/launchpad-cli
+cd ~/projects/orbit-cli
 
 # Test on Mac (copy to local machine first)
-scp -r . your-mac:~/launchpad-cli-dev/
+scp -r . your-mac:~/orbit-cli-dev/
 ssh your-mac
-cd ~/launchpad-cli-dev
+cd ~/orbit-cli-dev
 php launchpad setup --json
 ```
 
@@ -447,8 +447,8 @@ php launchpad setup --json
    launchctl list | grep horizon
    docker ps
    ```
-4. Test DNS: `dig launchpad.test @127.0.0.1`
-5. Open https://launchpad.test
+4. Test DNS: `dig orbit.test @127.0.0.1`
+5. Open https://orbit.test
 
 ---
 
@@ -468,7 +468,7 @@ php launchpad setup --json
 
 ## Notes
 
-- All provisioning logic lives in `launchpad-cli`, not the desktop app
+- All provisioning logic lives in `orbit-cli`, not the desktop app
 - Desktop app is just a "dumb UI shell" that displays progress
 - The `--json` flag is key for desktop integration
 - Existing `ProvisioningService.php` in desktop handles remote (SSH) provisioning - that stays

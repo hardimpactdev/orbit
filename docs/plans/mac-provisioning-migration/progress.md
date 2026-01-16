@@ -15,15 +15,15 @@ To be filled by implementer with discovered patterns:
 
 Created epic and tasks from mac-provisioning-migration-plan.md.
 
-Epic: Mac Provisioning Migration (launchpad-desktop-x3h)
- - Phase 1: Create CLI Setup Command (launchpad-desktop-l9a) - ready
- - Verify Phase 1: CLI Setup Command Works (launchpad-desktop-911) - blocked by Phase 1
- - Phase 2: Desktop Integration with CLI (launchpad-desktop-uy2) - blocked by Verify Phase 1
- - Verify Phase 2: Desktop Integration Works (launchpad-desktop-2yx) - blocked by Phase 2
- - Phase 3: Remove Redundant Desktop Files (launchpad-desktop-91a) - blocked by Verify Phase 2
- - Verify Phase 3: Cleanup Complete (launchpad-desktop-ajc) - blocked by Phase 3
- - Phase 4: Release and E2E Testing (launchpad-desktop-oz2) - blocked by Verify Phase 3
- - Verify Phase 4: Release Complete (launchpad-desktop-dxp) - blocked by Phase 4
+Epic: Mac Provisioning Migration (orbit-desktop-x3h)
+ - Phase 1: Create CLI Setup Command (orbit-desktop-l9a) - ready
+ - Verify Phase 1: CLI Setup Command Works (orbit-desktop-911) - blocked by Phase 1
+ - Phase 2: Desktop Integration with CLI (orbit-desktop-uy2) - blocked by Verify Phase 1
+ - Verify Phase 2: Desktop Integration Works (orbit-desktop-2yx) - blocked by Phase 2
+ - Phase 3: Remove Redundant Desktop Files (orbit-desktop-91a) - blocked by Verify Phase 2
+ - Verify Phase 3: Cleanup Complete (orbit-desktop-ajc) - blocked by Phase 3
+ - Phase 4: Release and E2E Testing (orbit-desktop-oz2) - blocked by Verify Phase 3
+ - Verify Phase 4: Release Complete (orbit-desktop-dxp) - blocked by Phase 4
 
 Total: 8 tasks (1 ready)
 
@@ -137,10 +137,10 @@ Run `bd ready` to see unblocked tasks.
 **Status:** Complete
 
 **Files changed:**
-- Remote server: ~/projects/launchpad-cli/app/Commands/SetupCommand.php (created)
-- Remote server: ~/projects/launchpad-cli/app/Commands/Setup/MacSetup.php (created)
-- Remote server: ~/projects/launchpad-cli/app/Commands/Setup/LinuxSetup.php (created)
-- Remote server: ~/projects/launchpad-cli/app/Commands/Setup/SetupProgress.php (created)
+- Remote server: ~/projects/orbit-cli/app/Commands/SetupCommand.php (created)
+- Remote server: ~/projects/orbit-cli/app/Commands/Setup/MacSetup.php (created)
+- Remote server: ~/projects/orbit-cli/app/Commands/Setup/LinuxSetup.php (created)
+- Remote server: ~/projects/orbit-cli/app/Commands/Setup/SetupProgress.php (created)
 
 **Learnings:**
 
@@ -166,13 +166,13 @@ Run `bd ready` to see unblocked tasks.
 4. **GitHub Release Workflow**: Created release v0.0.24 with:
    - Previous version: v0.0.23
    - Included release notes documenting new features and architecture
-   - Attached `launchpad.phar` binary
+   - Attached `orbit.phar` binary
 
 5. **PHPStan False Positive**: Added `@phpstan-ignore-next-line` comment in MacSetup.php line 223 where PHPStan incorrectly infers that `hasDocker()` is always false in a polling loop (it changes after OrbStack installation).
 
 **Verification results:**
 - `box compile` → exit 0 ✓
-- `gh release view v0.0.24` → release exists with launchpad.phar asset ✓
+- `gh release view v0.0.24` → release exists with orbit.phar asset ✓
 - CLI updated on remote server via latest release ✓
 
 **Next Steps:**
@@ -180,7 +180,7 @@ Run `bd ready` to see unblocked tasks.
   - Create new local environment in desktop app
   - Observe provisioning progress UI
   - Verify services running after setup (PHP-FPM, Caddy, DNS)
-  - Verify `dig launchpad.test @127.0.0.1` returns IP address
+  - Verify `dig orbit.test @127.0.0.1` returns IP address
 
 **Gotchas:**
 - Must use full absolute paths for Box `--composer-bin` flag

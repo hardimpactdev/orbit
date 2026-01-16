@@ -2,11 +2,11 @@
 
 **Source Plan:** `docs/service-management-plan.md`
 **Verification:** `docs/plans/declarative-service-management/verification.md`
-**Target:** Remote CLI at `ssh launchpad@ai:~/projects/launchpad-cli/`
+**Target:** Remote CLI at `ssh launchpad@ai:~/projects/orbit-cli/`
 
 ## Overview
 
-Replace hardcoded Docker service definitions in launchpad-cli with YAML-based templates. Users configure via `services.yaml`, system generates unified `docker-compose.yaml`.
+Replace hardcoded Docker service definitions in orbit-cli with YAML-based templates. Users configure via `services.yaml`, system generates unified `docker-compose.yaml`.
 
 ## Phase 1: DTOs and Template Loader
 
@@ -92,7 +92,7 @@ depends_on: []
 
 Run test suite after each phase:
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && ./vendor/bin/pest"
+ssh launchpad@ai "cd ~/projects/orbit-cli && ./vendor/bin/pest"
 ```
 
 Full verification criteria in `docs/plans/declarative-service-management/verification.md`
@@ -101,7 +101,7 @@ Full verification criteria in `docs/plans/declarative-service-management/verific
 
 ```bash
 ssh launchpad@ai
-cd ~/projects/launchpad-cli
+cd ~/projects/orbit-cli
 php launchpad init
 php launchpad service:list
 php launchpad service:enable mysql

@@ -280,7 +280,7 @@ const toggleMenuBar = () => {
         <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-white">Menu Bar Icon</h2>
-                <p class="text-sm text-zinc-400">Show Launchpad in the system menu bar for quick access.</p>
+                <p class="text-sm text-zinc-400">Show Orbit in the system menu bar for quick access.</p>
             </div>
             <div class="flex items-center">
                 <button

@@ -28,7 +28,7 @@ bash .claude/scripts/test-provision-flow.sh my-test-project
 Desktop App                    Remote Server (ai)
 ┌─────────────┐               ┌──────────────────────────────────────┐
 │ Vue Form    │               │                                      │
-│     │       │    HTTPS      │  PHP Container (launchpad-php-XX)    │
+│     │       │    HTTPS      │  PHP Container (orbit-php-XX)    │
 │     ▼       │ ─────────────►│  └─ Web App API                      │
 │ POST /api/  │               │      └─ ProjectController            │
 │  projects   │               │          └─ dispatch(CreateProjectJob)
@@ -66,7 +66,7 @@ Expected response:
 
 ```bash
 # Watch the web app logs for job progress
-ssh launchpad@ai 'tail -f ~/.config/launchpad/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
+ssh launchpad@ai 'tail -f ~/.config/orbit/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
 ```
 
 Expected log entries:
@@ -115,17 +115,17 @@ ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api -
 
 Check Horizon status:
 ```bash
-ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan horizon:status'
+ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:status'
 ```
 
 Check for failed jobs:
 ```bash
-ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan queue:failed'
+ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan queue:failed'
 ```
 
 Restart Horizon:
 ```bash
-ssh launchpad@ai 'cd ~/.config/launchpad/web && php artisan horizon:terminate'
+ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
 # Supervisord will restart it automatically
 ```
 
@@ -138,7 +138,7 @@ ssh launchpad@ai 'ls -la ~/.bun/bin/bun'
 
 Verify CreateProjectJob has correct PATH:
 ```bash
-ssh launchpad@ai 'grep -A5 "PATH" ~/.config/launchpad/web/app/Jobs/CreateProjectJob.php'
+ssh launchpad@ai 'grep -A5 "PATH" ~/.config/orbit/web/app/Jobs/CreateProjectJob.php'
 ```
 
 The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
@@ -147,7 +147,7 @@ The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
 
 Check Horizon timeout setting:
 ```bash
-ssh launchpad@ai 'grep timeout ~/.config/launchpad/web/config/horizon.php'
+ssh launchpad@ai 'grep timeout ~/.config/orbit/web/config/horizon.php'
 ```
 
 Should be `'timeout' => 120` (120 seconds).
@@ -156,10 +156,10 @@ Should be `'timeout' => 120` (120 seconds).
 
 The CLI should be mounted into PHP containers:
 ```bash
-ssh launchpad@ai 'grep launchpad ~/.config/launchpad/php/docker-compose.yml'
+ssh launchpad@ai 'grep launchpad ~/.config/orbit/php/docker-compose.yml'
 ```
 
-Should show: `~/.local/bin/launchpad:/usr/local/bin/launchpad:ro`
+Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
 
 ## Historical Fixes (Jan 2026)
 
@@ -182,8 +182,8 @@ Should show: `~/.local/bin/launchpad:/usr/local/bin/launchpad:ro`
 
 | Location | File | Purpose |
 |----------|------|---------|
-| Remote Web App | `~/.config/launchpad/web/app/Jobs/CreateProjectJob.php` | Horizon job that calls CLI |
-| Remote Web App | `~/.config/launchpad/web/app/Http/Controllers/Api/ProjectController.php` | API endpoint |
-| Remote Web App | `~/.config/launchpad/web/config/horizon.php` | Queue timeout settings |
-| Remote CLI | `~/projects/launchpad-cli/app/Commands/ProvisionCommand.php` | Actual provisioning |
+| Remote Web App | `~/.config/orbit/web/app/Jobs/CreateProjectJob.php` | Horizon job that calls CLI |
+| Remote Web App | `~/.config/orbit/web/app/Http/Controllers/Api/ProjectController.php` | API endpoint |
+| Remote Web App | `~/.config/orbit/web/config/horizon.php` | Queue timeout settings |
+| Remote CLI | `~/projects/orbit-cli/app/Commands/ProvisionCommand.php` | Actual provisioning |
 | Desktop | `.claude/scripts/test-provision-flow.sh` | Test script |

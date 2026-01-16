@@ -89,7 +89,7 @@ router.on('finish', () => {
 
 <template>
     <Head>
-        <title>Launchpad</title>
+        <title>Orbit</title>
     </Head>
 
     <Toaster position="bottom-center" theme="dark" :toast-options="{ class: 'bg-zinc-900 border-zinc-800 text-white' }" />

@@ -18,9 +18,9 @@ interface SshKeyInfo {
 }
 
 interface ServerCheckResult {
-    has_launchpad: boolean;
-    has_launchpad_user: boolean;
-    launchpad_running: boolean;
+    has_orbit: boolean;
+    has_orbit_user: boolean;
+    orbit_running: boolean;
     can_connect: boolean;
     connected_as: string | null;
     error: string | null;
@@ -107,9 +107,9 @@ const checkServer = async () => {
         hasChecked.value = true;
     } catch (error) {
         checkResult.value = {
-            has_launchpad: false,
-            has_launchpad_user: false,
-            launchpad_running: false,
+            has_orbit: false,
+            has_orbit_user: false,
+            orbit_running: false,
             can_connect: false,
             connected_as: null,
             error: 'Failed to check server connection',
@@ -149,7 +149,7 @@ const submit = () => {
 
         <Heading title="Add External Environment" />
         <p class="text-zinc-400 mb-8 mt-2">
-            Set up an external environment with the complete Launchpad stack. Requires root SSH access.
+            Set up an external environment with the complete Orbit stack. Requires root SSH access.
         </p>
 
         <form @submit.prevent="submit" class="max-w-lg">
@@ -216,16 +216,16 @@ const submit = () => {
                     </button>
                 </div>
 
-                <!-- Check Result: Launchpad Already Configured -->
-                <div v-if="checkResult?.has_launchpad" class="p-4 bg-lime-400/10 border border-lime-400/20 rounded-lg">
+                <!-- Check Result: Orbit Already Configured -->
+                <div v-if="checkResult?.has_orbit" class="p-4 bg-lime-400/10 border border-lime-400/20 rounded-lg">
                     <div class="flex items-start">
                         <CheckCircle class="w-5 h-5 text-lime-400 mr-3 mt-0.5 flex-shrink-0" />
                         <div class="flex-1">
                             <p class="text-sm font-medium text-lime-400">
-                                Launchpad is already configured on this server!
+                                Orbit is already configured on this server!
                             </p>
                             <p class="mt-1 text-sm text-zinc-400">
-                                Status: {{ checkResult.launchpad_running ? 'Running' : 'Not running' }}
+                                Status: {{ checkResult.orbit_running ? 'Running' : 'Not running' }}
                                 <span v-if="checkResult.status?.sites?.length"> · {{ checkResult.status.sites.length }} site(s)</span>
                             </p>
                             <p class="mt-2 text-sm text-zinc-500">
@@ -235,8 +235,8 @@ const submit = () => {
                     </div>
                 </div>
 
-                <!-- Check Result: Can Connect but No Launchpad -->
-                <div v-else-if="checkResult?.can_connect && !checkResult?.has_launchpad" class="p-4 bg-blue-400/10 border border-blue-400/20 rounded-lg">
+                <!-- Check Result: Can Connect but No Orbit -->
+                <div v-else-if="checkResult?.can_connect && !checkResult?.has_orbit" class="p-4 bg-blue-400/10 border border-blue-400/20 rounded-lg">
                     <div class="flex items-start">
                         <CheckCircle class="w-5 h-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
                         <div class="flex-1">
@@ -244,7 +244,7 @@ const submit = () => {
                                 Connected successfully as {{ checkResult.connected_as }}
                             </p>
                             <p class="mt-1 text-sm text-zinc-400">
-                                Launchpad is not installed on this server. Provisioning will set it up.
+                                Orbit is not installed on this server. Provisioning will set it up.
                             </p>
                         </div>
                     </div>
@@ -272,7 +272,7 @@ const submit = () => {
                     </div>
                 </div>
 
-                <div v-if="!checkResult?.has_launchpad">
+                <div v-if="!checkResult?.has_orbit">
                     <label for="ssh_public_key" class="block text-sm font-medium text-zinc-400 mb-2">
                         SSH Public Key
                     </label>
@@ -319,22 +319,22 @@ const submit = () => {
             </div>
 
             <!-- Warning for provisioning -->
-            <div v-if="!checkResult?.has_launchpad" class="mt-8 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-lg">
+            <div v-if="!checkResult?.has_orbit" class="mt-8 p-4 bg-yellow-400/10 border border-yellow-400/20 rounded-lg">
                 <p class="text-sm text-yellow-400">
-                    <strong>Note:</strong> We'll first check if Launchpad is already installed. If not, provisioning will make these changes:
+                    <strong>Note:</strong> We'll first check if Orbit is already installed. If not, provisioning will make these changes:
                 </p>
                 <ul class="mt-2 text-sm text-zinc-400 list-disc list-inside space-y-1">
                     <li>Create a <code class="bg-zinc-800 px-1 rounded text-zinc-300">launchpad</code> user with sudo access</li>
                     <li>Disable SSH password authentication</li>
                     <li>Disable root SSH login</li>
                     <li>Install Docker</li>
-                    <li>Install and initialize Launchpad</li>
+                    <li>Install and initialize Orbit</li>
                 </ul>
             </div>
 
             <div class="mt-8 flex gap-3">
                 <!-- Show different buttons based on check result -->
-                <template v-if="checkResult?.has_launchpad">
+                <template v-if="checkResult?.has_orbit">
                     <button
                         type="button"
                         @click="addWithoutProvisioning"

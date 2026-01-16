@@ -33,7 +33,7 @@ class DnsResolverService
 
             // Write expect script to temp file to avoid complex escaping
             // Using Tcl variable assignment preserves the command correctly
-            $tempScript = tempnam(sys_get_temp_dir(), 'launchpad_expect_');
+            $tempScript = tempnam(sys_get_temp_dir(), 'orbit_expect_');
             $expectScript = <<<EXPECT
 set cmd {{$shellCommand}}
 spawn sudo sh -c \$cmd
@@ -104,7 +104,7 @@ EXPECT;
             $shellCommand = "rm -f {$resolverFile}";
 
             // Write expect script to temp file to avoid complex escaping
-            $tempScript = tempnam(sys_get_temp_dir(), 'launchpad_expect_');
+            $tempScript = tempnam(sys_get_temp_dir(), 'orbit_expect_');
             $expectScript = <<<EXPECT
 set cmd {{$shellCommand}}
 spawn sudo sh -c \$cmd
@@ -176,7 +176,7 @@ EXPECT;
     }
 
     /**
-     * Get all currently configured resolvers managed by Launchpad.
+     * Get all currently configured resolvers managed by Orbit.
      */
     public function getManagedResolvers(): array
     {
@@ -189,7 +189,7 @@ EXPECT;
 
         foreach ($files as $file) {
             $content = @file_get_contents($file);
-            if ($content && str_contains($content, 'Managed by Launchpad')) {
+            if ($content && str_contains($content, 'Managed by Orbit')) {
                 $tld = basename($file);
                 preg_match('/nameserver\s+(\S+)/', $content, $matches);
                 $resolvers[$tld] = $matches[1] ?? 'unknown';
@@ -202,7 +202,7 @@ EXPECT;
     /**
      * Sync all resolver files with current environment configurations.
      */
-    public function syncAllResolvers(\App\Services\LaunchpadCli\ConfigurationService $configService): array
+    public function syncAllResolvers(\App\Services\OrbitCli\ConfigurationService $configService): array
     {
         $results = [];
         $environments = Environment::all();

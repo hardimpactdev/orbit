@@ -14,7 +14,7 @@ export interface ReverbConfig {
 }
 
 /**
- * Get or create an Echo instance for connecting to Launchpad's standalone Reverb server.
+ * Get or create an Echo instance for connecting to Orbit's standalone Reverb server.
  */
 export function getEcho(config: ReverbConfig): Echo<'reverb'> {
     echoInstance = new Echo({

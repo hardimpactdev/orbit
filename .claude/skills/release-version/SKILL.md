@@ -6,22 +6,22 @@ allowed-tools: Bash(git:*), Bash(gh:*), Bash(ssh:*), Bash(~/.config/composer/ven
 
 # Release New Version
 
-This skill handles releases for **launchpad-cli** (the primary use case) or the desktop app.
+This skill handles releases for **orbit-cli** (the primary use case) or the desktop app.
 
-## Launchpad CLI Release
+## Orbit CLI Release
 
 The CLI is a Laravel Zero app on the remote server. Follow these steps:
 
 ### 1. Check Current State
 
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && git status && git tag --sort=-version:refname | head -5"
+ssh launchpad@ai "cd ~/projects/orbit-cli && git status && git tag --sort=-version:refname | head -5"
 ```
 
 ### 2. Commit Changes (if needed)
 
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && git add -A && git commit -m 'Description of changes' && git push"
+ssh launchpad@ai "cd ~/projects/orbit-cli && git add -A && git commit -m 'Description of changes' && git push"
 ```
 
 ### 3. Build the Phar
@@ -29,10 +29,10 @@ ssh launchpad@ai "cd ~/projects/launchpad-cli && git add -A && git commit -m 'De
 Use Box directly (Laravel Zero's bundled Box has a PHP 8.5 bug):
 
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && ~/.config/composer/vendor/bin/box compile"
+ssh launchpad@ai "cd ~/projects/orbit-cli && ~/.config/composer/vendor/bin/box compile"
 ```
 
-This creates `builds/launchpad.phar`.
+This creates `builds/orbit.phar`.
 
 ### 4. Determine Version Number
 
@@ -44,13 +44,13 @@ Follow semantic versioning (MAJOR.MINOR.PATCH):
 ### 5. Create GitHub Release
 
 ```bash
-ssh launchpad@ai "cd ~/projects/launchpad-cli && gh release create vX.Y.Z builds/launchpad.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
+ssh launchpad@ai "cd ~/projects/orbit-cli && gh release create vX.Y.Z builds/orbit.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
 ```
 
 ### 6. Update CLI on Server
 
 ```bash
-ssh launchpad@ai "curl -L -o ~/.local/bin/launchpad https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x ~/.local/bin/launchpad"
+ssh launchpad@ai "curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit"
 ```
 
 ### 7. Verify
