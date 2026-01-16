@@ -306,6 +306,47 @@ defineProps<{
 - Load data asynchronously via `remoteApiUrl` fetch calls
 - Use Inertia for navigation, direct fetch for API data
 
+## Known Gotchas
+
+### Bun/Node Package Managers in Background Processes
+
+**Problem:** `bun install` (and potentially other package managers) can hang indefinitely when executed from PHP in background/non-interactive contexts like Laravel Horizon queue workers.
+
+**Root Cause:** Package managers often try to display progress bars or interactive output. When there's no TTY (terminal) available, the process can block waiting for terminal operations that will never complete.
+
+**Solution:** Always use CI-mode commands when running package managers from PHP:
+
+```php
+// BAD - can hang in background processes
+Process::run('bun install');
+Process::run('bun install --no-progress');
+
+// GOOD - designed for non-interactive environments
+Process::run('bun ci');
+
+// Also set CI environment variable for extra safety
+Process::env(['CI' => '1'])->run('bun ci');
+```
+
+**Key Points:**
+- `bun ci` is specifically designed for CI/non-TTY environments
+- Always set `CI=1` environment variable when running from PHP
+- This applies to Horizon jobs, queue workers, and any PHP subprocess
+- The issue does NOT occur when running PHP scripts interactively from terminal
+- `shell_exec()` and `Process::run()` both work fine - the issue is TTY detection in bun
+
+**Debugging Tips:**
+- If bun hangs, test the same command directly in terminal (it will work)
+- Check if process is running in Horizon vs direct CLI invocation
+- Increase timeout and check logs for partial output
+
+### PHP-FPM Configuration
+
+PHP-FPM pool configs are stored in `/opt/homebrew/etc/php/{version}/php-fpm.d/`. When orbit-cli regenerates configs, ensure:
+- Pool names use "orbit-XX" format (not legacy "launchpad-XX")
+- Socket paths point to `~/.config/orbit/php/phpXX.sock`
+- Log paths point to `~/.config/orbit/logs/phpXX-fpm.log`
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
