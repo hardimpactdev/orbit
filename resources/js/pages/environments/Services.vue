@@ -603,16 +603,18 @@ onUnmounted(() => {
                 <Button
                     @click="showAddServiceModal = true"
                     :disabled="loading"
+                    size="sm"
                 >
                     <Plus class="w-4 h-4" />
                     Add Service
                 </Button>
-                <div class="w-px h-6 bg-zinc-800 mx-1" />
+                <div class="w-px h-5 bg-zinc-700 mx-1" />
                 <Button
                     v-if="!allRunning"
                     @click="startAll"
                     :disabled="loading || actionInProgress !== null"
-                    variant="secondary"
+                    variant="outline"
+                    size="sm"
                 >
                     <Loader2 v-if="actionInProgress === 'start-all'" class="w-4 h-4 animate-spin" />
                     <Play v-else class="w-4 h-4" />
@@ -623,6 +625,7 @@ onUnmounted(() => {
                     @click="stopAll"
                     :disabled="loading || actionInProgress !== null"
                     variant="outline"
+                    size="sm"
                 >
                     <Loader2 v-if="actionInProgress === 'stop-all'" class="w-4 h-4 animate-spin" />
                     <Square v-else class="w-4 h-4" />
@@ -632,6 +635,7 @@ onUnmounted(() => {
                     @click="restartAll"
                     :disabled="loading || actionInProgress !== null"
                     variant="outline"
+                    size="sm"
                 >
                     <Loader2 v-if="restartingAll" class="w-4 h-4 animate-spin" />
                     <RefreshCw v-else class="w-4 h-4" />

@@ -39,7 +39,7 @@ const props = defineProps<{
 }>();
 
 // Environment type toggle
-const environmentType = ref<'local' | 'external'>(props.hasLocalEnvironment ? 'external' : 'local');
+const environmentType = ref<'local' | 'remote'>(props.hasLocalEnvironment ? 'remote' : 'local');
 
 // Get the default key from database
 const defaultKey = computed(() => {
@@ -56,8 +56,8 @@ const localForm = useForm({
     is_local: true,
 });
 
-// External form
-const externalForm = useForm({
+// Remote form
+const remoteForm = useForm({
     name: '',
     host: '',
     user: 'root',
@@ -82,9 +82,9 @@ const showCustomKeyInput = computed(() => {
 // Sync selectedKeyValue with form when it changes
 watch(selectedKeyValue, (newValue) => {
     if (newValue && newValue !== 'custom') {
-        externalForm.ssh_public_key = newValue;
+        remoteForm.ssh_public_key = newValue;
     } else if (newValue === 'custom') {
-        externalForm.ssh_public_key = '';
+        remoteForm.ssh_public_key = '';
     }
 });
 
@@ -94,13 +94,13 @@ const checkResult = ref<ServerCheckResult | null>(null);
 const hasChecked = ref(false);
 
 // Reset check state when host or user changes
-watch([() => externalForm.host, () => externalForm.user], () => {
+watch([() => remoteForm.host, () => remoteForm.user], () => {
     checkResult.value = null;
     hasChecked.value = false;
 });
 
 const checkServer = async () => {
-    if (!externalForm.host) return;
+    if (!remoteForm.host) return;
 
     isChecking.value = true;
     checkResult.value = null;
@@ -115,8 +115,8 @@ const checkServer = async () => {
                     '',
             },
             body: JSON.stringify({
-                host: externalForm.host,
-                user: externalForm.user,
+                host: remoteForm.host,
+                user: remoteForm.user,
             }),
         });
 
@@ -139,9 +139,9 @@ const checkServer = async () => {
 
 const addWithoutProvisioning = () => {
     router.post('/servers', {
-        name: externalForm.name,
-        host: externalForm.host,
-        user: checkResult.value?.connected_as === 'launchpad' ? 'launchpad' : externalForm.user,
+        name: remoteForm.name,
+        host: remoteForm.host,
+        user: checkResult.value?.connected_as === 'launchpad' ? 'launchpad' : remoteForm.user,
         port: 22,
         is_local: false,
     });
@@ -151,8 +151,8 @@ const submitLocal = () => {
     localForm.post('/servers');
 };
 
-const submitExternal = () => {
-    externalForm.post('/provision');
+const submitRemote = () => {
+    remoteForm.post('/provision');
 };
 </script>
 
@@ -172,7 +172,7 @@ const submitExternal = () => {
 
         <Heading title="Add Environment" />
         <p class="text-zinc-400 mb-8 mt-2">
-            Add a local or external environment to manage development sites.
+            Add a local or remote environment to manage development sites.
         </p>
 
         <!-- Environment Type Toggle -->
@@ -196,15 +196,15 @@ const submitExternal = () => {
                 </button>
                 <button
                     type="button"
-                    @click="environmentType = 'external'"
+                    @click="environmentType = 'remote'"
                     class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors"
                     :class="
-                        environmentType === 'external'
+                        environmentType === 'remote'
                             ? 'bg-zinc-600 text-white'
                             : 'text-zinc-400 hover:text-white'
                     "
                 >
-                    External
+                    Remote
                 </button>
             </div>
         </div>
@@ -240,45 +240,45 @@ const submitExternal = () => {
             </div>
         </form>
 
-        <!-- External Environment Form -->
-        <form v-else @submit.prevent="submitExternal" class="max-w-lg">
+        <!-- Remote Environment Form -->
+        <form v-else @submit.prevent="submitRemote" class="max-w-lg">
             <div class="space-y-6">
                 <div>
-                    <Label for="external-name" class="text-muted-foreground mb-2">
+                    <Label for="remote-name" class="text-muted-foreground mb-2">
                         Environment Name
                     </Label>
                     <Input
-                        v-model="externalForm.name"
+                        v-model="remoteForm.name"
                         type="text"
-                        id="external-name"
+                        id="remote-name"
                         required
                         placeholder="Production"
                         class="w-full"
                     />
-                    <p v-if="externalForm.errors.name" class="mt-2 text-sm text-red-400">
-                        {{ externalForm.errors.name }}
+                    <p v-if="remoteForm.errors.name" class="mt-2 text-sm text-red-400">
+                        {{ remoteForm.errors.name }}
                     </p>
                 </div>
 
                 <div>
                     <Label for="host" class="text-muted-foreground mb-2"> Host IP Address </Label>
                     <Input
-                        v-model="externalForm.host"
+                        v-model="remoteForm.host"
                         type="text"
                         id="host"
                         required
                         placeholder="192.168.1.100"
                         class="w-full"
                     />
-                    <p v-if="externalForm.errors.host" class="mt-2 text-sm text-red-400">
-                        {{ externalForm.errors.host }}
+                    <p v-if="remoteForm.errors.host" class="mt-2 text-sm text-red-400">
+                        {{ remoteForm.errors.host }}
                     </p>
                 </div>
 
                 <div>
                     <Label for="user" class="text-muted-foreground mb-2"> SSH User </Label>
                     <Input
-                        v-model="externalForm.user"
+                        v-model="remoteForm.user"
                         type="text"
                         id="user"
                         required
@@ -288,13 +288,13 @@ const submitExternal = () => {
                     <p class="mt-2 text-sm text-muted-foreground">
                         User must have sudo privileges for provisioning
                     </p>
-                    <p v-if="externalForm.errors.user" class="mt-2 text-sm text-red-400">
-                        {{ externalForm.errors.user }}
+                    <p v-if="remoteForm.errors.user" class="mt-2 text-sm text-red-400">
+                        {{ remoteForm.errors.user }}
                     </p>
                 </div>
 
                 <!-- Check Server Button -->
-                <div v-if="externalForm.host && !hasChecked">
+                <div v-if="remoteForm.host && !hasChecked">
                     <Button
                         type="button"
                         @click="checkServer"
@@ -400,7 +400,7 @@ const submitExternal = () => {
                     </select>
                     <textarea
                         v-if="showCustomKeyInput"
-                        v-model="externalForm.ssh_public_key"
+                        v-model="remoteForm.ssh_public_key"
                         id="ssh_public_key"
                         rows="3"
                         required
@@ -410,8 +410,8 @@ const submitExternal = () => {
                     <p class="mt-2 text-sm text-muted-foreground">
                         This key will be added to the launchpad user on the remote machine
                     </p>
-                    <p v-if="externalForm.errors.ssh_public_key" class="mt-2 text-sm text-red-400">
-                        {{ externalForm.errors.ssh_public_key }}
+                    <p v-if="remoteForm.errors.ssh_public_key" class="mt-2 text-sm text-red-400">
+                        {{ remoteForm.errors.ssh_public_key }}
                     </p>
                 </div>
             </div>
@@ -444,17 +444,17 @@ const submitExternal = () => {
                     <Button
                         type="button"
                         @click="addWithoutProvisioning"
-                        :disabled="externalForm.processing || !externalForm.name"
+                        :disabled="remoteForm.processing || !remoteForm.name"
                         variant="secondary"
                     >
-                        <Loader2 v-if="externalForm.processing" class="w-4 h-4 animate-spin" />
+                        <Loader2 v-if="remoteForm.processing" class="w-4 h-4 animate-spin" />
                         Add
                     </Button>
                 </template>
                 <template v-else>
-                    <Button type="submit" :disabled="externalForm.processing" variant="secondary">
-                        <Loader2 v-if="externalForm.processing" class="w-4 h-4 animate-spin" />
-                        {{ externalForm.processing ? 'Setting up...' : 'Provision' }}
+                    <Button type="submit" :disabled="remoteForm.processing" variant="secondary">
+                        <Loader2 v-if="remoteForm.processing" class="w-4 h-4 animate-spin" />
+                        {{ remoteForm.processing ? 'Setting up...' : 'Provision' }}
                     </Button>
                 </template>
                 <Button as-child variant="ghost">

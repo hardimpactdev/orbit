@@ -142,7 +142,7 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="Add External Environment" />
+    <Head title="Add Remote Environment" />
 
     <div>
         <div class="mb-6">
@@ -155,9 +155,9 @@ const submit = () => {
             </Link>
         </div>
 
-        <Heading title="Add External Environment" />
+        <Heading title="Add Remote Environment" />
         <p class="text-zinc-400 mb-8 mt-2">
-            Set up an external environment with the complete Orbit stack. Requires root SSH access.
+            Set up a remote environment with the complete Orbit stack. Requires root SSH access.
         </p>
 
         <form @submit.prevent="submit" class="max-w-lg">

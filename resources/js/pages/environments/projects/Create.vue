@@ -517,7 +517,7 @@ const submit = () => {
                     <Select
                         v-else-if="githubUser"
                         :model-value="selectedOrg"
-                        @update:model-value="selectedOrg = $event"
+                        @update:model-value="selectedOrg = $event as string"
                     >
                         <SelectTrigger class="w-full">
                             <SelectValue placeholder="Select organization" />

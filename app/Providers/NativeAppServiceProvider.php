@@ -23,7 +23,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             ->minWidth(800)
             ->minHeight(600)
             ->titleBarHiddenInset()
-            ->trafficLightPosition(16, 18)
+            ->trafficLightPosition(16, 14)
             ->backgroundColor('#09090b');
 
         // Create menu bar if enabled in user preferences

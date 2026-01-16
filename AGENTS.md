@@ -340,6 +340,32 @@ Process::env(['CI' => '1'])->run('bun ci');
 - Check if process is running in Horizon vs direct CLI invocation
 - Increase timeout and check logs for partial output
 
+### Environment Variable Pollution in Horizon
+
+**Problem:** When running artisan commands or package manager commands through Laravel Horizon, environment variables from the parent process (the orbit web app) can "pollute" the new project's environment. This happens because `phpdotenv` does NOT override existing environment variables.
+
+**Example:** The orbit web app has `APP_KEY=base64:xxx...` set. When provisioning a new project, `php artisan key:generate` runs but the new project picks up the parent's APP_KEY instead of generating its own.
+
+**Solution:** Use `env -i` to clear all inherited environment variables before running commands:
+
+```php
+// BAD - inherits APP_KEY, DB_CONNECTION, etc. from Horizon
+Process::run('php artisan key:generate');
+
+// GOOD - clears environment, sets only essential vars
+$command = "env -i HOME={$home} PATH={$path} CI=1 php artisan key:generate";
+Process::run($command);
+
+// orbit-cli provides a helper for this:
+$command = $context->wrapWithCleanEnv('php artisan key:generate');
+```
+
+**Key Points:**
+- `env -i` clears ALL inherited environment variables
+- Must explicitly set `HOME` and `PATH` after clearing
+- Also include `CI=1` to prevent interactive prompts
+- This affects ALL provision steps: artisan commands, bun, npm, composer scripts
+
 ### PHP-FPM Configuration
 
 PHP-FPM pool configs are stored in `/opt/homebrew/etc/php/{version}/php-fpm.d/`. When orbit-cli regenerates configs, ensure:

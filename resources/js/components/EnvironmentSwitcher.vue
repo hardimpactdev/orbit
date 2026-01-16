@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ChevronDown, Check, Plus, Server, Monitor } from 'lucide-vue-next';
+import { ChevronDown, Check, Plus, Server, Monitor, Sparkles } from 'lucide-vue-next';
 
 interface Environment {
     id: number;
@@ -72,12 +72,12 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
         <Link
             v-if="environments.length === 0"
             href="/environments/create"
-            class="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg transition-colors hover:bg-white/5"
+            class="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors hover:bg-white/5"
             :class="collapsed ? 'justify-center' : ''"
             :title="collapsed ? 'Add Environment' : undefined"
         >
             <div
-                class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-dashed border-zinc-600"
+                class="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-dashed border-zinc-600"
             >
                 <Plus class="w-4 h-4 text-zinc-500" />
             </div>
@@ -90,15 +90,14 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
         <button
             v-else
             @click="toggle"
-            class="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg transition-colors hover:bg-white/5"
+            class="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors hover:bg-white/5"
             :class="collapsed ? 'justify-center' : ''"
             :title="collapsed ? displayName : undefined"
         >
             <div
-                class="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0"
+                class="w-7 h-7 rounded-lg bg-lime-500/15 flex items-center justify-center flex-shrink-0"
             >
-                <Monitor v-if="currentEnvironment?.is_local" class="w-4 h-4 text-zinc-400" />
-                <Server v-else class="w-4 h-4 text-zinc-400" />
+                <Sparkles class="w-4 h-4 text-lime-400" />
             </div>
             <template v-if="!collapsed">
                 <span class="flex-1 text-sm font-medium text-white truncate">{{
