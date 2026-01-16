@@ -13,7 +13,7 @@ return [
      * usually in the form of a reverse domain name.
      * For example: com.nativephp.app
      */
-    'app_id' => env('NATIVEPHP_APP_ID', 'com.launchpad.desktop'),
+    'app_id' => env('NATIVEPHP_APP_ID', 'com.orbit.desktop'),
 
     /**
      * If your application allows deep linking, you can specify the scheme
@@ -39,7 +39,7 @@ return [
     /**
      * The description of your application.
      */
-    'description' => env('NATIVEPHP_APP_DESCRIPTION', 'Desktop application for managing Launchpad development environments'),
+    'description' => env('NATIVEPHP_APP_DESCRIPTION', 'Desktop application for managing Orbit development environments'),
 
     /**
      * The Website of your application.
@@ -154,7 +154,7 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        'mkdir -p bin && curl -L -o bin/launchpad.phar https://github.com/nckrtl/launchpad-cli/releases/latest/download/launchpad.phar && chmod +x bin/launchpad.phar',
+        'mkdir -p bin && scp launchpad@10.6.0.4:~/projects/orbit-cli/builds/orbit.phar bin/orbit.phar && chmod +x bin/orbit.phar',
     ],
 
     'postbuild' => [
@@ -165,4 +165,11 @@ return [
      * Custom PHP binary path.
      */
     'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH'),
+
+    /**
+     * Custom PHP binary version.
+     * If not specified, uses the current PHP version (PHP_MAJOR_VERSION.PHP_MINOR_VERSION).
+     * Override this if the NativePHP php-bin package doesn't have binaries for your PHP version.
+     */
+    'binary_version' => env('NATIVEPHP_PHP_BINARY_VERSION'),
 ];

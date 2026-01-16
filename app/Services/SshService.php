@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
-use App\Models\Server;
+use App\Models\Environment;
 use Illuminate\Support\Facades\Process;
 
 class SshService
 {
     // Use /tmp for control sockets to avoid path length issues
-    protected string $controlDir = '/tmp/launchpad-ssh';
+    protected string $controlDir = '/tmp/orbit-ssh';
 
     protected int $controlPersist = 600;
 
@@ -19,24 +19,24 @@ class SshService
         }
     }
 
-    protected function getControlPath(Server $server): string
+    protected function getControlPath(Environment $environment): string
     {
         // Use short hash to avoid path length limits on macOS
-        $hash = substr(md5("{$server->user}@{$server->host}:{$server->port}"), 0, 12);
+        $hash = substr(md5("{$environment->user}@{$environment->host}:{$environment->port}"), 0, 12);
 
         return "{$this->controlDir}/ctrl-{$hash}";
     }
 
-    public function testConnection(Server $server): array
+    public function testConnection(Environment $environment): array
     {
-        if ($server->is_local) {
+        if ($environment->is_local) {
             return [
                 'success' => true,
                 'message' => 'Local connection',
             ];
         }
 
-        $result = Process::timeout(10)->run($this->buildSshCommand($server, 'echo "connected"'));
+        $result = Process::timeout(10)->run($this->buildSshCommand($environment, 'echo "connected"'));
 
         return [
             'success' => $result->successful(),
@@ -45,14 +45,14 @@ class SshService
         ];
     }
 
-    public function execute(Server $server, string $command, int $timeout = 30): array
+    public function execute(Environment $environment, string $command, int $timeout = 30): array
     {
-        if ($server->is_local) {
+        if ($environment->is_local) {
             $result = Process::timeout($timeout)->run($command);
         } else {
             // Prepend common paths for PHP and other binaries
-            $pathPrefix = 'export PATH="$HOME/.config/herd-lite/bin:$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH" && ';
-            $result = Process::timeout($timeout)->run($this->buildSshCommand($server, $pathPrefix.$command));
+            $pathPrefix = 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/bin:/usr/local/bin:$PATH" && ';
+            $result = Process::timeout($timeout)->run($this->buildSshCommand($environment, $pathPrefix.$command));
         }
 
         return [
@@ -63,35 +63,40 @@ class SshService
         ];
     }
 
-    public function executeJson(Server $server, string $command): array
+    public function executeJson(Environment $environment, string $command): array
     {
-        $result = $this->execute($server, $command);
+        $result = $this->execute($environment, $command);
 
+        // Always try to parse JSON from stdout, even if command failed
+        // CLI tools often return valid JSON with error info even on non-zero exit
+        $decoded = json_decode((string) $result['output'], true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            // Successfully parsed JSON - return the decoded data
+            // The CLI's own success/error fields will be in $decoded
+            return [
+                'success' => true,
+                'exit_code' => $result['exit_code'],
+                'data' => $decoded,
+            ];
+        }
+
+        // JSON parsing failed - return the raw result
         if (! $result['success']) {
             return $result;
         }
 
-        $decoded = json_decode((string) $result['output'], true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return [
-                'success' => false,
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
-                'error' => 'Failed to parse JSON: '.json_last_error_msg(),
-            ];
-        }
-
         return [
-            'success' => true,
+            'success' => false,
             'exit_code' => $result['exit_code'],
-            'data' => $decoded,
+            'output' => $result['output'],
+            'error' => 'Failed to parse JSON: '.json_last_error_msg(),
         ];
     }
 
-    protected function buildSshCommand(Server $server, string $command): string
+    protected function buildSshCommand(Environment $environment, string $command): string
     {
-        $controlPath = $this->getControlPath($server);
+        $controlPath = $this->getControlPath($environment);
 
         $sshOptions = [
             '-o BatchMode=yes',
@@ -102,23 +107,23 @@ class SshService
             "-o ControlPersist={$this->controlPersist}",
         ];
 
-        if ($server->port !== 22) {
-            $sshOptions[] = "-p {$server->port}";
+        if ($environment->port !== 22) {
+            $sshOptions[] = "-p {$environment->port}";
         }
 
         $options = implode(' ', $sshOptions);
         $escapedCommand = escapeshellarg($command);
 
-        return "ssh {$options} {$server->user}@{$server->host} {$escapedCommand}";
+        return "ssh {$options} {$environment->user}@{$environment->host} {$escapedCommand}";
     }
 
-    public function closeConnection(Server $server): void
+    public function closeConnection(Environment $environment): void
     {
-        if ($server->is_local) {
+        if ($environment->is_local) {
             return;
         }
 
-        $controlPath = $this->getControlPath($server);
-        Process::run("ssh -O exit -o ControlPath={$controlPath} {$server->user}@{$server->host}");
+        $controlPath = $this->getControlPath($environment);
+        Process::run("ssh -O exit -o ControlPath={$controlPath} {$environment->user}@{$environment->host}");
     }
 }

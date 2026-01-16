@@ -12,8 +12,14 @@
         "@inertiajs/vue3": "^2.3.4",
         "@vueuse/core": "^14.1.0",
         "class-variance-authority": "^0.7.1",
+        "laravel-echo": "^2.2.7",
         "lucide-vue-next": "^0.562.0",
-        "vue": "^3.5.26"
+        "pinia": "^3.0.4",
+        "pinia-plugin-persistedstate": "^4.7.1",
+        "playwright": "^1.57.0",
+        "pusher-js": "^8.4.0",
+        "vue": "^3.5.26",
+        "vue-sonner": "^2.0.9"
     },
     "devDependencies": {
         "@electron-forge/cli": "^7.10.2",

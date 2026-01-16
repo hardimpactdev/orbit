@@ -1,3 +1,4 @@
+/.beads
 *.log
 .DS_Store
 .env
@@ -24,3 +25,5 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 .claude/.laravel-log-position
+/tests/Browser/Screenshots
+prd.json

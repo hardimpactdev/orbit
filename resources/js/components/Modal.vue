@@ -47,29 +47,39 @@ watch(() => props.show, (show) => {
         >
             <div
                 v-if="show"
-                class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+                class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
                 @click.self="close"
             >
-                <div
-                    class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full"
-                    :class="maxWidth || 'max-w-md'"
+                <Transition
+                    enter-active-class="transition ease-out duration-200"
+                    enter-from-class="opacity-0 scale-95"
+                    enter-to-class="opacity-100 scale-100"
+                    leave-active-class="transition ease-in duration-150"
+                    leave-from-class="opacity-100 scale-100"
+                    leave-to-class="opacity-0 scale-95"
                 >
-                    <!-- Header -->
-                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-                            {{ title }}
-                        </h3>
-                        <button
-                            @click="close"
-                            class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded"
-                        >
-                            <X class="w-5 h-5" />
-                        </button>
-                    </div>
+                    <div
+                        v-if="show"
+                        class="bg-zinc-900 border border-white/10 rounded-lg shadow-xl ring-1 ring-white/10 w-full"
+                        :class="maxWidth || 'max-w-md'"
+                    >
+                        <!-- Header -->
+                        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+                            <h3 class="text-lg font-semibold text-white">
+                                {{ title }}
+                            </h3>
+                            <button
+                                @click="close"
+                                class="p-1.5 text-zinc-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                            >
+                                <X class="w-5 h-5" />
+                            </button>
+                        </div>
 
-                    <!-- Content -->
-                    <slot />
-                </div>
+                        <!-- Content -->
+                        <slot />
+                    </div>
+                </Transition>
             </div>
         </Transition>
     </Teleport>

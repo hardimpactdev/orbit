@@ -2,25 +2,30 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Server;
-use App\Services\LaunchpadService;
-use Inertia\Inertia;
-use Inertia\Response;
+use App\Models\Environment;
+use Illuminate\Http\RedirectResponse;
 
 class DashboardController extends Controller
 {
-    public function __construct(
-        protected LaunchpadService $launchpad,
-    ) {}
-
-    public function index(): Response
+    public function index(): RedirectResponse
     {
-        $servers = Server::all();
-        $defaultServer = Server::getDefault();
+        $defaultEnvironment = Environment::getDefault();
 
-        return Inertia::render('Dashboard', [
-            'servers' => $servers,
-            'defaultServer' => $defaultServer,
-        ]);
+        if ($defaultEnvironment instanceof \App\Models\Environment) {
+            return redirect()->route('environments.show', $defaultEnvironment);
+        }
+
+        // No default environment - check if any environments exist
+        $firstEnvironment = Environment::where('status', 'active')->first();
+
+        if ($firstEnvironment) {
+            // Set it as default and redirect
+            $firstEnvironment->update(['is_default' => true]);
+
+            return redirect()->route('environments.show', $firstEnvironment);
+        }
+
+        // No environments at all - redirect to create
+        return redirect()->route('environments.create');
     }
 }

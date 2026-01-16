@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Server;
+use App\Models\Environment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
@@ -11,10 +11,10 @@ class DnsResolverService
     protected string $resolverDir = '/etc/resolver';
 
     /**
-     * Update the DNS resolver configuration for a server's TLD.
+     * Update the DNS resolver configuration for an environment's TLD.
      * Creates/updates /etc/resolver/{tld} to point to the correct DNS server.
      */
-    public function updateResolver(Server $server, string $tld): array
+    public function updateResolver(Environment $environment, string $tld): array
     {
         // Only manage resolvers on macOS
         if (PHP_OS_FAMILY !== 'Darwin') {
@@ -25,7 +25,7 @@ class DnsResolverService
         }
 
         $resolverFile = "{$this->resolverDir}/{$tld}";
-        $dnsServer = $this->getDnsServer($server);
+        $dnsServer = $this->getDnsServer($environment);
 
         try {
             // Build shell command (use double quotes inside to avoid Tcl escaping issues)
@@ -33,7 +33,7 @@ class DnsResolverService
 
             // Write expect script to temp file to avoid complex escaping
             // Using Tcl variable assignment preserves the command correctly
-            $tempScript = tempnam(sys_get_temp_dir(), 'launchpad_expect_');
+            $tempScript = tempnam(sys_get_temp_dir(), 'orbit_expect_');
             $expectScript = <<<EXPECT
 set cmd {{$shellCommand}}
 spawn sudo sh -c \$cmd
@@ -104,7 +104,7 @@ EXPECT;
             $shellCommand = "rm -f {$resolverFile}";
 
             // Write expect script to temp file to avoid complex escaping
-            $tempScript = tempnam(sys_get_temp_dir(), 'launchpad_expect_');
+            $tempScript = tempnam(sys_get_temp_dir(), 'orbit_expect_');
             $expectScript = <<<EXPECT
 set cmd {{$shellCommand}}
 spawn sudo sh -c \$cmd
@@ -147,17 +147,17 @@ EXPECT;
     }
 
     /**
-     * Get the DNS server address for a server.
-     * Local servers use 127.0.0.1, remote servers use their host IP.
+     * Get the DNS server address for an environment.
+     * Local environments use 127.0.0.1, remote environments use their host IP.
      */
-    protected function getDnsServer(Server $server): string
+    protected function getDnsServer(Environment $environment): string
     {
-        if ($server->is_local) {
+        if ($environment->is_local) {
             return '127.0.0.1';
         }
 
         // For remote servers, resolve hostname to IP if needed
-        $host = $server->host;
+        $host = $environment->host;
 
         // If it's already an IP address, use it directly
         if (filter_var($host, FILTER_VALIDATE_IP)) {
@@ -176,7 +176,7 @@ EXPECT;
     }
 
     /**
-     * Get all currently configured resolvers managed by Launchpad.
+     * Get all currently configured resolvers managed by Orbit.
      */
     public function getManagedResolvers(): array
     {
@@ -189,7 +189,7 @@ EXPECT;
 
         foreach ($files as $file) {
             $content = @file_get_contents($file);
-            if ($content && str_contains($content, 'Managed by Launchpad')) {
+            if ($content && str_contains($content, 'Managed by Orbit')) {
                 $tld = basename($file);
                 preg_match('/nameserver\s+(\S+)/', $content, $matches);
                 $resolvers[$tld] = $matches[1] ?? 'unknown';
@@ -200,18 +200,18 @@ EXPECT;
     }
 
     /**
-     * Sync all resolver files with current server configurations.
+     * Sync all resolver files with current environment configurations.
      */
-    public function syncAllResolvers(LaunchpadService $launchpadService): array
+    public function syncAllResolvers(\App\Services\OrbitCli\ConfigurationService $configService): array
     {
         $results = [];
-        $servers = Server::all();
+        $environments = Environment::all();
 
-        foreach ($servers as $server) {
-            $config = $launchpadService->getConfig($server);
+        foreach ($environments as $environment) {
+            $config = $configService->getConfig($environment);
             if ($config['success'] && isset($config['data']['tld'])) {
                 $tld = $config['data']['tld'];
-                $results[$server->name] = $this->updateResolver($server, $tld);
+                $results[$environment->name] = $this->updateResolver($environment, $tld);
             }
         }
 
