@@ -8,7 +8,7 @@
         "typecheck": "vue-tsc --noEmit"
     },
     "dependencies": {
-        "@hardimpactdev/liftoff-vue": "^0.0.43",
+        "@hardimpactdev/craft-ui": "^0.0.1",
         "@inertiajs/vue3": "^2.3.4",
         "@vueuse/core": "^14.1.0",
         "class-variance-authority": "^0.7.1",
