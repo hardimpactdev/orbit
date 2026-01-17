@@ -37,15 +37,20 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $currentPath = $request->path();
+        $multiEnvironment = config('orbit.multi_environment');
 
-        // Cache default environment to avoid duplicate queries
-        $defaultEnv = null;
-        $getDefaultEnv = function () use (&$defaultEnv): ?\App\Models\Environment {
-            if (! $defaultEnv instanceof \App\Models\Environment) {
-                $defaultEnv = Environment::getDefault();
+        // Cache current environment to avoid duplicate queries
+        $currentEnv = null;
+        $getCurrentEnv = function () use (&$currentEnv, $multiEnvironment): ?\App\Models\Environment {
+            if ($multiEnvironment) {
+                return null;
             }
 
-            return $defaultEnv;
+            if (! $currentEnv instanceof \App\Models\Environment) {
+                $currentEnv = Environment::where('is_local', true)->first();
+            }
+
+            return $currentEnv;
         };
 
         return [
@@ -59,9 +64,8 @@ class HandleInertiaRequests extends Middleware
                 ->orderBy('is_default', 'desc')
                 ->orderBy('name')
                 ->get(['id', 'name', 'host', 'is_local', 'is_default']),
-            'currentEnvironment' => $getDefaultEnv,
-            'navigation' => function () use ($currentPath, $getDefaultEnv): array {
-                $currentEnv = $getDefaultEnv();
+            'navigation' => function () use ($currentPath, $getCurrentEnv): array {
+                $currentEnv = $getCurrentEnv();
                 $envId = $currentEnv?->id;
                 $hasOrchestrator = $currentEnv?->orchestrator_url !== null;
 
@@ -111,20 +115,22 @@ class HandleInertiaRequests extends Middleware
                     }
                 }
 
+                $footerItems = [
+                    [
+                        'title' => 'App Settings',
+                        'href' => '/settings',
+                        'icon' => 'Cog',
+                        'isActive' => $currentPath === 'settings',
+                    ],
+                ];
+
                 return [
                     'app' => [
                         'main' => [
                             'items' => $mainItems,
                         ],
                         'footer' => [
-                            'items' => [
-                                [
-                                    'title' => 'App Settings',
-                                    'href' => '/settings',
-                                    'icon' => 'Cog',
-                                    'isActive' => $currentPath === 'settings',
-                                ],
-                            ],
+                            'items' => $footerItems,
                         ],
                     ],
                 ];

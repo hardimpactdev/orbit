@@ -214,7 +214,7 @@ const toggleMenuBar = () => {
         <hr class="mt-6 mb-10 border-t border-white/10" />
 
         <!-- Code Editor -->
-        <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <section v-if="$page.props.multi_environment" class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-foreground">Code Editor</h2>
                 <p class="text-sm text-muted-foreground">
@@ -230,10 +230,10 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-border" />
+        <hr v-if="$page.props.multi_environment" class="my-10 border-t border-border" />
 
         <!-- Terminal -->
-        <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <section v-if="$page.props.multi_environment" class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-foreground">Terminal</h2>
                 <p class="text-sm text-muted-foreground">
@@ -249,10 +249,10 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-border" />
+        <hr v-if="$page.props.multi_environment" class="my-10 border-t border-border" />
 
         <!-- Desktop Notifications -->
-        <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <section v-if="$page.props.multi_environment" class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-foreground">Desktop Notifications</h2>
                 <p class="text-sm text-muted-foreground">Show system notifications for project events.</p>
@@ -266,10 +266,10 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-border" />
+        <hr v-if="$page.props.multi_environment" class="my-10 border-t border-border" />
 
         <!-- Menu Bar -->
-        <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <section v-if="$page.props.multi_environment" class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-foreground">Menu Bar Icon</h2>
                 <p class="text-sm text-muted-foreground">
@@ -285,10 +285,10 @@ const toggleMenuBar = () => {
             </div>
         </section>
 
-        <hr class="my-10 border-t border-border" />
+        <hr v-if="$page.props.multi_environment" class="my-10 border-t border-border" />
 
         <!-- SSH Keys -->
-        <section class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <section v-if="$page.props.multi_environment" class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div class="space-y-1">
                 <h2 class="text-sm font-semibold text-foreground">SSH Public Keys</h2>
                 <p class="text-sm text-muted-foreground">Manage SSH keys for environment provisioning.</p>

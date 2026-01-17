@@ -154,7 +154,7 @@ router.on('finish', () => {
                     <PanelLeftClose v-else class="w-4 h-4" />
                 </button>
                 <!-- Navigation buttons -->
-                <div class="flex items-center ml-3 no-drag">
+                <div v-if="page.props.multi_environment" class="flex items-center ml-3 no-drag">
                     <button class="flex items-center justify-center w-7 h-7 rounded-md text-zinc-500 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500" disabled>
                         <ChevronLeft class="w-4 h-4" />
                     </button>
@@ -196,7 +196,7 @@ router.on('finish', () => {
                 :class="sidebarCollapsed ? 'w-16' : 'w-56'"
             >
                 <!-- Environment Switcher -->
-                <div class="px-3 py-3 border-b border-zinc-800">
+                <div v-if="page.props.multi_environment" class="px-3 py-3 border-b border-zinc-800">
                     <EnvironmentSwitcher
                         :environments="environments || []"
                         :current-environment="currentEnvironment || null"

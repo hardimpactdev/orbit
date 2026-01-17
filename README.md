@@ -66,8 +66,9 @@ When you configure a TLD (e.g., `.test`, `.ccc`) for an environment:
 
 ### Communication
 
-- **Local environments**: Direct PHP process execution
-- **Remote environments**: Direct API calls to `https://orbit.{tld}/api/...` for performance, SSH for provisioning
+- **Local environments**: Direct PHP process execution via NativePHP backend.
+- **Remote environments**: Direct API calls from Vue to the remote Orbit Web API (`https://orbit.{tld}/api/...`) for optimal performance. SSH is used primarily for initial provisioning and low-level configuration.
+- **Real-time updates**: Leverages Laravel Reverb on the remote server to broadcast status changes (provisioning progress, service status) directly to the Desktop app.
 
 ## Development
 

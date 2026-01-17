@@ -425,7 +425,7 @@ onMounted(() => {
                     </p>
                 </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div v-if="$page.props.multi_environment" class="flex items-center gap-2">
                 <Button @click="openInTerminal" variant="outline" title="Open in Terminal">
                     <Terminal class="w-4 h-4 mr-2" />
                     SSH
@@ -438,6 +438,12 @@ onMounted(() => {
                     <EditorIcon :editor="editor.scheme" class="w-4 h-4 mr-2" />
                     Open in {{ editor.name }}
                 </Button>
+                <Button @click="openAddProjectModal" variant="secondary">
+                    <Plus class="w-4 h-4 mr-2" />
+                    Add Project
+                </Button>
+            </div>
+            <div v-else class="flex items-center gap-2">
                 <Button @click="openAddProjectModal" variant="secondary">
                     <Plus class="w-4 h-4 mr-2" />
                     Add Project

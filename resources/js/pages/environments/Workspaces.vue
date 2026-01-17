@@ -238,23 +238,25 @@ const deleteWorkspace = async () => {
                         </TableCell>
                         <TableCell class="text-right">
                             <div class="flex items-center justify-end gap-2">
-                                <Button
-                                    @click="openInTerminal(workspace)"
-                                    variant="ghost"
-                                    size="sm"
-                                    title="Open in Terminal"
-                                >
-                                    <Terminal class="w-3.5 h-3.5" />
-                                </Button>
-                                <Button
-                                    v-if="workspace.has_workspace_file"
-                                    @click="openInEditor(workspace)"
-                                    variant="ghost"
-                                    size="sm"
-                                    :title="`Open in ${editor.name}`"
-                                >
-                                    <EditorIcon :editor="editor.scheme" class="w-3.5 h-3.5" />
-                                </Button>
+                                <template v-if="$page.props.multi_environment">
+                                    <Button
+                                        @click="openInTerminal(workspace)"
+                                        variant="ghost"
+                                        size="sm"
+                                        title="Open in Terminal"
+                                    >
+                                        <Terminal class="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                        v-if="workspace.has_workspace_file"
+                                        @click="openInEditor(workspace)"
+                                        variant="ghost"
+                                        size="sm"
+                                        :title="`Open in ${editor.name}`"
+                                    >
+                                        <EditorIcon :editor="editor.scheme" class="w-3.5 h-3.5" />
+                                    </Button>
+                                </template>
                                 <Button as-child variant="outline" size="sm">
                                     <Link :href="`/environments/${environment.id}/workspaces/${workspace.name}`">
                                         Manage

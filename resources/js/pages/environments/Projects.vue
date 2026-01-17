@@ -242,6 +242,12 @@ async function loadProjects(silent = false) {
 
 async function openSite(domain: string) {
     const url = `https://${domain}`;
+    
+    if (!page.props.multi_environment) {
+        window.open(url, '_blank');
+        return;
+    }
+
     try {
         await api.post('/open-external', { url });
     } catch {
@@ -697,6 +703,7 @@ onMounted(() => {
                                     Open
                                 </Button>
                                 <Button
+                                    v-if="$page.props.multi_environment"
                                     @click="openInEditor(project.path)"
                                     variant="outline"
                                     size="sm"

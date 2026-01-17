@@ -26,7 +26,7 @@ defineProps<{
     <div>
         <div class="flex justify-between items-center mb-8">
             <Heading title="Dashboard" />
-            <Button as-child variant="secondary">
+            <Button v-if="$page.props.multi_environment" as-child variant="secondary">
                 <Link href="/environments/create">Add</Link>
             </Button>
         </div>
@@ -39,7 +39,7 @@ defineProps<{
             <ServerIcon class="w-16 h-16 mx-auto text-zinc-600 mb-4" />
             <h3 class="text-lg font-medium text-white mb-2">No environments configured</h3>
             <p class="text-zinc-400 mb-4">Get started by adding your first environment.</p>
-            <Button as-child variant="secondary">
+            <Button v-if="$page.props.multi_environment" as-child variant="secondary">
                 <Link href="/environments/create">Add</Link>
             </Button>
         </div>

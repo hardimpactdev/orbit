@@ -70,7 +70,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
     <div class="environment-switcher relative">
         <!-- Empty State - No Environments -->
         <Link
-            v-if="environments.length === 0"
+            v-if="environments.length === 0 && $page.props.multi_environment"
             href="/environments/create"
             class="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors hover:bg-white/5"
             :class="collapsed ? 'justify-center' : ''"
@@ -89,9 +89,12 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
         <!-- Trigger Button -->
         <button
             v-else
-            @click="toggle"
-            class="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors hover:bg-white/5"
-            :class="collapsed ? 'justify-center' : ''"
+            @click="$page.props.multi_environment ? toggle() : null"
+            class="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors"
+            :class="[
+                collapsed ? 'justify-center' : '',
+                $page.props.multi_environment ? 'hover:bg-white/5' : 'cursor-default'
+            ]"
             :title="collapsed ? displayName : undefined"
         >
             <div
@@ -104,6 +107,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
                     displayName
                 }}</span>
                 <ChevronDown
+                    v-if="$page.props.multi_environment"
                     class="w-4 h-4 text-zinc-500 transition-transform"
                     :class="{ 'rotate-180': isOpen }"
                 />
@@ -156,6 +160,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside));
 
                 <!-- Add Environment -->
                 <Link
+                    v-if="$page.props.multi_environment"
                     href="/environments/create"
                     class="flex items-center gap-3 px-3 py-2 text-left hover:bg-white/5 transition-colors"
                     @click="close"

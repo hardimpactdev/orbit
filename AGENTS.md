@@ -18,6 +18,8 @@ bd sync               # Sync with git
 
 > **Historical note:** The CLI was previously named "launchpad-cli". Any "launchpad" references in docs or code are deprecated and should be renamed to "orbit".
 
+**Important principle:** Never add fallbacks or workarounds in the desktop app to compensate for CLI bugs. If the CLI has issues (e.g., wrong container names, missing service detection), fix the issue at the source in orbit-cli, rebuild the phar, and update locally. The desktop app should trust the CLI output without second-guessing it.
+
 ### Orbit CLI Development Workflow
 
 The orbit-cli source code is developed on a remote server, not locally.
@@ -90,6 +92,27 @@ php artisan test --filter=testMethodName
 # PHPUnit - by class
 php artisan test tests/Unit/EnvironmentModelTest.php
 ```
+
+### Environment-specific Testing
+
+**Multi-environment (Desktop) vs Single-environment (Web) modes:**
+
+- Use `config(['orbit.multi_environment' => true/false])` in `setUp()` to force a mode.
+- Desktop mode tests should use environment-prefixed routes (e.g., `/environments/{id}/projects`).
+- Web mode tests should use flat routes (e.g., `/projects`) and rely on `implicit.environment` middleware.
+- When testing environment pages in Feature tests, **always mock `DoctorService` and `StatusService`** if you don't need real SSH connectivity. This prevents slow tests and timeouts:
+
+```php
+$this->mock(\App\Services\DoctorService::class, function ($mock) {
+    $mock->shouldReceive('runChecks')->andReturn(['success' => true, ...]);
+});
+```
+
+- Run tests with explicit environment variables to verify mode-specific behavior:
+    ```bash
+    MULTI_ENVIRONMENT_MANAGEMENT=true php artisan test  # Desktop mode
+    MULTI_ENVIRONMENT_MANAGEMENT=false php artisan test # Web mode
+    ```
 
 ### Database Migrations
 

@@ -804,7 +804,7 @@ onMounted(() => {
         <hr class="border-zinc-800" />
 
         <!-- Danger Zone -->
-        <div class="py-6">
+        <div v-if="$page.props.multi_environment" class="py-6">
             <h2 class="text-lg font-medium text-red-400 mb-6">Danger Zone</h2>
 
             <div class="grid grid-cols-2 gap-8">

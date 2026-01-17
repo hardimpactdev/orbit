@@ -54,7 +54,7 @@ class ProjectService
 
         // GitHub organization to create repo under (defaults to user's personal account if not set)
         if (! empty($options['org'])) {
-            $payload['org'] = $options['org'];
+            $payload['organization'] = $options['org'];
         }
 
         // Handle template vs clone

@@ -109,7 +109,7 @@ onMounted(() => {
     <div>
         <div class="flex justify-between items-center mb-8">
             <Heading title="Environments" />
-            <Button as-child>
+            <Button v-if="$page.props.multi_environment" as-child>
                 <Link href="/environments/create">
                     Add environment
                 </Link>
@@ -195,7 +195,7 @@ onMounted(() => {
                                     <Eye class="w-4 h-4" />
                                 </Link>
                             </Button>
-                            <Button as-child variant="ghost" size="icon-sm">
+                            <Button v-if="$page.props.multi_environment" as-child variant="ghost" size="icon-sm">
                                 <Link
                                     :href="`/environments/${environment.id}/edit`"
                                     title="Edit"
@@ -204,6 +204,7 @@ onMounted(() => {
                                 </Link>
                             </Button>
                             <Button
+                                v-if="$page.props.multi_environment"
                                 @click="deleteEnvironment(environment)"
                                 variant="ghost"
                                 size="icon-sm"
