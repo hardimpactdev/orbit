@@ -1,6 +1,6 @@
-# Orbit Desktop
+# Orbit
 
-A NativePHP/Electron desktop application for managing local and remote [Orbit CLI](https://github.com/nckrtl/orbit-cli) installations.
+A unified codebase for managing [Orbit CLI](https://github.com/nckrtl/orbit-cli) installations, supporting both single-environment web deployment and multi-environment desktop management.
 
 > **Note:** This is a **macOS-only** application. It relies on macOS-specific features like `/etc/resolver/` for DNS management and Touch ID for sudo authentication. Remote environments can run any Linux distribution.
 
@@ -34,6 +34,65 @@ npm install
 # Run the app in development
 php artisan native:serve
 ```
+
+## Deployment Modes
+
+Orbit supports two deployment modes controlled by environment variables:
+
+### Web Mode (Single Environment)
+For deploying as a web application on a server:
+
+```env
+ORBIT_MODE=web
+MULTI_ENVIRONMENT_MANAGEMENT=false
+```
+
+**Setup:**
+```bash
+composer install && npm install
+php artisan migrate
+php artisan orbit:init  # Creates local environment
+npm run build
+```
+
+**Characteristics:**
+- Flat routes: `/projects`, `/services`, etc.
+- No environment switcher UI
+- Manages only the local environment
+- No NativePHP dependency
+
+### Desktop Mode (Multi-Environment)
+For running as a NativePHP desktop application:
+
+```env
+ORBIT_MODE=desktop
+MULTI_ENVIRONMENT_MANAGEMENT=true
+```
+
+**Characteristics:**
+- Prefixed routes: `/environments/{id}/projects`
+- Environment switcher UI visible
+- Manages multiple local and remote environments
+- Full NativePHP integration
+
+## Configuration
+
+### config/orbit.php
+```php
+return [
+    'mode' => env('ORBIT_MODE', 'web'),
+    'multi_environment' => env('MULTI_ENVIRONMENT_MANAGEMENT', false),
+];
+```
+
+### orbit:init Command
+Creates the local environment for web mode:
+```bash
+php artisan orbit:init
+```
+- Idempotent (safe to run multiple times)
+- Reads TLD from `~/.config/orbit/config.json`
+- Falls back to `.test` if not found
 
 ## macOS Touch ID Setup
 

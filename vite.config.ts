@@ -7,7 +7,10 @@ import { resolve } from 'path';
 export default defineConfig({
     plugins: [
         laravel({
-            input: ['resources/js/app.ts', 'resources/css/app.css'],
+            input: [
+                'vendor/hardimpactdev/orbit-core/resources/js/app.ts',
+                'vendor/hardimpactdev/orbit-core/resources/css/app.css',
+            ],
             refresh: true,
         }),
         vue({
@@ -22,7 +25,8 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': resolve(__dirname, 'resources/js'),
+            '@': resolve(__dirname, 'vendor/hardimpactdev/orbit-core/resources/js'),
+            '@orbit': resolve(__dirname, 'vendor/hardimpactdev/orbit-core/resources/js'),
             vue: 'vue/dist/vue.esm-bundler.js',
         },
     },

@@ -10,12 +10,11 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "paths": {
-            "@/*": ["./resources/js/*"],
-            "@routes/*": ["./resources/js/routes/*"],
-            "@actions/*": ["./resources/js/actions/*"]
+            "@/*": ["./vendor/hardimpactdev/orbit-core/resources/js/*"],
+            "@orbit/*": ["./vendor/hardimpactdev/orbit-core/resources/js/*"]
         },
-        "types": ["vite/client", "./resources/js/types"]
+        "types": ["vite/client"]
     },
-    "include": ["resources/js/**/*", "resources/js/**/*.vue"],
+    "include": ["vendor/hardimpactdev/orbit-core/resources/js/**/*", "vendor/hardimpactdev/orbit-core/resources/js/**/*.vue"],
     "exclude": ["node_modules"]
 }

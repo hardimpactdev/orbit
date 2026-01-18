@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f8e2a04595738dbd4ae55df71445d3a3",
+    "content-hash": "81562ddcd5253b76ed534bde9a25bdd3",
     "packages": [
         {
             "name": "brick/math",
@@ -1368,6 +1368,79 @@
             "transport-options": {
                 "relative": false
             }
+        },
+        {
+            "name": "hardimpactdev/orbit-core",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/hardimpactdev/orbit-core.git",
+                "reference": "461867b7932c173f884f914f83ef5c9a66625c9e"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/hardimpactdev/orbit-core/zipball/461867b7932c173f884f914f83ef5c9a66625c9e",
+                "reference": "461867b7932c173f884f914f83ef5c9a66625c9e",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/contracts": "^11.0||^12.0",
+                "illuminate/support": "^11.0||^12.0",
+                "inertiajs/inertia-laravel": "^2.0",
+                "php": "^8.4",
+                "saloonphp/saloon": "^3.14"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.14",
+                "orchestra/testbench": "^10.0.0||^9.0.0",
+                "pestphp/pest": "^4.0",
+                "pestphp/pest-plugin-laravel": "^4.0"
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "HardImpact\\Orbit\\OrbitServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "HardImpact\\Orbit\\": "src/",
+                    "HardImpact\\Orbit\\Database\\Factories\\": "database/factories/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Nick Ratel",
+                    "email": "nick.retel@gmail.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Core functionality for orbit-web and orbit-desktop",
+            "homepage": "https://github.com/hardimpactdev/orbit-core",
+            "keywords": [
+                "development-environment",
+                "laravel",
+                "orbit"
+            ],
+            "support": {
+                "issues": "https://github.com/hardimpactdev/orbit-core/issues",
+                "source": "https://github.com/hardimpactdev/orbit-core/tree/main"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/Hard Impact",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-01-18T12:16:28+00:00"
         },
         {
             "name": "hardimpactdev/waymaker",
@@ -13465,9 +13538,10 @@
         }
     ],
     "aliases": [],
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "stability-flags": {
         "hardimpactdev/liftoff-laravel": 20,
+        "hardimpactdev/orbit-core": 20,
         "hardimpactdev/waymaker": 20
     },
     "prefer-stable": true,

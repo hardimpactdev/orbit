@@ -21,8 +21,42 @@ Created: January 17, 2026
 | orbit-desktop-zuu | Phase 4.2: Write desktop mode tests | Complete | |
 | orbit-desktop-mi1 | Phase 4.3: Verify orbit:init idempotency | Complete | |
 | orbit-desktop-6ce | Phase 4.4: Full regression test suite | Complete | |
-| orbit-desktop-4pe | Phase 5.1: Update README | ready | |
-| orbit-desktop-ced | Phase 5.2: Update AGENTS.md | ready | |
+| orbit-desktop-4pe | Phase 5.1: Update README | Complete | |
+| orbit-desktop-ced | Phase 5.2: Update AGENTS.md | Complete | |
+| orbit-desktop-xyz | Phase 5.3: Handover | ready | |
+
+
+### 2026-01-17 00:05 - Phase 5.2: Update AGENTS.md
+**Status:** Complete
+**Files changed:**
+- AGENTS.md
+
+**Learnings:**
+- Documentation now correctly reflects the unified codebase architecture.
+- Centralized mode-specific development patterns and testing commands.
+
+**Verification results:**
+- AGENTS.md reflects unified codebase architecture ✓
+- Development patterns updated for both modes ✓
+- Configuration and middleware patterns documented ✓
+- Testing approaches for both modes explained ✓
+
+### 2026-01-17 21:50 - Phase 5.1: Update README with deployment modes
+**Status:** Complete
+**Files changed:**
+- README.md
+
+**Learnings:**
+- Documentation now clearly distinguishes between "Web Mode" (single-environment, server-side) and "Desktop Mode" (multi-environment, NativePHP).
+- Documented environment variables `ORBIT_MODE` and `MULTI_ENVIRONMENT_MANAGEMENT`.
+- Added documentation for the `orbit:init` command used in web mode setup.
+- Updated the project title to "Orbit" to reflect its unified nature.
+
+**Verification results:**
+- README documents both web and desktop deployment modes ✓
+- Environment variable configuration clearly explained ✓
+- orbit:init command usage documented ✓
+- Deployment examples provided for both modes ✓
 
 ### 2026-01-17 23:30 - Phase 4.4: Full regression test suite
 **Status:** Complete

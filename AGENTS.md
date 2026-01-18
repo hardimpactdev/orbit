@@ -45,6 +45,68 @@ ssh nckrtl@ai           # Explicit user
 
 **Important:** Always release a new CLI version after making changes. Never leave unreleased changes on the remote server.
 
+## Unified Codebase Architecture
+
+This project supports both desktop (NativePHP) and web deployment modes.
+
+### Mode Configuration
+```env
+# Web mode (default)
+ORBIT_MODE=web
+MULTI_ENVIRONMENT_MANAGEMENT=false
+
+# Desktop mode
+ORBIT_MODE=desktop
+MULTI_ENVIRONMENT_MANAGEMENT=true
+```
+
+### Key Differences
+
+| Aspect | Web Mode | Desktop Mode |
+|--------|----------|--------------|
+| Routes | Flat (`/projects`) | Prefixed (`/environments/{id}/projects`) |
+| Environment | Single, implicit | Multiple, explicit |
+| NativePHP | Not installed | Full integration |
+| Environment UI | Hidden | Visible |
+| SSH Keys | Hidden (403) | Available |
+
+### Development Patterns
+
+**Controllers receive Environment parameter in both modes:**
+- Web mode: `ImplicitEnvironment` middleware injects from route
+- Desktop mode: Route model binding from `{environment}` parameter
+
+**Testing both modes:**
+```bash
+# Web mode (default in phpunit.xml)
+php artisan test
+
+# Desktop mode
+MULTI_ENVIRONMENT_MANAGEMENT=true php artisan test
+```
+
+**Mode-aware code:**
+```php
+if (config('orbit.multi_environment')) {
+    // Desktop-only logic
+}
+```
+
+**Frontend mode-aware rendering:**
+```vue
+<template v-if="$page.props.multi_environment">
+  <!-- Desktop-only UI -->
+</template>
+```
+
+### Files to Know
+
+- `config/orbit.php` - Mode configuration
+- `app/Http/Middleware/ImplicitEnvironment.php` - Web mode environment injection
+- `app/Console/Commands/OrbitInit.php` - Web mode setup command
+- `routes/environment.php` - Shared environment-scoped routes
+- `routes/web.php` - Conditional route registration
+
 ## Build, Lint, and Test Commands
 
 ### Frontend (Vue + TypeScript)
@@ -108,11 +170,7 @@ $this->mock(\App\Services\DoctorService::class, function ($mock) {
 });
 ```
 
-- Run tests with explicit environment variables to verify mode-specific behavior:
-    ```bash
-    MULTI_ENVIRONMENT_MANAGEMENT=true php artisan test  # Desktop mode
-    MULTI_ENVIRONMENT_MANAGEMENT=false php artisan test # Web mode
-    ```
+- Run tests with explicit environment variables to verify mode-specific behavior (see [Unified Codebase Architecture](#unified-codebase-architecture)).
 
 ### Database Migrations
 

@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\UserPreference;
-use Native\Laravel\Facades\Notification;
 
 class NotificationService
 {
@@ -12,6 +11,11 @@ class NotificationService
      */
     public function isEnabled(): bool
     {
+        // Web mode doesn't support native notifications
+        if (! config('orbit.multi_environment')) {
+            return false;
+        }
+        
         // Default to enabled (opt-out)
         return UserPreference::getValue('notifications_enabled', true);
     }
@@ -41,7 +45,12 @@ class NotificationService
             return;
         }
 
-        $notification = Notification::title($title)
+        // Only use NativePHP Notification in desktop mode
+        if (! class_exists(\Native\Laravel\Facades\Notification::class)) {
+            return;
+        }
+
+        $notification = \Native\Laravel\Facades\Notification::title($title)
             ->message($message);
 
         if ($event) {

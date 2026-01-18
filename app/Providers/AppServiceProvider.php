@@ -2,7 +2,8 @@
 
 namespace App\Providers;
 
-use App\Models\Environment;
+use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\OrbitServiceProvider;
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
 
@@ -21,6 +22,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Register orbit-core routes
+        OrbitServiceProvider::routes();
+
         Inertia::share([
             'multi_environment' => fn () => config('orbit.multi_environment'),
             'currentEnvironment' => fn () => config('orbit.multi_environment')
