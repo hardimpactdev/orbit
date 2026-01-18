@@ -1,17 +1,22 @@
-# Orbit
+# Orbit Desktop
 
-A unified codebase for managing [Orbit CLI](https://github.com/nckrtl/orbit-cli) installations, supporting both single-environment web deployment and multi-environment desktop management.
+A NativePHP desktop application for managing local development environments across multiple machines, powered by [Orbit CLI](https://github.com/nckrtl/orbit-cli). This is a thin shell that requires [orbit-core](https://github.com/hardimpactdev/orbit-core).
 
-> **Note:** This is a **macOS-only** application. It relies on macOS-specific features like `/etc/resolver/` for DNS management and Touch ID for sudo authentication. Remote environments can run any Linux distribution.
+> **Note:** This is a **macOS-only** application. It relies on macOS-specific features like `/etc/resolver/` for DNS management and Touch ID for sudo authentication.
 
-## Features
+## Overview
 
-- **Local Environment Management**: Control your local Orbit CLI installation directly
-- **Remote Server Management**: Manage remote Orbit CLI installations via SSH
-- **Server Provisioning**: Provision new Ubuntu servers with the complete Orbit stack (PHP-FPM, Caddy, Docker services)
-- **Automatic DNS Setup**: Configures macOS DNS resolvers with Touch ID authentication
-- **Multi-Editor Support**: Open projects in Cursor, VS Code, Windsurf, Zed, and more
-- **Real-time Status**: WebSocket-based updates for project provisioning and service status
+Orbit Desktop provides a native macOS app to manage both local and remote Orbit CLI installations. For single-server web dashboard deployment, see [orbit-web](https://github.com/hardimpactdev/orbit-web).
+
+### Features
+
+- **Multi-Environment Management**: Manage local and remote Orbit installations from one app
+- **Project Management**: Create, configure, and monitor Laravel projects
+- **Service Control**: Start/stop PHP-FPM, Caddy, Redis, PostgreSQL, etc.
+- **Real-time Status**: WebSocket-based updates via Laravel Reverb
+- **Automatic DNS Setup**: Configures macOS DNS resolvers with Touch ID
+- **Multi-Editor Support**: Open projects in Cursor, VS Code, Windsurf, Zed, etc.
+- **Native Notifications**: System notifications for provisioning status
 
 ## Requirements
 
@@ -24,8 +29,8 @@ A unified codebase for managing [Orbit CLI](https://github.com/nckrtl/orbit-cli)
 
 ```bash
 # Clone the repository
-git clone https://github.com/nckrtl/orbit-desktop.git
-cd orbit-desktop
+git clone https://github.com/hardimpactdev/orbit.git
+cd orbit
 
 # Install dependencies
 composer install
@@ -35,116 +40,72 @@ npm install
 php artisan native:serve
 ```
 
-## Deployment Modes
+## Configuration
 
-Orbit supports two deployment modes controlled by environment variables:
-
-### Web Mode (Single Environment)
-For deploying as a web application on a server:
-
-```env
-ORBIT_MODE=web
-MULTI_ENVIRONMENT_MANAGEMENT=false
-```
-
-**Setup:**
-```bash
-composer install && npm install
-php artisan migrate
-php artisan orbit:init  # Creates local environment
-npm run build
-```
-
-**Characteristics:**
-- Flat routes: `/projects`, `/services`, etc.
-- No environment switcher UI
-- Manages only the local environment
-- No NativePHP dependency
-
-### Desktop Mode (Multi-Environment)
-For running as a NativePHP desktop application:
+### Desktop Mode Settings
 
 ```env
 ORBIT_MODE=desktop
 MULTI_ENVIRONMENT_MANAGEMENT=true
 ```
 
-**Characteristics:**
-- Prefixed routes: `/environments/{id}/projects`
-- Environment switcher UI visible
-- Manages multiple local and remote environments
-- Full NativePHP integration
+### Touch ID Setup
 
-## Configuration
-
-### config/orbit.php
-```php
-return [
-    'mode' => env('ORBIT_MODE', 'web'),
-    'multi_environment' => env('MULTI_ENVIRONMENT_MANAGEMENT', false),
-];
-```
-
-### orbit:init Command
-Creates the local environment for web mode:
-```bash
-php artisan orbit:init
-```
-- Idempotent (safe to run multiple times)
-- Reads TLD from `~/.config/orbit/config.json`
-- Falls back to `.test` if not found
-
-## macOS Touch ID Setup
-
-For Touch ID authentication when updating DNS resolvers, create `/etc/pam.d/sudo_local`:
+For Touch ID authentication when updating DNS resolvers:
 
 ```bash
 sudo sh -c 'echo "auth sufficient pam_tid.so" > /etc/pam.d/sudo_local'
 ```
 
-This enables Touch ID for sudo commands, which the app uses to manage `/etc/resolver/` files.
+## Architecture
 
-## How It Works
+This project is a **thin NativePHP shell** that delegates to [orbit-core](https://github.com/hardimpactdev/orbit-core):
 
-### Architecture
+```
+orbit-desktop/
+  app/
+    Models/User.php                    # Only local model (auth)
+    Services/NotificationService.php   # NativePHP-specific notifications
+    Providers/AppServiceProvider.php   # Registers orbit-core routes
+    Providers/NativeAppServiceProvider.php  # NativePHP config
+  config/
+    orbit.php                          # Mode configuration
+    nativephp.php                      # NativePHP settings
+  resources/
+    views/app.blade.php                # Blade template
+  vite.config.ts                       # Compiles from orbit-core
+```
 
-The Orbit stack uses **PHP-FPM on the host** with **Caddy** as the web server:
+All business logic, controllers, services, and Vue components come from orbit-core.
 
-- **PHP-FPM**: Multiple pools (8.4, 8.5) with Unix sockets at `~/.config/orbit/php/`
-- **Caddy**: Single binary on host serving sites with automatic HTTPS
-- **Horizon**: Queue worker as systemd (Linux) or launchd (macOS) service
-- **Docker**: PostgreSQL, Redis, Mailpit, Reverb, dnsmasq remain containerized
+### What Lives in Desktop vs Core
 
-### DNS Resolution
-
-When you configure a TLD (e.g., `.test`, `.ccc`) for an environment:
-
-1. **Mac Resolver**: Creates `/etc/resolver/{tld}` pointing to the server's DNS
-2. **Remote DNS Container**: Rebuilds the dnsmasq container with the correct TLD
-3. **Caddy Config**: Restarts Orbit to regenerate Caddy configuration
-
-### Communication
-
-- **Local environments**: Direct PHP process execution via NativePHP backend.
-- **Remote environments**: Direct API calls from Vue to the remote Orbit Web API (`https://orbit.{tld}/api/...`) for optimal performance. SSH is used primarily for initial provisioning and low-level configuration.
-- **Real-time updates**: Leverages Laravel Reverb on the remote server to broadcast status changes (provisioning progress, service status) directly to the Desktop app.
+| Desktop (this repo) | Core (orbit-core) |
+|---------------------|-------------------|
+| NativePHP configuration | All Eloquent models |
+| NotificationService | All services |
+| User model | All controllers |
+| Touch ID integration | All Vue pages/components |
+| Menu bar app config | Routes and middleware |
 
 ## Development
 
 ```bash
-# Run in development mode
+# Start NativePHP dev server
 php artisan native:serve
 
-# Build for production
-php artisan native:build
+# Run tests
+php artisan test
 
-# Run migrations
-php artisan migrate
+# Build for distribution
+php artisan native:build
 ```
 
 ## Related Projects
 
-- [Orbit CLI](https://github.com/nckrtl/orbit-cli) - The command-line tool this app controls
+- [Orbit Core](https://github.com/hardimpactdev/orbit-core) - Shared package (required)
+- [Orbit Web](https://github.com/hardimpactdev/orbit-web) - Web dashboard alternative
+- [Orbit CLI](https://github.com/nckrtl/orbit-cli) - The CLI tool that powers everything
 
 ## License
 
