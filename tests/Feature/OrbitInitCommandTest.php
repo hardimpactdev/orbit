@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Models\Environment;
+use HardImpact\Orbit\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -38,7 +38,7 @@ class OrbitInitCommandTest extends TestCase
 
     public function test_skips_when_local_environment_exists(): void
     {
-        Environment::factory()->create(['is_local' => true]);
+        createEnvironment(['is_local' => true]);
         
         $this->artisan('orbit:init')
             ->expectsOutput('Local environment already exists. Skipping.')

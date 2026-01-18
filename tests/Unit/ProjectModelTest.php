@@ -1,8 +1,8 @@
 <?php
 
-use App\Models\Deployment;
-use App\Models\Environment;
-use App\Models\Project;
+use HardImpact\Orbit\Models\Deployment;
+use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Models\Project;
 
 test('project can be created', function () {
     Project::create([

@@ -1,8 +1,8 @@
 <?php
 
-use App\Models\Environment;
-use App\Services\OrbitCli\ConfigurationService;
-use App\Services\OrbitCli\ProjectService;
+use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Services\OrbitCli\ConfigurationService;
+use HardImpact\Orbit\Services\OrbitCli\ProjectService;
 
 beforeEach(function () {
     createEnvironment();

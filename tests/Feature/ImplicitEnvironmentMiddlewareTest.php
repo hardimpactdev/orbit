@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Environment;
+use HardImpact\Orbit\Models\Environment;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Log;
@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 beforeEach(function () {
     Config::set('orbit.multi_environment', false);
     
-    Route::middleware([\App\Http\Middleware\ImplicitEnvironment::class])
+    Route::middleware([\HardImpact\Orbit\Http\Middleware\ImplicitEnvironment::class])
         ->get('/test-middleware/{environment?}', function (Environment $environment) {
             return response()->json(['id' => $environment->id]);
         });

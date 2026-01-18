@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Models\Environment;
+use HardImpact\Orbit\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -26,7 +26,7 @@ class DesktopModeTest extends TestCase
 
     public function test_projects_page_loads_with_route_parameter(): void
     {
-        $environment = Environment::factory()->create();
+        $environment = createEnvironment();
         
         $response = $this->get("/environments/{$environment->id}/projects");
         
@@ -41,10 +41,10 @@ class DesktopModeTest extends TestCase
 
     public function test_all_desktop_features_accessible(): void
     {
-        $environment = Environment::factory()->create();
+        $environment = createEnvironment();
         
         // Mock services to avoid real SSH/Process calls
-        $this->mock(\App\Services\OrbitCli\StatusService::class, function ($mock) {
+        $this->mock(\HardImpact\Orbit\Services\OrbitCli\StatusService::class, function ($mock) {
             $mock->shouldReceive('checkInstallation')->andReturn([
                 'installed' => true,
                 'version' => '0.0.1',
@@ -52,7 +52,7 @@ class DesktopModeTest extends TestCase
             ]);
         });
 
-        $this->mock(\App\Services\DoctorService::class, function ($mock) {
+        $this->mock(\HardImpact\Orbit\Services\DoctorService::class, function ($mock) {
             $mock->shouldReceive('runChecks')->andReturn([
                 'success' => true,
                 'status' => 'healthy',
@@ -69,7 +69,7 @@ class DesktopModeTest extends TestCase
 
     public function test_inertia_props_multi_environment_true(): void
     {
-        $environment = Environment::factory()->create();
+        $environment = createEnvironment();
         
         $response = $this->get("/environments/{$environment->id}/projects");
         
@@ -81,7 +81,9 @@ class DesktopModeTest extends TestCase
 
     public function test_dashboard_shows_environment_list(): void
     {
-        Environment::factory()->count(3)->create();
+        createEnvironment(['name' => 'Env 1']);
+        createEnvironment(['name' => 'Env 2', 'is_default' => false]);
+        createEnvironment(['name' => 'Env 3', 'is_default' => false]);
         
         $response = $this->get('/');
         

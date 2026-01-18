@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\TemplateFavorite;
-use App\Models\UserPreference;
+use HardImpact\Orbit\Models\TemplateFavorite;
+use HardImpact\Orbit\Models\UserPreference;
 
 test('settings page loads', function () {
     $response = $this->get('/settings');

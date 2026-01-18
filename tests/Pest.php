@@ -55,9 +55,9 @@ expect()->extend('toBeSuccessful', function () {
 |
 */
 
-function createEnvironment(array $attributes = []): \App\Models\Environment
+function createEnvironment(array $attributes = []): \HardImpact\Orbit\Models\Environment
 {
-    return \App\Models\Environment::create(array_merge([
+    return \HardImpact\Orbit\Models\Environment::create(array_merge([
         'name' => 'Test Environment',
         'host' => 'ai',
         'user' => 'launchpad',

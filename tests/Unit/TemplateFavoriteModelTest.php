@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\TemplateFavorite;
+use HardImpact\Orbit\Models\TemplateFavorite;
 
 test('template favorite can be created', function () {
     TemplateFavorite::create([

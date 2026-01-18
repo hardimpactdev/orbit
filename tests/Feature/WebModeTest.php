@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Models\Environment;
+use HardImpact\Orbit\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -21,7 +21,7 @@ class WebModeTest extends TestCase
         }
         
         // Create local environment
-        Environment::factory()->create([
+        createEnvironment([
             'is_local' => true,
             'name' => 'Local',
             'host' => 'localhost',

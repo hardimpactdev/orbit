@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\TemplateFavorite;
+use HardImpact\Orbit\Models\TemplateFavorite;
 
 describe('Settings Page', function () {
     test('can view settings page', function () {

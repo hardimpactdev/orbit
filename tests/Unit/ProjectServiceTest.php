@@ -1,12 +1,12 @@
 <?php
 
-use App\Http\Integrations\Orbit\OrbitConnector;
-use App\Models\Environment;
-use App\Services\OrbitCli\ConfigurationService;
-use App\Services\OrbitCli\ProjectService;
-use App\Services\OrbitCli\Shared\CommandService;
-use App\Services\OrbitCli\Shared\ConnectorService;
-use App\Services\SshService;
+use HardImpact\Orbit\Http\Integrations\Orbit\OrbitConnector;
+use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Services\OrbitCli\ConfigurationService;
+use HardImpact\Orbit\Services\OrbitCli\ProjectService;
+use HardImpact\Orbit\Services\OrbitCli\Shared\CommandService;
+use HardImpact\Orbit\Services\OrbitCli\Shared\ConnectorService;
+use HardImpact\Orbit\Services\SshService;
 
 beforeEach(function () {
     $this->sshService = Mockery::mock(SshService::class);
