@@ -1375,12 +1375,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/hardimpactdev/orbit-core.git",
-                "reference": "f226ecdf22d7d3a904087f170be8ae2c8890da5d"
+                "reference": "c4dbbb8f197d51dabce557fd6f68d73a14e36283"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/hardimpactdev/orbit-core/zipball/f226ecdf22d7d3a904087f170be8ae2c8890da5d",
-                "reference": "f226ecdf22d7d3a904087f170be8ae2c8890da5d",
+                "url": "https://api.github.com/repos/hardimpactdev/orbit-core/zipball/c4dbbb8f197d51dabce557fd6f68d73a14e36283",
+                "reference": "c4dbbb8f197d51dabce557fd6f68d73a14e36283",
                 "shasum": ""
             },
             "require": {
@@ -1440,7 +1440,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-01-18T12:56:05+00:00"
+            "time": "2026-01-18T13:04:25+00:00"
         },
         {
             "name": "hardimpactdev/waymaker",
