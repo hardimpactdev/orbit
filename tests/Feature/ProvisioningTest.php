@@ -175,7 +175,7 @@ test('create project page loads', function () {
     $response = $this->get("/environments/{$environment->id}/projects/create");
 
     $response->assertStatus(200);
-    $response->assertInertia(fn ($page) => $page->component('environments/projects/Create'));
+    $response->assertInertia(fn ($page) => $page->component('environments/sites/SiteCreate'));
 });
 
 test('projects page loads', function () {
@@ -184,7 +184,7 @@ test('projects page loads', function () {
     $response = $this->get("/environments/{$environment->id}/projects");
 
     $response->assertStatus(200);
-    $response->assertInertia(fn ($page) => $page->component('environments/Projects'));
+    $response->assertInertia(fn ($page) => $page->component('environments/Sites'));
 });
 
 test('projects page includes provisioning slug from flash', function () {
@@ -194,5 +194,5 @@ test('projects page includes provisioning slug from flash', function () {
         ->get("/environments/{$environment->id}/projects");
 
     $response->assertStatus(200);
-    $response->assertInertia(fn ($page) => $page->component('environments/Projects'));
+    $response->assertInertia(fn ($page) => $page->component('environments/Sites'));
 });

@@ -9,6 +9,11 @@
     ],
     "repositories": [
         {
+            "name": "orbit-web",
+            "type": "vcs",
+            "url": "https://github.com/hardimpactdev/orbit-web"
+        },
+        {
             "type": "path",
             "url": "/Users/nckrtl/Projects/hardimpact/packages/waymaker"
         },
@@ -21,7 +26,7 @@
     "require": {
         "php": "^8.2",
         "hardimpactdev/liftoff-laravel": "@dev",
-        "hardimpactdev/orbit-core": "dev-main",
+        "hardimpactdev/orbit-web": "dev-main",
         "hardimpactdev/waymaker": "@dev",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",
