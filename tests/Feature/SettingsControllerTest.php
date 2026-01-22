@@ -1,23 +1,32 @@
 <?php
 
+use HardImpact\Orbit\Models\Environment;
 use HardImpact\Orbit\Models\TemplateFavorite;
 use HardImpact\Orbit\Models\UserPreference;
 
+beforeEach(function () {
+    createEnvironment();
+});
+
 test('settings page loads', function () {
-    $response = $this->get('/settings');
+    $environment = Environment::first();
+
+    $response = $this->get("/environments/{$environment->id}/settings");
 
     $response->assertStatus(200);
-    $response->assertInertia(fn ($page) => $page->component('Settings'));
+    $response->assertInertia(fn ($page) => $page->component('environments/Settings'));
 });
 
 test('settings page includes template favorites', function () {
+    $environment = Environment::first();
+
     TemplateFavorite::create([
         'repo_url' => 'laravel/laravel',
         'display_name' => 'Laravel',
         'usage_count' => 5,
     ]);
 
-    $response = $this->get('/settings');
+    $response = $this->get("/environments/{$environment->id}/settings");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page
@@ -86,7 +95,9 @@ test('template favorite can be deleted', function () {
 });
 
 test('settings page includes notification preference', function () {
-    $response = $this->get('/settings');
+    $environment = Environment::first();
+
+    $response = $this->get("/environments/{$environment->id}/settings");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->has('notificationsEnabled'));
@@ -120,7 +131,9 @@ test('notifications can be enabled', function () {
 });
 
 test('settings page includes menu bar preference', function () {
-    $response = $this->get('/settings');
+    $environment = Environment::first();
+
+    $response = $this->get("/environments/{$environment->id}/settings");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->has('menuBarEnabled'));

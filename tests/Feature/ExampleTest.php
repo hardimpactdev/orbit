@@ -19,6 +19,6 @@ test('homepage redirects to default environment when one exists', function () {
     if (config('orbit.multi_environment')) {
         $response->assertRedirect("/environments/{$environment->id}");
     } else {
-        $response->assertRedirect("/projects");
+        $response->assertRedirect("/sites");
     }
 });

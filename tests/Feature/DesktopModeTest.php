@@ -24,11 +24,11 @@ class DesktopModeTest extends TestCase
         config(['orbit.multi_environment' => true]);
     }
 
-    public function test_projects_page_loads_with_route_parameter(): void
+    public function test_sites_page_loads_with_route_parameter(): void
     {
         $environment = createEnvironment();
         
-        $response = $this->get("/environments/{$environment->id}/projects");
+        $response = $this->get("/environments/{$environment->id}/sites");
         
         $response->assertStatus(200);
     }
@@ -71,7 +71,7 @@ class DesktopModeTest extends TestCase
     {
         $environment = createEnvironment();
         
-        $response = $this->get("/environments/{$environment->id}/projects");
+        $response = $this->get("/environments/{$environment->id}/sites");
         
         $response->assertInertia(fn ($page) => 
             $page->where('multi_environment', true)

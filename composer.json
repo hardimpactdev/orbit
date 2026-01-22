@@ -9,9 +9,9 @@
     ],
     "repositories": [
         {
-            "name": "orbit-web",
+            "name": "orbit-core",
             "type": "vcs",
-            "url": "https://github.com/hardimpactdev/orbit-web"
+            "url": "https://github.com/hardimpactdev/orbit-core"
         },
         {
             "type": "path",
@@ -26,7 +26,7 @@
     "require": {
         "php": "^8.2",
         "hardimpactdev/liftoff-laravel": "@dev",
-        "hardimpactdev/orbit-web": "dev-main",
+        "hardimpactdev/orbit-core": "dev-main",
         "hardimpactdev/waymaker": "@dev",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",

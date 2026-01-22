@@ -23,7 +23,7 @@ test('provision status endpoint returns not found for unknown project', function
             ]);
     });
 
-    $response = $this->get("/environments/{$environment->id}/projects/unknown-project/provision-status");
+    $response = $this->get("/environments/{$environment->id}/sites/unknown-project/provision-status");
 
     $response->assertStatus(200);
     $response->assertJson([
@@ -49,7 +49,7 @@ test('provision status endpoint returns provisioning status', function () {
             ]);
     });
 
-    $response = $this->get("/environments/{$environment->id}/projects/my-project/provision-status");
+    $response = $this->get("/environments/{$environment->id}/sites/my-project/provision-status");
 
     $response->assertStatus(200);
     $response->assertJson([
@@ -75,7 +75,7 @@ test('provision status endpoint returns ready when complete', function () {
             ]);
     });
 
-    $response = $this->get("/environments/{$environment->id}/projects/my-project/provision-status");
+    $response = $this->get("/environments/{$environment->id}/sites/my-project/provision-status");
 
     $response->assertStatus(200);
     $response->assertJson([
@@ -101,7 +101,7 @@ test('provision status endpoint returns failed with error', function () {
             ]);
     });
 
-    $response = $this->get("/environments/{$environment->id}/projects/my-project/provision-status");
+    $response = $this->get("/environments/{$environment->id}/sites/my-project/provision-status");
 
     $response->assertStatus(200);
     $response->assertJson([
@@ -169,29 +169,29 @@ test('reverb config endpoint returns disabled when not configured', function () 
     ]);
 });
 
-test('create project page loads', function () {
+test('create site page loads', function () {
     $environment = Environment::first();
 
-    $response = $this->get("/environments/{$environment->id}/projects/create");
+    $response = $this->get("/environments/{$environment->id}/sites/create");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->component('environments/sites/SiteCreate'));
 });
 
-test('projects page loads', function () {
+test('sites page loads', function () {
     $environment = Environment::first();
 
-    $response = $this->get("/environments/{$environment->id}/projects");
+    $response = $this->get("/environments/{$environment->id}/sites");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->component('environments/Sites'));
 });
 
-test('projects page includes provisioning slug from flash', function () {
+test('sites page includes provisioning slug from flash', function () {
     $environment = Environment::first();
 
     $response = $this->withSession(['flash' => ['provisioning' => 'my-new-project']])
-        ->get("/environments/{$environment->id}/projects");
+        ->get("/environments/{$environment->id}/sites");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->component('environments/Sites'));
