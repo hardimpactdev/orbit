@@ -1,0 +1,1 @@
+import{d as n,c as e,a as i,f as a,t as s,o}from"./app-DCjzOA_Z.js";const c={class:"text-2xl font-semibold text-white"},r={key:0,class:"mt-1 text-sm text-zinc-400"},p=n({__name:"Heading",props:{title:{},description:{}},setup(t){return(d,l)=>(o(),e("div",null,[i("h1",c,s(t.title),1),t.description?(o(),e("p",r,s(t.description),1)):a("",!0)]))}});export{p as _};

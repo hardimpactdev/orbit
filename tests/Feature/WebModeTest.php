@@ -15,11 +15,11 @@ class WebModeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         if (config('orbit.multi_environment')) {
             $this->markTestSkipped('Skipping WebModeTest in desktop mode.');
         }
-        
+
         // Create local environment
         createEnvironment([
             'is_local' => true,
@@ -31,21 +31,21 @@ class WebModeTest extends TestCase
     public function test_dashboard_redirects_to_projects(): void
     {
         $response = $this->get('/');
-        
+
         $response->assertRedirect('/projects');
     }
 
     public function test_projects_page_loads_with_implicit_environment(): void
     {
         $response = $this->get('/projects');
-        
+
         $response->assertStatus(200);
     }
 
     public function test_services_page_loads_with_implicit_environment(): void
     {
         $response = $this->get('/services');
-        
+
         $response->assertStatus(200);
     }
 
@@ -59,10 +59,9 @@ class WebModeTest extends TestCase
     public function test_inertia_props_include_current_environment(): void
     {
         $response = $this->get('/projects');
-        
-        $response->assertInertia(fn ($page) => 
-            $page->has('currentEnvironment')
-                ->where('multi_environment', false)
+
+        $response->assertInertia(fn ($page) => $page->has('currentEnvironment')
+            ->where('multi_environment', false)
         );
     }
 }

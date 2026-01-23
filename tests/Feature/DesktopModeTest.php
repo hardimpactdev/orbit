@@ -15,11 +15,11 @@ class DesktopModeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
-        if (!config('orbit.multi_environment')) {
+
+        if (! config('orbit.multi_environment')) {
             $this->markTestSkipped('Skipping DesktopModeTest in web mode.');
         }
-        
+
         // Ensure desktop mode
         config(['orbit.multi_environment' => true]);
     }
@@ -27,9 +27,9 @@ class DesktopModeTest extends TestCase
     public function test_sites_page_loads_with_route_parameter(): void
     {
         $environment = createEnvironment();
-        
+
         $response = $this->get("/environments/{$environment->id}/sites");
-        
+
         $response->assertStatus(200);
     }
 
@@ -42,7 +42,7 @@ class DesktopModeTest extends TestCase
     public function test_all_desktop_features_accessible(): void
     {
         $environment = createEnvironment();
-        
+
         // Mock services to avoid real SSH/Process calls
         $this->mock(\HardImpact\Orbit\Services\OrbitCli\StatusService::class, function ($mock) {
             $mock->shouldReceive('checkInstallation')->andReturn([
@@ -70,12 +70,11 @@ class DesktopModeTest extends TestCase
     public function test_inertia_props_multi_environment_true(): void
     {
         $environment = createEnvironment();
-        
+
         $response = $this->get("/environments/{$environment->id}/sites");
-        
-        $response->assertInertia(fn ($page) => 
-            $page->where('multi_environment', true)
-                ->where('currentEnvironment', null)
+
+        $response->assertInertia(fn ($page) => $page->where('multi_environment', true)
+            ->where('currentEnvironment', null)
         );
     }
 
@@ -84,9 +83,9 @@ class DesktopModeTest extends TestCase
         createEnvironment(['name' => 'Env 1']);
         createEnvironment(['name' => 'Env 2', 'is_default' => false]);
         createEnvironment(['name' => 'Env 3', 'is_default' => false]);
-        
+
         $response = $this->get('/');
-        
+
         // Dashboard redirects to default environment or first environment
         $response->assertStatus(302);
     }

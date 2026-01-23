@@ -16,7 +16,7 @@
             document.documentElement.classList.toggle('dark', e.matches);
         });
     </script>
-    @vite(['vendor/hardimpactdev/orbit-core/resources/js/app.ts', 'vendor/hardimpactdev/orbit-core/resources/css/app.css'])
+    @vite(['resources/js/app.ts'])
     @inertiaHead
 </head>
 <body class="bg-zinc-950 antialiased">

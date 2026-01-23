@@ -15,7 +15,7 @@ class NotificationService
         if (! config('orbit.multi_environment')) {
             return false;
         }
-        
+
         // Default to enabled (opt-out)
         return UserPreference::getValue('notifications_enabled', true);
     }

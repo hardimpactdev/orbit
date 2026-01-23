@@ -100,6 +100,34 @@ In desktop mode (`MULTI_ENVIRONMENT_MANAGEMENT=true`):
 - SSH key management is available
 - Native notifications via NativePHP
 
+## New Workspace Setup
+
+When setting up orbit-desktop in a new workspace (e.g., Conductor):
+
+```bash
+# 1. Install dependencies
+composer install
+npm install
+npm install @laravel/echo-vue
+
+# 2. Create environment
+cp .env.example .env
+php artisan key:generate
+
+# 3. Copy pre-built orbit-core assets from remote
+mkdir -p public/vendor/orbit
+scp -r nckrtl@ai:~/projects/orbit-web/public/vendor/orbit/build public/vendor/orbit/
+
+# 4. Patch NativePHP for PHP 8.5 (if needed)
+# Edit vendor/nativephp/electron/src/Traits/ExecuteCommand.php
+# Change: PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION
+# To: config('nativephp.binary_version', PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION)
+```
+
+**Why pre-built assets?** orbit-core has linked dependencies (craft-ui) only available on the remote server. We use pre-built assets like orbit-web does, without running vite locally.
+
+**PHP 8.5 note:** NativePHP php-bin only has 8.3/8.4 binaries. The .env sets `NATIVEPHP_PHP_BINARY_VERSION=8.4` but the vendor code ignores config until patched.
+
 ## Build, Lint, and Test Commands
 
 ### Frontend (Vue + TypeScript)

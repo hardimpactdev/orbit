@@ -2,12 +2,12 @@
 
 use HardImpact\Orbit\Models\Environment;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 
 beforeEach(function () {
     Config::set('orbit.multi_environment', false);
-    
+
     Route::middleware([\HardImpact\Orbit\Http\Middleware\ImplicitEnvironment::class])
         ->get('/test-middleware/{environment?}', function (Environment $environment) {
             return response()->json(['id' => $environment->id]);
@@ -28,7 +28,7 @@ test('it does not inject when multi_environment is true', function () {
     createEnvironment(['is_local' => true]);
 
     $response = $this->getJson('/test-middleware');
-    
+
     // When not injected and not in URL, id should be null
     $response->assertJson(['id' => null]);
 });
