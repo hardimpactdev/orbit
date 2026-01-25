@@ -1,0 +1,19 @@
+flowchart TD
+    Start([horizon restart]) --> CheckInstalled{Service installed?}
+    
+    CheckInstalled -->|No| NotInstalledError[Error: Not installed]
+    NotInstalledError --> FailExit([Failure])
+    
+    CheckInstalled -->|Yes| DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| SystemctlRestart[systemctl restart orbit-horizon]
+    DetectOS -->|macOS| StopFirst[launchctl unload plist]
+    
+    StopFirst --> StartAgain[launchctl load plist]
+    
+    SystemctlRestart --> CheckResult{Restarted?}
+    StartAgain --> CheckResult
+    
+    CheckResult -->|Yes| SuccessExit([Success])
+    CheckResult -->|No| RestartError[Error: Failed to restart]
+    RestartError --> FailExit

@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant User
+    participant CLI as PackageLink
+    participant FS as FileSystem
+    participant Composer
+
+    User->>CLI: orbit package link package app
+    CLI->>CLI: Build paths from ~/projects/
+    
+    CLI->>FS: Check packagePath exists
+    alt Package not found
+        FS-->>CLI: false
+        CLI-->>User: Error - Package not found
+    else Package exists
+        FS-->>CLI: true
+        CLI->>FS: Check appPath exists
+        
+        alt App not found
+            FS-->>CLI: false
+            CLI-->>User: Error - App not found
+        else App exists
+            FS-->>CLI: true
+            CLI->>FS: Check packagePath/composer.json exists
+            
+            alt No composer.json
+                FS-->>CLI: false
+                CLI-->>User: Error - No composer.json
+            else Has composer.json
+                FS-->>CLI: true
+                CLI->>Composer: composer link packagePath
+                Note over Composer: Run in appPath directory
+                
+                alt Link failed
+                    Composer-->>CLI: error
+                    CLI-->>User: Error - Failed to link
+                else Link succeeded
+                    Composer-->>CLI: success
+                    CLI-->>User: Package linked to app
+                end
+            end
+        end
+    end

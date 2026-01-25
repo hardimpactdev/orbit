@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant User
+    participant CLI as site:list
+    participant Scanner as SiteScanner
+    participant Config as ConfigManager
+    participant DB as DatabaseService
+
+    User->>CLI: run site:list
+    CLI->>Scanner: scan()
+
+    Scanner->>Config: get paths + overrides
+    Scanner->>DB: get PHP version per site
+    Scanner-->>CLI: sites
+
+    CLI->>Config: get TLD + default PHP
+    CLI-->>User: JSON or table output

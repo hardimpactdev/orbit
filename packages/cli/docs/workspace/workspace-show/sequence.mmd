@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorkspaceShow
+    participant Service as WorkspaceService
+    participant FS as Filesystem
+
+    User->>CLI: workspace:show name
+    CLI->>Service: getWorkspaceInfo(name)
+    Service->>FS: check workspace path
+    Service->>FS: scan for symlinks
+    Service->>FS: check .code-workspace exists
+    Service->>FS: check CLAUDE.md exists
+    Service-->>CLI: workspace info
+    alt not exists
+        CLI-->>User: error output
+    else exists
+        CLI-->>User: workspace details
+    end

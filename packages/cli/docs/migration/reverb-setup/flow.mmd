@@ -1,0 +1,31 @@
+flowchart TD
+    Start([reverb setup]) --> CheckDisable{--disable flag?}
+    
+    CheckDisable -->|Yes| StopContainer[Stop Reverb container]
+    StopContainer --> DisableConfig[Disable in config]
+    DisableConfig --> RegenCaddyDisable[Regenerate Caddyfile]
+    RegenCaddyDisable --> ReloadDisable[Reload Caddy]
+    ReloadDisable --> ReportDisabled[Reverb disabled]
+    ReportDisabled --> SuccessExit([Success])
+    
+    CheckDisable -->|No| CreateDir[Create config directory]
+    CreateDir --> CopyDocker[Copy Docker files from stubs]
+    CopyDocker --> GenerateEnv[Generate .env with credentials]
+    GenerateEnv --> SaveConfig[Save to Orbit config]
+    SaveConfig --> EnableService[Enable Reverb service]
+    EnableService --> RegenCaddyfile[Regenerate Caddyfile]
+    
+    RegenCaddyfile --> CheckEnable{--enable flag?}
+    
+    CheckEnable -->|No| ReportSetup[Report setup complete]
+    ReportSetup --> ShowConfig[Show WebSocket URL and env vars]
+    ShowConfig --> SuccessExit
+    
+    CheckEnable -->|Yes| BuildContainer[docker compose build]
+    BuildContainer --> CheckBuild{Build success?}
+    CheckBuild -->|No| BuildError[Error: Build failed]
+    BuildError --> FailExit([Failure])
+    
+    CheckBuild -->|Yes| StartContainer[Start Reverb container]
+    StartContainer --> ReloadCaddy[Reload Caddy]
+    ReloadCaddy --> ReportSetup

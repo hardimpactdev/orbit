@@ -1,0 +1,21 @@
+flowchart TD
+    start([Start]) --> getArgs[Get workspace and project args]
+    getArgs --> callService[WorkspaceService addProject]
+    callService --> checkWorkspace{Workspace exists?}
+    checkWorkspace -->|no| errorNoWorkspace[Throw - workspace not found]
+    checkWorkspace -->|yes| checkProject{Project exists?}
+    checkProject -->|no| errorNoProject[Throw - project not found]
+    checkProject -->|yes| checkSymlink{Already in workspace?}
+    checkSymlink -->|yes| errorExists[Throw - already added]
+    checkSymlink -->|no| createSymlink[Create symlink]
+    createSymlink --> regenWorkspace[Regenerate .code-workspace]
+    regenWorkspace --> updateClaude[Update CLAUDE.md]
+    updateClaude --> getInfo[Get workspace info]
+    getInfo --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| consoleSuccess[Print success]
+
+    errorNoWorkspace --> catchError[Catch RuntimeException]
+    errorNoProject --> catchError
+    errorExists --> catchError
+    catchError --> errorOut[Output error]

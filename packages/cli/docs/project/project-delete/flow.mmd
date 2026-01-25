@@ -1,0 +1,46 @@
+flowchart TD
+    start([Start site:delete]) --> readArgs[Read slug or --id]
+    readArgs --> needPrompt{Interactive + no slug/id?}
+    needPrompt -->|yes| promptSlug[Prompt for slug]
+    needPrompt -->|no| validateInput
+    promptSlug --> validateInput
+    validateInput --> hasInput{Slug or id present?}
+    hasInput -->|no| failMissing[Fail: slug or id required]
+    hasInput -->|yes| initLogger[Init DeletionLogger + broadcast deleting]
+
+    initLogger --> confirm{Need confirmation?}
+    confirm -->|no| sequenceStep
+    confirm -->|yes| confirmSlug[Prompt for slug confirmation]
+    confirmSlug --> confirmOk{Matches slug/id?}
+    confirmOk -->|no| failConfirm[Fail: confirmation failed]
+    confirmOk -->|yes| sequenceStep
+
+    sequenceStep --> mcpConfigured{MCP configured?}
+    mcpConfigured -->|yes| mcpDelete[Call delete-site]
+    mcpConfigured -->|no| warnMcp[Warn + continue]
+    mcpDelete --> mcpOk{Success?}
+    mcpOk -->|no| warnMcpFail[Record warning]
+    mcpOk -->|yes| recordMeta[Store meta]
+    warnMcp --> findLocal
+    warnMcpFail --> findLocal
+    recordMeta --> findLocal
+
+    findLocal[Find local path from config + slug] --> dbStep
+    dbStep --> keepDb{--keep-db?}
+    keepDb -->|yes| removeFiles
+    keepDb -->|no| dropDb[Drop database]
+    dropDb --> dbResult[Store db result]
+    dbResult --> removeFiles
+
+    removeFiles --> localExists{Local path exists?}
+    localExists -->|no| broadcastDeleted
+    localExists -->|yes| confirmLocal{Confirm local delete?}
+    confirmLocal -->|no| broadcastDeleted
+    confirmLocal -->|yes| rmDir[rm -rf (sudo fallback)]
+    rmDir --> broadcastDeleted[Broadcast deleted]
+
+    broadcastDeleted --> caddyReload[Generate + reload Caddy]
+    caddyReload --> output[JSON success + warnings]
+
+    failMissing --> failOut[Output error]
+    failConfirm --> failOut

@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorktreesCommand
+    participant WS as WorktreeService
+    participant Git
+
+    User->>CLI: orbit worktrees site
+    CLI->>CLI: Parse optional site argument
+    
+    alt Site specified
+        CLI->>WS: getSiteWorktrees siteName
+        WS->>Git: git worktree list in site path
+    else No site filter
+        CLI->>WS: getAllWorktrees
+        WS->>Git: git worktree list for all sites
+    end
+    
+    Git-->>WS: worktree list output
+    WS->>WS: Parse worktree info
+    WS-->>CLI: worktrees array
+    
+    alt Error occurred
+        CLI-->>User: Error message
+    else Success
+        alt No worktrees
+            CLI-->>User: No worktrees found
+        else Has worktrees
+            CLI->>CLI: Build table with Site Worktree Domain Branch Path
+            CLI-->>User: Display table
+            CLI-->>User: Total worktrees count
+        end
+    end

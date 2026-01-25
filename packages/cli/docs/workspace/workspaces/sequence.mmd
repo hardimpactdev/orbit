@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant User
+    participant CLI as Workspaces
+    participant Service as WorkspaceService
+    participant FS as Filesystem
+
+    User->>CLI: workspaces
+    CLI->>Service: list()
+    Service->>FS: ensure workspaces dir
+    Service->>FS: get directories
+    loop each workspace
+        Service->>FS: get workspace info
+    end
+    Service-->>CLI: workspaces array
+    CLI-->>User: table or JSON output

@@ -1,0 +1,481 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:create\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Console/Commands/OrbitInit.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Console/Commands/OrbitInit.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:findOrFail\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Jobs/CreateProjectJob.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:findOrFail\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Jobs/CreateProjectJob.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:findOrFail\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Jobs/DeleteProjectJob.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Deployment\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Models/Deployment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_checked_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$port\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 2
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Call to method current\(\) on an unknown class HardImpact\\Orbit\\Services\\EnvironmentManager\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Call to method setActive\(\) on an unknown class HardImpact\\Orbit\\Services\\EnvironmentManager\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Class HardImpact\\Orbit\\Services\\EnvironmentManager not found\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Models/Environment.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting\:\:find\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Models/Setting.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting\:\:updateOrCreate\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Models/Setting.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey\:\:\$public_key\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Models/SshKey.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey\:\:first\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Models/SshKey.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 2
+			path: src/Models/SshKey.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\TemplateFavorite\:\:orderByDesc\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 2
+			path: src/Models/TemplateFavorite.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Models/TemplateFavorite.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\TrackedJob\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Models/TrackedJob.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference\:\:updateOrCreate\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Models/UserPreference.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 2
+			path: src/Models/UserPreference.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 1
+			path: src/Services/Deletion/Actions/DeleteProjectFiles.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 3
+			path: src/Services/Deletion/Actions/DeleteProjectFiles.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 2
+			path: src/Services/Deletion/Actions/DeleteProjectFiles.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/DnsResolverService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/DnsResolverService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/DnsResolverService.php
+
+		-
+			message: '#^Call to method getConfig\(\) on an unknown class App\\Services\\OrbitCli\\ConfigurationService\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Services/DnsResolverService.php
+
+		-
+			message: '#^Parameter \$configService of method HardImpact\\Orbit\\Core\\Services\\DnsResolverService\:\:syncAllResolvers\(\) has invalid type App\\Services\\OrbitCli\\ConfigurationService\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Services/DnsResolverService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Services/DoctorService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Services/DoctorService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$port\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/DoctorService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Services/DoctorService.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:findOrFail\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/EnvironmentManager.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:first\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/EnvironmentManager.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 3
+			path: src/Services/EnvironmentManager.php
+
+		-
+			message: '#^Left side of \|\| is always false\.$#'
+			identifier: booleanOr.leftAlwaysFalse
+			count: 1
+			path: src/Services/MacPhpFpmConfigService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 5
+			path: src/Services/OrbitCli/ConfigurationService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/OrbitCli/PackageService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Services/OrbitCli/ProjectCliService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 8
+			path: src/Services/OrbitCli/ProjectCliService.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:create\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/OrbitCli/ProjectCliService.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 2
+			path: src/Services/OrbitCli/ProjectCliService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitCli/ServiceControlService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 19
+			path: src/Services/OrbitCli/ServiceControlService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Services/OrbitCli/Shared/CommandService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitCli/Shared/ConnectorService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$tld\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitCli/Shared/ConnectorService.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: src/Services/OrbitCli/Shared/ConnectorService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_path\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitCli/StatusService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitCli/StatusService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/OrbitCli/StatusService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 5
+			path: src/Services/OrbitCli/WorkspaceService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/OrbitCli/WorktreeService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_path\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_version\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 43
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$tld\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: src/Services/OrbitService.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:create\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/ProjectService.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:where\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/ProjectService.php
+
+		-
+			message: '#^Method HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\BuildAssets\:\:buildWithBun\(\) should return Illuminate\\Process\\ProcessResult but returns Illuminate\\Contracts\\Process\\ProcessResult\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Services/Provision/Actions/BuildAssets.php
+
+		-
+			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:find\(\)\.$#'
+			identifier: staticMethod.notFound
+			count: 1
+			path: src/Services/Provision/Actions/SetPhpVersion.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Services/ProvisioningService.php
+
+		-
+			message: '#^Left side of \|\| is always false\.$#'
+			identifier: booleanOr.leftAlwaysFalse
+			count: 1
+			path: src/Services/ProvisioningService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/SshService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/SshService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$port\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Services/SshService.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Services/SshService.php
+
+		-
+			message: '#^Variable \$version on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.variable
+			count: 1
+			path: src/Services/TemplateAnalyzer/Analyzers/LaravelTemplateAnalyzer.php
+
+		-
+			message: '#^Call to method analyze\(\) on an unknown class App\\Services\\TemplateAnalyzer\\Contracts\\TemplateAnalyzerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Services/TemplateAnalyzer/TemplateAnalyzerService.php
+
+		-
+			message: '#^Class App\\Services\\TemplateAnalyzer\\Contracts\\TemplateAnalyzerInterface not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Services/TemplateAnalyzer/TemplateAnalyzerService.php

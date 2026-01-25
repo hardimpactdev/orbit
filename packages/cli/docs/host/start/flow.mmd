@@ -1,0 +1,22 @@
+flowchart TD
+    Start([host start service]) --> ParseService[Parse service argument]
+    
+    ParseService --> CheckType{Service type?}
+    
+    CheckType -->|caddy| StartCaddy[CaddyManager.start]
+    CheckType -->|php-version| ExtractVersion[Extract PHP version]
+    CheckType -->|horizon| StartHorizon[HorizonManager.start]
+    CheckType -->|unknown| UnknownError[Error: Unknown service]
+    
+    ExtractVersion --> StartPhp[PhpManager.start version]
+    
+    StartCaddy --> CheckResult{Success?}
+    StartPhp --> CheckResult
+    StartHorizon --> CheckResult
+    UnknownError --> FailExit([Failure])
+    
+    CheckResult -->|Yes| ReportSuccess[Info: Started service]
+    CheckResult -->|No| ReportFailure[Error: Failed to start]
+    
+    ReportSuccess --> SuccessExit([Success])
+    ReportFailure --> FailExit

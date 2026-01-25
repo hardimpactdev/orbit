@@ -1,0 +1,32 @@
+flowchart TD
+    start([Start init]) --> checkPrereqs{Skip prerequisites?}
+    checkPrereqs -->|no| runPrereqs[Check prerequisites]
+    checkPrereqs -->|yes| checkDocker
+    runPrereqs --> prereqsOk{All passed?}
+    prereqsOk -->|no| offerInstall{Offer install?}
+    offerInstall -->|yes| installMissing[Install missing]
+    offerInstall -->|no| failPrereqs[Fail - missing prereqs]
+    installMissing --> recheck[Recheck prerequisites]
+    recheck --> recheckOk{All passed?}
+    recheckOk -->|no| failPrereqs
+    recheckOk -->|yes| checkDocker
+    prereqsOk -->|yes| checkDocker
+
+    checkDocker{Docker running?}
+    checkDocker -->|no| failDocker[Fail - Docker not running]
+    checkDocker -->|yes| detectFirst{First run?}
+    detectFirst --> createDirs[Create directory structure]
+    createDirs --> copyStubs[Copy configuration files]
+    copyStubs --> installWeb[Install companion web app]
+    installWeb --> genCaddy[Generate Caddyfile]
+    genCaddy --> genDns[Generate dnsmasq config]
+    genDns --> initServices[Initialize services.yaml]
+    initServices --> createNetwork[Create Docker network]
+    createNetwork --> configHosts[Configure etc hosts]
+    configHosts --> configureDns[Configure system DNS]
+    configureDns --> buildDns[Build DNS container]
+    buildDns --> buildPhp[Build PHP images]
+    buildPhp --> pullImages[Pull service images]
+    pullImages --> startAll[Start all services]
+    startAll --> installComposerLink[Install composer-link]
+    installComposerLink --> done[Show completion message]

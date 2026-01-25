@@ -1,0 +1,9 @@
+flowchart TD
+    start([Start service disable]) --> getService[Get service argument]
+    getService --> callDisable[ServiceManager disable]
+    callDisable --> success{Disable success?}
+    success -->|no| failDisable[Output error]
+    success -->|yes| regenCompose[Regenerate docker-compose]
+    regenCompose --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| consoleSuccess[Print disabled message]

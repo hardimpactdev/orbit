@@ -1,0 +1,20 @@
+flowchart TD
+    Start([horizon uninstall]) --> CheckInstalled{Service installed?}
+    
+    CheckInstalled -->|No| NotInstalled[Report not installed]
+    NotInstalled --> SuccessExit([Success])
+    
+    CheckInstalled -->|Yes| StopService[Stop service first]
+    StopService --> DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| RemoveSystemd[Delete systemd service file]
+    DetectOS -->|macOS| RemoveLaunchd[Delete launchd plist]
+    
+    RemoveSystemd --> DaemonReload[systemctl daemon-reload]
+    DaemonReload --> CheckResult{Removed?}
+    
+    RemoveLaunchd --> CheckResult
+    
+    CheckResult -->|Yes| SuccessExit
+    CheckResult -->|No| RemoveError[Error: Failed to uninstall]
+    RemoveError --> FailExit([Failure])

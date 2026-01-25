@@ -1,0 +1,30 @@
+flowchart TD
+    Start([php config version]) --> ParseVersion{Version specified?}
+    
+    ParseVersion -->|No| GetInstalled[Get installed PHP versions]
+    GetInstalled --> CheckInstalled{Any installed?}
+    CheckInstalled -->|No| NoPhpError[Error: No PHP installed]
+    NoPhpError --> FailExit([Failure])
+    CheckInstalled -->|Yes| UseLatest[Use latest version]
+    UseLatest --> CollectOptions
+    
+    ParseVersion -->|Yes| CollectOptions[Collect setting options]
+    
+    CollectOptions --> CheckUpdates{Any updates provided?}
+    
+    CheckUpdates -->|No| ShowSettings[Get and display current settings]
+    ShowSettings --> SuccessExit([Success])
+    
+    CheckUpdates -->|Yes| CheckGetFlag{--get flag?}
+    CheckGetFlag -->|Yes| ShowSettings
+    
+    CheckGetFlag -->|No| ApplyUpdates[Apply setting updates]
+    ApplyUpdates --> RestartFpm[Restart PHP-FPM]
+    RestartFpm --> CheckSuccess{Success?}
+    
+    CheckSuccess -->|Yes| GetUpdated[Get updated settings]
+    GetUpdated --> ReportSuccess[Report changes applied]
+    ReportSuccess --> SuccessExit
+    
+    CheckSuccess -->|No| UpdateError[Error: Failed to update]
+    UpdateError --> FailExit

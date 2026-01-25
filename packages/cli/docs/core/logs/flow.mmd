@@ -1,0 +1,8 @@
+flowchart TD
+    start([Start logs]) --> getContainer[Get container argument]
+    getContainer --> checkFollow{Follow enabled?}
+    checkFollow -->|yes| streamLogs[Stream logs with follow]
+    checkFollow -->|no| showLogs[Show logs without follow]
+    streamLogs --> userInterrupt[User presses Ctrl+C]
+    showLogs --> done([Done])
+    userInterrupt --> done

@@ -1,0 +1,39 @@
+sequenceDiagram
+    participant User
+    participant CLI as Init
+    participant Platform as PlatformService
+    participant Config as ConfigManager
+    participant Docker as DockerManager
+    participant Caddy as CaddyfileGenerator
+    participant Service as ServiceManager
+    participant FS as Filesystem
+
+    User->>CLI: orbit init
+    
+    alt check prerequisites
+        CLI->>Platform: checkPrerequisites
+        Platform-->>CLI: results
+        opt missing and installable
+            CLI->>Platform: install missing
+        end
+    end
+
+    CLI->>Platform: hasDocker
+    alt not running
+        CLI-->>User: error Docker not running
+    end
+
+    CLI->>FS: create directories
+    CLI->>FS: copy stub files
+    CLI->>Config: install web app
+    CLI->>Caddy: generate Caddyfile
+    CLI->>Config: write dnsmasq conf
+    CLI->>Service: load and regenerate compose
+    CLI->>Docker: create network
+    CLI->>FS: configure etc hosts
+    CLI->>Platform: configure DNS
+    CLI->>Docker: build dns container
+    CLI->>Docker: build php images
+    CLI->>Docker: pull postgres redis mailpit
+    CLI->>Docker: start all
+    CLI-->>User: completion message

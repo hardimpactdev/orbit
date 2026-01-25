@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.orbit.horizon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>ORBIT_PHP_BIN</string>
+        <string>artisan</string>
+        <string>horizon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>ORBIT_WEB_PATH</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>ORBIT_ENV_PATH</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>ORBIT_LOG_PATH</string>
+    <key>StandardErrorPath</key>
+    <string>ORBIT_LOG_PATH</string>
+</dict>
+</plist>

@@ -1,0 +1,33 @@
+flowchart TD
+    Start([php site version]) --> ParseArgs[Parse site and version args]
+    ParseArgs --> FindSite{Site exists?}
+    
+    FindSite -->|No| SiteNotFound[Error: Site not found]
+    SiteNotFound --> FailExit([Failure])
+    
+    FindSite -->|Yes| CheckReset{--reset flag?}
+    
+    CheckReset -->|Yes| RemoveOverride[Remove from database]
+    RemoveOverride --> RemoveLegacy[Remove from legacy config]
+    RemoveLegacy --> CheckPublicReset{Has public folder?}
+    CheckPublicReset -->|Yes| RegenReset[Regenerate Caddyfile]
+    CheckPublicReset -->|No| ReportReset[Report reset to default]
+    RegenReset --> ReloadReset[Reload Caddy]
+    ReloadReset --> ReportReset
+    ReportReset --> SuccessExit([Success])
+    
+    CheckReset -->|No| CheckVersion{Version provided?}
+    CheckVersion -->|No| NoVersionError[Error: Provide version or use --reset]
+    NoVersionError --> FailExit
+    
+    CheckVersion -->|Yes| ValidateVersion{Valid version?}
+    ValidateVersion -->|No| InvalidVersion[Error: Invalid version]
+    InvalidVersion --> FailExit
+    
+    ValidateVersion -->|Yes| SaveDb[Save to database]
+    SaveDb --> CheckPublicSet{Has public folder?}
+    CheckPublicSet -->|Yes| RegenSet[Regenerate Caddyfile]
+    RegenSet --> ReloadSet[Reload Caddy]
+    ReloadSet --> ReportSet[Report version set]
+    CheckPublicSet -->|No| ReportSet
+    ReportSet --> SuccessExit

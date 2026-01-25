@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorktreeRefresh
+    participant WS as WorktreeService
+    participant Git
+    participant Caddy
+
+    User->>CLI: orbit worktree refresh --cleanup
+    
+    alt --cleanup flag
+        CLI->>WS: cleanupOrphaned
+        WS->>WS: Find entries for deleted worktrees
+        WS->>Caddy: Remove orphaned Caddy routes
+        WS-->>CLI: removed count
+    end
+    
+    CLI->>WS: refresh
+    WS->>Git: git worktree list for all sites
+    Git-->>WS: worktree list output
+    WS->>WS: Detect new worktrees
+    WS->>Caddy: Add routes for new worktrees
+    WS-->>CLI: worktrees array
+    
+    alt Error occurred
+        CLI-->>User: Error message
+    else Success
+        CLI-->>User: Scan complete - N worktrees found
+        alt Orphans removed
+            CLI-->>User: Removed N orphaned entries
+        end
+        alt Has worktrees
+            CLI-->>User: List active worktrees with domains
+        end
+    end

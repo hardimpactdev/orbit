@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant User
+    participant CLI as ServiceInfo
+    participant Manager as ServiceManager
+    participant Loader as ServiceTemplateLoader
+
+    User->>CLI: service:info redis
+    CLI->>Manager: getService(name)
+    Manager-->>CLI: config or null
+    CLI->>Loader: load(name)
+    Loader-->>CLI: template or null
+    alt neither found
+        CLI-->>User: error not found
+    else found
+        CLI-->>User: template info + config + schema
+    end

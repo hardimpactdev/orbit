@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonStop
+    participant HM as HorizonManager
+    participant OS as System Service
+
+    User->>CLI: orbit horizon stop
+    CLI->>HM: isInstalled
+    
+    alt Not installed
+        HM-->>CLI: false
+        CLI-->>User: Not installed - nothing to stop
+    else Installed
+        HM-->>CLI: true
+        CLI->>HM: isRunning
+        
+        alt Not running
+            HM-->>CLI: false
+            CLI-->>User: Not running
+        else Running
+            HM-->>CLI: true
+            CLI->>HM: stop
+            
+            alt Linux
+                HM->>OS: systemctl stop orbit-horizon
+            else macOS
+                HM->>OS: launchctl unload plist
+            end
+            
+            OS-->>HM: result
+            HM-->>CLI: stopped boolean
+            CLI-->>User: Stopped or error message
+        end
+    end

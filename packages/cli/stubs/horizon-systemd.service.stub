@@ -1,0 +1,16 @@
+[Unit]
+Description=Orbit Horizon Queue Worker
+After=network.target
+
+[Service]
+Type=simple
+User=ORBIT_USER
+Group=ORBIT_GROUP
+WorkingDirectory=ORBIT_WEB_PATH
+ExecStart=ORBIT_PHP_BIN artisan horizon
+Restart=always
+RestartSec=5
+Environment="PATH=ORBIT_ENV_PATH"
+
+[Install]
+WantedBy=multi-user.target

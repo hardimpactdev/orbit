@@ -1,0 +1,9 @@
+flowchart TD
+    start([Start service enable]) --> getService[Get service argument]
+    getService --> callEnable[ServiceManager enable]
+    callEnable --> success{Enable success?}
+    success -->|no| failEnable[Output error]
+    success -->|yes| regenCompose[Regenerate docker-compose]
+    regenCompose --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| consoleSuccess[Print enabled message]

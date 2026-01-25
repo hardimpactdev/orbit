@@ -1,0 +1,27 @@
+flowchart TD
+    Start([horizon install]) --> CheckInstalled{Already installed?}
+    
+    CheckInstalled -->|Yes| AlreadyDone[Report already installed]
+    AlreadyDone --> SuccessExit([Success])
+    
+    CheckInstalled -->|No| DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| InstallSystemd[Create systemd service file]
+    DetectOS -->|macOS| InstallLaunchd[Create launchd plist]
+    DetectOS -->|Other| UnsupportedError[Unsupported platform error]
+    UnsupportedError --> FailExit([Failure])
+    
+    InstallSystemd --> LoadStub[Load service stub template]
+    InstallLaunchd --> LoadPlist[Load plist stub template]
+    
+    LoadStub --> ReplaceVars[Replace placeholders with config]
+    LoadPlist --> ReplaceVars
+    
+    ReplaceVars --> WriteFile[Write service file]
+    WriteFile --> EnableService[Enable service for auto-start]
+    EnableService --> StartService[Start Horizon service]
+    
+    StartService --> CheckStarted{Started?}
+    CheckStarted -->|Yes| SuccessExit
+    CheckStarted -->|No| WarnNotStarted[Warn: installed but not started]
+    WarnNotStarted --> SuccessExit

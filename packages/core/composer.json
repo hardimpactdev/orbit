@@ -1,0 +1,72 @@
+{
+    "name": "hardimpactdev/orbit-core",
+    "description": "Core functionality for orbit-web and orbit-desktop",
+    "keywords": [
+        "laravel",
+        "orbit",
+        "development-environment"
+    ],
+    "homepage": "https://github.com/hardimpactdev/orbit-core",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Nick Ratel",
+            "email": "nick.retel@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^11.0||^12.0",
+        "illuminate/database": "^11.0||^12.0",
+        "illuminate/process": "^11.0||^12.0",
+        "illuminate/support": "^11.0||^12.0",
+        "saloonphp/saloon": "^3.14"
+    },
+    "suggest": {
+    },
+    "require-dev": {
+        "laravel/pint": "^1.14",
+        "larastan/larastan": "^3.0",
+        "orchestra/testbench": "^10.0.0||^9.0.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "HardImpact\\Orbit\\Core\\": "src/",
+            "HardImpact\\Orbit\\Core\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "HardImpact\\Orbit\\Core\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "whisky update"
+        ],
+        "post-update-cmd": [
+            "whisky update"
+        ],
+        "analyse": "vendor/bin/phpstan analyse",
+        "test": "vendor/bin/pest",
+        "format": "vendor/bin/pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "HardImpact\\Orbit\\Core\\CoreServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

@@ -1,0 +1,24 @@
+services:
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: orbit-reverb:latest
+    container_name: orbit-reverb
+    ports:
+      - "8080:8080"
+    environment:
+      - REVERB_APP_ID=${REVERB_APP_ID:-orbit}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:-orbit-key}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:-orbit-secret}
+      - REVERB_HOST=0.0.0.0
+      - REVERB_PORT=8080
+      - REDIS_HOST=orbit-redis
+      - REDIS_PORT=6379
+    restart: unless-stopped
+    networks:
+      - orbit
+
+networks:
+  orbit:
+    external: true

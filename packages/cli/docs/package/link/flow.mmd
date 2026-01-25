@@ -1,0 +1,24 @@
+flowchart TD
+    Start([package link package app]) --> ParseArgs[Parse package and app names]
+    ParseArgs --> BuildPaths[Build paths in ~/projects/]
+    
+    BuildPaths --> CheckPackage{Package dir exists?}
+    CheckPackage -->|No| PackageNotFound[Error: Package not found]
+    PackageNotFound --> FailExit([Failure])
+    
+    CheckPackage -->|Yes| CheckApp{App dir exists?}
+    CheckApp -->|No| AppNotFound[Error: App not found]
+    AppNotFound --> FailExit
+    
+    CheckApp -->|Yes| CheckComposer{Package has composer.json?}
+    CheckComposer -->|No| NoComposer[Error: No composer.json]
+    NoComposer --> FailExit
+    
+    CheckComposer -->|Yes| RunLink[Run composer link in app dir]
+    RunLink --> CheckResult{Success?}
+    
+    CheckResult -->|Yes| ReportSuccess[Report package linked]
+    ReportSuccess --> SuccessExit([Success])
+    
+    CheckResult -->|No| LinkError[Error: Failed to link]
+    LinkError --> FailExit

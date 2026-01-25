@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonStatus
+    participant HM as HorizonManager
+    participant FS as FileSystem
+    participant OS as System Service
+
+    User->>CLI: orbit horizon status
+    CLI->>HM: isInstalled
+    
+    alt Linux
+        HM->>FS: Check /etc/systemd/system/orbit-horizon.service
+    else macOS
+        HM->>FS: Check ~/Library/LaunchAgents/com.orbit.horizon.plist
+    end
+    
+    FS-->>HM: exists boolean
+    
+    alt Not installed
+        HM-->>CLI: false
+        CLI-->>User: Not installed - run horizon install
+    else Installed
+        HM-->>CLI: true
+        CLI->>HM: isRunning
+        
+        alt Linux
+            HM->>OS: systemctl is-active orbit-horizon
+        else macOS
+            HM->>OS: launchctl list grep com.orbit.horizon
+        end
+        
+        OS-->>HM: active boolean
+        HM-->>CLI: running boolean
+        
+        alt Running
+            CLI-->>User: Horizon is running
+        else Not running
+            CLI-->>User: Not running - run horizon start
+        end
+    end

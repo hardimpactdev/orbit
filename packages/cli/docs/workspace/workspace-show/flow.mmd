@@ -1,0 +1,11 @@
+flowchart TD
+    start([Start]) --> getName[Get name argument]
+    getName --> getInfo[WorkspaceService getWorkspaceInfo]
+    getInfo --> checkExists{Workspace dir exists?}
+    checkExists -->|no| errorNotFound[Output error - not found]
+    checkExists -->|yes| output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON with info]
+    output -->|no| printInfo[Print workspace details]
+    printInfo --> checkProjects{Has projects?}
+    checkProjects -->|no| warnEmpty[Warn no projects]
+    checkProjects -->|yes| listProjects[List projects with paths]

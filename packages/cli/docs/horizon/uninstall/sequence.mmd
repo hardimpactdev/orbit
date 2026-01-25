@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonUninstall
+    participant HM as HorizonManager
+    participant FS as FileSystem
+    participant OS as System Service
+
+    User->>CLI: orbit horizon uninstall
+    CLI->>HM: isInstalled
+    
+    alt Not installed
+        HM-->>CLI: false
+        CLI-->>User: Not installed - nothing to remove
+    else Installed
+        HM-->>CLI: true
+        CLI->>HM: uninstall
+        HM->>HM: stop service first
+        
+        alt Linux
+            HM->>OS: systemctl stop orbit-horizon
+            HM->>FS: Delete /etc/systemd/system/orbit-horizon.service
+            HM->>OS: systemctl daemon-reload
+        else macOS
+            HM->>OS: launchctl unload plist
+            HM->>FS: Delete ~/Library/LaunchAgents/com.orbit.horizon.plist
+        end
+        
+        HM-->>CLI: uninstalled boolean
+        CLI-->>User: Uninstalled or error message
+    end

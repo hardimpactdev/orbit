@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant User
+    participant CLI as site:scan
+    participant Config as ConfigManager
+    participant FS as Filesystem
+    participant Git as git
+
+    User->>CLI: run site:scan
+    CLI->>CLI: read path + depth
+
+    alt path provided
+        CLI->>CLI: use provided path
+    else config paths
+        CLI->>Config: get paths
+        Config-->>CLI: paths
+    end
+
+    CLI->>FS: scan directories up to depth
+    loop per base path
+        CLI->>FS: scandir + recurse
+        alt .git found
+            CLI->>Git: git remote get-url origin
+            Git-->>CLI: URL
+        end
+    end
+
+    CLI->>CLI: sort sites
+    CLI-->>User: JSON or console output

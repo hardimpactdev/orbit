@@ -1,0 +1,17 @@
+flowchart TD
+    start([Start site:list]) --> scanSites[SiteScanner::scan]
+    scanSites --> getConfig[Get TLD + default PHP]
+    getConfig --> jsonMode{JSON output?}
+    jsonMode -->|yes| jsonOut[Output sites + count + tld + default php]
+    jsonMode -->|no| hasSites{Sites empty?}
+    hasSites -->|yes| warnNone[Warn: no sites found]
+    hasSites -->|no| buildTable[Build table rows]
+    buildTable --> renderTable[Render table + totals]
+
+    subgraph SiteScanner::scan
+        scanStart[Load config paths + overrides] --> overrides[Scan overrides]
+        overrides --> scanPaths[Scan configured paths]
+        scanPaths --> buildSite[Build site metadata]
+        buildSite --> detectPhp[Detect PHP version]
+        detectPhp --> setDomain[Set domain if public/]
+        setDomain --> sortSites[Sort by name]

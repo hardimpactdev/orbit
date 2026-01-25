@@ -1,0 +1,15 @@
+flowchart TD
+    Start([horizon status]) --> CheckInstalled{Service installed?}
+    
+    CheckInstalled -->|No| NotInstalled[Warn: Not installed]
+    NotInstalled --> SuggestInstall[Suggest horizon install]
+    SuggestInstall --> SuccessExit([Success])
+    
+    CheckInstalled -->|Yes| CheckRunning{Currently running?}
+    
+    CheckRunning -->|Yes| ReportRunning[Info: Horizon is running]
+    ReportRunning --> SuccessExit
+    
+    CheckRunning -->|No| ReportStopped[Warn: Not running]
+    ReportStopped --> SuggestStart[Suggest horizon start]
+    SuggestStart --> SuccessExit

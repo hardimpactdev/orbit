@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant User
+    participant CLI as ServiceConfigure
+    participant Manager as ServiceManager
+
+    User->>CLI: service:configure redis --set port=6380
+    CLI->>CLI: parse set options
+    CLI->>Manager: configure(service, config)
+    Manager-->>CLI: success or error
+    alt success
+        CLI->>Manager: regenerateCompose
+        CLI-->>User: configuration summary
+    else error
+        CLI-->>User: error message
+    end

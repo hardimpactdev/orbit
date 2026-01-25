@@ -1,0 +1,22 @@
+flowchart TD
+    Start([host stop service]) --> ParseService[Parse service argument]
+    
+    ParseService --> CheckType{Service type?}
+    
+    CheckType -->|caddy| StopCaddy[CaddyManager.stop]
+    CheckType -->|php-version| ExtractVersion[Extract PHP version]
+    CheckType -->|horizon| StopHorizon[HorizonManager.stop]
+    CheckType -->|unknown| UnknownError[Error: Unknown service]
+    
+    ExtractVersion --> StopPhp[PhpManager.stop version]
+    
+    StopCaddy --> CheckResult{Success?}
+    StopPhp --> CheckResult
+    StopHorizon --> CheckResult
+    UnknownError --> FailExit([Failure])
+    
+    CheckResult -->|Yes| ReportSuccess[Info: Stopped service]
+    CheckResult -->|No| ReportFailure[Error: Failed to stop]
+    
+    ReportSuccess --> SuccessExit([Success])
+    ReportFailure --> FailExit

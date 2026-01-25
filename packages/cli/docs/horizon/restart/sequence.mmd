@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonRestart
+    participant HM as HorizonManager
+    participant OS as System Service
+
+    User->>CLI: orbit horizon restart
+    CLI->>HM: isInstalled
+    
+    alt Not installed
+        HM-->>CLI: false
+        CLI-->>User: Error - run horizon install
+    else Installed
+        HM-->>CLI: true
+        CLI->>HM: restart
+        
+        alt Linux
+            HM->>OS: systemctl restart orbit-horizon
+            OS-->>HM: result
+        else macOS
+            HM->>HM: stop
+            HM->>OS: launchctl unload plist
+            HM->>HM: start
+            HM->>OS: launchctl load plist
+            OS-->>HM: result
+        end
+        
+        HM-->>CLI: restarted boolean
+        CLI-->>User: Restarted or error message
+    end

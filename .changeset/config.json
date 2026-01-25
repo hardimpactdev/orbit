@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "hardimpactdev/orbit-core",
+      "hardimpactdev/orbit-cli",
+      "@hardimpactdev/orbit-app",
+      "hardimpactdev/orbit-web",
+      "hardimpactdev/orbit-desktop"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

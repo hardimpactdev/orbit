@@ -1,0 +1,14 @@
+flowchart TD
+    start([Start service list]) --> checkMode{Available mode?}
+    checkMode -->|yes| loadTemplates[Load all templates]
+    checkMode -->|no| loadConfigured[Load configured services]
+    
+    loadTemplates --> groupByCategory[Group by category]
+    groupByCategory --> outputAvailable{JSON output?}
+    outputAvailable -->|yes| jsonTemplates[Output JSON templates]
+    outputAvailable -->|no| renderTemplates[Render grouped list]
+    
+    loadConfigured --> getEnabled[Get enabled services]
+    getEnabled --> outputConfigured{JSON output?}
+    outputConfigured -->|yes| jsonConfigured[Output JSON services]
+    outputConfigured -->|no| renderTable[Render status table]

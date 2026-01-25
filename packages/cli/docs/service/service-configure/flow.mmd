@@ -1,0 +1,14 @@
+flowchart TD
+    start([Start service configure]) --> getArgs[Get service and set options]
+    getArgs --> checkOptions{Has set options?}
+    checkOptions -->|no| failNoOptions[Error - no config provided]
+    checkOptions -->|yes| parseOptions[Parse key=value pairs]
+    parseOptions --> parseOk{Parse success?}
+    parseOk -->|no| failParse[Error - invalid format]
+    parseOk -->|yes| callConfigure[ServiceManager configure]
+    callConfigure --> success{Configure success?}
+    success -->|no| failConfigure[Output error]
+    success -->|yes| regenCompose[Regenerate docker-compose]
+    regenCompose --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| showConfig[Show updated configuration]

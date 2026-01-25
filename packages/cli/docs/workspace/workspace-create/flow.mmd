@@ -1,0 +1,18 @@
+flowchart TD
+    start([Start]) --> getName[Get name argument]
+    getName --> callService[WorkspaceService create]
+    callService --> ensureDir[Ensure workspaces dir exists]
+    ensureDir --> checkExists{Workspace exists?}
+    checkExists -->|yes| throwError[Throw RuntimeException]
+    checkExists -->|no| makeDir[Create workspace directory]
+    makeDir --> createClaude[Create CLAUDE.md]
+    createClaude --> createWorkspace[Create .code-workspace file]
+    createWorkspace --> getInfo[Get workspace info]
+    getInfo --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| consoleSuccess[Print success message]
+
+    throwError --> catchError[Catch RuntimeException]
+    catchError --> errorOutput{JSON output?}
+    errorOutput -->|yes| jsonError[Output JSON error]
+    errorOutput -->|no| consoleError[Print error message]

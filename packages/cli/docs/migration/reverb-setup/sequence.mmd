@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant User
+    participant CLI as ReverbSetup
+    participant CM as ConfigManager
+    participant DM as DockerManager
+    participant CG as CaddyfileGenerator
+    participant FS as FileSystem
+    participant Process
+
+    User->>CLI: orbit reverb setup options
+    
+    alt --disable flag
+        CLI->>DM: stop reverb
+        CLI->>CM: disableService reverb
+        CLI->>CG: generate
+        CLI->>CG: reload
+        CLI-->>User: Reverb service disabled
+    else Setup
+        CLI->>CM: getConfigPath
+        CLI->>FS: Create reverb config directory
+        
+        CLI->>FS: Copy docker-compose.yml from stubs
+        CLI->>FS: Copy Dockerfile from stubs
+        CLI->>FS: Copy entrypoint.sh from stubs
+        
+        CLI->>CLI: Get app credentials from options or defaults
+        CLI->>FS: Write .env file
+        
+        CLI->>CM: setReverbConfig with credentials
+        CLI->>CM: enableService reverb
+        
+        CLI->>CG: generate
+        
+        alt --enable flag
+            CLI->>Process: docker compose build
+            alt Build failed
+                CLI-->>User: Error - Build failed
+            else Build success
+                CLI->>DM: start reverb
+                CLI->>CG: reload
+            end
+        end
+        
+        CLI-->>User: Reverb setup complete
+        CLI-->>User: WebSocket URL wss://reverb.tld
+        CLI-->>User: App credentials
+        CLI-->>User: Laravel .env configuration
+    end

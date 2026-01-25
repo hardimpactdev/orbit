@@ -1,0 +1,49 @@
+sequenceDiagram
+    participant User
+    participant CLI as WebInstall
+    participant CM as ConfigManager
+    participant FS as FileSystem
+    participant Artisan
+    participant Process
+
+    User->>CLI: orbit web install
+    CLI->>FS: Check bundle exists at stubs/orbit-web-bundle.tar.gz
+    
+    alt Bundle not found
+        CLI-->>User: Error - Bundle not found
+    else Bundle exists
+        CLI->>CM: getWebAppPath
+        CM-->>CLI: destPath
+        
+        CLI->>FS: Check destPath exists
+        alt Already installed and not --force
+            CLI-->>User: Already installed use --force
+        else Install
+            alt --dry-run
+                CLI-->>User: Would extract to destPath
+                CLI-->>User: Would set permissions
+                CLI-->>User: Would generate env
+                CLI-->>User: Would run migrations
+            else Real install
+                alt --force and exists
+                    CLI->>FS: Delete existing directory
+                end
+                
+                CLI->>Process: tar -xzf bundle -C destPath
+                CLI->>Process: chmod 755 directories
+                CLI->>Process: chmod 644 files
+                CLI->>FS: chmod 755 artisan
+                CLI->>Process: chmod 775 storage bootstrap/cache
+                
+                CLI->>CLI: Generate .env with config
+                CLI->>FS: Write .env file
+                
+                CLI->>Artisan: db:migrate
+                
+                CLI->>Process: orbit caddy:generate
+                
+                CLI-->>User: Web app installed
+                CLI-->>User: Restart Orbit and access at orbit.tld
+            end
+        end
+    end

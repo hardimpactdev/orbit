@@ -1,0 +1,9 @@
+services:
+  dns:
+    build:
+      context: .
+    container_name: orbit-dns
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ${CONFIG_PATH}/dnsmasq.conf:/etc/dnsmasq.conf:ro

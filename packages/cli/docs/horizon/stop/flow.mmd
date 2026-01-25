@@ -1,0 +1,22 @@
+flowchart TD
+    Start([horizon stop]) --> CheckInstalled{Service installed?}
+    
+    CheckInstalled -->|No| NotInstalled[Report not installed]
+    NotInstalled --> SuccessExit([Success])
+    
+    CheckInstalled -->|Yes| CheckRunning{Currently running?}
+    
+    CheckRunning -->|No| NotRunning[Report not running]
+    NotRunning --> SuccessExit
+    
+    CheckRunning -->|Yes| DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| SystemctlStop[systemctl stop orbit-horizon]
+    DetectOS -->|macOS| LaunchctlUnload[launchctl unload plist]
+    
+    SystemctlStop --> CheckResult{Stopped?}
+    LaunchctlUnload --> CheckResult
+    
+    CheckResult -->|Yes| SuccessExit
+    CheckResult -->|No| StopError[Error: Failed to stop]
+    StopError --> FailExit([Failure])

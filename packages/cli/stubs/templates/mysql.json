@@ -1,0 +1,57 @@
+{
+    "name": "mysql",
+    "label": "MySQL",
+    "description": "Popular open source relational database",
+    "category": "database",
+    "versions": ["9.1", "9.0", "8.4", "8.0", "5.7"],
+    "configSchema": {
+        "required": ["port"],
+        "properties": {
+            "port": {
+                "type": "number",
+                "default": 3306,
+                "minimum": 1024,
+                "maximum": 65535
+            },
+            "environment": {
+                "type": "object",
+                "properties": {
+                    "MYSQL_ROOT_PASSWORD": {
+                        "type": "string",
+                        "default": "secret"
+                    },
+                    "MYSQL_DATABASE": {
+                        "type": "string",
+                        "default": "orbit"
+                    },
+                    "MYSQL_USER": {
+                        "type": "string",
+                        "default": "orbit"
+                    },
+                    "MYSQL_PASSWORD": {
+                        "type": "string",
+                        "default": "secret"
+                    }
+                }
+            }
+        }
+    },
+    "dockerConfig": {
+        "image": "mysql:${version}",
+        "ports": ["3306:3306"],
+        "volumes": ["${data_path}:/var/lib/mysql"],
+        "environment": {
+            "MYSQL_ROOT_PASSWORD": "secret",
+            "MYSQL_DATABASE": "orbit",
+            "MYSQL_USER": "orbit",
+            "MYSQL_PASSWORD": "secret"
+        },
+        "healthcheck": {
+            "test": ["CMD", "mysqladmin", "ping", "-h", "localhost"],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+        }
+    },
+    "dependsOn": []
+}

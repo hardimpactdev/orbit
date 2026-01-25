@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant User
+    participant CLI as Logs
+    participant Docker as DockerManager
+    participant Container
+
+    User->>CLI: orbit logs orbit-php-83
+    CLI->>Docker: logs(container, follow)
+    Docker->>Container: docker logs -f
+    loop streaming
+        Container-->>Docker: log lines
+        Docker-->>CLI: output
+        CLI-->>User: display logs
+    end
+    User->>CLI: Ctrl+C
+    CLI-->>User: stopped

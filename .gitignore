@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+vendor/
+.bun/
+
+# Builds (too large for GitHub)
+packages/cli/builds/orbit.phar
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Laravel
+*.log
+.env
+.env.backup
+.phpunit.result.cache
+storage/*.key
+
+# NPM/Bun
+*.lock
+bun.lock
+
+# PHP
+composer.lock
+

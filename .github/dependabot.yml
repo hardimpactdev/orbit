@@ -1,0 +1,96 @@
+# Please see the documentation for all configuration options:
+# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # Root composer.json (monorepo config)
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # Root package.json (turbo, changeset)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # Core package
+  - package-ecosystem: "composer"
+    directory: "/packages/core"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "core"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/core"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "core"
+
+  # App package (was ui)
+  - package-ecosystem: "composer"
+    directory: "/packages/app"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "app"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/app"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "app"
+
+  # CLI package
+  - package-ecosystem: "composer"
+    directory: "/packages/cli"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "cli"
+
+  # Web package
+  - package-ecosystem: "composer"
+    directory: "/packages/web"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "web"
+
+  # Desktop package
+  - package-ecosystem: "composer"
+    directory: "/packages/desktop"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "desktop"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/desktop"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "desktop"

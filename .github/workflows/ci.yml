@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Detect which packages changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      app: ${{ steps.filter.outputs.app }}
+      cli: ${{ steps.filter.outputs.cli }}
+      web: ${{ steps.filter.outputs.web }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'packages/core/**'
+            app:
+              - 'packages/app/**'
+            cli:
+              - 'packages/cli/**'
+            web:
+              - 'packages/web/**'
+            desktop:
+              - 'packages/desktop/**'
+
+  # Core package tests
+  core:
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: packages/core
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run PHPStan
+        working-directory: packages/core
+        run: ./vendor/bin/phpstan analyse --memory-limit=512M
+
+      - name: Run tests
+        working-directory: packages/core
+        run: ./vendor/bin/pest
+
+  # App package tests (was ui)
+  app:
+    needs: changes
+    if: needs.changes.outputs.app == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: packages/app
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run PHPStan
+        working-directory: packages/app
+        run: ./vendor/bin/phpstan analyse --memory-limit=512M
+
+      - name: Run tests
+        working-directory: packages/app
+        run: ./vendor/bin/pest
+
+  # CLI package tests
+  cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json
+          tools: composer:v2
+          coverage: none
+
+      - name: Install monorepo dependencies (for path repos)
+        run: composer install --prefer-dist --no-progress
+
+      - name: Check code style with Pint
+        working-directory: packages/cli
+        run: ./vendor/bin/pint --test
+
+      - name: Run Rector
+        working-directory: packages/cli
+        run: ./vendor/bin/rector --dry-run
+
+      - name: Run PHPStan
+        working-directory: packages/cli
+        run: ./vendor/bin/phpstan analyse --memory-limit=512M
+
+      - name: Run tests
+        working-directory: packages/cli
+        run: ./vendor/bin/pest
+
+  # Web package tests
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json
+          tools: composer:v2
+          coverage: none
+
+      - name: Install monorepo dependencies (for path repos)
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run tests
+        working-directory: packages/web
+        run: ./vendor/bin/pest
+
+  # Verify changesets exist for meaningful changes
+  changeset-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Check for changeset
+        run: |
+          # Check if any changeset files were added
+          CHANGESETS=$(git diff --name-only origin/main...HEAD | grep "^\.changeset/.*\.md$" | grep -v "README.md" || true)
+          
+          if [ -z "$CHANGESETS" ]; then
+            echo "::warning::No changeset found. If this PR has user-facing changes, run 'bunx changeset' to add one."
+          else
+            echo "Changeset found: $CHANGESETS"
+          fi

@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant User
+    participant CLI as DbMigrate
+    participant Artisan
+    participant DB as Database
+
+    User->>CLI: orbit db migrate options
+    
+    alt --status flag
+        CLI->>Artisan: migrate:status
+        Artisan->>DB: Check migration table
+        DB-->>Artisan: migration records
+        Artisan-->>CLI: status output
+        CLI-->>User: Display migration status
+    else --fresh flag
+        CLI-->>User: Warn dropping all tables
+        CLI->>Artisan: migrate:fresh --force
+        Artisan->>DB: Drop all tables
+        Artisan->>DB: Run all migrations
+        alt --seed flag
+            CLI->>Artisan: db:seed --force
+            Artisan->>DB: Insert seed data
+        end
+        CLI-->>User: Fresh migration complete
+    else Normal migration
+        CLI->>Artisan: schema:migrate
+        Note over Artisan: Legacy projects to sites
+        Artisan-->>CLI: schema migration result
+        
+        CLI->>Artisan: migrate --force
+        Artisan->>DB: Run pending migrations
+        Artisan-->>CLI: migration result
+        
+        alt --seed flag and success
+            CLI->>Artisan: db:seed --force
+            Artisan->>DB: Insert seed data
+        end
+        
+        CLI-->>User: Migrations complete
+    end

@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant User
+    participant CLI as Start
+    participant Caddy as CaddyfileGenerator
+    participant PHP as PhpManager
+    participant CaddyMgr as CaddyManager
+    participant Service as ServiceManager
+    participant Horizon as HorizonManager
+
+    User->>CLI: orbit start
+    CLI->>CLI: detect architecture
+    CLI->>Caddy: generate config
+
+    alt PHP-FPM architecture
+        CLI->>PHP: start pools 8.3 and 8.4
+        CLI->>CaddyMgr: start
+    end
+
+    CLI->>Service: startAll Docker services
+
+    alt PHP-FPM architecture
+        CLI->>Horizon: start
+    end
+
+    CLI-->>User: results with service status

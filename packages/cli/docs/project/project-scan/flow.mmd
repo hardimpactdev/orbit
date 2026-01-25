@@ -1,0 +1,40 @@
+flowchart TD
+    start([Start site:scan]) --> readArgs[Read path + --depth]
+    readArgs --> buildPaths[Build list of paths to scan]
+    buildPaths --> pathsEmpty{No paths?}
+    pathsEmpty -->|yes| failNoPaths[Fail: no paths configured]
+    pathsEmpty -->|no| loopPaths[For each base path]
+
+    loopPaths --> baseExists{Base path exists?}
+    baseExists -->|no| nextBase[Skip]
+    baseExists -->|yes| scanDir[scanDirectory(base, depth)]
+    scanDir --> mergeSites[Merge found sites]
+    mergeSites --> nextBase
+
+    nextBase --> morePaths{More paths?}
+    morePaths -->|yes| loopPaths
+    morePaths -->|no| sortSites[Sort sites by name]
+    sortSites --> output
+
+    output --> jsonMode{JSON output?}
+    jsonMode -->|yes| jsonOut[Output sites + count]
+    jsonMode -->|no| printOut[Print table/list]
+
+    subgraph scanDirectory
+        scanStart[Enter directory] --> depthCheck{depth > max?}
+        depthCheck -->|yes| scanReturn[Return empty]
+        depthCheck -->|no| listEntries[scandir]
+        listEntries --> iterateEntries[For each entry]
+        iterateEntries --> entryDir{Is directory?}
+        entryDir -->|no| nextEntry
+        entryDir -->|yes| gitRepo{Has .git?}
+        gitRepo -->|yes| extractInfo[Extract site info]
+        extractInfo --> addSite[Add site]
+        gitRepo -->|no| skipDirs{Is excluded dir?}
+        skipDirs -->|yes| nextEntry
+        skipDirs -->|no| recurse[Recurse into subdir]
+        recurse --> nextEntry
+        addSite --> nextEntry
+        nextEntry --> entriesLeft{More entries?}
+        entriesLeft -->|yes| iterateEntries
+        entriesLeft -->|no| scanReturn

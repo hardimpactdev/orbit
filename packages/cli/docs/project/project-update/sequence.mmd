@@ -1,0 +1,44 @@
+sequenceDiagram
+    participant User
+    participant CLI as site:update
+    participant Config as ConfigManager
+    participant Git as git
+    participant Composer
+    participant Node as NodePkg
+    participant Artisan
+    participant Caddy as CaddyfileGenerator
+
+    User->>CLI: run site:update
+    CLI->>CLI: resolve path (arg or --site)
+    alt resolve via --site
+        CLI->>Config: get paths
+        Config-->>CLI: paths
+    end
+
+    CLI->>CLI: validate directory + .git
+
+    alt --no-git
+        CLI->>CLI: mark git pull skipped
+    else git pull
+        CLI->>Git: git pull
+        Git-->>CLI: success/fail
+        alt failure
+            CLI-->>User: error exit
+        end
+    end
+
+    alt dependencies enabled
+        CLI->>Composer: composer install (if composer.json)
+        CLI->>Node: detect package manager + install (if package.json)
+        alt build script exists
+            CLI->>Node: run build
+        end
+    end
+
+    alt migrations enabled
+        CLI->>Artisan: php artisan migrate --force (if artisan)
+    end
+
+    CLI->>CLI: configure trusted proxies for Laravel 11+
+    CLI->>Caddy: generate + reload
+    CLI-->>User: success output (JSON or console)

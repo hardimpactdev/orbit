@@ -1,0 +1,15 @@
+flowchart TD
+    start([Start setup]) --> parseOptions[Parse options]
+    parseOptions --> normalizePHP[Normalize PHP versions]
+    normalizePHP --> detectPlatform{Detect platform}
+    detectPlatform -->|Darwin| macSetup[MacSetup.run]
+    detectPlatform -->|Linux| linuxSetup[LinuxSetup.run]
+    detectPlatform -->|other| failPlatform[Fail - unsupported]
+
+    macSetup --> macSteps[Mac-specific setup steps]
+    linuxSetup --> linuxSteps[Linux-specific setup steps]
+
+    macSteps --> done{Success?}
+    linuxSteps --> done
+    done -->|yes| success[Return SUCCESS]
+    done -->|no| failure[Return FAILURE]

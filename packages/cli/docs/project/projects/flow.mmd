@@ -1,0 +1,13 @@
+flowchart TD
+    start([Start sites]) --> scanSites[SiteScanner::scanSites]
+    scanSites --> getDefaultPhp[Get default PHP]
+    getDefaultPhp --> jsonMode{JSON output?}
+    jsonMode -->|yes| jsonOut[Output sites + count + default php]
+    jsonMode -->|no| hasSites{Sites empty?}
+    hasSites -->|yes| warnNone[Warn: no sites found]
+    hasSites -->|no| buildTable[Build domain/php/path table]
+    buildTable --> renderTable[Render table + default PHP]
+
+    subgraph SiteScanner::scanSites
+        scanSitesStart[scanSites] --> scanAll[scan()]
+        scanAll --> filterPublic[Filter has_public_folder]

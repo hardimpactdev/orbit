@@ -1,0 +1,10 @@
+flowchart TD
+    start([Start]) --> callList[WorkspaceService list]
+    callList --> ensureDir[Ensure workspaces dir exists]
+    ensureDir --> scanDirs[Scan directories]
+    scanDirs --> getInfo[Get info for each workspace]
+    getInfo --> output{JSON output?}
+    output -->|yes| jsonOut[Output JSON with workspaces]
+    output -->|no| checkEmpty{Workspaces empty?}
+    checkEmpty -->|yes| warnEmpty[Warn no workspaces]
+    checkEmpty -->|no| renderTable[Render table]

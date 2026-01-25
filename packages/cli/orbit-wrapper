@@ -1,0 +1,2 @@
+#!/bin/bash
+exec $HOME/.config/herd-lite/bin/php $HOME/projects/orbit-cli/orbit "$@"

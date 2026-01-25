@@ -1,0 +1,52 @@
+{
+    "name": "postgres",
+    "label": "PostgreSQL",
+    "description": "Advanced open source relational database",
+    "category": "database",
+    "versions": ["17", "16", "15", "14", "13"],
+    "configSchema": {
+        "required": ["port"],
+        "properties": {
+            "port": {
+                "type": "number",
+                "default": 5432,
+                "minimum": 1024,
+                "maximum": 65535
+            },
+            "environment": {
+                "type": "object",
+                "properties": {
+                    "POSTGRES_USER": {
+                        "type": "string",
+                        "default": "orbit"
+                    },
+                    "POSTGRES_PASSWORD": {
+                        "type": "string",
+                        "default": "secret"
+                    },
+                    "POSTGRES_DB": {
+                        "type": "string",
+                        "default": "orbit"
+                    }
+                }
+            }
+        }
+    },
+    "dockerConfig": {
+        "image": "postgres:${version}",
+        "ports": ["5432:5432"],
+        "volumes": ["${data_path}:/var/lib/postgresql/data"],
+        "environment": {
+            "POSTGRES_USER": "orbit",
+            "POSTGRES_PASSWORD": "secret",
+            "POSTGRES_DB": "orbit"
+        },
+        "healthcheck": {
+            "test": ["CMD-SHELL", "pg_isready -U orbit"],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+        }
+    },
+    "dependsOn": []
+}

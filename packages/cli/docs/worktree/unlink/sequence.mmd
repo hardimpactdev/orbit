@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorktreeUnlink
+    participant WS as WorktreeService
+    participant Caddy
+
+    User->>CLI: orbit worktree unlink site worktree
+    CLI->>CLI: Parse site and worktree arguments
+    
+    CLI->>WS: unlinkWorktree siteName worktreeName
+    WS->>WS: Find worktree entry
+    
+    alt Worktree not found
+        WS-->>CLI: false
+        CLI-->>User: Error - Worktree not found for site
+    else Worktree found
+        WS->>Caddy: Remove subdomain route
+        WS->>Caddy: Reload configuration
+        WS-->>CLI: true
+        CLI-->>User: Worktree unlinked from site
+        CLI-->>User: Caddy configuration updated
+    end

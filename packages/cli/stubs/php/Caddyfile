@@ -1,0 +1,26 @@
+{
+    frankenphp
+    order php_server before file_server
+}
+
+:8080 {
+    # Extract site name from host header (strip .test)
+    @hasPublic `file({http.request.host.labels.1}/public/index.php)`
+    handle @hasPublic {
+        root * /app/{http.request.host.labels.1}/public
+        php_server
+    }
+
+    # Fallback for sites without /public (non-Laravel)
+    @noPublic `file({http.request.host.labels.1}/index.php)`
+    handle @noPublic {
+        root * /app/{http.request.host.labels.1}
+        php_server
+    }
+
+    # Default fallback
+    handle {
+        root * /app/{http.request.host.labels.1}
+        php_server
+    }
+}

@@ -1,0 +1,32 @@
+name: redis
+label: Redis
+description: In-memory data structure store
+category: cache
+versions:
+  - "7.4"
+  - "7.2"
+  - "7.0"
+  - "6.2"
+configSchema:
+  required:
+    - port
+  properties:
+    port:
+      type: number
+      default: 6379
+      minimum: 1024
+      maximum: 65535
+    maxmemory:
+      type: string
+      default: 256mb
+      pattern: "^[0-9]+(mb|gb)$"
+    persistence:
+      type: boolean
+      default: true
+dockerConfig:
+  image: redis
+  ports:
+    - "6379:6379"
+  volumes:
+    - "./data/redis:/data"
+dependsOn: []

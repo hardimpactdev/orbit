@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant User
+    participant CLI as Ensure
+    participant Docker as DockerManager
+    participant Start as StartCommand
+
+    User->>CLI: orbit ensure
+    CLI->>Docker: check docker running
+    alt not running
+        CLI-->>User: warn and skip
+    end
+    CLI->>Docker: getAllStatuses
+    Docker-->>CLI: statuses
+    alt not all running
+        CLI->>Start: call start
+        CLI->>Docker: clearStatusCache
+    end
+    CLI->>Docker: isRunning orbit-horizon
+    alt not running
+        CLI->>Docker: start horizon
+    end
+    CLI-->>User: results

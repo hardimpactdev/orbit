@@ -1,0 +1,43 @@
+{
+    "name": "dns",
+    "label": "dnsmasq DNS",
+    "description": "Lightweight DNS server for local development",
+    "category": "infrastructure",
+    "required": true,
+    "versions": ["latest", "2.90", "2.89"],
+    "configSchema": {
+        "required": ["port"],
+        "properties": {
+            "port": {
+                "type": "number",
+                "default": 53,
+                "minimum": 53,
+                "maximum": 65535
+            },
+            "environment": {
+                "type": "object",
+                "properties": {
+                    "TLD": {
+                        "type": "string",
+                        "default": "test"
+                    },
+                    "HOST_IP": {
+                        "type": "string",
+                        "default": "127.0.0.1"
+                    }
+                }
+            }
+        }
+    },
+    "dockerConfig": {
+        "image": "4km3/dnsmasq:${version}",
+        "ports": ["53:53/tcp", "53:53/udp"],
+        "volumes": ["${config_path}/dnsmasq.conf:/etc/dnsmasq.conf"],
+        "environment": {
+            "TLD": "test",
+            "HOST_IP": "127.0.0.1"
+        },
+        "cap_add": ["NET_ADMIN"]
+    },
+    "dependsOn": []
+}

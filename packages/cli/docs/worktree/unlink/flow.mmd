@@ -1,0 +1,16 @@
+flowchart TD
+    Start([worktree unlink site worktree]) --> ParseArgs[Parse site and worktree args]
+    
+    ParseArgs --> CallUnlink[Call WorktreeService.unlinkWorktree]
+    
+    CallUnlink --> CheckResult{Success?}
+    
+    CheckResult -->|Error| ReportError[Error message]
+    ReportError --> FailExit([Failure])
+    
+    CheckResult -->|Not found| NotFound[Worktree not found for site]
+    NotFound --> FailExit
+    
+    CheckResult -->|Success| ReportSuccess[Worktree unlinked]
+    ReportSuccess --> ReportCaddy[Caddy configuration updated]
+    ReportCaddy --> SuccessExit([Success])

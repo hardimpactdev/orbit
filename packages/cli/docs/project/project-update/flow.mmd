@@ -1,0 +1,59 @@
+flowchart TD
+    start([Start site:update]) --> readArgs[Read path or --site]
+    readArgs --> resolvePath{--site and no path?}
+    resolvePath -->|yes| lookup[Resolve path from config paths]
+    resolvePath -->|no| pathReady
+    lookup --> pathFound{Found path?}
+    pathFound -->|no| failNoPath[Fail: path not found]
+    pathFound -->|yes| pathReady
+    pathReady --> promptPath{Interactive + no path?}
+    promptPath -->|yes| askPath[Prompt for site path]
+    promptPath -->|no| validatePath
+    askPath --> validatePath
+    validatePath --> pathExists{Directory exists?}
+    pathExists -->|no| failMissing[Fail: directory missing]
+    pathExists -->|yes| gitRepo{.git exists?}
+    gitRepo -->|no| failNoGit[Fail: not a git repo]
+    gitRepo -->|yes| gitStep
+
+    gitStep --> skipGit{--no-git?}
+    skipGit -->|yes| markSkipGit[Record git_pull skipped]
+    skipGit -->|no| runGit[git pull]
+    runGit --> gitOk{Git pull success?}
+    gitOk -->|no| failGit[Output error + exit]
+    gitOk -->|yes| depsStep
+    markSkipGit --> depsStep
+
+    depsStep --> depsAllowed{--no-deps?}
+    depsAllowed -->|yes| migrateStep
+    depsAllowed -->|no| composerCheck{composer.json exists?}
+    composerCheck -->|yes| composerInstall[composer install]
+    composerCheck -->|no| nodeCheck
+    composerInstall --> nodeCheck
+    nodeCheck --> nodeExists{package.json exists?}
+    nodeExists -->|yes| detectPM[Detect package manager]
+    nodeExists -->|no| migrateStep
+    detectPM --> installDeps[Install deps with bun/pnpm/yarn/npm]
+    installDeps --> buildCheck{package.json has build script?}
+    buildCheck -->|yes| buildAssets[Run build]
+    buildCheck -->|no| migrateStep
+    buildAssets --> migrateStep
+
+    migrateStep --> migrateAllowed{--no-migrate?}
+    migrateAllowed -->|yes| proxiesStep
+    migrateAllowed -->|no| artisanExists{artisan exists?}
+    artisanExists -->|yes| runMigrate[php artisan migrate --force]
+    artisanExists -->|no| proxiesStep
+    runMigrate --> proxiesStep
+
+    proxiesStep --> configureProxies[Configure trusted proxies if Laravel 11+]
+    configureProxies --> reloadCaddy[Generate + reload Caddy]
+    reloadCaddy --> done[Output success]
+
+    composerInstall -->|error| recordComposerError[Record error, continue]
+    installDeps -->|error| recordNodeError[Record error, continue]
+    buildAssets -->|error| recordBuildError[Record error, continue]
+    runMigrate -->|error| recordMigrateError[Record error, continue]
+    recordComposerError --> nodeCheck
+    recordNodeError --> buildCheck
+    recordBuildError --> migrateStep

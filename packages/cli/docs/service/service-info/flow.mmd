@@ -1,0 +1,12 @@
+flowchart TD
+    start([Start service info]) --> getService[Get service argument]
+    getService --> loadConfig[ServiceManager getService]
+    loadConfig --> loadTemplate[ServiceTemplateLoader load]
+    loadTemplate --> checkFound{Config or template exists?}
+    checkFound -->|no| notFound[Error - service not found]
+    checkFound -->|yes| output{JSON output?}
+    output -->|yes| jsonOutput[Output JSON with all info]
+    output -->|no| renderInfo[Render detailed info]
+    renderInfo --> showTemplate[Show template info]
+    showTemplate --> showConfig[Show current configuration]
+    showConfig --> showSchema[Show available options]

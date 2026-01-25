@@ -1,0 +1,8 @@
+flowchart TD
+    start([Start restart]) --> checkJson{JSON output?}
+    checkJson -->|yes| stopJson[Call stop with --json]
+    checkJson -->|no| stopNormal[Call stop]
+    stopJson --> startJson[Call start with --json]
+    stopNormal --> startNormal[Call start]
+    startJson --> returnMax[Return max exit code]
+    startNormal --> returnSuccess[Return SUCCESS]

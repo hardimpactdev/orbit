@@ -1,0 +1,30 @@
+{
+    "paths": [
+        "~/Projects",
+        "~/Clients"
+    ],
+    "default_php_version": "8.3",
+    "tld": "test",
+    "host_ip": "127.0.0.1",
+    "dns_mappings": [
+        {
+            "type": "address",
+            "tld": "test",
+            "value": "127.0.0.1"
+        },
+        {
+            "type": "server",
+            "value": "8.8.8.8"
+        },
+        {
+            "type": "server",
+            "value": "8.8.4.4"
+        }
+    ],
+    "sites": {},
+    "services": {
+        "postgres": { "enabled": true },
+        "redis": { "enabled": true },
+        "mailpit": { "enabled": true }
+    }
+}

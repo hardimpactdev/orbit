@@ -1,0 +1,9 @@
+flowchart TD
+    start([Start trust]) --> checkCaddy{Caddy running?}
+    checkCaddy -->|no| failCaddy[Fail - Caddy not running]
+    checkCaddy -->|yes| extractCert[Extract root CA from container]
+    extractCert --> certOk{Certificate extracted?}
+    certOk -->|no| failExtract[Fail - extraction failed]
+    certOk -->|yes| addKeychain[Add to macOS Keychain]
+    addKeychain --> cleanup[Remove temp file]
+    cleanup --> done[Success - restart browser]

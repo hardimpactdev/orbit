@@ -1,0 +1,23 @@
+flowchart TD
+    Start([worktrees site]) --> ParseArgs[Parse optional site argument]
+    
+    ParseArgs --> CheckSite{Site specified?}
+    
+    CheckSite -->|Yes| GetSiteWorktrees[Get worktrees for site]
+    CheckSite -->|No| GetAllWorktrees[Get all worktrees]
+    
+    GetSiteWorktrees --> CheckResult{Success?}
+    GetAllWorktrees --> CheckResult
+    
+    CheckResult -->|Error| ReportError[Error message]
+    ReportError --> FailExit([Failure])
+    
+    CheckResult -->|Success| CheckEmpty{Any worktrees?}
+    
+    CheckEmpty -->|No| ReportNone[No worktrees found]
+    ReportNone --> SuccessExit([Success])
+    
+    CheckEmpty -->|Yes| BuildTable[Build table data]
+    BuildTable --> DisplayTable[Display table with worktrees]
+    DisplayTable --> ShowCount[Show total count]
+    ShowCount --> SuccessExit

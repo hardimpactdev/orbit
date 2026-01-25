@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant User
+    participant CLI as Stop
+    participant Horizon as HorizonManager
+    participant Caddy as CaddyManager
+    participant Service as ServiceManager
+    participant PHP as PhpManager
+
+    User->>CLI: orbit stop
+    CLI->>PHP: detect architecture
+
+    alt PHP-FPM architecture
+        CLI->>Horizon: stop
+        CLI->>Caddy: stop
+    end
+
+    CLI->>Service: stopAll Docker services
+    CLI-->>User: results

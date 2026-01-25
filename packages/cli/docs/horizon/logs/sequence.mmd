@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonLogs
+    participant HM as HorizonManager
+    participant FS as FileSystem
+    participant OS as System
+
+    User->>CLI: orbit horizon logs --lines=N
+    CLI->>CLI: Parse --lines option
+    CLI->>HM: getLogs N
+    
+    alt Linux
+        HM->>OS: journalctl -u orbit-horizon -n N --no-pager
+        OS-->>HM: log output
+    else macOS
+        HM->>FS: Check ~/.config/orbit/logs/horizon.log exists
+        alt File exists
+            FS-->>HM: true
+            HM->>OS: tail -n N horizon.log
+            OS-->>HM: log output
+        else File missing
+            FS-->>HM: false
+            HM-->>HM: No logs found
+        end
+    else Other platform
+        HM-->>HM: Platform not supported
+    end
+    
+    HM-->>CLI: log content
+    CLI-->>User: Display logs

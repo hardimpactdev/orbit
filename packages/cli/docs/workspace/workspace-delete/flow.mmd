@@ -1,0 +1,16 @@
+flowchart TD
+    start([Start]) --> getName[Get name argument]
+    getName --> checkForce{Force or JSON?}
+    checkForce -->|no| confirm{User confirms?}
+    confirm -->|no| cancelled[Output cancelled]
+    confirm -->|yes| callDelete
+    checkForce -->|yes| callDelete[WorkspaceService delete]
+    callDelete --> checkExists{Workspace exists?}
+    checkExists -->|no| throwError[Throw RuntimeException]
+    checkExists -->|yes| deleteDir[Delete directory recursively]
+    deleteDir --> output{JSON output?}
+    output -->|yes| jsonSuccess[Output JSON success]
+    output -->|no| consoleSuccess[Print success]
+
+    throwError --> catchError[Catch RuntimeException]
+    catchError --> errorOut[Output error]

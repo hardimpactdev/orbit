@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorkspaceRemove
+    participant Service as WorkspaceService
+    participant FS as Filesystem
+
+    User->>CLI: workspace:remove workspace project
+    CLI->>Service: removeProject(workspace, project)
+    Service->>FS: check workspace exists
+    Service->>FS: check symlink exists
+    alt validation fails
+        Service-->>CLI: throw RuntimeException
+        CLI-->>User: error output
+    else valid
+        Service->>FS: unlink symlink
+        Service->>FS: regenerate .code-workspace
+        Service->>FS: update CLAUDE.md
+        Service-->>CLI: workspace info
+        CLI-->>User: success output
+    end

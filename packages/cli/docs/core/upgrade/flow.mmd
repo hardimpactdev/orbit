@@ -1,0 +1,29 @@
+flowchart TD
+    start([Start upgrade]) --> checkPhar{Running as PHAR?}
+    checkPhar -->|no| checkOnly{Check only?}
+    checkOnly -->|no| failNotPhar[Fail - not PHAR]
+    checkOnly -->|yes| fetchRelease
+    checkPhar -->|yes| fetchRelease[Fetch latest release]
+    fetchRelease --> fetchOk{Fetch success?}
+    fetchOk -->|no| failFetch[Fail - fetch error]
+    fetchOk -->|yes| compareVersions[Compare versions]
+    compareVersions --> upToDate{Up to date?}
+    upToDate -->|yes| checkMode{Check only?}
+    checkMode -->|yes| showCheck[Show version info]
+    checkMode -->|no| alreadyLatest[Already latest]
+    upToDate -->|no| checkMode2{Check only?}
+    checkMode2 -->|yes| showUpdateAvailable[Show update available]
+    checkMode2 -->|no| findUrl[Find PHAR download URL]
+    findUrl --> urlFound{URL found?}
+    urlFound -->|no| failUrl[Fail - no URL]
+    urlFound -->|yes| download[Download new version]
+    download --> downloadOk{Download success?}
+    downloadOk -->|no| failDownload[Fail - download error]
+    downloadOk -->|yes| validate[Validate PHAR]
+    validate --> validOk{Valid PHAR?}
+    validOk -->|no| failInvalid[Fail - invalid PHAR]
+    validOk -->|yes| replace[Replace binary]
+    replace --> replaceOk{Replace success?}
+    replaceOk -->|no| failReplace[Fail - replace error]
+    replaceOk -->|yes| cleanup[Cleanup and output]
+    cleanup --> sigkill[SIGKILL to terminate]

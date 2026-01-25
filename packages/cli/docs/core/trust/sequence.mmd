@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant User
+    participant CLI as Trust
+    participant Docker as DockerManager
+    participant Container as CaddyContainer
+    participant Keychain as macOSKeychain
+
+    User->>CLI: orbit trust
+    CLI->>Docker: isRunning orbit-caddy
+    alt not running
+        CLI-->>User: error
+    end
+    CLI->>Container: cat root.crt to temp file
+    Container-->>CLI: certificate
+    CLI->>Keychain: sudo security add-trusted-cert
+    Keychain-->>CLI: result
+    CLI->>CLI: cleanup temp file
+    CLI-->>User: success - restart browser

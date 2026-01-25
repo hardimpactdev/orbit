@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant User
+    participant CLI as ServiceEnable
+    participant Manager as ServiceManager
+
+    User->>CLI: service:enable redis
+    CLI->>Manager: enable(service)
+    Manager-->>CLI: success or error
+    alt success
+        CLI->>Manager: regenerateCompose
+        CLI-->>User: enabled message
+    else error
+        CLI-->>User: error message
+    end

@@ -1,0 +1,44 @@
+sequenceDiagram
+    participant User
+    participant CLI as SiteDelete
+    participant Logger as DeletionLogger
+    participant MCP as MCP Sequence
+    participant Config as ConfigManager
+    participant Docker as Docker/Postgres
+    participant FS as Filesystem
+    participant Caddy as CaddyfileGenerator
+
+    User->>CLI: run site:delete
+    CLI->>Logger: broadcast deleting
+
+    alt confirmation required
+        CLI->>User: prompt for slug
+        User-->>CLI: confirmation
+    end
+
+    alt MCP configured
+        CLI->>MCP: delete-site (slug/id, delete-repo)
+        MCP-->>CLI: result or error
+    else MCP not configured
+        CLI->>Logger: warn, skip integrations
+    end
+
+    CLI->>Config: resolve local path
+
+    alt keep DB
+        CLI->>CLI: skip drop
+    else drop DB
+        CLI->>Docker: check postgres container
+        CLI->>Docker: check database existence
+        CLI->>Docker: terminate connections + drop database
+        Docker-->>CLI: result
+    end
+
+    alt local path exists
+        CLI->>User: confirm local delete (if interactive)
+        CLI->>FS: rm -rf (sudo fallback)
+    end
+
+    CLI->>Logger: broadcast deleted
+    CLI->>Caddy: generate + reload
+    CLI-->>User: JSON success + warnings

@@ -1,0 +1,11 @@
+sequenceDiagram
+    participant User
+    participant CLI as sites
+    participant Scanner as SiteScanner
+    participant Config as ConfigManager
+
+    User->>CLI: run sites
+    CLI->>Scanner: scanSites()
+    Scanner-->>CLI: public sites only
+    CLI->>Config: get default PHP
+    CLI-->>User: JSON or table output

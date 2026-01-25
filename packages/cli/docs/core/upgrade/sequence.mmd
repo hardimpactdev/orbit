@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant User
+    participant CLI as Upgrade
+    participant GitHub as GitHubAPI
+    participant FS as Filesystem
+
+    User->>CLI: orbit upgrade
+    CLI->>CLI: check running as PHAR
+    CLI->>GitHub: fetch latest release
+    GitHub-->>CLI: release info
+    CLI->>CLI: compare versions
+
+    alt check only
+        CLI-->>User: version comparison
+    else up to date
+        CLI-->>User: already latest
+    else update available
+        CLI->>GitHub: download orbit.phar
+        GitHub-->>CLI: binary
+        CLI->>CLI: validate PHAR
+        CLI->>FS: backup current binary
+        CLI->>FS: replace with new binary
+        CLI->>CLI: cleanup temp file
+        CLI-->>User: success message
+        CLI->>CLI: SIGKILL to terminate safely
+    end

@@ -1,0 +1,16 @@
+flowchart TD
+    Start([package unlink package app]) --> ParseArgs[Parse package name and app]
+    ParseArgs --> BuildPath[Build app path in ~/projects/]
+    
+    BuildPath --> CheckApp{App dir exists?}
+    CheckApp -->|No| AppNotFound[Error: App not found]
+    AppNotFound --> FailExit([Failure])
+    
+    CheckApp -->|Yes| RunUnlink[Run composer unlink in app dir]
+    RunUnlink --> CheckResult{Success?}
+    
+    CheckResult -->|Yes| ReportSuccess[Report package unlinked]
+    ReportSuccess --> SuccessExit([Success])
+    
+    CheckResult -->|No| UnlinkError[Error: Failed to unlink]
+    UnlinkError --> FailExit

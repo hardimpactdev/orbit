@@ -1,0 +1,140 @@
+name: Build and Release PHAR
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout orbit-cli
+        uses: actions/checkout@v4
+        with:
+          path: orbit-cli
+
+      - name: Checkout orbit-web
+        uses: actions/checkout@v4
+        with:
+          repository: hardimpactdev/orbit-web
+          path: orbit-web
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json
+          tools: composer:v2
+          ini-values: phar.readonly=0
+
+      - name: Install orbit-web dependencies and bundle
+        run: |
+          cd orbit-web
+          # Remove path repositories so composer uses packagist
+          jq 'del(.repositories)' composer.json > composer.tmp && mv composer.tmp composer.json
+          rm -f composer.lock
+          # orbit-core ships with pre-built assets, post-install-cmd publishes them
+          composer install --no-dev --optimize-autoloader --prefer-dist
+          # Remove dev files before bundling
+          rm -rf .git tests
+          tar -czf ../orbit-cli/stubs/orbit-web-bundle.tar.gz .
+
+      - name: Get version from tag
+        id: version
+        run: |
+          cd orbit-cli
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Set version in config
+        run: |
+          cd orbit-cli
+          sed -i "s/@version@/${{ steps.version.outputs.version }}/g" config/app.php
+
+      - name: Install orbit-cli dependencies
+        run: |
+          cd orbit-cli
+          jq 'del(.repositories)' composer.json > composer.tmp && mv composer.tmp composer.json
+          rm -f composer.lock
+          composer install --no-dev --optimize-autoloader --prefer-dist
+
+      - name: Download Box
+        run: |
+          wget https://github.com/box-project/box/releases/download/4.6.2/box.phar
+          chmod +x box.phar
+
+      - name: Compile PHAR
+        run: |
+          cd orbit-cli
+          php ../box.phar compile
+
+      - name: Verify PHAR integrity
+        run: |
+          cd orbit-cli
+          echo "Checking PHAR file exists and has content..."
+          test -f builds/orbit.phar || (echo "PHAR file not found!" && exit 1)
+          
+          FILESIZE=$(stat -c%s builds/orbit.phar)
+          echo "PHAR size: $FILESIZE bytes"
+          test $FILESIZE -gt 1000000 || (echo "PHAR file too small, likely corrupted!" && exit 1)
+          
+          echo "Verifying PHAR executes correctly..."
+          php builds/orbit.phar --version || (echo "PHAR --version failed!" && exit 1)
+          
+          echo "Verifying PHAR commands load..."
+          php builds/orbit.phar list || (echo "PHAR list command failed!" && exit 1)
+          
+          echo "PHAR verification passed!"
+
+      - name: Generate checksum
+        run: |
+          cd orbit-cli
+          sha256sum builds/orbit.phar > builds/checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            orbit-cli/builds/orbit.phar
+            orbit-cli/builds/checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release has PHAR download URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for release assets to be available..."
+          sleep 5
+          
+          echo "Fetching release info for ${{ steps.version.outputs.version }}..."
+          RELEASE_JSON=$(gh api repos/${{ github.repository }}/releases/tags/${{ steps.version.outputs.version }})
+          
+          echo "Checking for orbit.phar asset..."
+          PHAR_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name=="orbit.phar") | .browser_download_url')
+          
+          if [ -z "$PHAR_URL" ] || [ "$PHAR_URL" = "null" ]; then
+            echo "::error::Could not find PHAR download URL in the release!"
+            echo "This would cause 'orbit upgrade' to fail for users."
+            echo ""
+            echo "Release assets:"
+            echo "$RELEASE_JSON" | jq '.assets[].name'
+            exit 1
+          fi
+          
+          echo "PHAR download URL found: $PHAR_URL"
+          
+          echo "Verifying PHAR is downloadable..."
+          HTTP_CODE=$(curl -sL -o /dev/null -w "%{http_code}" "$PHAR_URL")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::PHAR download failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          
+          echo "Release verification passed! orbit upgrade will work."

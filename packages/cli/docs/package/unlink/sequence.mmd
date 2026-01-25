@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant User
+    participant CLI as PackageUnlink
+    participant FS as FileSystem
+    participant Composer
+
+    User->>CLI: orbit package unlink package app
+    CLI->>CLI: Build app path from ~/projects/
+    
+    CLI->>FS: Check appPath exists
+    alt App not found
+        FS-->>CLI: false
+        CLI-->>User: Error - App not found
+    else App exists
+        FS-->>CLI: true
+        CLI->>Composer: composer unlink package
+        Note over Composer: Run in appPath directory
+        
+        alt Unlink failed
+            Composer-->>CLI: error
+            CLI-->>User: Error - Failed to unlink
+        else Unlink succeeded
+            Composer-->>CLI: success
+            CLI-->>User: Package unlinked from app
+        end
+    end

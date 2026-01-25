@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant User
+    participant CLI as Rebuild
+    participant Docker as DockerManager
+    participant Config as ConfigManager
+    participant FS as Filesystem
+
+    User->>CLI: orbit rebuild
+    CLI->>Docker: check docker info
+    alt not running
+        CLI-->>User: error
+    end
+    CLI->>Config: get config path
+    CLI->>FS: check Dockerfiles exist
+    opt missing
+        CLI->>FS: copy from stubs
+    end
+    CLI->>Docker: stop php
+    CLI->>Docker: build php
+    CLI->>Docker: start php
+    CLI-->>User: success with extensions list

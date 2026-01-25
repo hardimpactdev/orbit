@@ -1,0 +1,37 @@
+flowchart TD
+    Start([schema migrate]) --> CheckDb{Database exists?}
+    
+    CheckDb -->|No| NoDb[Will be initialized on first use]
+    NoDb --> SuccessExit([Success])
+    
+    CheckDb -->|Yes| ConnectDb[Connect to database]
+    ConnectDb --> CheckTables[Check for projects and sites tables]
+    
+    CheckTables --> HasProjects{Has projects table?}
+    
+    HasProjects -->|No| HasSitesOnly{Has sites table?}
+    HasSitesOnly -->|Yes| EnsureProjectId[Ensure project_id column]
+    HasSitesOnly -->|No| NoMigration[No migration needed]
+    EnsureProjectId --> SuccessExit
+    NoMigration --> SuccessExit
+    
+    HasProjects -->|Yes| CheckPathCol{Has path column?}
+    CheckPathCol -->|No| OrbitCoreTable[Skip - orbit-core table]
+    OrbitCoreTable --> SuccessExit
+    
+    CheckPathCol -->|Yes| CheckDryRun{Dry run?}
+    CheckDryRun -->|Yes| ReportDryRun[Report what would happen]
+    ReportDryRun --> SuccessExit
+    
+    CheckDryRun -->|No| CreateBackup[Create timestamped backup]
+    CreateBackup --> HasSitesToo{Sites table exists?}
+    
+    HasSitesToo -->|Yes| MergeData[Merge data into sites]
+    MergeData --> DropProjects[Drop projects table]
+    DropProjects --> EnsureProjectId
+    
+    HasSitesToo -->|No| RenameTable[Rename projects to sites]
+    RenameTable --> CheckNameCol{Has name column?}
+    CheckNameCol -->|Yes| RenameCol[Rename name to slug]
+    CheckNameCol -->|No| EnsureProjectId
+    RenameCol --> EnsureProjectId

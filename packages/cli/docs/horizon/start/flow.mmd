@@ -1,0 +1,22 @@
+flowchart TD
+    Start([horizon start]) --> CheckInstalled{Service installed?}
+    
+    CheckInstalled -->|No| NotInstalledError[Error: Not installed]
+    NotInstalledError --> FailExit([Failure])
+    
+    CheckInstalled -->|Yes| CheckRunning{Already running?}
+    
+    CheckRunning -->|Yes| AlreadyRunning[Report already running]
+    AlreadyRunning --> SuccessExit([Success])
+    
+    CheckRunning -->|No| DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| SystemctlStart[systemctl start orbit-horizon]
+    DetectOS -->|macOS| LaunchctlLoad[launchctl load plist]
+    
+    SystemctlStart --> CheckResult{Started?}
+    LaunchctlLoad --> CheckResult
+    
+    CheckResult -->|Yes| SuccessExit
+    CheckResult -->|No| StartError[Error: Failed to start]
+    StartError --> FailExit

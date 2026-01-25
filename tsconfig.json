@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "jsx": "preserve",
+        "jsxImportSource": "vue",
+        "noEmit": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "paths": {
+            "@/*": ["./vendor/hardimpactdev/orbit-core/resources/js/*"],
+            "@orbit/*": ["./vendor/hardimpactdev/orbit-core/resources/js/*"]
+        },
+        "types": ["vite/client"]
+    },
+    "include": ["vendor/hardimpactdev/orbit-core/resources/js/**/*", "vendor/hardimpactdev/orbit-core/resources/js/**/*.vue"],
+    "exclude": ["node_modules"]
+}

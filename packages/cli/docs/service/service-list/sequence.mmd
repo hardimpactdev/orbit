@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant User
+    participant CLI as ServiceList
+    participant Manager as ServiceManager
+    participant Loader as ServiceTemplateLoader
+
+    User->>CLI: service:list
+    alt available mode
+        CLI->>Loader: loadAll templates
+        Loader-->>CLI: templates
+        CLI-->>User: grouped template list
+    else configured mode
+        CLI->>Manager: getServices
+        CLI->>Manager: getEnabled
+        Manager-->>CLI: services and enabled
+        CLI-->>User: service status list
+    end

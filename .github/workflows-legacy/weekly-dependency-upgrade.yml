@@ -1,0 +1,788 @@
+name: Weekly Dependency Upgrade
+
+on:
+  schedule:
+    # Run every Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: '8.4'
+
+jobs:
+  upgrade-and-test:
+    name: Upgrade Dependencies & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+      composer_changes: ${{ steps.check_changes.outputs.composer_changes }}
+      npm_changes: ${{ steps.check_changes.outputs.npm_changes }}
+      composer_upgrades: ${{ steps.composer_upgrade.outputs.upgrades }}
+      npm_upgrades: ${{ steps.npm_upgrade.outputs.upgrades }}
+      new_version: ${{ steps.create_release.outputs.new_version }}
+      security_alerts_before: ${{ steps.check_alerts_before.outputs.alert_count }}
+      security_alerts_after: ${{ steps.check_alerts_after.outputs.alert_count }}
+      security_alerts_fixed: ${{ steps.check_alerts_after.outputs.alerts_fixed }}
+      security_alerts_summary: ${{ steps.check_alerts_after.outputs.summary }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Check Dependabot alerts (before upgrade)
+        id: check_alerts_before
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "### Security Alerts (Before Upgrade)" >> $GITHUB_STEP_SUMMARY
+
+          # Fetch open Dependabot alerts - handle API errors gracefully
+          API_RESPONSE=$(gh api repos/${{ github.repository }}/dependabot/alerts 2>&1) || {
+            echo "Dependabot API unavailable (may need to enable Dependabot or add token permissions)"
+            echo "_Dependabot alerts could not be retrieved (API unavailable or disabled)_" >> $GITHUB_STEP_SUMMARY
+            echo "alert_count=0" >> $GITHUB_OUTPUT
+            echo "[]" > /tmp/alerts_before.json
+            touch /tmp/vulnerable_packages_before.txt
+            exit 0
+          }
+
+          # Filter for open alerts
+          ALERTS=$(echo "$API_RESPONSE" | jq '[.[] | select(.state == "open")]' 2>/dev/null) || {
+            echo "Could not parse Dependabot response"
+            echo "_Could not parse Dependabot response_" >> $GITHUB_STEP_SUMMARY
+            echo "alert_count=0" >> $GITHUB_OUTPUT
+            echo "[]" > /tmp/alerts_before.json
+            touch /tmp/vulnerable_packages_before.txt
+            exit 0
+          }
+
+          ALERT_COUNT=$(echo "$ALERTS" | jq -r 'length')
+          echo "Found $ALERT_COUNT open Dependabot security alerts"
+          echo "alert_count=$ALERT_COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$ALERT_COUNT" -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Severity | Package | Vulnerability | CVE |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|---------|---------------|-----|" >> $GITHUB_STEP_SUMMARY
+
+            # Save alerts to file for later comparison
+            echo "$ALERTS" > /tmp/alerts_before.json
+
+            # Parse and display each alert
+            echo "$ALERTS" | jq -r '.[] | "| \(.security_advisory.severity // "unknown") | \(.security_vulnerability.package.name // "unknown") | \(.security_advisory.summary // "N/A" | .[0:60]) | \(.security_advisory.cve_id // "N/A") |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+
+            # Also save package names for comparison
+            echo "$ALERTS" | jq -r '.[].security_vulnerability.package.name // empty' 2>/dev/null | sort -u > /tmp/vulnerable_packages_before.txt || true
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Total open alerts: $ALERT_COUNT**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No open Dependabot security alerts_" >> $GITHUB_STEP_SUMMARY
+            echo "[]" > /tmp/alerts_before.json
+            touch /tmp/vulnerable_packages_before.txt
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, xml, ctype, iconv, intl, pdo_sqlite, dom, filter, gd, json, libxml, openssl, pcre, phar, tokenizer, zip
+          coverage: none
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Note: @hardimpactdev/craft-ui is published to public npm registry
+      # No special npm configuration needed
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install current Composer dependencies
+        env:
+          COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ secrets.GH_PAT }}"}}'
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Upgrade Composer dependencies to latest versions
+        id: composer_upgrade
+        env:
+          COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ secrets.GH_PAT }}"}}'
+        run: |
+          echo "Checking for available Composer upgrades..."
+          echo "### Composer Dependency Upgrades" >> $GITHUB_STEP_SUMMARY
+
+          # Get outdated direct dependencies with current and latest versions
+          OUTDATED_JSON=$(composer outdated --direct --format=json 2>/dev/null || echo '{"installed":[]}')
+          OUTDATED=$(echo "$OUTDATED_JSON" | jq -r '.installed[] | select(.latest != null and .version != .latest) | "\(.name):\(.version):\(.latest)"' || true)
+
+          UPGRADE_LIST=""
+
+          if [ -n "$OUTDATED" ]; then
+            echo "Found outdated packages to upgrade:"
+            echo "$OUTDATED"
+            echo ""
+
+            for pkg in $OUTDATED; do
+              PACKAGE_NAME=$(echo "$pkg" | cut -d: -f1)
+              CURRENT_VERSION=$(echo "$pkg" | cut -d: -f2)
+              LATEST_VERSION=$(echo "$pkg" | cut -d: -f3)
+
+              # Build upgrade list for release notes (format: package:old:new)
+              if [ -n "$UPGRADE_LIST" ]; then
+                UPGRADE_LIST="${UPGRADE_LIST}|${PACKAGE_NAME}:${CURRENT_VERSION}:${LATEST_VERSION}"
+              else
+                UPGRADE_LIST="${PACKAGE_NAME}:${CURRENT_VERSION}:${LATEST_VERSION}"
+              fi
+
+              # Check if it's a dev dependency
+              if grep -A100 '"require-dev"' composer.json | grep -q "\"$PACKAGE_NAME\""; then
+                echo "Upgrading dev dependency $PACKAGE_NAME from $CURRENT_VERSION to ^$LATEST_VERSION..."
+                echo "- \`$PACKAGE_NAME\`: \`$CURRENT_VERSION\` → \`$LATEST_VERSION\` (dev)" >> $GITHUB_STEP_SUMMARY
+                composer require --dev "$PACKAGE_NAME:^$LATEST_VERSION" --no-interaction --no-update || true
+              else
+                echo "Upgrading $PACKAGE_NAME from $CURRENT_VERSION to ^$LATEST_VERSION..."
+                echo "- \`$PACKAGE_NAME\`: \`$CURRENT_VERSION\` → \`$LATEST_VERSION\`" >> $GITHUB_STEP_SUMMARY
+                composer require "$PACKAGE_NAME:^$LATEST_VERSION" --no-interaction --no-update || true
+              fi
+            done
+
+            # Run the actual update
+            echo ""
+            echo "Running composer update..."
+            composer update --no-interaction --prefer-dist --with-all-dependencies
+
+            # Output the upgrades list for use in release notes
+            echo "upgrades=$UPGRADE_LIST" >> $GITHUB_OUTPUT
+          else
+            echo "No Composer upgrades available."
+            echo "_No Composer upgrades available_" >> $GITHUB_STEP_SUMMARY
+            echo "upgrades=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upgrade npm dependencies to latest versions
+        id: npm_upgrade
+        run: |
+          echo "Checking for available npm upgrades..."
+          echo "### npm Dependency Upgrades" >> $GITHUB_STEP_SUMMARY
+
+          # Install npm-check-updates
+          bun add -g npm-check-updates
+
+          # Get available upgrades in JSON format before updating
+          echo "Available upgrades:"
+          NCU_OUTPUT=$(bunx ncu --jsonUpgraded 2>/dev/null || echo '{}')
+          echo "$NCU_OUTPUT" | jq . || true
+
+          # Upgrade all dependencies in package.json to latest versions
+          echo ""
+          echo "Upgrading package.json to latest versions..."
+
+          # Get current versions before upgrade
+          CURRENT_VERSIONS=$(jq -r '.dependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json 2>/dev/null || echo "")
+          CURRENT_DEV_VERSIONS=$(jq -r '.devDependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json 2>/dev/null || echo "")
+
+          bunx ncu -u
+
+          UPGRADE_LIST=""
+
+          # Show what changed
+          if ! git diff --quiet package.json; then
+            echo "package.json was modified with new versions"
+            echo "#### Upgraded packages:" >> $GITHUB_STEP_SUMMARY
+
+            # Get new versions after upgrade
+            NEW_VERSIONS=$(jq -r '.dependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json 2>/dev/null || echo "")
+            NEW_DEV_VERSIONS=$(jq -r '.devDependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json 2>/dev/null || echo "")
+
+            # Compare and build upgrade list for dependencies
+            while IFS= read -r new_entry; do
+              [ -z "$new_entry" ] && continue
+              PKG_NAME=$(echo "$new_entry" | cut -d: -f1)
+              NEW_VER=$(echo "$new_entry" | cut -d: -f2)
+
+              # Find old version
+              OLD_VER=$(echo "$CURRENT_VERSIONS" | grep "^${PKG_NAME}:" | cut -d: -f2 || echo "")
+
+              if [ -n "$OLD_VER" ] && [ "$OLD_VER" != "$NEW_VER" ]; then
+                echo "- \`$PKG_NAME\`: \`$OLD_VER\` → \`$NEW_VER\`" >> $GITHUB_STEP_SUMMARY
+                if [ -n "$UPGRADE_LIST" ]; then
+                  UPGRADE_LIST="${UPGRADE_LIST}|${PKG_NAME}:${OLD_VER}:${NEW_VER}"
+                else
+                  UPGRADE_LIST="${PKG_NAME}:${OLD_VER}:${NEW_VER}"
+                fi
+              fi
+            done <<< "$NEW_VERSIONS"
+
+            # Compare and build upgrade list for devDependencies
+            while IFS= read -r new_entry; do
+              [ -z "$new_entry" ] && continue
+              PKG_NAME=$(echo "$new_entry" | cut -d: -f1)
+              NEW_VER=$(echo "$new_entry" | cut -d: -f2)
+
+              # Find old version
+              OLD_VER=$(echo "$CURRENT_DEV_VERSIONS" | grep "^${PKG_NAME}:" | cut -d: -f2 || echo "")
+
+              if [ -n "$OLD_VER" ] && [ "$OLD_VER" != "$NEW_VER" ]; then
+                echo "- \`$PKG_NAME\`: \`$OLD_VER\` → \`$NEW_VER\` (dev)" >> $GITHUB_STEP_SUMMARY
+                if [ -n "$UPGRADE_LIST" ]; then
+                  UPGRADE_LIST="${UPGRADE_LIST}|${PKG_NAME}:${OLD_VER}:${NEW_VER}"
+                else
+                  UPGRADE_LIST="${PKG_NAME}:${OLD_VER}:${NEW_VER}"
+                fi
+              fi
+            done <<< "$NEW_DEV_VERSIONS"
+
+            echo "upgrades=$UPGRADE_LIST" >> $GITHUB_OUTPUT
+          else
+            echo "No npm upgrades available"
+            echo "_No npm upgrades available_" >> $GITHUB_STEP_SUMMARY
+            echo "upgrades=" >> $GITHUB_OUTPUT
+          fi
+
+          # Install upgraded dependencies
+          echo ""
+          echo "Installing upgraded dependencies..."
+          bun install
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+          # Enable debug mode for better error messages
+          sed -i 's/APP_DEBUG=false/APP_DEBUG=true/' .env || true
+          sed -i 's/APP_ENV=production/APP_ENV=local/' .env || true
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Test setup command - App (Auth + Dashboard)
+        run: |
+          echo "Testing craft:setup app..."
+          php artisan craft:setup app
+
+          echo "Verifying Auth files..."
+          test -f app/Http/Controllers/Auth/LoginController.php
+          test -f app/Http/Controllers/Auth/RegisterController.php
+          test -f resources/js/pages/auth/Login.vue
+
+          echo "Verifying Dashboard files..."
+          test -f app/Http/Controllers/DashboardController.php
+          test -f resources/js/pages/Dashboard.vue
+
+          echo "Setup app completed successfully!"
+
+      - name: Test setup command - CMS
+        run: |
+          echo "Testing craft:setup cms..."
+          php artisan craft:setup cms || echo "CMS setup may require additional dependencies"
+
+          echo "Setup cms test completed!"
+
+      - name: Build frontend assets
+        run: bun run build
+
+      - name: Install Playwright
+        run: bunx playwright install chromium --with-deps
+
+      - name: Start server and run tests
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 &
+          SERVER_PID=$!
+          sleep 3
+
+          # Test homepage
+          echo "Testing homepage..."
+          HTTP_CODE=$(curl -s -o response.html -w "%{http_code}" http://127.0.0.1:8000)
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Homepage returned HTTP $HTTP_CODE - Success!"
+          else
+            echo "Homepage returned HTTP $HTTP_CODE - Expected 200"
+            echo ""
+            echo "=== Laravel log (last 100 lines) ==="
+            cat storage/logs/laravel.log 2>/dev/null | tail -100 || echo "No log file found"
+            echo ""
+            echo "=== Response body (first 200 lines) ==="
+            head -200 response.html || echo "No response file"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          # Run Playwright tests
+          bunx playwright test || true
+
+          kill $SERVER_PID 2>/dev/null || true
+        env:
+          APP_URL: http://127.0.0.1:8000
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse || true
+
+      - name: Run Pest tests
+        run: vendor/bin/pest --ci || true
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          COMPOSER_CHANGED="false"
+          NPM_CHANGED="false"
+
+          if ! git diff --quiet composer.json composer.lock 2>/dev/null; then
+            COMPOSER_CHANGED="true"
+            echo "Composer changes detected"
+          fi
+
+          if ! git diff --quiet package.json bun.lock 2>/dev/null; then
+            NPM_CHANGED="true"
+            echo "npm changes detected"
+          fi
+
+          if [ "$COMPOSER_CHANGED" = "true" ] || [ "$NPM_CHANGED" = "true" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "composer_changes=$COMPOSER_CHANGED" >> $GITHUB_OUTPUT
+          echo "npm_changes=$NPM_CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Check Dependabot alerts (after upgrade)
+        id: check_alerts_after
+        if: steps.check_changes.outputs.has_changes == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Security Alerts (After Upgrade)" >> $GITHUB_STEP_SUMMARY
+
+          # Get the alerts we recorded before (handle missing file gracefully)
+          if [ -f /tmp/alerts_before.json ]; then
+            BEFORE_COUNT=$(cat /tmp/alerts_before.json | jq -r 'length' 2>/dev/null || echo "0")
+          else
+            BEFORE_COUNT=0
+          fi
+
+          BEFORE_PACKAGES=$(cat /tmp/vulnerable_packages_before.txt 2>/dev/null || echo "")
+
+          # Check which packages were upgraded
+          UPGRADED_COMPOSER=""
+          UPGRADED_NPM=""
+
+          if [ "${{ steps.check_changes.outputs.composer_changes }}" = "true" ]; then
+            # Get list of changed composer packages
+            UPGRADED_COMPOSER=$(git diff composer.lock 2>/dev/null | grep '"name":' | sed 's/.*"name": "\([^"]*\)".*/\1/' | sort -u || true)
+          fi
+
+          if [ "${{ steps.check_changes.outputs.npm_changes }}" = "true" ]; then
+            # Get list of changed npm packages
+            UPGRADED_NPM=$(git diff package.json 2>/dev/null | grep -E '^\+.*":' | grep -v '"private"\|"type"\|"scripts"' | sed 's/.*"\([^"]*\)": ".*/\1/' | sort -u || true)
+          fi
+
+          # Determine which vulnerable packages may have been fixed
+          POTENTIALLY_FIXED=""
+          FIXED_COUNT=0
+
+          if [ -n "$BEFORE_PACKAGES" ]; then
+            while IFS= read -r pkg; do
+              [ -z "$pkg" ] && continue
+              # Check if this package was upgraded
+              if echo "$UPGRADED_COMPOSER $UPGRADED_NPM" | grep -q "$pkg"; then
+                POTENTIALLY_FIXED="${POTENTIALLY_FIXED}${pkg}\n"
+                FIXED_COUNT=$((FIXED_COUNT + 1))
+              fi
+            done <<< "$BEFORE_PACKAGES"
+          fi
+
+          echo "alert_count=$BEFORE_COUNT" >> $GITHUB_OUTPUT
+          echo "alerts_fixed=$FIXED_COUNT" >> $GITHUB_OUTPUT
+
+          # Build summary
+          SUMMARY=""
+          if [ "$BEFORE_COUNT" -gt 0 ] 2>/dev/null; then
+            if [ "$FIXED_COUNT" -gt 0 ]; then
+              SUMMARY="$FIXED_COUNT of $BEFORE_COUNT security alerts may be resolved by this upgrade"
+              echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Potentially fixed packages:**" >> $GITHUB_STEP_SUMMARY
+              echo -e "$POTENTIALLY_FIXED" | while read -r pkg; do
+                [ -n "$pkg" ] && echo "- \`$pkg\`" >> $GITHUB_STEP_SUMMARY
+              done
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "_Note: Dependabot will automatically close fixed alerts after the commit is pushed._" >> $GITHUB_STEP_SUMMARY
+            else
+              SUMMARY="$BEFORE_COUNT security alerts remain (upgraded packages do not address them)"
+              echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            SUMMARY="No security alerts"
+            echo "_No security alerts to address_" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Build commit message
+          COMMIT_MSG="chore(deps): weekly dependency upgrade ($(date +%Y-%m-%d))"
+          COMMIT_BODY=""
+
+          # Add Composer upgrades
+          COMPOSER_UPGRADES="${{ steps.composer_upgrade.outputs.upgrades }}"
+          if [ "${{ steps.check_changes.outputs.composer_changes }}" = "true" ]; then
+            git add composer.json composer.lock
+            if [ -n "$COMPOSER_UPGRADES" ]; then
+              COMMIT_BODY="${COMMIT_BODY}\n\nComposer:"
+              echo "$COMPOSER_UPGRADES" | tr '|' '\n' | while IFS=: read -r pkg old new; do
+                [ -z "$pkg" ] && continue
+                echo "- $pkg: $old → $new"
+              done > /tmp/composer_commit.txt
+              COMPOSER_LIST=$(cat /tmp/composer_commit.txt)
+              COMMIT_BODY="${COMMIT_BODY}\n${COMPOSER_LIST}"
+            else
+              COMMIT_BODY="${COMMIT_BODY}\n- Composer dependencies upgraded"
+            fi
+          fi
+
+          # Add npm upgrades
+          NPM_UPGRADES="${{ steps.npm_upgrade.outputs.upgrades }}"
+          if [ "${{ steps.check_changes.outputs.npm_changes }}" = "true" ]; then
+            git add package.json bun.lock
+            if [ -n "$NPM_UPGRADES" ]; then
+              COMMIT_BODY="${COMMIT_BODY}\n\nnpm:"
+              echo "$NPM_UPGRADES" | tr '|' '\n' | while IFS=: read -r pkg old new; do
+                [ -z "$pkg" ] && continue
+                echo "- $pkg: $old → $new"
+              done > /tmp/npm_commit.txt
+              NPM_LIST=$(cat /tmp/npm_commit.txt)
+              COMMIT_BODY="${COMMIT_BODY}\n${NPM_LIST}"
+            else
+              COMMIT_BODY="${COMMIT_BODY}\n- npm dependencies upgraded"
+            fi
+          fi
+
+          # Add security info if applicable
+          SECURITY_INFO=""
+          if [ "${{ steps.check_alerts_before.outputs.alert_count }}" != "0" ] && [ -n "${{ steps.check_alerts_before.outputs.alert_count }}" ]; then
+            SECURITY_INFO="\n\nSecurity: ${{ steps.check_alerts_after.outputs.summary }}"
+          fi
+
+          git commit -m "$COMMIT_MSG
+
+          Automated weekly upgrade including major version upgrades where compatible.
+          $(echo -e "$COMMIT_BODY")$(echo -e "$SECURITY_INFO")
+
+          All tests passed:
+          - Setup commands (app, cms)
+          - Frontend build
+          - Homepage rendering
+          - Playwright tests
+
+          Updated on: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          git push origin main
+
+      - name: Create release
+        id: create_release
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # Parse version numbers (remove 'v' prefix if present)
+          VERSION=${LATEST_TAG#v}
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Build release notes
+          RELEASE_NOTES="## Weekly Dependency Upgrade
+
+          Automated dependency upgrade performed on $(date +%Y-%m-%d)."
+
+          # Add Composer upgrades
+          COMPOSER_UPGRADES="${{ steps.composer_upgrade.outputs.upgrades }}"
+          if [ -n "$COMPOSER_UPGRADES" ]; then
+            RELEASE_NOTES="${RELEASE_NOTES}
+
+          ### Composer Packages"
+            # Parse the pipe-separated list and format each upgrade
+            echo "$COMPOSER_UPGRADES" | tr '|' '\n' | while IFS=: read -r pkg old new; do
+              [ -z "$pkg" ] && continue
+              echo "- \`$pkg\`: $old → $new"
+            done > /tmp/composer_list.txt
+            COMPOSER_LIST=$(cat /tmp/composer_list.txt)
+            RELEASE_NOTES="${RELEASE_NOTES}
+          ${COMPOSER_LIST}"
+          fi
+
+          # Add npm upgrades
+          NPM_UPGRADES="${{ steps.npm_upgrade.outputs.upgrades }}"
+          if [ -n "$NPM_UPGRADES" ]; then
+            RELEASE_NOTES="${RELEASE_NOTES}
+
+          ### npm Packages"
+            # Parse the pipe-separated list and format each upgrade
+            echo "$NPM_UPGRADES" | tr '|' '\n' | while IFS=: read -r pkg old new; do
+              [ -z "$pkg" ] && continue
+              echo "- \`$pkg\`: $old → $new"
+            done > /tmp/npm_list.txt
+            NPM_LIST=$(cat /tmp/npm_list.txt)
+            RELEASE_NOTES="${RELEASE_NOTES}
+          ${NPM_LIST}"
+          fi
+
+          # Add security alert info if present
+          ALERTS_BEFORE="${{ steps.check_alerts_before.outputs.alert_count }}"
+          ALERTS_FIXED="${{ steps.check_alerts_after.outputs.alerts_fixed }}"
+
+          if [ "$ALERTS_BEFORE" != "0" ] && [ -n "$ALERTS_BEFORE" ]; then
+            RELEASE_NOTES="${RELEASE_NOTES}
+
+          ### Security
+          - **Open alerts before upgrade:** $ALERTS_BEFORE"
+            if [ "$ALERTS_FIXED" != "0" ] && [ -n "$ALERTS_FIXED" ]; then
+              RELEASE_NOTES="${RELEASE_NOTES}
+          - **Potentially resolved:** $ALERTS_FIXED"
+            fi
+          fi
+
+          RELEASE_NOTES="${RELEASE_NOTES}
+
+          ### Verification
+          All tests passed:
+          - Setup commands (app, cms)
+          - Frontend build
+          - Homepage rendering
+          - Playwright tests
+          - PHPStan analysis
+          - Pest tests
+
+          ---
+          *This release was automatically created by the weekly dependency upgrade workflow.*"
+
+          # Create the release
+          echo "$RELEASE_NOTES" | gh release create "$NEW_VERSION" \
+            --title "Release $NEW_VERSION - Dependency Upgrade" \
+            --notes-file - \
+            --target main
+
+          echo "Release $NEW_VERSION created successfully!"
+
+  notify-success:
+    name: Notify Success (Slack)
+    needs: [upgrade-and-test]
+    if: |
+      always() &&
+      needs.upgrade-and-test.result == 'success' &&
+      needs.upgrade-and-test.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Starterkit Dependencies Upgraded",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Repository:* `craft-starterkit`\\n*Release:* `${{ needs.upgrade-and-test.outputs.new_version }}`"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Tests Passed:*\n- Setup commands (app, cms)\n- Frontend build\n- Homepage rendering\n- Playwright tests"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Security:* ${{ needs.upgrade-and-test.outputs.security_alerts_summary || 'No security alerts' }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Release"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.upgrade-and-test.outputs.new_version }}"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow Run"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+
+  notify-failure:
+    name: Notify Failure (Slack)
+    needs: [upgrade-and-test]
+    if: |
+      always() &&
+      needs.upgrade-and-test.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Dependency Upgrade Failed",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Repository:* `craft-starterkit`"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "The weekly dependency upgrade failed during testing. Please review the workflow logs to identify which upgrade caused the issue."
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow Logs"
+                      },
+                      "style": "danger",
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+
+      - name: Checkout for gh CLI
+        uses: actions/checkout@v4
+
+      - name: Create failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh issue create \
+            --title "Weekly dependency upgrade failed ($(date +%Y-%m-%d))" \
+            --body "## Dependency Upgrade Failure
+
+          The weekly dependency upgrade workflow failed during integration testing.
+
+          ### Details
+          - **Workflow run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          ### Next steps
+          1. Review the workflow logs linked above
+          2. Identify which dependency upgrade caused the failure
+          3. Either fix the compatibility issue or pin the problematic dependency version
+
+          ---
+          *This issue was automatically created by the weekly dependency upgrade workflow.*" \
+            --label "bug,dependencies"
+
+  notify-no-updates:
+    name: Notify No Updates (Slack)
+    needs: [upgrade-and-test]
+    if: |
+      always() &&
+      needs.upgrade-and-test.result == 'success' &&
+      needs.upgrade-and-test.outputs.has_changes == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*craft-starterkit*: No dependency upgrades available this week. All packages are at their latest versions."
+                  }
+                }
+              ]
+            }

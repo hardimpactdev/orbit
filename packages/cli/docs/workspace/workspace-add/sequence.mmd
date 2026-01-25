@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant User
+    participant CLI as WorkspaceAdd
+    participant Service as WorkspaceService
+    participant FS as Filesystem
+
+    User->>CLI: workspace:add workspace project
+    CLI->>Service: addProject(workspace, project)
+    Service->>FS: check workspace exists
+    Service->>FS: check project exists
+    Service->>FS: check symlink not exists
+    alt validation fails
+        Service-->>CLI: throw RuntimeException
+        CLI-->>User: error output
+    else valid
+        Service->>FS: symlink project to workspace
+        Service->>FS: regenerate .code-workspace
+        Service->>FS: update CLAUDE.md
+        Service-->>CLI: workspace info
+        CLI-->>User: success output
+    end

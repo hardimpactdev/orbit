@@ -1,0 +1,26 @@
+{
+    "main": "orbit",
+    "output": "builds/orbit.phar",
+    "chmod": "0755",
+    "directories": [
+        "app",
+        "app/Commands",
+        "bootstrap",
+        "config",
+        "stubs",
+        "vendor"
+    ],
+    "files": [
+        "composer.json"
+    ],
+    "exclude-composer-files": false,
+    "compression": "NONE",
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Php",
+        "KevinGH\\Box\\Compactor\\Json"
+    ],
+    "blacklist": [
+        "tests"
+    ],
+    "check-requirements": false
+}

@@ -1,0 +1,53 @@
+sequenceDiagram
+    participant User
+    participant CLI as PhpCommand
+    participant SS as SiteScanner
+    participant DB as DatabaseService
+    participant CFG as ConfigManager
+    participant CG as CaddyfileGenerator
+    participant Caddy
+
+    User->>CLI: orbit php site version
+    CLI->>SS: findSite site
+    
+    alt Site not found
+        SS-->>CLI: null
+        CLI-->>User: Error - Site not found
+    else Site found
+        SS-->>CLI: siteInfo
+        
+        alt --reset flag
+            CLI->>DB: removeSiteOverride site
+            CLI->>CFG: removeSiteOverride site
+            CLI->>CFG: getDefaultPhpVersion
+            CFG-->>CLI: defaultVersion
+            
+            alt Has public folder
+                CLI->>CG: generate
+                CLI->>CG: reload
+                CG->>Caddy: Reload config
+            end
+            
+            CLI-->>User: Reset to default version
+        else Set version
+            alt No version provided
+                CLI-->>User: Error - Provide version
+            else Version provided
+                CLI->>CLI: Validate version in allowed list
+                
+                alt Invalid version
+                    CLI-->>User: Error - Invalid version
+                else Valid version
+                    CLI->>DB: setSitePhpVersion site path version
+                    
+                    alt Has public folder
+                        CLI->>CG: generate
+                        CLI->>CG: reload
+                        CG->>Caddy: Reload config
+                    end
+                    
+                    CLI-->>User: Set site to PHP version
+                end
+            end
+        end
+    end

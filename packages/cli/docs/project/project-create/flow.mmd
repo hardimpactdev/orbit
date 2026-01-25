@@ -1,0 +1,70 @@
+flowchart TD
+    start([Start]) --> validateName[Validate name and slug]
+    validateName --> reservedName{Reserved name?}
+    reservedName -->|yes| failReserved[Fail - reserved name]
+    reservedName -->|no| pathOption{--path provided?}
+    
+    pathOption -->|yes| validatePath{Path exists?}
+    validatePath -->|no| failNoPath[Fail - path does not exist]
+    validatePath -->|yes| usePath[Use provided path]
+    usePath --> createContext
+    
+    pathOption -->|no| loadPaths[Load configured paths]
+    loadPaths --> pathsEmpty{Paths available?}
+    pathsEmpty -->|no| failNoPaths[Fail - no project paths]
+    pathsEmpty -->|yes| resolvePath[Resolve base path and slug]
+    resolvePath --> exists{Directory exists?}
+    exists -->|yes| failExists[Fail - directory exists]
+    exists -->|no| mkdir[Create project directory]
+    mkdir --> createContext[Build ProvisionContext from options]
+    createContext --> initLogger[Init ProvisionLogger and broadcast]
+    initLogger --> flowCheck{Which flow?}
+
+    flowCheck -->|package argument| validatePackagist[ValidatePackagistPackage]
+    validatePackagist --> packagistOk{Package valid?}
+    packagistOk -->|no| failPackagist[Throw error]
+    packagistOk -->|yes| createProject[composer create-project]
+    createProject --> earlyCaddy
+
+    flowCheck -->|--fork flag| forkRepo[ForkRepository]
+    forkRepo --> cloneStep
+
+    flowCheck -->|--template flag| createRepo[CreateGitHubRepository from template]
+    createRepo --> cloneStep
+
+    flowCheck -->|--clone flag| cloneStep{Has clone URL?}
+    flowCheck -->|none| earlyCaddy
+
+    cloneStep -->|yes| cloneRepo[CloneRepository]
+    cloneStep -->|no| earlyCaddy
+    cloneRepo --> earlyCaddy[Generate and reload Caddy]
+
+    earlyCaddy --> setupPhase[Run project setup]
+    setupPhase --> minimalMode{Minimal mode?}
+    minimalMode -->|yes| composerOnly[InstallComposerDependencies]
+    minimalMode -->|no| composer[InstallComposerDependencies]
+    composer --> nodeDeps[InstallNodeDependencies]
+    nodeDeps --> buildAssets[BuildAssets]
+    buildAssets --> envConfig[ConfigureEnvironment]
+    envConfig --> createDb[CreateDatabase]
+    createDb --> appKey[GenerateAppKey]
+    appKey --> migrations[RunMigrations]
+    migrations --> postScripts[RunPostInstallScripts]
+    postScripts --> proxies[ConfigureTrustedProxies]
+    proxies --> phpVersion[SetPhpVersion]
+    composerOnly --> finalize
+    phpVersion --> finalize[Finalize]
+    finalize --> registerMcp{MCP configured?}
+    registerMcp -->|yes| mcpRegister[MCP project_add]
+    registerMcp -->|no| restartPhp
+    mcpRegister --> restartPhp[RestartPhpContainer]
+    restartPhp --> ready[Broadcast ready and output success]
+
+    createProject -->|error| errorCatch[Catch and cleanup]
+    cloneRepo -->|error| errorCatch
+    setupPhase -->|error| errorCatch
+    finalize -->|error| errorCatch
+    errorCatch --> cleanup[Log error and broadcast failed]
+    cleanup --> removeEmpty{Empty project dir?}
+    removeEmpty -->|yes| removeDir[Remove dir]
+    removeEmpty -->|no| returnError[Return error exit code]

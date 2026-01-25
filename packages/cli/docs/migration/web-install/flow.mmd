@@ -1,0 +1,27 @@
+flowchart TD
+    Start([web install]) --> CheckBundle{Bundle exists?}
+    
+    CheckBundle -->|No| BundleError[Error: Bundle not found]
+    BundleError --> FailExit([Failure])
+    
+    CheckBundle -->|Yes| CheckInstalled{Already installed?}
+    
+    CheckInstalled -->|Yes| CheckForce{--force flag?}
+    CheckForce -->|No| AlreadyInstalled[Already installed - use --force]
+    AlreadyInstalled --> SuccessExit([Success])
+    
+    CheckForce -->|Yes| CheckDryRun
+    CheckInstalled -->|No| CheckDryRun{--dry-run?}
+    
+    CheckDryRun -->|Yes| ReportDryRun[Report what would happen]
+    ReportDryRun --> SuccessExit
+    
+    CheckDryRun -->|No| ExtractBundle[Extract bundle to dest]
+    ExtractBundle --> SetPermissions[Set file permissions]
+    SetPermissions --> GenerateEnv[Generate .env file]
+    GenerateEnv --> RunMigrations[Run db:migrate]
+    RunMigrations --> UpdateCaddy[Regenerate Caddyfile]
+    
+    UpdateCaddy --> ReportSuccess[Installation complete]
+    ReportSuccess --> ShowNextSteps[Show next steps]
+    ShowNextSteps --> SuccessExit

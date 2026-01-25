@@ -1,0 +1,78 @@
+sequenceDiagram
+    participant User
+    participant CLI as SiteCreate
+    participant Config as ConfigManager
+    participant Logger as ProvisionLogger
+    participant Packagist as ValidatePackagistPackage
+    participant GitHub
+    participant Caddy as CaddyfileGenerator
+    participant Pipeline as ProvisionPipeline
+    participant PHP as RestartPhpContainer
+
+    User->>CLI: run site:create name [package] + options
+    CLI->>CLI: resolve slug from name
+    
+    alt --path provided (web flow)
+        CLI->>CLI: validate path exists
+        Note over CLI: Use pre-created directory
+    else no --path (CLI flow)
+        CLI->>Config: get paths + tld
+        CLI->>CLI: resolve project path from base + slug
+        CLI->>CLI: create directory
+    end
+    
+    CLI->>Logger: broadcast provisioning
+
+    alt package argument (create-project flow)
+        CLI->>Packagist: validate package exists
+        Packagist-->>CLI: ok/fail
+        CLI->>CLI: composer create-project
+    end
+
+    alt fork mode (--clone with --fork)
+        CLI->>GitHub: ForkRepository
+        GitHub-->>CLI: forked repo + clone URL
+        CLI->>GitHub: CloneRepository (clones your fork)
+        GitHub-->>CLI: clone ok
+    end
+
+    alt template mode (--template)
+        CLI->>GitHub: CreateGitHubRepository from template
+        GitHub-->>CLI: repo + clone URL
+        CLI->>GitHub: CloneRepository
+        GitHub-->>CLI: clone ok
+    end
+
+    alt clone mode (--clone only)
+        CLI->>GitHub: CloneRepository (origin points to source)
+        GitHub-->>CLI: clone ok
+    end
+
+    CLI->>Caddy: generate + reload (early)
+
+    alt minimal mode
+        CLI->>Pipeline: runMinimal (composer install only)
+        Pipeline-->>CLI: done
+    else full setup
+        CLI->>Pipeline: runFull
+        Note over Pipeline: 1. InstallComposerDependencies
+        Note over Pipeline: 2. DetectNodePackageManager
+        Note over Pipeline: 3. InstallNodeDependencies
+        Note over Pipeline: 4. BuildAssets
+        Note over Pipeline: 5. ConfigureEnvironment
+        Note over Pipeline: 6. CreateDatabase
+        Note over Pipeline: 7. GenerateAppKey
+        Note over Pipeline: 8. RunMigrations
+        Note over Pipeline: 9. ConfigureTrustedProxies
+        Note over Pipeline: 10. SetPhpVersion
+        Pipeline-->>CLI: done
+    end
+
+    CLI->>PHP: restart PHP container
+    CLI-->>User: JSON success + ready status
+
+    opt error path
+        CLI->>Logger: broadcast failed
+        CLI->>CLI: cleanup empty dir
+        CLI-->>User: error exit code
+    end

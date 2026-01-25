@@ -1,0 +1,127 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$cli_version\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 7
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 6
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$tld\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Offset ''exists'' on array\{exists\: bool, error\?\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Http/Controllers/EnvironmentController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\TrackedJob\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/JobController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$host\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$is_local\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$provisioning_error\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$provisioning_log\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$provisioning_step\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$provisioning_total_steps\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Call to method getPharPath\(\) on an unknown class App\\Services\\CliUpdateService\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Call to method isInstalled\(\) on an unknown class App\\Services\\CliUpdateService\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Call to static method checkExistingSetup\(\) on an unknown class App\\Services\\ProvisioningService\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Class App\\Services\\CliUpdateService not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Http/Controllers/ProvisioningController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey\:\:\$is_default\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Http/Controllers/SshKeyController.php
+
+		-
+			message: '#^Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 4
+			path: src/Http/Controllers/SshKeyController.php
+
+		-
+			message: '#^Cannot access property \$id on object\|string\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: src/Http/Middleware/HandleInertiaRequests.php

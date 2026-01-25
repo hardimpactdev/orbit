@@ -1,0 +1,22 @@
+flowchart TD
+    Start([host restart service]) --> ParseService[Parse service argument]
+    
+    ParseService --> CheckType{Service type?}
+    
+    CheckType -->|caddy| RestartCaddy[CaddyManager.restart]
+    CheckType -->|php-version| ExtractVersion[Extract PHP version]
+    CheckType -->|horizon| RestartHorizon[HorizonManager.restart]
+    CheckType -->|unknown| UnknownError[Error: Unknown service]
+    
+    ExtractVersion --> RestartPhp[PhpManager.restart version]
+    
+    RestartCaddy --> CheckResult{Success?}
+    RestartPhp --> CheckResult
+    RestartHorizon --> CheckResult
+    UnknownError --> FailExit([Failure])
+    
+    CheckResult -->|Yes| ReportSuccess[Info: Restarted service]
+    CheckResult -->|No| ReportFailure[Error: Failed to restart]
+    
+    ReportSuccess --> SuccessExit([Success])
+    ReportFailure --> FailExit

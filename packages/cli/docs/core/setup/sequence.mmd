@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant User
+    participant CLI as Setup
+    participant Mac as MacSetup
+    participant Linux as LinuxSetup
+    participant Config as ConfigManager
+    participant Docker as DockerManager
+    participant PHP as PhpManager
+    participant Caddy as CaddyManager
+
+    User->>CLI: orbit setup --tld=ccc
+    CLI->>CLI: parse and normalize options
+    
+    alt Darwin
+        CLI->>Mac: run with options
+        Mac->>PHP: install PHP versions
+        Mac->>Caddy: configure Caddy
+        Mac->>Docker: setup Docker services
+        Mac-->>CLI: success or failure
+    else Linux
+        CLI->>Linux: run with options
+        Linux->>PHP: install PHP versions
+        Linux->>Caddy: configure Caddy
+        Linux->>Docker: setup Docker services
+        Linux-->>CLI: success or failure
+    end
+
+    CLI-->>User: result

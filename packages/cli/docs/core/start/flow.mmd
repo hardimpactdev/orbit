@@ -1,0 +1,23 @@
+flowchart TD
+    start([Start]) --> detectArch[Detect architecture]
+    detectArch --> genConfig[Generate Caddyfile]
+    genConfig --> checkFpm{Using PHP-FPM?}
+    
+    checkFpm -->|yes| startPhp[Start PHP-FPM pools]
+    startPhp --> startCaddy[Start host Caddy]
+    startCaddy --> startDocker[Start Docker services]
+    
+    checkFpm -->|no| startDocker
+    
+    startDocker --> checkFpm2{Using PHP-FPM?}
+    checkFpm2 -->|yes| startHorizon[Start Horizon]
+    checkFpm2 -->|no| output
+    startHorizon --> output
+    
+    output{JSON output?}
+    output -->|yes| jsonOut[Output JSON with results]
+    output -->|no| consoleOut[Print status message]
+    
+    consoleOut --> checkSuccess{All succeeded?}
+    checkSuccess -->|yes| successMsg[Orbit is running]
+    checkSuccess -->|no| warnMsg[Some services failed]

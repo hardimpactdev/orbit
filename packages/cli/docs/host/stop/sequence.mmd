@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant User
+    participant CLI as HostStop
+    participant CM as CaddyManager
+    participant PM as PhpManager
+    participant HM as HorizonManager
+    participant OS as System Service
+
+    User->>CLI: orbit host stop service
+    CLI->>CLI: Parse service argument
+    
+    alt service is caddy
+        CLI->>CM: stop
+        CM->>OS: Stop Caddy service
+        OS-->>CM: result
+        CM-->>CLI: success boolean
+    else service is php-version
+        CLI->>CLI: Extract version from php-X.Y
+        CLI->>PM: stop version
+        PM->>OS: Stop PHP-FPM service
+        OS-->>PM: result
+        PM-->>CLI: success boolean
+    else service is horizon
+        CLI->>HM: stop
+        HM->>OS: Stop Horizon service
+        OS-->>HM: result
+        HM-->>CLI: success boolean
+    else unknown service
+        CLI-->>User: Error - Unknown host service
+    end
+    
+    CLI-->>User: Stopped or error message

@@ -1,0 +1,12 @@
+flowchart TD
+    start([Start rebuild]) --> checkDocker{Docker running?}
+    checkDocker -->|no| failDocker[Fail - Docker not running]
+    checkDocker -->|yes| checkDockerfiles{Dockerfiles exist?}
+    checkDockerfiles -->|no| copyStubs[Copy from stubs]
+    checkDockerfiles -->|yes| stopPhp
+    copyStubs --> stopPhp[Stop PHP containers]
+    stopPhp --> buildImages[Build PHP images]
+    buildImages --> buildOk{Build success?}
+    buildOk -->|no| failBuild[Output build error]
+    buildOk -->|yes| startPhp[Start PHP containers]
+    startPhp --> done[Output success]

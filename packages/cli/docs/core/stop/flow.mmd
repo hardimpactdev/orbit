@@ -1,0 +1,13 @@
+flowchart TD
+    start([Start stop]) --> detectArch[Detect architecture]
+    detectArch --> checkFpm{Using PHP-FPM?}
+    
+    checkFpm -->|yes| stopHorizon[Stop Horizon]
+    stopHorizon --> stopCaddy[Stop host Caddy]
+    stopCaddy --> stopDocker[Stop Docker services]
+    
+    checkFpm -->|no| stopDocker
+    
+    stopDocker --> output{JSON output?}
+    output -->|yes| jsonOut[Output JSON with results]
+    output -->|no| consoleOut[Print Orbit stopped]

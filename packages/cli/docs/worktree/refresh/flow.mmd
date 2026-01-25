@@ -1,0 +1,25 @@
+flowchart TD
+    Start([worktree refresh]) --> CheckCleanup{--cleanup flag?}
+    
+    CheckCleanup -->|Yes| CleanupOrphaned[Remove orphaned entries]
+    CleanupOrphaned --> Refresh[Scan for worktrees]
+    
+    CheckCleanup -->|No| Refresh
+    
+    Refresh --> CheckResult{Success?}
+    
+    CheckResult -->|Error| ReportError[Error message]
+    ReportError --> FailExit([Failure])
+    
+    CheckResult -->|Success| ReportComplete[Worktree scan complete]
+    ReportComplete --> ReportCount[Report worktrees found]
+    
+    ReportCount --> CheckRemoved{Orphans removed?}
+    CheckRemoved -->|Yes| ReportRemoved[Report orphans removed count]
+    CheckRemoved -->|No| CheckWorktrees
+    ReportRemoved --> CheckWorktrees
+    
+    CheckWorktrees{Any worktrees?}
+    CheckWorktrees -->|Yes| ListActive[List active worktrees with domains]
+    CheckWorktrees -->|No| SuccessExit([Success])
+    ListActive --> SuccessExit

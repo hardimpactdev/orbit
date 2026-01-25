@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant User
+    participant CLI as Restart
+    participant Stop as StopCommand
+    participant Start as StartCommand
+
+    User->>CLI: orbit restart
+    CLI->>Stop: call stop
+    Stop-->>CLI: exit code
+    CLI->>Start: call start
+    Start-->>CLI: exit code
+    CLI-->>User: combined result

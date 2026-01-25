@@ -1,0 +1,18 @@
+flowchart TD
+    Start([package linked app]) --> ParseArgs[Parse app name]
+    ParseArgs --> BuildPath[Build app path in ~/projects/]
+    
+    BuildPath --> CheckApp{App dir exists?}
+    CheckApp -->|No| AppNotFound[Error: App not found]
+    AppNotFound --> FailExit([Failure])
+    
+    CheckApp -->|Yes| RunLinked[Run composer linked]
+    RunLinked --> ParseOutput[Parse output lines]
+    ParseOutput --> ExtractPackages[Extract package names and paths]
+    
+    ExtractPackages --> CheckEmpty{Any packages?}
+    CheckEmpty -->|No| ReportNone[No linked packages]
+    CheckEmpty -->|Yes| ReportList[List packages with paths]
+    
+    ReportNone --> SuccessExit([Success])
+    ReportList --> SuccessExit

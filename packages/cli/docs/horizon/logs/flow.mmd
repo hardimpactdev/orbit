@@ -1,0 +1,17 @@
+flowchart TD
+    Start([horizon logs]) --> GetLines[Get --lines option]
+    GetLines --> DetectOS{Detect OS}
+    
+    DetectOS -->|Linux| Journalctl[journalctl -u orbit-horizon -n lines]
+    DetectOS -->|macOS| CheckLogFile{Log file exists?}
+    DetectOS -->|Other| UnsupportedMsg[Platform not supported]
+    
+    CheckLogFile -->|Yes| TailLog[tail -n lines horizon.log]
+    CheckLogFile -->|No| NoLogs[No logs found]
+    
+    Journalctl --> OutputLogs[Output log content]
+    TailLog --> OutputLogs
+    NoLogs --> OutputLogs
+    UnsupportedMsg --> OutputLogs
+    
+    OutputLogs --> SuccessExit([Success])

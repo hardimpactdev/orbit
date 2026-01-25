@@ -1,0 +1,17 @@
+flowchart TD
+    start([Start status]) --> detectArch[Detect architecture]
+    detectArch --> checkFpm{Using PHP-FPM?}
+    
+    checkFpm -->|yes| checkPhp[Check PHP-FPM pools]
+    checkPhp --> checkCaddy[Check host Caddy]
+    checkCaddy --> checkHorizon[Check Horizon]
+    checkHorizon --> checkDocker
+    
+    checkFpm -->|no| checkDocker[Get Docker service statuses]
+    
+    checkDocker --> scanSites[Scan sites]
+    scanSites --> output{JSON output?}
+    output -->|yes| jsonOut[Output JSON with all info]
+    output -->|no| renderStatus[Render status display]
+    renderStatus --> showServices[Show service list with icons]
+    showServices --> showConfig[Show architecture and config]

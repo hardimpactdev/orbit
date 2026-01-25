@@ -1,0 +1,36 @@
+{
+    "name": "mailpit",
+    "label": "Mailpit",
+    "description": "Email testing tool with web interface",
+    "category": "development",
+    "versions": ["latest", "v1.21", "v1.20"],
+    "configSchema": {
+        "required": ["smtp_port", "http_port"],
+        "properties": {
+            "smtp_port": {
+                "type": "number",
+                "default": 1025,
+                "minimum": 1024,
+                "maximum": 65535
+            },
+            "http_port": {
+                "type": "number",
+                "default": 8025,
+                "minimum": 1024,
+                "maximum": 65535
+            }
+        }
+    },
+    "dockerConfig": {
+        "image": "axllent/mailpit:${version}",
+        "ports": ["1025:1025", "8025:8025"],
+        "environment": {
+            "MP_MAX_MESSAGES": "5000",
+            "MP_DATABASE": "/data/mailpit.db",
+            "MP_SMTP_AUTH_ACCEPT_ANY": "1",
+            "MP_SMTP_AUTH_ALLOW_INSECURE": "1"
+        },
+        "volumes": ["${data_path}:/data"]
+    },
+    "dependsOn": []
+}

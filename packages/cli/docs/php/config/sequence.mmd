@@ -1,0 +1,47 @@
+sequenceDiagram
+    participant User
+    participant CLI as PhpConfigCommand
+    participant PM as PhpManager
+    participant SS as PhpSettingsService
+    participant FS as FileSystem
+    participant OS as System
+
+    User->>CLI: orbit php config version options
+    
+    alt No version specified
+        CLI->>PM: getInstalledVersions
+        PM-->>CLI: versions array
+        alt No versions installed
+            CLI-->>User: Error - No PHP installed
+        else Has versions
+            CLI->>CLI: Sort and use latest
+        end
+    end
+    
+    CLI->>CLI: Collect setting options from flags
+    
+    alt No updates or --get flag
+        CLI->>SS: getSettings version
+        SS->>FS: Read php.ini
+        SS->>FS: Read pool config
+        SS-->>CLI: current settings
+        CLI->>SS: getPhpIniPath version
+        CLI->>SS: getPoolConfigPath version
+        CLI-->>User: Display settings table
+    else Updates provided
+        CLI->>SS: updateSettings version updates
+        SS->>FS: Write php.ini changes
+        SS->>FS: Write pool config changes
+        SS->>OS: Restart PHP-FPM
+        OS-->>SS: result
+        
+        alt Success
+            SS-->>CLI: true
+            CLI->>SS: getSettings version
+            SS-->>CLI: updated settings
+            CLI-->>User: Settings updated successfully
+        else Failure
+            SS-->>CLI: false
+            CLI-->>User: Error - Failed to update
+        end
+    end

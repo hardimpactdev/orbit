@@ -1,0 +1,45 @@
+sequenceDiagram
+    participant User
+    participant CLI as HorizonInstall
+    participant HM as HorizonManager
+    participant FS as FileSystem
+    participant OS as System Service
+
+    User->>CLI: orbit horizon install
+    CLI->>HM: isInstalled
+    HM->>FS: Check service file exists
+    FS-->>HM: exists boolean
+    
+    alt Already installed
+        HM-->>CLI: true
+        CLI-->>User: Already installed message
+    else Not installed
+        HM-->>CLI: false
+        CLI->>HM: install
+        
+        alt Linux
+            HM->>FS: Load systemd stub
+            FS-->>HM: stub content
+            HM->>HM: Replace placeholders
+            HM->>OS: Write to /etc/systemd/system/
+            HM->>OS: systemctl daemon-reload
+            HM->>OS: systemctl enable orbit-horizon
+        else macOS
+            HM->>FS: Load launchd stub
+            FS-->>HM: stub content
+            HM->>HM: Replace placeholders
+            HM->>FS: Write to ~/Library/LaunchAgents/
+        end
+        
+        HM-->>CLI: install result
+        CLI->>HM: start
+        
+        alt Linux
+            HM->>OS: systemctl start orbit-horizon
+        else macOS
+            HM->>OS: launchctl load plist
+        end
+        
+        HM-->>CLI: start result
+        CLI-->>User: Installed and started
+    end
