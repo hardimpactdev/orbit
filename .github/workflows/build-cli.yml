@@ -95,7 +95,7 @@ jobs:
           sha256sum builds/orbit.phar > builds/checksums.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             packages/cli/builds/orbit.phar
