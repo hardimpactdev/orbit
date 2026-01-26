@@ -34,19 +34,33 @@ jobs:
           curl -sL https://github.com/splitsh/lite/releases/download/v1.0.1/lite_linux_amd64.tar.gz | tar xz
           sudo mv splitsh-lite /usr/local/bin/
 
-      - name: Split ${{ matrix.package.local }}
-        id: split
+      - name: Split and push ${{ matrix.package.local }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.SPLIT_TOKEN }}
         run: |
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           echo "Split SHA: $SHA"
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-
-      - name: Push to ${{ matrix.package.remote }}
-        run: |
-          git remote add ${{ matrix.package.remote }} https://x-access-token:${{ secrets.SPLIT_TOKEN }}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
-          git push ${{ matrix.package.remote }} ${{ steps.split.outputs.sha }}:refs/heads/main --force
+          
+          # Clone target repo, update, push
+          git clone --bare https://x-access-token:${GITHUB_TOKEN}@github.com/hardimpactdev/${{ matrix.package.remote }}.git target-repo
+          cd target-repo
+          git fetch origin $SHA:refs/heads/main --force || git update-ref refs/heads/main $SHA
+          git push origin main:main --force
+          cd ..
+          rm -rf target-repo
           
       - name: Push tags
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.SPLIT_TOKEN }}
         run: |
-          git push ${{ matrix.package.remote }} ${{ github.ref }} --force
+          TAG=${GITHUB_REF#refs/tags/}
+          SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
+          
+          cd /tmp
+          git clone --bare https://x-access-token:${GITHUB_TOKEN}@github.com/hardimpactdev/${{ matrix.package.remote }}.git target-repo
+          cd target-repo
+          git tag -f $TAG $SHA
+          git push origin $TAG --force
+          cd ..
+          rm -rf target-repo
