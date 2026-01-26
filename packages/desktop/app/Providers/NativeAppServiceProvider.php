@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Models\UserPreference;
+use App\Services\CliInstallService;
 use Native\Laravel\Contracts\ProvidesPhpIni;
 use Native\Laravel\Facades\MenuBar;
 use Native\Laravel\Facades\Window;
+use Native\Laravel\Facades\Notification;
 use Native\Laravel\Menu\Menu;
 
 class NativeAppServiceProvider implements ProvidesPhpIni
@@ -28,6 +30,29 @@ class NativeAppServiceProvider implements ProvidesPhpIni
 
         // Create menu bar if enabled in user preferences
         $this->initializeMenuBar();
+        
+        // Check CLI installation on first launch
+        $this->checkCliInstallation();
+    }
+
+    /**
+     * Check if CLI is installed and prompt user if not.
+     */
+    protected function checkCliInstallation(): void
+    {
+        try {
+            $cliService = app(CliInstallService::class);
+            
+            if (!$cliService->isInstalled()) {
+                // Show notification prompting user to install CLI
+                // The actual installation will be triggered from the UI
+                Notification::title('Orbit CLI')
+                    ->message('Click here to install the Orbit CLI for terminal access.')
+                    ->show();
+            }
+        } catch (\Exception $e) {
+            // Silently fail - CLI check is not critical for app startup
+        }
     }
 
     /**
@@ -43,7 +68,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             return;
         }
 
-        if (! $menuBarEnabled) {
+        if (!$menuBarEnabled) {
             return;
         }
 

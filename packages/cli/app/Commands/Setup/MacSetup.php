@@ -414,12 +414,6 @@ class MacSetup
             }
         }
 
-        // Detect Herd conflict
-        if ($tld === 'test' && $this->isHerdInstalled()) {
-            $this->progressInfo('Warning: Laravel Herd detected using .test TLD');
-            $this->progressInfo('Consider using --tld=lp to avoid conflicts');
-        }
-
         // Create resolver (requires sudo)
         $this->progressInfo('Creating DNS resolver (sudo required)...');
 
@@ -436,21 +430,6 @@ class MacSetup
         return true;
     }
 
-    protected function isHerdInstalled(): bool
-    {
-        $herdPaths = [
-            $_SERVER['HOME'].'/.config/herd',
-            $_SERVER['HOME'].'/Library/Application Support/Herd',
-        ];
-
-        foreach ($herdPaths as $path) {
-            if (is_dir($path)) {
-                return true;
-            }
-        }
-
-        return Process::run('command -v herd')->successful();
-    }
 
     protected function startPhpFpm(array $versions): bool
     {

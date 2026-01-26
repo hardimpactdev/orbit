@@ -587,7 +587,7 @@ public function getLogs(int $lines = 100): string;
 
 **File:** `app/Services/ProvisioningService.php`
 
-**Remove step:** "Install PHP via php.new (herd-lite)"
+**Remove step:** "Install PHP via php.new (php-fpm)"
 
 **Add steps:**
 
@@ -621,7 +621,7 @@ public function getLogs(int $lines = 100): string;
 
 #### 2.2 Update SSH PATH Configuration
 
-**Current:** Includes `$HOME/.config/herd-lite/bin`
+**Current:** Includes `$HOME/.config/php-fpm/bin`
 **Target:** Standard paths only (PHP-FPM is system-installed)
 
 ```php

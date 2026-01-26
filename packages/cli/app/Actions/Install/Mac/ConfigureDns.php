@@ -27,12 +27,6 @@ final readonly class ConfigureDns
             }
         }
 
-        // Detect Herd conflict
-        if ($tld === 'test' && $this->isHerdInstalled()) {
-            $logger->warn('Laravel Herd detected using .test TLD');
-            $logger->info('Consider using --tld=lp to avoid conflicts');
-        }
-
         // Create resolver (requires sudo)
         $logger->step('Creating DNS resolver (sudo required)...');
 
@@ -45,22 +39,5 @@ final readonly class ConfigureDns
         $logger->success("DNS resolver for .{$tld} configured");
 
         return StepResult::success();
-    }
-
-    private function isHerdInstalled(): bool
-    {
-        $home = $_SERVER['HOME'] ?? getenv('HOME') ?: '/tmp';
-        $herdPaths = [
-            "{$home}/.config/herd",
-            "{$home}/Library/Application Support/Herd",
-        ];
-
-        foreach ($herdPaths as $path) {
-            if (is_dir($path)) {
-                return true;
-            }
-        }
-
-        return Process::run('command -v herd')->successful();
     }
 }

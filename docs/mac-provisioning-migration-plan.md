@@ -169,9 +169,6 @@ protected function configureDnsMac(string $tld): bool
         }
     }
 
-    // Detect Herd - suggest different TLD if conflict
-    if ($tld === 'test' && $this->isHerdInstalled()) {
-        $this->progress('info', 'Laravel Herd detected using .test TLD');
         $this->progress('info', 'Consider using --tld=lp to avoid conflicts');
         // Continue anyway - user can re-run with different TLD
     }
@@ -184,18 +181,12 @@ protected function configureDnsMac(string $tld): bool
     return $result->successful();
 }
 
-protected function isHerdInstalled(): bool
 {
-    $herdPaths = [
-        $_SERVER['HOME'] . '/.config/herd',
-        $_SERVER['HOME'] . '/Library/Application Support/Herd',
     ];
 
-    foreach ($herdPaths as $path) {
         if (is_dir($path)) return true;
     }
 
-    return Process::run('command -v herd')->successful();
 }
 ```
 
@@ -465,7 +456,6 @@ php launchpad setup --json
 | **OrbStack over Docker Desktop**      | Better performance on Mac, but falls back to Docker Desktop     |
 | **Idempotent steps**                  | Safe to re-run, checks before each action                       |
 | **Simple sudo calls**                 | Let macOS handle auth naturally (Touch ID if configured)        |
-| **Smart Herd detection**              | Avoids TLD conflicts, suggests alternatives                     |
 
 ---
 

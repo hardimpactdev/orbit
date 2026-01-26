@@ -28,3 +28,4 @@ bun.lock
 # PHP
 composer.lock
 
+packages/desktop/dist/

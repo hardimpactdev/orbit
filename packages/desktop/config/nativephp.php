@@ -154,7 +154,7 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        'mkdir -p bin && scp launchpad@10.6.0.4:~/projects/orbit-cli/builds/orbit.phar bin/orbit.phar && chmod +x bin/orbit.phar',
+        // Prebuild command disabled for CI - orbit.phar should be pre-copied
     ],
 
     'postbuild' => [
