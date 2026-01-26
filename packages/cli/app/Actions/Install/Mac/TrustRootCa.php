@@ -19,27 +19,34 @@ final readonly class TrustRootCa
             return StepResult::success();
         }
 
-        // Use host-based Caddy certificate path
-        $certPath = $_SERVER['HOME'].'/Library/Application Support/Caddy/pki/authorities/local/root.crt';
+        $home = $_SERVER['HOME'] ?? getenv('HOME') ?: '/tmp';
+        $certPath = $home . '/Library/Application Support/Caddy/pki/authorities/local/root.crt';
 
         if (! file_exists($certPath)) {
             $logger->warn('Caddy root certificate not found - certificates may not be trusted');
-            $logger->info('Certificate expected at: '.$certPath);
+            $logger->info('Certificate expected at: ' . $certPath);
             $logger->info('Try running Caddy first to generate certificates');
 
             return StepResult::success();
         }
 
-        // Add to macOS Keychain
-        $logger->step('Adding to macOS Keychain (sudo authorization required)...');
+        $logger->step('Trusting Caddy root certificate (authorization required)...');
+        $logger->info('A system dialog may appear - please authorize to trust the certificate');
 
-        $trustResult = Process::run(
-            "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"{$certPath}\""
-        );
+        $trustResult = Process::timeout(60)->run('caddy trust');
 
         if (! $trustResult->successful()) {
-            $logger->warn('Failed to add certificate to Keychain - continuing installation');
-            $logger->info('You may need to manually trust the certificate or run with sudo authorization');
+            if (str_contains($trustResult->errorOutput(), 'already')) {
+                $logger->success('Certificate already trusted');
+                return StepResult::success();
+            }
+
+            $logger->warn('Could not automatically trust certificate');
+            $logger->info('Please manually trust the certificate:');
+            $logger->info('1. Open Keychain Access');
+            $logger->info('2. Select System keychain');
+            $logger->info('3. Find "Caddy Local Authority" certificate');
+            $logger->info('4. Double-click -> Trust -> Always Trust');
 
             return StepResult::success();
         }
