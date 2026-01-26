@@ -62,8 +62,14 @@ class CaddyfileGenerator
 ";
         }
 
-        // Generate entry for each project
+        // Generate entry for each project (skip orbit itself - it has its own entry above)
+        $orbitDomain = "orbit.{$tld}";
         foreach ($projects as $project) {
+            // Skip if this project would conflict with the orbit UI domain
+            if (($project["domain"] ?? null) === $orbitDomain) {
+                continue;
+            }
+
             $socket = $project['has_custom_php']
                 ? $this->getSocketPath($project['php_version'])
                 : $defaultSocket;
