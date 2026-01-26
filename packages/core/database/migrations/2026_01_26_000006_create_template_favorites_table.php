@@ -6,9 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('template_favorites', function (Blueprint $table) {
@@ -17,13 +14,14 @@ return new class extends Migration
             $table->string('display_name');
             $table->integer('usage_count')->default(0);
             $table->timestamp('last_used_at')->nullable();
+            $table->string('db_driver')->nullable();
+            $table->string('session_driver')->nullable();
+            $table->string('cache_driver')->nullable();
+            $table->string('queue_driver')->nullable();
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('template_favorites');

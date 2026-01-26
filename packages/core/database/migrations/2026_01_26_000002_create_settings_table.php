@@ -8,15 +8,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->string('github_url')->nullable()->change();
+        Schema::create('settings', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->text('value')->nullable();
+            $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->string('github_url')->nullable(false)->change();
-        });
+        Schema::dropIfExists('settings');
     }
 };

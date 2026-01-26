@@ -6,23 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('settings', function (Blueprint $table) {
-            $table->string('key')->primary();
-            $table->text('value')->nullable();
+        Schema::create('ssh_keys', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->text('public_key');
+            $table->boolean('is_default')->default(false);
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('settings');
+        Schema::dropIfExists('ssh_keys');
     }
 };
