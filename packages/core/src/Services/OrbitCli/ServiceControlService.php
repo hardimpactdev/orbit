@@ -64,10 +64,7 @@ class ServiceControlService
     public function enable(Environment $environment, string $service, array $options = []): array
     {
         if ($environment->is_local) {
-            $optionsJson = json_encode($options);
-            $escapedOptions = escapeshellarg($optionsJson);
-
-            return $this->command->executeCommand($environment, "service:enable {$service} --options={$escapedOptions} --json");
+            return $this->command->executeCommand($environment, "service:enable {$service} --json");
         }
 
         return $this->connector->sendRequest($environment, new EnableServiceRequest($service, $options));
