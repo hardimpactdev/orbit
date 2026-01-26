@@ -3,7 +3,7 @@ name: Build and Release CLI
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: "8.4"
           extensions: mbstring, xml, json
           tools: composer:v2
           ini-values: phar.readonly=0
@@ -29,37 +29,21 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Bundle web package into CLI
+      - name: Install CLI dependencies (no web bundle for now)
         run: |
-          cd packages/web
+          cd packages/cli
           
           # For release build, replace path repos with packagist versions
           jq 'del(.repositories)' composer.json > composer.tmp && mv composer.tmp composer.json
           rm -f composer.lock
           
-          # Install production dependencies
           composer install --no-dev --optimize-autoloader --prefer-dist
-          
-          # Remove dev files before bundling
-          rm -rf .git tests
-          
-          # Create bundle
-          tar -czf ../cli/stubs/orbit-web-bundle.tar.gz .
 
       - name: Set version in CLI config
         run: |
           cd packages/cli
-          sed -i "s/@version@/${{ steps.version.outputs.version }}/g" config/app.php
-
-      - name: Install CLI dependencies
-        run: |
-          cd packages/cli
-          
-          # For release build, replace path repos with packagist versions
-          jq 'del(.repositories)' composer.json > composer.tmp && mv composer.tmp composer.json
-          rm -f composer.lock
-          
-          composer install --no-dev --optimize-autoloader --prefer-dist
+          sed -i "s/'version' => '[^']*'/'version' => '${{ steps.version.outputs.version }}'/g" config/app.php
+          grep version config/app.php
 
       - name: Download Box
         run: |
@@ -94,45 +78,44 @@ jobs:
           cd packages/cli
           sha256sum builds/orbit.phar > builds/checksums.txt
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            packages/cli/builds/orbit.phar
-            packages/cli/builds/checksums.txt
-          generate_release_notes: true
+      - name: Create Release on orbit-cli repo
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify release has PHAR download URL
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SPLIT_TOKEN }}
         run: |
-          echo "Waiting for release assets to be available..."
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Create release on orbit-cli (where upgrade command looks)
+          gh release create "$VERSION" \
+            --repo hardimpactdev/orbit-cli \
+            --title "Orbit $VERSION" \
+            --generate-notes \
+            packages/cli/builds/orbit.phar \
+            packages/cli/builds/checksums.txt
+          
+          echo "Release created on orbit-cli repo"
+
+      - name: Verify release on orbit-cli
+        env:
+          GH_TOKEN: ${{ secrets.SPLIT_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          echo "Waiting for release assets..."
           sleep 5
           
-          echo "Fetching release info for ${{ steps.version.outputs.version }}..."
-          RELEASE_JSON=$(gh api repos/${{ github.repository }}/releases/tags/${{ steps.version.outputs.version }})
+          PHAR_URL=$(gh api repos/hardimpactdev/orbit-cli/releases/tags/$VERSION --jq '.assets[] | select(.name=="orbit.phar") | .browser_download_url')
           
-          echo "Checking for orbit.phar asset..."
-          PHAR_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name=="orbit.phar") | .browser_download_url')
-          
-          if [ -z "$PHAR_URL" ] || [ "$PHAR_URL" = "null" ]; then
-            echo "::error::Could not find PHAR download URL in the release!"
-            echo "This would cause 'orbit upgrade' to fail for users."
-            echo ""
-            echo "Release assets:"
-            echo "$RELEASE_JSON" | jq '.assets[].name'
+          if [ -z "$PHAR_URL" ]; then
+            echo "::error::PHAR not found in orbit-cli release!"
             exit 1
           fi
           
-          echo "PHAR download URL found: $PHAR_URL"
+          echo "PHAR URL: $PHAR_URL"
           
-          echo "Verifying PHAR is downloadable..."
           HTTP_CODE=$(curl -sL -o /dev/null -w "%{http_code}" "$PHAR_URL")
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::error::PHAR download failed with HTTP $HTTP_CODE"
             exit 1
           fi
           
-          echo "Release verification passed! orbit upgrade will work."
+          echo "✓ Release verified - orbit upgrade will work!"

@@ -17,6 +17,8 @@ jobs:
             remote: orbit-core
           - local: app
             remote: orbit-app
+          - local: cli
+            remote: orbit-cli
     steps:
       - uses: actions/checkout@v4
         with:
