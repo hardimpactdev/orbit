@@ -7,6 +7,7 @@ namespace App\Commands;
 use App\Services\CaddyfileGenerator;
 use App\Services\ConfigManager;
 use App\Services\DockerManager;
+use App\Services\ServiceManager;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;
@@ -24,18 +25,20 @@ final class ReverbSetupCommand extends Command
 
     public function handle(
         ConfigManager $config,
+        ServiceManager $serviceManager,
         DockerManager $docker,
         CaddyfileGenerator $caddyGenerator
     ): int {
         if ($this->option('disable')) {
-            return $this->disableReverb($config, $docker, $caddyGenerator);
+            return $this->disableReverb($config, $serviceManager, $docker, $caddyGenerator);
         }
 
-        return $this->setupReverb($config, $docker, $caddyGenerator);
+        return $this->setupReverb($config, $serviceManager, $docker, $caddyGenerator);
     }
 
     protected function setupReverb(
         ConfigManager $config,
+        ServiceManager $serviceManager,
         DockerManager $docker,
         CaddyfileGenerator $caddyGenerator
     ): int {
@@ -50,6 +53,12 @@ final class ReverbSetupCommand extends Command
 
         // Copy docker-compose from stubs
         $stubPath = base_path('stubs/reverb');
+        if (! File::isDirectory($stubPath)) {
+            $this->error('Reverb stubs not found at: '.$stubPath);
+
+            return 1;
+        }
+
         File::copy($stubPath.'/docker-compose.yml', $reverbConfigPath.'/docker-compose.yml');
         File::copy($stubPath.'/Dockerfile', $reverbConfigPath.'/Dockerfile');
         File::copy($stubPath.'/entrypoint.sh', $reverbConfigPath.'/entrypoint.sh');
@@ -71,7 +80,7 @@ ENV;
         File::put($reverbConfigPath.'/.env', $envContent);
         $this->line('  Generated environment configuration');
 
-        // Save config
+        // Save reverb config to config.json (for env generation in web app)
         $tld = $config->get('tld', 'test');
         $config->setReverbConfig([
             'app_id' => $appId,
@@ -82,8 +91,8 @@ ENV;
         ]);
         $config->set('reverb.url', "https://reverb.{$tld}");
 
-        // Enable the service
-        $config->enableService('reverb');
+        // Enable the service in services.yaml (this is what CaddyfileGenerator checks)
+        $serviceManager->enable('reverb');
         $this->line('  Enabled service in configuration');
 
         // Regenerate Caddyfile with Reverb entry
@@ -142,6 +151,7 @@ ENV;
 
     protected function disableReverb(
         ConfigManager $config,
+        ServiceManager $serviceManager,
         DockerManager $docker,
         CaddyfileGenerator $caddyGenerator
     ): int {
@@ -151,8 +161,8 @@ ENV;
         $docker->stop('reverb');
         $this->line('  Service stopped');
 
-        // Disable in config
-        $config->disableService('reverb');
+        // Disable in services.yaml
+        $serviceManager->disable('reverb');
         $this->line('  Disabled in configuration');
 
         // Regenerate Caddyfile without Reverb

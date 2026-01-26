@@ -82,6 +82,7 @@ class InitCommand extends Command
                 "{$configPath}/redis/data",
                 "{$configPath}/mailpit",
                 "{$configPath}/horizon",
+                "{$configPath}/reverb",
                 "{$configPath}/logs",
             ];
 
@@ -104,6 +105,7 @@ class InitCommand extends Command
             $this->copyStubDirectory("{$stubsPath}/redis", "{$configPath}/redis");
             $this->copyStubDirectory("{$stubsPath}/mailpit", "{$configPath}/mailpit");
             $this->copyStubDirectory("{$stubsPath}/horizon", "{$configPath}/horizon");
+            $this->copyStubDirectory("{$stubsPath}/reverb", "{$configPath}/reverb");
 
             // Copy config.json if it doesn't exist
             if (! File::exists("{$configPath}/config.json")) {

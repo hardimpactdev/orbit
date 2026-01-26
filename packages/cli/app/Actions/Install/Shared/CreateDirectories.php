@@ -21,6 +21,7 @@ final readonly class CreateDirectories
         'redis/data',
         'mailpit',
         'horizon',
+        'reverb',
         'logs',
         'logs/provision',
     ];
