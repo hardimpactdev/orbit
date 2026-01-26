@@ -30,7 +30,7 @@
     "@electron-forge/cli": "^7.10.2",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-vue": "^6.0.3",
-    "axios": "^1.11.0",
+    "axios": "^1.13.3",
     "concurrently": "^9.0.1",
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
