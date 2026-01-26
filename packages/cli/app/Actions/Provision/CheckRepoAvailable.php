@@ -71,7 +71,7 @@ final class CheckRepoAvailable
         // For clone-url: check if we need to import as new repo
         if ($context->cloneUrl && ! $context->fork) {
             $sourceRepo = $this->extractRepoFromUrl($context->cloneUrl);
-            $sourceOwner = explode('/', $sourceRepo)[0] ?? '';
+            $sourceOwner = explode('/', $sourceRepo)[0];
 
             // If cloning from different owner, will create new repo
             if (strtolower($sourceOwner) !== strtolower((string) $owner)) {

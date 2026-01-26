@@ -1,19 +1,2 @@
 parameters:
-	ignoreErrors:
-		-
-			message: '#^Method App\\Actions\\Provision\\BuildAssets\:\:buildWithBun\(\) should return Illuminate\\Process\\ProcessResult but returns Illuminate\\Contracts\\Process\\ProcessResult\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Actions/Provision/BuildAssets.php
-
-		-
-			message: '#^Offset 0 on non\-empty\-list\<string\> on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 1
-			path: app/Actions/Provision/CheckRepoAvailable.php
-
-		-
-			message: '#^Negated boolean expression is always true\.$#'
-			identifier: booleanNot.alwaysTrue
-			count: 1
-			path: app/Commands/MigrateToFpmCommand.php
+    ignoreErrors: []

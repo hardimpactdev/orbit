@@ -58,7 +58,7 @@ final readonly class BuildAssets
         return StepResult::success();
     }
 
-    private function buildWithBun(ProvisionContext $context): \Illuminate\Process\ProcessResult
+    private function buildWithBun(ProvisionContext $context): \Illuminate\Contracts\Process\ProcessResult
     {
         $home = $context->getHomeDir();
         $bunPath = file_exists("{$home}/.bun/bin/bun") ? "{$home}/.bun/bin/bun" : 'bun';
