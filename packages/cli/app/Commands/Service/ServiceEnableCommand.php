@@ -45,8 +45,8 @@ class ServiceEnableCommand extends Command
             }
 
             $this->newLine();
-            $this->info("  Service '$serviceName' has been enabled");
-            $this->line("  <fg=gray>Run 'orbit start $serviceName' to start the service</>");
+            $this->info("  Service '{$serviceName}' has been enabled");
+            $this->line("  <fg=gray>Run 'orbit start {$serviceName}' to start the service</>");
             $this->newLine();
 
             return self::SUCCESS;
@@ -78,7 +78,6 @@ class ServiceEnableCommand extends Command
         
         if ($exitCode !== 0) {
             if ($this->wantsJson()) {
-                // In JSON mode, just note it in output
                 return;
             }
 
@@ -95,7 +94,7 @@ class ServiceEnableCommand extends Command
                     $this->info('  ✓ mysql-client installed');
                     $this->newLine();
                     $this->warn('  Add to your shell PATH:');
-                    $this->line('  echo \'\\'export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"\'\\' >> ~/.zshrc');
+                    $this->line('  echo \'export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"\' >> ~/.zshrc');
                     $this->line('  source ~/.zshrc');
                 } else {
                     $this->error('  Failed to install mysql-client');
