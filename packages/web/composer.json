@@ -78,5 +78,21 @@
     }
   },
   "minimum-stability": "dev",
-  "prefer-stable": true
+  "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../app",
+      "options": {
+        "symlink": true
+      }
+    },
+    {
+      "type": "path",
+      "url": "../core",
+      "options": {
+        "symlink": true
+      }
+    }
+  ]
 }

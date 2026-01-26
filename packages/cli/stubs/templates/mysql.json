@@ -39,7 +39,10 @@
     "dockerConfig": {
         "image": "mysql:${version}",
         "ports": ["3306:3306"],
-        "volumes": ["${data_path}:/var/lib/mysql"],
+        "volumes": [
+            "${data_path}:/var/lib/mysql",
+            "${stubs_path}/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"
+        ],
         "environment": {
             "MYSQL_ROOT_PASSWORD": "secret",
             "MYSQL_DATABASE": "orbit",
