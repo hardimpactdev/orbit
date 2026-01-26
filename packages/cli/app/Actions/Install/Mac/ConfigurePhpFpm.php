@@ -135,7 +135,7 @@ final readonly class ConfigurePhpFpm
         $logger->step("Validating PHP-FPM configuration for PHP {$version}...");
 
         // Test configuration syntax
-        $result = Process::run("php-fpm{$version} -t");
+        $result = Process::run("/opt/homebrew/opt/php@{$version}/sbin/php-fpm -t");
 
         if (! $result->successful()) {
             $logger->error('PHP-FPM configuration test failed: '.$result->errorOutput());
