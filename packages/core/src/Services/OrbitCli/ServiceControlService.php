@@ -52,7 +52,7 @@ class ServiceControlService
     public function available(Environment $environment): array
     {
         if ($environment->is_local) {
-            return $this->command->executeCommand($environment, 'service:available --json');
+            return $this->command->executeCommand($environment, 'service:list --available --json');
         }
 
         return $this->connector->sendRequest($environment, new ListAvailableServicesRequest);
