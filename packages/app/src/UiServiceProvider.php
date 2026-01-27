@@ -21,6 +21,14 @@ class UiServiceProvider extends ServiceProvider
         $this->registerMiddleware();
         $this->registerMcp();
         $this->registerPublishing();
+        $this->registerRouteBindings();
+    }
+
+    protected function registerRouteBindings(): void
+    {
+        // Route model binding for Environment must be registered in boot()
+        // because Route::model() needs the router to be available
+        Route::model('environment', \HardImpact\Orbit\Core\Models\Environment::class);
     }
 
     protected function registerMiddleware(): void

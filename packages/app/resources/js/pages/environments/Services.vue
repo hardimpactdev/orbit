@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { useServicesStore, type Service } from '@/stores/services';
 import { useEchoPublic, useConnectionStatus } from '@laravel/echo-vue';
 import { toast } from 'vue-sonner';
 import Heading from '@/components/Heading.vue';
@@ -42,6 +41,14 @@ interface Editor {
     name: string;
 }
 
+export interface Service {
+    status: string;
+    health: string | null;
+    container: string | null;
+    type: string;
+    required?: boolean;
+}
+
 interface ServiceMeta {
     name: string;
     description: string;
@@ -49,6 +56,13 @@ interface ServiceMeta {
     ports?: string;
     category: 'core' | 'database' | 'php' | 'utility';
     required?: boolean;
+}
+
+interface PendingJob {
+    service: string;
+    action: 'start' | 'stop' | 'restart' | 'enable' | 'disable';
+    startedAt: number;
+    error?: string;
 }
 
 const props = defineProps<{
@@ -59,7 +73,6 @@ const props = defineProps<{
     homebrewPrefix: string | null;
 }>();
 
-const store = useServicesStore();
 const page = usePage();
 const connectionStatus = useConnectionStatus();
 
@@ -94,12 +107,16 @@ const baseApiUrl = computed(() => getApiUrl(''));
 
 const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
 
-const services = computed(() => store.services);
-const loading = ref(false); // We'll manage initial load state
-const servicesRunning = computed(() => store.servicesRunning);
-const servicesTotal = computed(() => store.servicesTotal);
+// Local state (no more Pinia)
+const services = ref<Record<string, Service>>({});
+const pendingJobs = ref<Record<string, PendingJob>>({});
+const serviceErrors = ref<Record<string, string>>({});
+const loading = ref(true);
 const restartingAll = ref(false);
 const actionInProgress = ref<string | null>(null);
+
+const servicesRunning = computed(() => Object.values(services.value).filter((s) => s.status === 'running').length);
+const servicesTotal = computed(() => Object.keys(services.value).length);
 
 // Modals
 const showAddServiceModal = ref(false);
@@ -301,6 +318,19 @@ const latestPhpVersion = computed(() => {
     return versions[versions.length - 1];
 });
 
+// Helper functions for pending jobs
+function isServicePending(service: string): boolean {
+    return Object.values(pendingJobs.value).some((j) => j.service === service);
+}
+
+function getServiceError(service: string): string | undefined {
+    return serviceErrors.value[service];
+}
+
+function clearServiceError(service: string) {
+    delete serviceErrors.value[service];
+}
+
 function openExternal(url: string) {
     window.open(url, '_blank');
 }
@@ -371,7 +401,23 @@ async function loadStatus(silent = false) {
         loading.value = true;
     }
     try {
-        await store.fetchServices(baseApiUrl.value);
+        const response = await fetch(`${baseApiUrl.value}/status`);
+        
+        if (!response.ok) {
+            console.error('Failed to fetch services:', response.status, response.statusText);
+            return;
+        }
+
+        const result = await response.json();
+        console.log('Services API response:', result);
+
+        if (result.success && result.data?.services) {
+            services.value = result.data.services;
+        } else if (result.services) {
+            services.value = result.services;
+        }
+    } catch (error) {
+        console.error('Failed to fetch services:', error);
     } finally {
         if (!silent) {
             loading.value = false;
@@ -382,7 +428,14 @@ async function loadStatus(silent = false) {
 async function startAll() {
     actionInProgress.value = 'start-all';
     try {
-        const result = await store.startAll(baseApiUrl.value);
+        const response = await fetch(`${baseApiUrl.value}/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+        const result = await response.json();
 
         if (result.success) {
             toast.success('Services Starting', {
@@ -406,7 +459,14 @@ async function startAll() {
 async function stopAll() {
     actionInProgress.value = 'stop-all';
     try {
-        const result = await store.stopAll(baseApiUrl.value);
+        const response = await fetch(`${baseApiUrl.value}/stop`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+        const result = await response.json();
 
         if (result.success) {
             toast.success('Services Stopping', {
@@ -431,7 +491,14 @@ async function restartAll() {
     restartingAll.value = true;
     actionInProgress.value = 'restart-all';
     try {
-        const result = await store.restartAll(baseApiUrl.value);
+        const response = await fetch(`${baseApiUrl.value}/restart`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+        const result = await response.json();
 
         if (result.success) {
             toast.success('Services Restarting', {
@@ -455,21 +522,29 @@ async function restartAll() {
 
 async function serviceAction(serviceKey: string, action: 'start' | 'stop' | 'restart') {
     const type = getServiceType(serviceKey);
+    const path = type === 'host' ? 'host-services' : 'services';
 
     try {
-        let result;
-        if (action === 'start') {
-            result = await store.startService(serviceKey, baseApiUrl.value, type);
-        } else if (action === 'stop') {
-            result = await store.stopService(serviceKey, baseApiUrl.value, type);
-        } else {
-            result = await store.restartService(serviceKey, baseApiUrl.value, type);
+        const response = await fetch(`${baseApiUrl.value}/${path}/${serviceKey}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+
+        const result = await response.json();
+
+        if (result.jobId) {
+            pendingJobs.value[result.jobId] = {
+                service: serviceKey,
+                action,
+                startedAt: Date.now(),
+            };
         }
 
         if (result?.success) {
-            if (result.jobId) {
-                // Real-time update will handle the rest
-            } else {
+            if (!result.jobId) {
                 await loadStatus(true);
             }
         } else {
@@ -484,7 +559,15 @@ async function removeService(serviceKey: string) {
     if (!confirm(`Are you sure you want to remove ${serviceKey}?`)) return;
 
     try {
-        const result = await store.disableService(serviceKey, baseApiUrl.value);
+        const response = await fetch(`${baseApiUrl.value}/services/${serviceKey}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+
+        const result = await response.json();
 
         if (result?.success) {
             toast.success(`${serviceKey} disabled`);
@@ -596,9 +679,24 @@ interface ServiceStatusEvent {
     timestamp: number;
 }
 
+function handleServiceStatusChanged(jobId: string | null, service: string, status: string, error?: string) {
+    // Remove from pending jobs
+    if (jobId && pendingJobs.value[jobId]) {
+        if (error) {
+            serviceErrors.value[service] = error;
+        }
+        delete pendingJobs.value[jobId];
+    }
+
+    // Update service status
+    if (services.value[service]) {
+        services.value[service].status = status;
+    }
+}
+
 if (reverbEnabled.value) {
     useEchoPublic('orbit', '.service.status.changed', (event: ServiceStatusEvent) => {
-        store.handleServiceStatusChanged(event.job_id, event.service, event.status, event.error);
+        handleServiceStatusChanged(event.job_id, event.service, event.status, event.error);
 
         if (event.error) {
             toast.error(`Failed to ${event.action} ${event.service}: ${event.error}`);
@@ -609,15 +707,7 @@ if (reverbEnabled.value) {
 }
 
 onMounted(async () => {
-    store.setActiveEnvironment(props.environment.id);
-
-    // Show cached data immediately, refresh if stale
-    if (store.isStale) {
-        loadStatus();
-    }
-
-    // Recover any pending jobs
-    store.recoverPendingJobs(baseApiUrl.value);
+    await loadStatus();
 });
 
 onUnmounted(() => {
@@ -775,14 +865,14 @@ onUnmounted(() => {
                                     <Button
                                         v-if="service.status !== 'running'"
                                         @click="serviceAction(key, 'start')"
-                                        :disabled="store.isServicePending(key)"
+                                        :disabled="isServicePending(key)"
                                         variant="ghost"
                                         size="icon-sm"
                                         class="h-8 w-8 text-zinc-400 hover:text-lime-400 hover:bg-zinc-800"
                                         title="Start"
                                     >
                                         <Loader2
-                                            v-if="store.isServicePending(key)"
+                                            v-if="isServicePending(key)"
                                             class="w-3.5 h-3.5 animate-spin"
                                         />
                                         <Play v-else class="w-3.5 h-3.5" />
@@ -790,28 +880,28 @@ onUnmounted(() => {
                                     <Button
                                         v-if="service.status === 'running'"
                                         @click="serviceAction(key, 'stop')"
-                                        :disabled="store.isServicePending(key)"
+                                        :disabled="isServicePending(key)"
                                         variant="ghost"
                                         size="icon-sm"
                                         class="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-zinc-800"
                                         title="Stop"
                                     >
                                         <Loader2
-                                            v-if="store.isServicePending(key)"
+                                            v-if="isServicePending(key)"
                                             class="w-3.5 h-3.5 animate-spin"
                                         />
                                         <Square v-else class="w-3.5 h-3.5" />
                                     </Button>
                                     <Button
                                         @click="serviceAction(key, 'restart')"
-                                        :disabled="store.isServicePending(key)"
+                                        :disabled="isServicePending(key)"
                                         variant="ghost"
                                         size="icon-sm"
                                         class="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
                                         title="Restart"
                                     >
                                         <Loader2
-                                            v-if="store.isServicePending(key)"
+                                            v-if="isServicePending(key)"
                                             class="w-3.5 h-3.5 animate-spin"
                                         />
                                         <RefreshCw v-else class="w-3.5 h-3.5" />
@@ -839,7 +929,7 @@ onUnmounted(() => {
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem 
                                                     @click="removeService(key)"
-                                                    :disabled="store.isServicePending(key)"
+                                                    :disabled="isServicePending(key)"
                                                     class="text-red-400 focus:text-red-400"
                                                 >
                                                     <Trash2 class="w-4 h-4 mr-2" />
@@ -853,13 +943,13 @@ onUnmounted(() => {
                         </div>
                         <!-- Error message for services with errors -->
                         <template v-for="{ key } in servicesByCategory[category.key]" :key="`error-${key}`">
-                            <div v-if="store.getServiceError(key)" class="px-4 py-3 bg-red-500/5">
+                            <div v-if="getServiceError(key)" class="px-4 py-3 bg-red-500/5">
                                 <div
                                     class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2 flex items-center justify-between"
                                 >
-                                    <span>Error: {{ store.getServiceError(key) }}</span>
+                                    <span>Error: {{ getServiceError(key) }}</span>
                                     <button
-                                        @click="store.clearServiceError(key)"
+                                        @click="clearServiceError(key)"
                                         class="text-red-400 hover:text-white ml-2"
                                     >
                                         <X class="w-3 h-3" />

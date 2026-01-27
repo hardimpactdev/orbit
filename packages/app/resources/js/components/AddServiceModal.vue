@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import Modal from './Modal.vue';
-import { useServicesStore } from '@/stores/services';
 import {
     Loader2,
     Plus,
@@ -34,12 +33,9 @@ const emit = defineEmits<{
     serviceEnabled: [name: string];
 }>();
 
-const store = useServicesStore();
 const loading = ref(true);
 const availableServices = ref<ServiceTemplate[]>([]);
 const enabling = ref<string | null>(null);
-
-const baseApiUrl = computed(() => props.getApiUrl(''));
 
 const categories = [
     { key: 'core', label: 'Core Services' },
@@ -85,7 +81,14 @@ const fetchAvailable = async () => {
 const enableService = async (serviceName: string) => {
     enabling.value = serviceName;
     try {
-        const result = await store.enableService(serviceName, baseApiUrl.value);
+        const response = await fetch(props.getApiUrl(`/services/${serviceName}/enable`), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': props.csrfToken,
+            },
+        });
+        const result = await response.json();
         if (result?.success) {
             emit('serviceEnabled', serviceName);
             emit('close');
@@ -114,11 +117,12 @@ const getIcon = (category: string) => {
     }
 };
 
-onMounted(() => {
-    if (props.show) {
+// Fetch available services when modal opens
+watch(() => props.show, (newValue) => {
+    if (newValue) {
         fetchAvailable();
     }
-});
+}, { immediate: true });
 </script>
 
 <template>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { useServicesStore } from '@/stores/services';
 import { toast } from 'vue-sonner';
 import axios from 'axios';
 import api from '@/lib/axios';
@@ -94,10 +93,12 @@ const abortController = ref<AbortController | null>(null);
 const connectionStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
 const connectionMessage = ref('Connection not tested');
 
-// Services
-const servicesStore = useServicesStore();
+// Services (local state, no Pinia)
+const services = ref<Record<string, { status: string; health: string | null }>>({});
 const servicesLoading = ref(true);
 const restartingAll = ref(false);
+const servicesRunning = computed(() => Object.values(services.value).filter((s) => s.status === 'running').length);
+const servicesTotal = computed(() => Object.keys(services.value).length);
 
 // Projects
 const projects = ref<Project[]>([]);
@@ -166,8 +167,17 @@ async function testConnection() {
 async function loadStatus() {
     servicesLoading.value = true;
     try {
-        await servicesStore.fetchServices(getApiUrl(''));
+        const response = await fetch(`${getApiUrl('')}/status`, {
+            signal: abortController.value?.signal,
+        });
+        const result = await response.json();
+        if (result.success && result.data?.services) {
+            services.value = result.data.services;
+        } else if (result.services) {
+            services.value = result.services;
+        }
     } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
         console.error('Failed to load services status:', error);
     } finally {
         servicesLoading.value = false;
@@ -230,7 +240,12 @@ async function loadConfig() {
 async function restartAllServices() {
     restartingAll.value = true;
     try {
-        const result = await servicesStore.restartAll(getApiUrl(''));
+        const response = await fetch(`${getApiUrl('')}/restart`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: abortController.value?.signal,
+        });
+        const result = await response.json();
 
         if (result.success) {
             toast.success('Services restarted successfully');
@@ -240,7 +255,8 @@ async function restartAllServices() {
                 description: result.error || 'Unknown error',
             });
         }
-    } catch {
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
         toast.error('Failed to restart services');
     } finally {
         restartingAll.value = false;
@@ -412,9 +428,6 @@ onMounted(() => {
         abortController.value?.abort();
     });
 
-    // Set active environment in services store
-    servicesStore.setActiveEnvironment(props.environment.id);
-
     // Load all data in parallel
     // When remoteApiUrl is available, calls go directly to the remote server (bypasses NativePHP)
     // This eliminates the single-threaded PHP server bottleneck for remote environments
@@ -517,9 +530,9 @@ onUnmounted(() => {
                 <span class="text-xs text-zinc-500 uppercase tracking-wide">Services</span>
                 <span class="text-2xl font-semibold text-zinc-100 tabular-nums">
                     <template v-if="servicesLoading">-</template>
-                    <template v-else>{{ servicesStore.servicesRunning }}/{{ servicesStore.servicesTotal }}</template>
+                    <template v-else>{{ servicesRunning }}/{{ servicesTotal }}</template>
                 </span>
-                <span v-if="!servicesLoading && servicesStore.servicesRunning === servicesStore.servicesTotal" class="text-xs text-zinc-500">All healthy</span>
+                <span v-if="!servicesLoading && servicesRunning === servicesTotal" class="text-xs text-zinc-500">All healthy</span>
             </div>
             <div class="flex flex-col gap-1 p-4 rounded-lg bg-zinc-800/30 border border-zinc-800">
                 <span class="text-xs text-zinc-500 uppercase tracking-wide">Status</span>
