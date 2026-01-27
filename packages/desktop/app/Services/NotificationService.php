@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\UserPreference;
+use HardImpact\Orbit\Core\Models\UserPreference;
 
 class NotificationService
 {

@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Models\UserPreference;
+use HardImpact\Orbit\Core\Models\UserPreference;
 use App\Services\CliInstallService;
 use Native\Laravel\Contracts\ProvidesPhpIni;
 use Native\Laravel\Facades\MenuBar;
