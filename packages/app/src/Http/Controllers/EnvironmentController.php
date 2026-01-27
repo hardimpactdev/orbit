@@ -57,10 +57,29 @@ class EnvironmentController extends Controller
         return null;
     }
 
-    public function index(): \Inertia\Response
+    public function index(): \Inertia\Response|\Illuminate\Http\RedirectResponse
     {
         $environments = Environment::all();
         $hasLocalEnvironment = Environment::where('is_local', true)->exists();
+
+        // Desktop mode: auto-create local environment if none exist
+        if ($environments->isEmpty() && config('orbit.mode') === 'desktop') {
+            $localEnvironment = Environment::create([
+                'name' => 'Local',
+                'host' => 'localhost',
+                'user' => get_current_user(),
+                'port' => 22,
+                'is_local' => true,
+            ]);
+
+            return redirect()->route('environments.show', $localEnvironment)
+                ->with('success', 'Local environment created automatically.');
+        }
+
+        // If only one environment exists, redirect directly to it
+        if ($environments->count() === 1) {
+            return redirect()->route('environments.show', $environments->first());
+        }
 
         return \Inertia\Inertia::render('environments/Index', [
             'environments' => $environments,
@@ -100,7 +119,8 @@ class EnvironmentController extends Controller
 
         $environment = Environment::create($validated);
 
-        return redirect()->route('environments.index')
+        // Redirect to the environment dashboard (not index)
+        return redirect()->route('environments.show', $environment)
             ->with('success', "Environment '{$environment->name}' added successfully.");
     }
 
