@@ -55,7 +55,19 @@ final readonly class ConfigurePhpFpm
 
     private function isPhpVersionInstalled(string $version): bool
     {
+        // Check for shivammathur tap formula first
         $result = Process::run("brew list shivammathur/php/php@{$version} 2>&1");
+        if ($result->successful()) {
+            return true;
+        }
+
+        // Fall back to checking for homebrew-core formula (php@8.4 or php for latest)
+        // PHP 8.5 is currently the default 'php' formula in homebrew-core
+        if ($version === '8.5') {
+            $result = Process::run('brew list php 2>&1');
+        } else {
+            $result = Process::run("brew list php@{$version} 2>&1");
+        }
 
         return $result->successful();
     }
@@ -84,8 +96,10 @@ final readonly class ConfigurePhpFpm
     {
         $poolDir = "/opt/homebrew/etc/php/{$version}/php-fpm.d";
         $poolConfigPath = "{$poolDir}/orbit.conf";
-        $socketPath = "{$context->configDir}/php/php{$version}.sock";
-        $logPath = "{$context->configDir}/logs/php{$version}-fpm.log";
+        // Use normalized version (no dot) for socket path to match MacAdapter::getSocketPath()
+        $normalizedVersion = str_replace('.', '', $version);
+        $socketPath = "{$context->configDir}/php/php{$normalizedVersion}.sock";
+        $logPath = "{$context->configDir}/logs/php{$normalizedVersion}-fpm.log";
 
         // Ensure log directory exists
         $logDir = dirname($logPath);
@@ -134,8 +148,14 @@ final readonly class ConfigurePhpFpm
     {
         $logger->step("Validating PHP-FPM configuration for PHP {$version}...");
 
+        // Get the correct php-fpm binary path for this version
+        // PHP 8.5 uses /opt/homebrew/opt/php/sbin/php-fpm
+        // Older versions use /opt/homebrew/opt/php@X.Y/sbin/php-fpm
+        $formula = $version === '8.5' ? 'php' : "php@{$version}";
+        $fpmBinary = "/opt/homebrew/opt/{$formula}/sbin/php-fpm";
+
         // Test configuration syntax
-        $result = Process::run("/opt/homebrew/opt/php@{$version}/sbin/php-fpm -t");
+        $result = Process::run("{$fpmBinary} -t 2>&1");
 
         if (! $result->successful()) {
             $logger->error('PHP-FPM configuration test failed: '.$result->errorOutput());

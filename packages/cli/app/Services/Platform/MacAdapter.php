@@ -111,7 +111,8 @@ class MacAdapter implements PlatformAdapter
     public function isPhpFpmRunning(string $version): bool
     {
         $normalizedVersion = $this->normalizePhpVersion($version);
-        $result = Process::run("pgrep -f 'php-fpm.*".str_replace('.', '', $normalizedVersion)."' > /dev/null");
+        // Process names contain version with dot (e.g. "php-fpm: pool orbit-8.4")
+        $result = Process::run("pgrep -f 'php-fpm.*{$normalizedVersion}' > /dev/null");
 
         return $result->successful();
     }

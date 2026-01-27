@@ -20,6 +20,15 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerCommands();
         $this->registerMigrations();
         $this->registerPublishing();
+        $this->registerRouteBindings();
+    }
+
+    protected function registerRouteBindings(): void
+    {
+        // Explicit route model binding for Environment
+        // Required because the model is in HardImpact\Orbit\Core\Models namespace
+        // not App\Models, so Laravel can't auto-discover it
+        \Illuminate\Support\Facades\Route::model('environment', \HardImpact\Orbit\Core\Models\Environment::class);
     }
 
     protected function registerCommands(): void
