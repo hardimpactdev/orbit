@@ -204,7 +204,7 @@ BASH;
     public function availableServices(Environment $environment): array
     {
         if ($environment->is_local) {
-            return $this->executeCommand($environment, 'service:available --json');
+            return $this->executeCommand($environment, 'service:list --available --json');
         }
 
         return $this->sendRequest($environment, new ListAvailableServicesRequest);
