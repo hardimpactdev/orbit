@@ -63,8 +63,43 @@ class ServiceEnableCommand extends Command
      */
     protected function checkServiceDependencies(string $serviceName): void
     {
-        if ($serviceName === 'mysql' && PHP_OS_FAMILY === 'Darwin') {
-            $this->checkMysqlClient();
+        if ($serviceName === 'mysql') {
+            $this->setupMysqlConfigFiles();
+            if (PHP_OS_FAMILY === 'Darwin') {
+                $this->checkMysqlClient();
+            }
+        }
+    }
+
+    /**
+     * Copy MySQL init files to config directory.
+     */
+    protected function setupMysqlConfigFiles(): void
+    {
+        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? $_ENV['HOME'] ?? '');
+        $configPath = $home.'/.config/orbit';
+        $mysqlDir = $configPath.'/mysql';
+
+        // Create mysql config directory
+        if (! is_dir($mysqlDir)) {
+            mkdir($mysqlDir, 0755, true);
+        }
+
+        // Copy init.sql from stubs
+        $initSqlPath = $mysqlDir.'/init.sql';
+        if (! file_exists($initSqlPath)) {
+            $stubPath = base_path('stubs/mysql/init.sql');
+            if (file_exists($stubPath)) {
+                copy($stubPath, $initSqlPath);
+            } else {
+                // Create default init.sql if stub doesn't exist (e.g., phar)
+                $defaultInitSql = <<<'SQL'
+-- Grant all privileges to the orbit user
+GRANT ALL PRIVILEGES ON *.* TO 'orbit'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+SQL;
+                file_put_contents($initSqlPath, $defaultInitSql);
+            }
         }
     }
 

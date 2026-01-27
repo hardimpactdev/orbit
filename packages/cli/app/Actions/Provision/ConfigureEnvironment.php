@@ -59,6 +59,20 @@ final readonly class ConfigureEnvironment
             $env = $this->setEnvValue($env, 'DB_USERNAME', $pgUser);
             $env = $this->setEnvValue($env, 'DB_PASSWORD', $pgPassword);
             $logger->log("Configured PostgreSQL database: {$context->slug}");
+        } elseif ($context->dbDriver === 'mysql') {
+            // Get MySQL credentials from services config
+            $mysqlConfig = $serviceManager?->getService('mysql') ?? [];
+            $mysqlUser = $mysqlConfig['MYSQL_USER'] ?? 'orbit';
+            $mysqlPassword = $mysqlConfig['MYSQL_PASSWORD'] ?? 'secret';
+            $mysqlPort = $mysqlConfig['port'] ?? 3306;
+
+            $env = $this->setEnvValue($env, 'DB_CONNECTION', 'mysql');
+            $env = $this->setEnvValue($env, 'DB_HOST', '127.0.0.1');
+            $env = $this->setEnvValue($env, 'DB_PORT', (string) $mysqlPort);
+            $env = $this->setEnvValue($env, 'DB_DATABASE', $context->slug);
+            $env = $this->setEnvValue($env, 'DB_USERNAME', $mysqlUser);
+            $env = $this->setEnvValue($env, 'DB_PASSWORD', $mysqlPassword);
+            $logger->log("Configured MySQL database: {$context->slug}");
         } elseif ($context->dbDriver === 'sqlite') {
             $env = $this->setEnvValue($env, 'DB_CONNECTION', 'sqlite');
             $this->createSqliteDatabase($context, $logger);
