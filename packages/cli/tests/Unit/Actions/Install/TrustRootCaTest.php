@@ -26,10 +26,11 @@ it('does not use docker exec in Linux TrustRootCa', function () {
     expect($sourceCode)->not->toContain('docker exec');
 });
 
-it('mentions sudo authorization in Mac TrustRootCa', function () {
+it('mentions authorization in Mac TrustRootCa', function () {
     $sourceCode = file_get_contents(__DIR__.'/../../../../app/Actions/Install/Mac/TrustRootCa.php');
 
-    expect($sourceCode)->toContain('sudo authorization required');
+    // Mac uses keychain authorization, not sudo
+    expect($sourceCode)->toContain('authorization required');
 });
 
 it('mentions sudo authorization in Linux TrustRootCa', function () {
