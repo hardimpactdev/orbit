@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace HardImpact\Orbit\Core\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -115,7 +117,7 @@ class Environment extends Model
      */
     public static function getActive(): ?self
     {
-        return app(\HardImpact\Orbit\Services\EnvironmentManager::class)->current();
+        return app(\HardImpact\Orbit\Core\Services\EnvironmentManager::class)->current();
     }
 
     /**
@@ -124,7 +126,7 @@ class Environment extends Model
      */
     public function setAsActive(): void
     {
-        app(\HardImpact\Orbit\Services\EnvironmentManager::class)->setActive($this->id);
+        app(\HardImpact\Orbit\Core\Services\EnvironmentManager::class)->setActive($this->id);
     }
 
     public function deployments(): HasMany

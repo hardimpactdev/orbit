@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace HardImpact\Orbit\Core\Console\Commands;
 
 use HardImpact\Orbit\Core\Models\Environment;

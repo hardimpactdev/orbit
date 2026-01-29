@@ -1,31 +1,33 @@
 # Dependencies
 node_modules/
 vendor/
-.bun/
 
-# Builds (too large for GitHub)
-packages/cli/builds/orbit.phar
+# Builds
+packages/cli/builds/
+packages/desktop/dist/
 
 # IDE
 .idea/
 .vscode/
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Laravel
+# Logs
 *.log
+
+# Environment
 .env
-.env.backup
-.phpunit.result.cache
-storage/*.key
+.env.local
+.env.*.local
 
-# NPM/Bun
-*.lock
+# Lock files (each package manages its own)
+package-lock.json
 bun.lock
-
-# PHP
 composer.lock
 
-packages/desktop/dist/
+# Test/build caches
+.phpunit.result.cache
+.turbo/

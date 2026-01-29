@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace HardImpact\Orbit\Core\Jobs;
 
 use HardImpact\Orbit\Core\Data\ProvisionContext;

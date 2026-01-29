@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 use HardImpact\Orbit\Core\Jobs\DeleteProjectJob;
 use HardImpact\Orbit\Core\Models\Environment;
