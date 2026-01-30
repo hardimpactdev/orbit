@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Concerns\WithJsonOutput;
-use App\Enums\ExitCode;
 use App\Contracts\CaddyfileGeneratorInterface;
+use App\Enums\ExitCode;
 use App\Services\ConfigManager;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;

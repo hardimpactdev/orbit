@@ -1,7 +1,7 @@
 <?php
 
-use App\Enums\ExitCode;
 use App\Contracts\CaddyfileGeneratorInterface;
+use App\Enums\ExitCode;
 use App\Services\CaddyManager;
 use App\Services\HorizonManager;
 use App\Services\PhpManager;

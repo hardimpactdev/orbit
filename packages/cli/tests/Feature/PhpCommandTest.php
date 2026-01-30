@@ -1,7 +1,7 @@
 <?php
 
-use App\Enums\ExitCode;
 use App\Contracts\CaddyfileGeneratorInterface;
+use App\Enums\ExitCode;
 use App\Services\ConfigManager;
 use App\Services\DatabaseService;
 use App\Services\ProjectScanner;

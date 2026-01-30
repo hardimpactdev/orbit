@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Install\Shared;
 
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Data\Install\InstallContext;
 use App\Data\Provision\StepResult;
-use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use App\Services\Install\InstallLogger;
 
