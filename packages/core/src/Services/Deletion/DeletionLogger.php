@@ -29,7 +29,7 @@ final class DeletionLogger implements ProvisionLoggerContract
 
     private function initializeLogFile(): void
     {
-        $home = $_SERVER['HOME'] ?? '/home/orbit';
+        $home = $_SERVER['HOME'] ?? config('orbit.home_directory');
         $logsDir = "{$home}/.config/orbit/logs/deletion";
 
         if (! is_dir($logsDir)) {

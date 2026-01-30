@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace HardImpact\Orbit\Ui\Http\Middleware;
 
@@ -125,7 +126,7 @@ class HandleInertiaRequests extends Middleware
             'reverb' => [
                 'enabled' => config('broadcasting.default') === 'reverb',
                 'host' => $reverbClientHost,
-                'port' => 443,
+                'port' => config('orbit-ui.ports.reverb', 443),
                 'scheme' => 'https',
                 'app_key' => config('reverb.apps.apps.0.key', ''),
             ],

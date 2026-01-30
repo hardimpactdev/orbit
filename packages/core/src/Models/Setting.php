@@ -6,6 +6,12 @@ namespace HardImpact\Orbit\Core\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $key
+ * @property string|null $value
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class Setting extends Model
 {
     protected $primaryKey = 'key';

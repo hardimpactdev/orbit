@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Models\Project
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-0eb4a265b82d22cd96299fcb3b669565c6de4f9bcee5c92c9a2e10129d70a600',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-8b6cdf804fdaf156038f94a4ca215b8a18e833b1b5bab20bef46af39cdf3d270',
    'data' => 
   array (
     'locatedSource' => 
@@ -45,7 +45,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 30,
-    'endLine' => 106,
+    'endLine' => 101,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => 'Illuminate\\Database\\Eloquent\\Model',
@@ -423,41 +423,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     'immediateMethods' => 
     array (
-      'deployments' => 
-      array (
-        'name' => 'deployments',
-        'parameters' => 
-        array (
-        ),
-        'returnsReference' => false,
-        'returnType' => 
-        array (
-          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
-          'data' => 
-          array (
-            'name' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
-            'isIdentifier' => false,
-          ),
-        ),
-        'attributes' => 
-        array (
-        ),
-        'docComment' => NULL,
-        'startLine' => 73,
-        'endLine' => 76,
-        'startColumn' => 5,
-        'endColumn' => 5,
-        'couldThrow' => false,
-        'isClosure' => false,
-        'isGenerator' => false,
-        'isVariadic' => false,
-        'modifiers' => 1,
-        'namespace' => 'HardImpact\\Orbit\\Core\\Models',
-        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-        'currentClassName' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-        'aliasName' => NULL,
-      ),
       'environment' => 
       array (
         'name' => 'environment',
@@ -478,8 +443,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 78,
-        'endLine' => 81,
+        'startLine' => 73,
+        'endLine' => 76,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -513,8 +478,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 83,
-        'endLine' => 95,
+        'startLine' => 78,
+        'endLine' => 90,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -548,8 +513,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 97,
-        'endLine' => 100,
+        'startLine' => 92,
+        'endLine' => 95,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -583,8 +548,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 102,
-        'endLine' => 105,
+        'startLine' => 97,
+        'endLine' => 100,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

@@ -13,7 +13,7 @@ A NativePHP/Electron desktop application for managing local and remote orbit CLI
 **Current environments:**
 | Environment | SSH Command | TLD | Notes |
 |-------------|-------------|-----|-------|
-| Ubuntu VPS | `ssh launchpad@ai` | `.ccc` | Main dev server, CLI source at `~/projects/orbit-cli/` |
+| Ubuntu VPS | `ssh orbit@ai` | `.ccc` | Main dev server, CLI source at `~/projects/orbit-cli/` |
 | Local | N/A (localhost) | `.test` | Local machine |
 
 **Key paths on remote servers:**
@@ -25,16 +25,16 @@ A NativePHP/Electron desktop application for managing local and remote orbit CLI
 - PHP-FPM sockets: `~/.config/orbit/php/php{version}.sock` (e.g., `php85.sock`, `php84.sock`)
 - PHP-FPM pool configs: `~/.config/orbit/php/php{version}-fpm.conf`
 - Worktrees config: `~/.config/orbit/worktrees.json`
-- Horizon service (Linux): `/etc/systemd/system/launchpad-horizon.service`
+- Horizon service (Linux): `/etc/systemd/system/orbit-horizon.service`
 
-**Important:** The orbit CLI source code lives on the remote server at `ssh launchpad@ai:~/projects/orbit-cli/`. Any changes to CLI behavior (site scanning, Caddy generation, worktrees, etc.) must be made there via SSH. See the "Orbit CLI Development" section below for the full workflow.
+**Important:** The orbit CLI source code lives on the remote server at `ssh orbit@ai:~/projects/orbit-cli/`. Any changes to CLI behavior (site scanning, Caddy generation, worktrees, etc.) must be made there via SSH. See the "Orbit CLI Development" section below for the full workflow.
 
 ## Project Overview
 
 This is a Laravel 12 application wrapped in NativePHP/Electron that provides a GUI for the orbit CLI tool. It can manage:
 
-- Local launchpad installations (on the same machine)
-- Remote launchpad installations (via SSH)
+- Local orbit installations (on the same machine)
+- Remote orbit installations (via SSH)
 - Provisioning new servers from scratch
 
 ### Platform Support
@@ -73,7 +73,7 @@ The orbit stack uses **PHP-FPM on the host** (not containerized) with **Caddy** 
 │   └─────────────────┘     └─────────────────┘                   │
 │                                                                  │
 │   ┌────────────────────────────────────────────────────┐        │
-│   │              Docker Network: launchpad              │        │
+│   │              Docker Network: orbit              │        │
 │   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐│        │
 │   │  │ Postgres │ │  Redis   │ │ Mailpit  │ │ Reverb ││        │
 │   │  └──────────┘ └──────────┘ └──────────┘ └────────┘│        │
@@ -105,25 +105,25 @@ The orbit stack uses **PHP-FPM on the host** (not containerized) with **Caddy** 
 ### Communication Pattern
 
 - **Local environments**: NativePHP backend → Direct PHP process execution
-- **Remote environments**: Vue frontend → Direct HTTP to remote launchpad web app API
+- **Remote environments**: Vue frontend → Direct HTTP to remote orbit web app API
 
 ### Direct API Calls (Important Performance Optimization)
 
 **Problem:** NativePHP uses `php artisan serve` which is single-threaded. When the Vue frontend makes multiple fetch calls through the NativePHP backend, requests are serialized and block each other. This caused slow page navigation (e.g., Dashboard → Projects) because Inertia navigation requests had to wait behind data-fetching API calls.
 
-**Solution:** For remote environments, the Vue frontend calls the remote launchpad web app API directly at `https://orbit.{tld}/api/...`, bypassing the NativePHP backend entirely.
+**Solution:** For remote environments, the Vue frontend calls the remote orbit web app API directly at `https://orbit.{tld}/api/...`, bypassing the NativePHP backend entirely.
 
 ```
 BEFORE (slow):
 Vue → fetch('/api/environments/1/status') → NativePHP (single-threaded) → SSH → CLI
 
 AFTER (fast):
-Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
+Vue → fetch('https://orbit.ccc/api/status') → Direct to remote server
 ```
 
 **Implementation:**
 
-1. `EnvironmentController` passes `remoteApiUrl` prop to Vue pages (e.g., `https://launchpad.ccc/api`)
+1. `EnvironmentController` passes `remoteApiUrl` prop to Vue pages (e.g., `https://orbit.ccc/api`)
 2. Vue pages use a `getApiUrl(path)` helper that returns the remote URL when available
 3. For local environments or when TLD isn't set, falls back to NativePHP backend
 4. The TLD is cached in the `environments.tld` database column
@@ -145,13 +145,13 @@ Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
 - Opening external URLs/editors - requires Shell::openExternal
 - Project creation form - uses Inertia for validation, redirects, and orchestrator integration
 
-**Remote API location:** `~/.config/orbit/web/` on the remote server (installed via `launchpad web:install`)
+**Remote API location:** `~/.config/orbit/web/` on the remote server (installed via `orbit web:install`)
 
 ### Key Services
 
-- **SshService** (`app/Services/SshService.php`): Handles SSH connections with ControlMaster pooling. Control sockets stored in `/tmp/launchpad-ssh/` to avoid macOS path length limits.
+- **SshService** (`app/Services/SshService.php`): Handles SSH connections with ControlMaster pooling. Control sockets stored in `/tmp/orbit-ssh/` to avoid macOS path length limits.
 
-- **LaunchpadService** (`app/Services/LaunchpadService.php`): Wraps orbit CLI commands. Searches multiple paths for the binary (`$HOME/projects/launchpad/launchpad`, `$HOME/.local/bin/orbit`, etc.).
+- **LaunchpadService** (`app/Services/LaunchpadService.php`): Wraps orbit CLI commands. Searches multiple paths for the binary (`$HOME/projects/orbit/orbit`, `$HOME/.local/bin/orbit`, etc.).
 
 - **CliUpdateService** (`app/Services/CliUpdateService.php`): Manages the local CLI installation at `~/.local/bin/orbit`.
 
@@ -163,11 +163,11 @@ Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
 - **ProvisioningService** (`app/Services/ProvisioningService.php`): Provisions new environments with the complete Orbit stack. Handles these steps:
     1. Clear old SSH host keys (prevents conflicts when environment is reset)
     2. Test root SSH connection
-    3. Create `launchpad` user
-    4. Setup SSH key for launchpad user
+    3. Create `orbit` user
+    4. Setup SSH key for orbit user
     5. Configure passwordless sudo
     6. Secure SSH (disable password auth, disable root login)
-    7. Test launchpad user connection
+    7. Test orbit user connection
     8. Install Docker
     9. Configure DNS (disable systemd-resolved, set to 1.1.1.1)
     10. Add Ondřej PPA for PHP (Linux)
@@ -182,7 +182,7 @@ Vue → fetch('https://launchpad.ccc/api/status') → Direct to remote server
 
 ### Models
 
-- **Environment**: Represents a local or remote machine with launchpad installed
+- **Environment**: Represents a local or remote machine with orbit installed
     - Fields: name, host, user, port, is_local, is_default, orchestrator_url, metadata, last_connected_at
     - Provisioning fields: status, provisioning_log, provisioning_error, provisioning_step, provisioning_total_steps
     - Status values: `provisioning`, `active`, `error`
@@ -203,7 +203,7 @@ Project creation uses an async workflow via the bundled web app API:
 
 1. **Desktop** submits create project form → Vue calls `POST https://orbit.{tld}/api/projects`
 2. **Web App** (runs via PHP-FPM) → `ProjectController` dispatches `CreateProjectJob` to Redis queue
-3. **Horizon** (runs on HOST as systemd/launchd service) → Picks up job, calls CLI `launchpad provision`
+3. **Horizon** (runs on HOST as systemd/launchd service) → Picks up job, calls CLI `orbit provision`
 4. **CLI** handles: GitHub repo creation, git clone, composer install, bun install, migrations, Caddy reload
 5. **Job** broadcasts status via Reverb (if reachable from host)
 6. **Desktop** refreshes project list to see new project
@@ -212,7 +212,7 @@ Project creation uses an async workflow via the bundled web app API:
 
 - CLI needs access to host filesystem (`~/projects/`)
 - Bun/Node need proper PATH on the host
-- PHP-FPM processes run as the `launchpad` user with full host access
+- PHP-FPM processes run as the `orbit` user with full host access
 
 **Key files (remote server `~/projects/orbit-cli/web/`):**
 
@@ -308,7 +308,7 @@ Then run: `php artisan migrate --database=nativephp_dev`
 - `GET /environments` - List all environments
 - `GET /environments/{environment}` - Show environment (or provisioning progress if status is `provisioning`)
 - `POST /environments/{environment}/test-connection` - Test SSH connection
-- `GET /environments/{environment}/status` - Get launchpad status
+- `GET /environments/{environment}/status` - Get orbit status
 - `GET /environments/{environment}/projects` - Get projects list from CLI
 - `POST /environments/{environment}/start|stop|restart` - Control orbit services
 - `POST /environments/{environment}/php` - Change PHP version for a site
@@ -346,7 +346,7 @@ Then run: `php artisan migrate --database=nativephp_dev`
 
 ### SSH Connection Issues
 
-- Control sockets are stored in `/tmp/launchpad-ssh/` with hashed filenames
+- Control sockets are stored in `/tmp/orbit-ssh/` with hashed filenames
 - PATH is prefixed for non-interactive SSH: `$HOME/.local/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin`
 - Binary detection checks multiple common installation paths
 - Use `sg docker -c "command"` to run Docker commands in new SSH sessions (picks up group membership)
@@ -354,9 +354,9 @@ Then run: `php artisan migrate --database=nativephp_dev`
 ### Provisioning Issues
 
 - **SSH host key conflicts**: Provisioning clears old host keys before connecting
-- **Docker network not created**: CLI has a bug where `launchpad init` doesn't persist the network. Provisioning creates it manually with `docker network create launchpad`
+- **Docker network not created**: CLI has a bug where `orbit init` doesn't persist the network. Provisioning creates it manually with `docker network create orbit`
 - **PHP-FPM pool configuration**: Pool configs are generated at `~/.config/orbit/php/` with Unix sockets
-- **systemd-resolved conflict**: Disabled during provisioning as it uses port 53 which launchpad DNS needs
+- **systemd-resolved conflict**: Disabled during provisioning as it uses port 53 which orbit DNS needs
 - **Horizon service**: Installed as systemd service on Linux, launchd on macOS
 
 ### DNS Resolver and TLD Changes
@@ -383,9 +383,9 @@ The app automatically detects git worktrees created by vibekanban (or manually) 
 
 **CLI Commands (orbit-cli):**
 
-- `launchpad worktrees [site] --json` - List all worktrees
-- `launchpad worktree:unlink <site> <name> --json` - Remove worktree routing
-- `launchpad worktree:refresh --json` - Re-scan and auto-link new worktrees
+- `orbit worktrees [site] --json` - List all worktrees
+- `orbit worktree:unlink <site> <name> --json` - Remove worktree routing
+- `orbit worktree:refresh --json` - Re-scan and auto-link new worktrees
 
 **Storage:**
 
@@ -566,9 +566,9 @@ This desktop app works with two projects that live on the remote dev server. All
 ```
 ┌─────────────────────────┐         ┌──────────────────────────────────────┐
 │  Orbit Desktop      │         │  Remote Dev Server (ai)       │
-│  (this repo - local)    │  SSH    │  ssh launchpad@ai             │
+│  (this repo - local)    │  SSH    │  ssh orbit@ai             │
 │                         │ ──────► │                                      │
-│  - GUI for launchpad    │         │  ~/projects/orbit-cli/  ← CLI    │
+│  - GUI for orbit    │         │  ~/projects/orbit-cli/  ← CLI    │
 │  - Calls CLI via SSH    │         │  ~/projects/orchestrator/   ← API    │
 │  - Calls orchestrator   │         │  ~/projects/*               ← SITES  │
 └─────────────────────────┘         └──────────────────────────────────────┘
@@ -593,7 +593,7 @@ The **orchestrator** is a Laravel backend that provides:
 
 ```bash
 # SSH into the dev server
-ssh launchpad@ai
+ssh orbit@ai
 
 # Navigate to orchestrator
 cd ~/projects/orchestrator
@@ -624,13 +624,13 @@ The **orbit CLI** manages sites, Caddy configs, Docker containers, and more. Sou
 
 ```bash
 # SSH into the dev server
-ssh launchpad@ai
+ssh orbit@ai
 
 # Navigate to CLI source
 cd ~/projects/orbit-cli
 
 # Make your changes, test locally
-php launchpad <command>
+php orbit <command>
 
 # When ready, publish a release (see below)
 ```
@@ -642,7 +642,7 @@ The CLI is a Laravel Zero application. Build using Box (Laravel Zero uses Box un
 **Quick local update (no GitHub release):**
 
 ```bash
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
 
 # Build phar using Box
@@ -652,7 +652,7 @@ cd ~/projects/orbit-cli
 cp builds/orbit.phar ~/.local/bin/orbit
 ```
 
-**Note on `app:build`:** Laravel Zero has a built-in `app:build` command (`php launchpad --env=development app:build`) but its bundled Box (4.6.7) has a PHP 8.5 compatibility bug. Use the global Box (4.6.10+) directly until Laravel Zero updates their bundled version.
+**Note on `app:build`:** Laravel Zero has a built-in `app:build` command (`php orbit --env=development app:build`) but its bundled Box (4.6.7) has a PHP 8.5 compatibility bug. Use the global Box (4.6.10+) directly until Laravel Zero updates their bundled version.
 
 ### CLI Release Workflow
 
@@ -661,7 +661,7 @@ After making changes to the CLI, publish a new release:
 **1. On the remote server - Build and release:**
 
 ```bash
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
 
 # Commit changes first
@@ -678,7 +678,7 @@ gh release create v1.x.x builds/orbit.phar --title "v1.x.x" --notes "Changelog"
 **2. Update CLI on servers:**
 
 ```bash
-# On each server that runs launchpad (including the dev server)
+# On each server that runs orbit (including the dev server)
 curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar
 chmod +x ~/.local/bin/orbit
 ```
@@ -698,12 +698,12 @@ For remote environments, the desktop app primarily uses **direct API calls** to 
 
 1. **Vue frontend** calls remote API directly (e.g., `DELETE /api/projects/{slug}`)
 2. **Remote web app** (via PHP-FPM on host) dispatches a job to Redis queue
-3. **Horizon** (systemd/launchd service on host) picks up the job and runs CLI command (e.g., `launchpad project:delete`)
+3. **Horizon** (systemd/launchd service on host) picks up the job and runs CLI command (e.g., `orbit project:delete`)
 
 For operations that require SSH (provisioning, config changes with TLD), the NativePHP backend uses:
 
 - `LaunchpadService::executeCommand()` which runs CLI commands over SSH
-- Commands are executed as `launchpad <command> --json`
+- Commands are executed as `orbit <command> --json`
 
 **If you change CLI behavior**, you must:
 
@@ -719,7 +719,7 @@ The CLI web app includes an E2E test that replicates the desktop workflow (creat
 
 ```bash
 # SSH into the remote server
-ssh launchpad@ai
+ssh orbit@ai
 
 # Run the E2E test
 cd ~/projects/orbit-cli/web
@@ -752,12 +752,12 @@ CLI (ReverbBroadcaster) -> Pusher HTTP API -> Reverb container -> Caddy -> WebSo
 ## Related Projects
 
 - **orbit-cli**: The command-line tool this app controls
-    - Source: `ssh launchpad@ai:~/projects/orbit-cli/`
+    - Source: `ssh orbit@ai:~/projects/orbit-cli/`
     - Releases: `https://github.com/nckrtl/orbit-cli/releases`
     - Install/Update: `curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit`
 
 - **orchestrator**: Laravel API backend for cross-project management
-    - Source: `ssh launchpad@ai:~/projects/orchestrator/`
+    - Source: `ssh orbit@ai:~/projects/orchestrator/`
     - Provides MCP tools for git, project, and task management
     - Desktop connects via `orchestrator_url` setting
 
@@ -765,8 +765,8 @@ CLI (ReverbBroadcaster) -> Pusher HTTP API -> Reverb container -> Caddy -> WebSo
 
 - **NativePHP database sync**: Migrations must be run on BOTH databases. Use `php artisan migrate --database=nativephp` to update the app's database. See the Database section above for details.
 - **"No such table" errors**: Usually means the NativePHP database hasn't been migrated. Run `php artisan migrate --database=nativephp`
-- **PHP-FPM socket permissions**: Ensure the launchpad user has proper permissions on `~/.config/orbit/php/` directory
-- **Horizon service not starting**: Check systemd logs with `journalctl -u launchpad-horizon` (Linux) or `launchctl list | grep horizon` (macOS)
+- **PHP-FPM socket permissions**: Ensure the orbit user has proper permissions on `~/.config/orbit/php/` directory
+- **Horizon service not starting**: Check systemd logs with `journalctl -u orbit-horizon` (Linux) or `launchctl list | grep horizon` (macOS)
 - **Web app .env hostnames**: When Horizon runs on host (not Docker), use `localhost` for `REDIS_HOST` and `REVERB_HOST` instead of Docker container names like `orbit-redis`
-- **`launchpad restart` stops Caddy/Horizon**: The CLI's restart command currently stops but doesn't restart host services. Manually restart with `sudo systemctl start caddy launchpad-horizon` (Linux)
+- **`orbit restart` stops Caddy/Horizon**: The CLI's restart command currently stops but doesn't restart host services. Manually restart with `sudo systemctl start caddy orbit-horizon` (Linux)
 - **Bun install hangs**: Fixed in CLI v0.0.17+ with `CI=1` and `--no-progress` flags. Update CLI if experiencing this issue.

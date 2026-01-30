@@ -190,7 +190,7 @@ class CreateProjectJob implements ShouldQueue
     protected function buildContext(string $projectPath, Environment $environment): ProvisionContext
     {
         // Get TLD from environment
-        $tld = $environment->tld ?? 'ccc';
+        $tld = $environment->tld ?? config('orbit.tld');
 
         // Parse clone URL if provided
         $cloneUrl = $this->options['template'] ?? $this->options['clone_url'] ?? null;
@@ -267,7 +267,7 @@ class CreateProjectJob implements ShouldQueue
     protected function expandPath(string $path): string
     {
         if (str_starts_with($path, '~/')) {
-            $home = $_SERVER['HOME'] ?? '/home/orbit';
+            $home = $_SERVER['HOME'] ?? config('orbit.home_directory');
 
             return $home.substr($path, 1);
         }

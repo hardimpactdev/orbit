@@ -141,7 +141,7 @@ const addWithoutProvisioning = () => {
     router.post('/servers', {
         name: remoteForm.name,
         host: remoteForm.host,
-        user: checkResult.value?.connected_as === 'launchpad' ? 'launchpad' : remoteForm.user,
+        user: checkResult.value?.connected_as === 'orbit' ? 'orbit' : remoteForm.user,
         port: 22,
         is_local: false,
     });
@@ -408,7 +408,7 @@ const submitRemote = () => {
                         class="w-full mt-2 font-mono text-sm"
                     />
                     <p class="mt-2 text-sm text-muted-foreground">
-                        This key will be added to the launchpad user on the remote machine
+                        This key will be added to the orbit user on the remote machine
                     </p>
                     <p v-if="remoteForm.errors.ssh_public_key" class="mt-2 text-sm text-red-400">
                         {{ remoteForm.errors.ssh_public_key }}
@@ -428,7 +428,7 @@ const submitRemote = () => {
                 <ul class="mt-2 text-sm text-zinc-400 list-disc list-inside space-y-1">
                     <li>
                         Create a
-                        <code class="bg-zinc-800 px-1 rounded text-zinc-300">launchpad</code> user
+                        <code class="bg-zinc-800 px-1 rounded text-zinc-300">orbit</code> user
                         with sudo access
                     </li>
                     <li>Disable SSH password authentication</li>

@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/ProvisionPipeline.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\Provision\ProvisionPipeline
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-c8dab105209b97a28a2c3793c1ac88a9916c75be2648355f15c7e360b3315d11',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-556f38843a8ffe4c550526689f711e4568f033f36dd95becf423819e8d742a0a',
    'data' => 
   array (
     'locatedSource' => 
@@ -36,7 +36,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 34,
-    'endLine' => 234,
+    'endLine' => 245,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -82,6 +82,409 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
       ),
+      'installComposerDependencies' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'installComposerDependencies',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\InstallComposerDependencies',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 38,
+        'endLine' => 38,
+        'startColumn' => 9,
+        'endColumn' => 72,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'detectNodePackageManager' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'detectNodePackageManager',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\DetectNodePackageManager',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 39,
+        'endLine' => 39,
+        'startColumn' => 9,
+        'endColumn' => 66,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'installNodeDependencies' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'installNodeDependencies',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\InstallNodeDependencies',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 40,
+        'endLine' => 40,
+        'startColumn' => 9,
+        'endColumn' => 64,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'buildAssets' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'buildAssets',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\BuildAssets',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 41,
+        'endLine' => 41,
+        'startColumn' => 9,
+        'endColumn' => 40,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'configureEnvironment' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'configureEnvironment',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ConfigureEnvironment',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 42,
+        'endLine' => 42,
+        'startColumn' => 9,
+        'endColumn' => 58,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'createDatabase' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'createDatabase',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CreateDatabase',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 43,
+        'endLine' => 43,
+        'startColumn' => 9,
+        'endColumn' => 46,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'generateAppKey' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'generateAppKey',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\GenerateAppKey',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 44,
+        'endLine' => 44,
+        'startColumn' => 9,
+        'endColumn' => 46,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'runMigrations' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'runMigrations',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\RunMigrations',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 45,
+        'endLine' => 45,
+        'startColumn' => 9,
+        'endColumn' => 44,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'configureTrustedProxies' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'configureTrustedProxies',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ConfigureTrustedProxies',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 46,
+        'endLine' => 46,
+        'startColumn' => 9,
+        'endColumn' => 64,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'setPhpVersion' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'setPhpVersion',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\SetPhpVersion',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 47,
+        'endLine' => 47,
+        'startColumn' => 9,
+        'endColumn' => 44,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'cloneRepository' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'cloneRepository',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CloneRepository',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 48,
+        'endLine' => 48,
+        'startColumn' => 9,
+        'endColumn' => 48,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'createGitHubRepository' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'createGitHubRepository',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CreateGitHubRepository',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 49,
+        'endLine' => 49,
+        'startColumn' => 9,
+        'endColumn' => 62,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'forkRepository' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\ProvisionPipeline',
+        'name' => 'forkRepository',
+        'modifiers' => 4,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ForkRepository',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 50,
+        'endLine' => 50,
+        'startColumn' => 9,
+        'endColumn' => 46,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
     ),
     'immediateMethods' => 
     array (
@@ -116,6 +519,344 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'parameterIndex' => 0,
             'isOptional' => false,
           ),
+          'installComposerDependencies' => 
+          array (
+            'name' => 'installComposerDependencies',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\InstallComposerDependencies',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 38,
+            'endLine' => 38,
+            'startColumn' => 9,
+            'endColumn' => 72,
+            'parameterIndex' => 1,
+            'isOptional' => false,
+          ),
+          'detectNodePackageManager' => 
+          array (
+            'name' => 'detectNodePackageManager',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\DetectNodePackageManager',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 39,
+            'endLine' => 39,
+            'startColumn' => 9,
+            'endColumn' => 66,
+            'parameterIndex' => 2,
+            'isOptional' => false,
+          ),
+          'installNodeDependencies' => 
+          array (
+            'name' => 'installNodeDependencies',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\InstallNodeDependencies',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 40,
+            'endLine' => 40,
+            'startColumn' => 9,
+            'endColumn' => 64,
+            'parameterIndex' => 3,
+            'isOptional' => false,
+          ),
+          'buildAssets' => 
+          array (
+            'name' => 'buildAssets',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\BuildAssets',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 41,
+            'endLine' => 41,
+            'startColumn' => 9,
+            'endColumn' => 40,
+            'parameterIndex' => 4,
+            'isOptional' => false,
+          ),
+          'configureEnvironment' => 
+          array (
+            'name' => 'configureEnvironment',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ConfigureEnvironment',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 42,
+            'endLine' => 42,
+            'startColumn' => 9,
+            'endColumn' => 58,
+            'parameterIndex' => 5,
+            'isOptional' => false,
+          ),
+          'createDatabase' => 
+          array (
+            'name' => 'createDatabase',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CreateDatabase',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 43,
+            'endLine' => 43,
+            'startColumn' => 9,
+            'endColumn' => 46,
+            'parameterIndex' => 6,
+            'isOptional' => false,
+          ),
+          'generateAppKey' => 
+          array (
+            'name' => 'generateAppKey',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\GenerateAppKey',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 44,
+            'endLine' => 44,
+            'startColumn' => 9,
+            'endColumn' => 46,
+            'parameterIndex' => 7,
+            'isOptional' => false,
+          ),
+          'runMigrations' => 
+          array (
+            'name' => 'runMigrations',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\RunMigrations',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 45,
+            'endLine' => 45,
+            'startColumn' => 9,
+            'endColumn' => 44,
+            'parameterIndex' => 8,
+            'isOptional' => false,
+          ),
+          'configureTrustedProxies' => 
+          array (
+            'name' => 'configureTrustedProxies',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ConfigureTrustedProxies',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 46,
+            'endLine' => 46,
+            'startColumn' => 9,
+            'endColumn' => 64,
+            'parameterIndex' => 9,
+            'isOptional' => false,
+          ),
+          'setPhpVersion' => 
+          array (
+            'name' => 'setPhpVersion',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\SetPhpVersion',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 47,
+            'endLine' => 47,
+            'startColumn' => 9,
+            'endColumn' => 44,
+            'parameterIndex' => 10,
+            'isOptional' => false,
+          ),
+          'cloneRepository' => 
+          array (
+            'name' => 'cloneRepository',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CloneRepository',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 48,
+            'endLine' => 48,
+            'startColumn' => 9,
+            'endColumn' => 48,
+            'parameterIndex' => 11,
+            'isOptional' => false,
+          ),
+          'createGitHubRepository' => 
+          array (
+            'name' => 'createGitHubRepository',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\CreateGitHubRepository',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 49,
+            'endLine' => 49,
+            'startColumn' => 9,
+            'endColumn' => 62,
+            'parameterIndex' => 12,
+            'isOptional' => false,
+          ),
+          'forkRepository' => 
+          array (
+            'name' => 'forkRepository',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\ForkRepository',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 50,
+            'endLine' => 50,
+            'startColumn' => 9,
+            'endColumn' => 46,
+            'parameterIndex' => 13,
+            'isOptional' => false,
+          ),
         ),
         'returnsReference' => false,
         'returnType' => NULL,
@@ -124,7 +865,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         ),
         'docComment' => NULL,
         'startLine' => 36,
-        'endLine' => 38,
+        'endLine' => 51,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -162,8 +903,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 43,
-            'endLine' => 43,
+            'startLine' => 56,
+            'endLine' => 56,
             'startColumn' => 25,
             'endColumn' => 49,
             'parameterIndex' => 0,
@@ -188,8 +929,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 43,
-            'endLine' => 43,
+            'startLine' => 56,
+            'endLine' => 56,
             'startColumn' => 52,
             'endColumn' => 82,
             'parameterIndex' => 1,
@@ -212,8 +953,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Run the full provisioning pipeline.
  */',
-        'startLine' => 43,
-        'endLine' => 50,
+        'startLine' => 56,
+        'endLine' => 63,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -251,8 +992,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 55,
-            'endLine' => 55,
+            'startLine' => 68,
+            'endLine' => 68,
             'startColumn' => 32,
             'endColumn' => 56,
             'parameterIndex' => 0,
@@ -277,8 +1018,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 55,
-            'endLine' => 55,
+            'startLine' => 68,
+            'endLine' => 68,
             'startColumn' => 59,
             'endColumn' => 89,
             'parameterIndex' => 1,
@@ -301,8 +1042,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Run minimal setup (composer install only).
  */',
-        'startLine' => 55,
-        'endLine' => 68,
+        'startLine' => 68,
+        'endLine' => 81,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -340,8 +1081,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 73,
-            'endLine' => 73,
+            'startLine' => 86,
+            'endLine' => 86,
             'startColumn' => 29,
             'endColumn' => 53,
             'parameterIndex' => 0,
@@ -366,8 +1107,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 73,
-            'endLine' => 73,
+            'startLine' => 86,
+            'endLine' => 86,
             'startColumn' => 56,
             'endColumn' => 86,
             'parameterIndex' => 1,
@@ -390,8 +1131,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Run full project setup.
  */',
-        'startLine' => 73,
-        'endLine' => 149,
+        'startLine' => 86,
+        'endLine' => 162,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -429,8 +1170,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 154,
-            'endLine' => 154,
+            'startLine' => 167,
+            'endLine' => 167,
             'startColumn' => 37,
             'endColumn' => 61,
             'parameterIndex' => 0,
@@ -455,8 +1196,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 154,
-            'endLine' => 154,
+            'startLine' => 167,
+            'endLine' => 167,
             'startColumn' => 64,
             'endColumn' => 94,
             'parameterIndex' => 1,
@@ -479,8 +1220,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Clone a repository.
  */',
-        'startLine' => 154,
-        'endLine' => 159,
+        'startLine' => 167,
+        'endLine' => 172,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -518,8 +1259,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 164,
-            'endLine' => 164,
+            'startLine' => 177,
+            'endLine' => 177,
             'startColumn' => 40,
             'endColumn' => 64,
             'parameterIndex' => 0,
@@ -544,8 +1285,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 164,
-            'endLine' => 164,
+            'startLine' => 177,
+            'endLine' => 177,
             'startColumn' => 67,
             'endColumn' => 97,
             'parameterIndex' => 1,
@@ -570,8 +1311,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 164,
-            'endLine' => 164,
+            'startLine' => 177,
+            'endLine' => 177,
             'startColumn' => 100,
             'endColumn' => 117,
             'parameterIndex' => 2,
@@ -594,8 +1335,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Create a GitHub repository from template.
  */',
-        'startLine' => 164,
-        'endLine' => 170,
+        'startLine' => 177,
+        'endLine' => 182,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -633,8 +1374,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 175,
-            'endLine' => 175,
+            'startLine' => 187,
+            'endLine' => 187,
             'startColumn' => 36,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -659,8 +1400,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 175,
-            'endLine' => 175,
+            'startLine' => 187,
+            'endLine' => 187,
             'startColumn' => 63,
             'endColumn' => 93,
             'parameterIndex' => 1,
@@ -683,8 +1424,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Fork a repository.
  */',
-        'startLine' => 175,
-        'endLine' => 181,
+        'startLine' => 187,
+        'endLine' => 192,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -720,8 +1461,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get GitHub service instance.
  */',
-        'startLine' => 186,
-        'endLine' => 189,
+        'startLine' => 197,
+        'endLine' => 200,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -757,8 +1498,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get PostgreSQL configuration from local orbit config.
  */',
-        'startLine' => 194,
-        'endLine' => 233,
+        'startLine' => 205,
+        'endLine' => 244,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

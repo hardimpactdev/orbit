@@ -28,9 +28,17 @@ final readonly class ProvisionContext
         public bool $minimal = false,
         public bool $fork = false,
         public ?string $displayName = null,
-        public ?string $tld = 'ccc',
+        public ?string $tld = null,
         public ?string $organization = null,
     ) {}
+
+    /**
+     * Get the TLD for this project.
+     */
+    public function getTld(): string
+    {
+        return $this->tld ?? config('orbit.tld');
+    }
 
     /**
      * Create new context with updated GitHub repo info.
@@ -68,7 +76,7 @@ final readonly class ProvisionContext
 
     public function getHomeDir(): string
     {
-        return $_SERVER['HOME'] ?? '/home/orbit';
+        return $_SERVER['HOME'] ?? config('orbit.home_directory');
     }
 
     public function getPhpEnv(): array

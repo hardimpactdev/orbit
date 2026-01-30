@@ -8,6 +8,33 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property string $host
+ * @property string $user
+ * @property int $port
+ * @property bool $is_local
+ * @property bool $is_active
+ * @property bool $external_access
+ * @property string|null $external_host
+ * @property bool $is_default
+ * @property string|null $tld
+ * @property string|null $editor_scheme
+ * @property string|null $cli_version
+ * @property string|null $cli_path
+ * @property \Carbon\Carbon|null $cli_checked_at
+ * @property string|null $orchestrator_url
+ * @property array|null $metadata
+ * @property \Carbon\Carbon|null $last_connected_at
+ * @property string $status
+ * @property array|null $provisioning_log
+ * @property string|null $provisioning_error
+ * @property int|null $provisioning_step
+ * @property int|null $provisioning_total_steps
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class Environment extends Model
 {
     use HasFactory;
@@ -127,11 +154,6 @@ class Environment extends Model
     public function setAsActive(): void
     {
         app(\HardImpact\Orbit\Core\Services\EnvironmentManager::class)->setActive($this->id);
-    }
-
-    public function deployments(): HasMany
-    {
-        return $this->hasMany(Deployment::class);
     }
 
     /**

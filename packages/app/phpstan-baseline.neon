@@ -85,25 +85,7 @@ parameters:
 			path: src/Http/Controllers/ProvisioningController.php
 
 		-
-			message: '#^Call to method getPharPath\(\) on an unknown class App\\Services\\CliUpdateService\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Http/Controllers/ProvisioningController.php
-
-		-
-			message: '#^Call to method isInstalled\(\) on an unknown class App\\Services\\CliUpdateService\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Http/Controllers/ProvisioningController.php
-
-		-
 			message: '#^Call to static method checkExistingSetup\(\) on an unknown class App\\Services\\ProvisioningService\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Http/Controllers/ProvisioningController.php
-
-		-
-			message: '#^Class App\\Services\\CliUpdateService not found\.$#'
 			identifier: class.notFound
 			count: 1
 			path: src/Http/Controllers/ProvisioningController.php

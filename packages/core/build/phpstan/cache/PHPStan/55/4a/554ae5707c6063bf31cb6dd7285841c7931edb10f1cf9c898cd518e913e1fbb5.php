@@ -42,7 +42,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -65,7 +87,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -88,7 +132,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -102,7 +168,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php' => 'c088bb56027d389ebeb62be1138d4fcf258f6c24a35788bead4491b6099a4b0b',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php' => '668f013cc12d5469e6e94bd6e664619d0057a7e2a98f682c7fef858e615fa4b8',
     ),
   ),
 ));

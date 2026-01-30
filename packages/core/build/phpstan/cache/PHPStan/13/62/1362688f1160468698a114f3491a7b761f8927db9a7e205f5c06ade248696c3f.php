@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Deletion/DeletionLogger.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\Deletion\DeletionLogger
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-15134c4c04d451c7ef1430923096e68ce7ce6dc6c04fe164df73ae3786488c29',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-7d38a03c2ac161e4fc9bce8c8fd2fb964fa7a395612a8771728e2565d4c31376',
    'data' => 
   array (
     'locatedSource' => 
@@ -634,10 +634,10 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               array (
                 'startLine' => 93,
                 'endLine' => 93,
-                'startTokenPos' => 442,
-                'startFilePos' => 2350,
-                'endTokenPos' => 442,
-                'endFilePos' => 2353,
+                'startTokenPos' => 445,
+                'startFilePos' => 2367,
+                'endTokenPos' => 445,
+                'endFilePos' => 2370,
               ),
             ),
             'type' => 

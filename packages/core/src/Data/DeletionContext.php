@@ -22,7 +22,7 @@ final readonly class DeletionContext
         public bool $keepRepository = true, // Always true for now - GitHub repo deletion not yet implemented
         public ?string $dbConnection = null,
         public ?string $dbName = null,
-        public string $tld = 'ccc',
+        public ?string $tld = null,
     ) {}
 
     /**
@@ -91,16 +91,24 @@ final readonly class DeletionContext
     }
 
     /**
+     * Get the TLD for this project.
+     */
+    public function getTld(): string
+    {
+        return $this->tld ?? config('orbit.tld');
+    }
+
+    /**
      * Extract TLD from a domain string.
      */
-    private static function extractTldFromDomain(?string $domain): string
+    private static function extractTldFromDomain(?string $domain): ?string
     {
         if (! $domain) {
-            return 'ccc';
+            return null;
         }
 
         $parts = explode('.', $domain);
 
-        return end($parts) ?: 'ccc';
+        return end($parts) ?: null;
     }
 }

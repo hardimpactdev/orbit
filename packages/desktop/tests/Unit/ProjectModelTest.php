@@ -1,6 +1,5 @@
 <?php
 
-use HardImpact\Orbit\Models\Deployment;
 use HardImpact\Orbit\Models\Environment;
 use HardImpact\Orbit\Models\Project;
 
@@ -14,29 +13,6 @@ test('project can be created', function () {
         'name' => 'Test Project',
         'github_url' => 'https://github.com/test/project',
     ]);
-});
-
-test('project has deployments relationship', function () {
-    $project = Project::create([
-        'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
-    ]);
-
-    $environment = Environment::create([
-        'name' => 'Test Server',
-        'host' => 'localhost',
-        'user' => 'test',
-        'port' => 22,
-        'is_local' => true,
-    ]);
-
-    Deployment::create([
-        'project_id' => $project->id,
-        'environment_id' => $environment->id,
-        'status' => 'active',
-    ]);
-
-    expect($project->deployments)->toHaveCount(1);
 });
 
 test('find by github url', function () {

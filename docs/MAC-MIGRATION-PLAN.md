@@ -36,7 +36,7 @@ The Ubuntu VPS (ai) is now running:
 │   └─────────────────┘     └─────────────────┘                   │
 │                                                                  │
 │   ┌────────────────────────────────────────────────────────┐    │
-│   │              Docker Network: launchpad                  │    │
+│   │              Docker Network: orbit                  │    │
 │   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐    │    │
 │   │  │ Postgres │ │  Redis   │ │ Mailpit  │ │ Reverb │    │    │
 │   │  └──────────┘ └──────────┘ └──────────┘ └────────┘    │    │
@@ -105,7 +105,7 @@ The CLI handles pool configuration, Caddyfile generation, and service setup auto
 
 ```bash
 # Run the migration
-launchpad migrate:to-fpm --force
+orbit migrate:to-fpm --force
 
 # This will:
 # 1. Stop current services
@@ -121,7 +121,7 @@ launchpad migrate:to-fpm --force
 
 **What the CLI creates:**
 
-- Pool configs at `/opt/homebrew/etc/php/8x/php-fpm.d/launchpad-8x.conf`
+- Pool configs at `/opt/homebrew/etc/php/8x/php-fpm.d/orbit-8x.conf`
 - Sockets at `~/.config/orbit/php/php8x.sock`
 - Logs at `~/.config/orbit/logs/php8x-fpm.log`
 - Horizon plist at `~/Library/LaunchAgents/com.orbit.horizon.plist`
@@ -139,8 +139,8 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 ### Phase 6: Verify Services
 
 ```bash
-# Check launchpad status
-launchpad status
+# Check orbit status
+orbit status
 
 # Expected output:
 # Architecture: php-fpm
@@ -172,9 +172,9 @@ curl -sk https://your-site.test/
 | PHP-FPM Service    | `systemctl`                | `brew services`                        |
 | Caddy Service      | `systemctl`                | `brew services`                        |
 | Horizon Service    | systemd unit file          | launchd plist                          |
-| Default User       | `launchpad`                | Your username                          |
+| Default User       | `orbit`                | Your username                          |
 | PHP Binary Path    | `/usr/bin/php8.x`          | `/opt/homebrew/opt/php@8.x/bin/php`    |
-| Socket Permissions | `launchpad:launchpad`      | `$USER:staff`                          |
+| Socket Permissions | `orbit:orbit`      | `$USER:staff`                          |
 | Pool Config Dir    | `/etc/php/8.x/fpm/pool.d/` | `/opt/homebrew/etc/php/8.x/php-fpm.d/` |
 
 ---
@@ -262,12 +262,12 @@ brew services stop caddy
 launchctl unload ~/Library/LaunchAgents/com.orbit.horizon.plist
 
 # Remove symlinked pool configs if they interfere
-rm -f /opt/homebrew/etc/php/8.5/php-fpm.d/launchpad-*.conf
-rm -f /opt/homebrew/etc/php/8.4/php-fpm.d/launchpad-*.conf
-rm -f /opt/homebrew/etc/php/8.3/php-fpm.d/launchpad-*.conf
+rm -f /opt/homebrew/etc/php/8.5/php-fpm.d/orbit-*.conf
+rm -f /opt/homebrew/etc/php/8.4/php-fpm.d/orbit-*.conf
+rm -f /opt/homebrew/etc/php/8.3/php-fpm.d/orbit-*.conf
 
 # Restart old container-based services (if applicable)
-# launchpad start --frankenphp
+# orbit start --frankenphp
 ```
 
 ---
@@ -281,5 +281,5 @@ rm -f /opt/homebrew/etc/php/8.3/php-fpm.d/launchpad-*.conf
 - [ ] Docker services (postgres, redis, etc.) running
 - [ ] DNS resolution working (via DNS container)
 - [ ] Local CA certificate trusted
-- [ ] `launchpad status` shows all services healthy
+- [ ] `orbit status` shows all services healthy
 - [ ] Test sites accessible via HTTPS

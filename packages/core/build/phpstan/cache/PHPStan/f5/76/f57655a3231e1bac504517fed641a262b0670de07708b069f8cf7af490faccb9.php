@@ -72,6 +72,49 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'typeAliasClassName' => NULL,
          'traitData' => NULL,
       )),
+      '531353d7ecf411b67aa973a3d40044b7' => 
+      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+         'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+         'uses' => 
+        array (
+        ),
+         'className' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
+         'functionName' => 'getTld',
+         'templatePhpDocNodes' => 
+        array (
+        ),
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+           'uses' => 
+          array (
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
+         'typeAliasesMap' => 
+        array (
+        ),
+         'bypassTypeAliases' => false,
+         'constUses' => 
+        array (
+        ),
+         'typeAliasClassName' => NULL,
+         'traitData' => NULL,
+      )),
       'd8385c3c4f162419b518ca594aab9cc7' => 
       \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
          'namespace' => 'HardImpact\\Orbit\\Core\\Data',
@@ -333,7 +376,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/ProvisionContext.php' => '0d7808869f7e905bdb645c5183f6023485b64dbed87e5e76c27474596b913b06',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/ProvisionContext.php' => 'cbaa14c99b952aeed46222316fa849ceef1d226e6fafb2d052bec3a28bd44ec0',
     ),
   ),
 ));

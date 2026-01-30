@@ -98,25 +98,4 @@ class NotificationService
         );
     }
 
-    /**
-     * Notify about deployment update.
-     */
-    public function deploymentUpdated(string $projectName): void
-    {
-        $this->success(
-            'Deployment Updated',
-            "'{$projectName}' has been updated successfully."
-        );
-    }
-
-    /**
-     * Notify about deployment upgrade.
-     */
-    public function deploymentUpgraded(string $projectName): void
-    {
-        $this->success(
-            'Deployment Upgraded',
-            "'{$projectName}' has been upgraded to integrated mode."
-        );
-    }
 }

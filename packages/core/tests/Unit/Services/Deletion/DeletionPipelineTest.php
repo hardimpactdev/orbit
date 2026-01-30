@@ -2,10 +2,12 @@
 declare(strict_types=1);
 
 use HardImpact\Orbit\Core\Data\DeletionContext;
+use HardImpact\Orbit\Core\Data\StepResult;
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Models\Project;
 use HardImpact\Orbit\Core\Services\Deletion\Actions\DeleteProjectFiles;
 use HardImpact\Orbit\Core\Services\Deletion\Actions\DropPostgresDatabase;
+use HardImpact\Orbit\Core\Services\Deletion\Actions\RegenerateCaddyConfig;
 use HardImpact\Orbit\Core\Services\Deletion\DeletionLogger;
 use HardImpact\Orbit\Core\Services\Deletion\DeletionPipeline;
 
@@ -246,7 +248,11 @@ describe('DeletionPipeline', function () {
         $context = $context->withDatabaseFromEnv();
 
         $logger = new DeletionLogger('pipeline-test');
-        $pipeline = new DeletionPipeline;
+        $pipeline = new DeletionPipeline(
+            dropPostgresDatabase: new DropPostgresDatabase,
+            deleteProjectFiles: new DeleteProjectFiles,
+            regenerateCaddyConfig: new RegenerateCaddyConfig,
+        );
         $result = $pipeline->run($context, $logger);
 
         expect($result->isSuccess())->toBeTrue();
@@ -268,7 +274,11 @@ describe('DeletionPipeline', function () {
         );
 
         $logger = new DeletionLogger('keep-db-pipeline');
-        $pipeline = new DeletionPipeline;
+        $pipeline = new DeletionPipeline(
+            dropPostgresDatabase: new DropPostgresDatabase,
+            deleteProjectFiles: new DeleteProjectFiles,
+            regenerateCaddyConfig: new RegenerateCaddyConfig,
+        );
         $result = $pipeline->run($context, $logger);
 
         expect($result->isSuccess())->toBeTrue();

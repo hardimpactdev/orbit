@@ -130,5 +130,5 @@ Track learnings, blockers, and decisions during implementation.
 
 **Verification results:**
 
-- ssh launchpad@ai "test -f ~/projects/orbit-cli/web/app/Http/Controllers/Api/ServiceController.php" -> File exists ✓
+- ssh orbit@ai "test -f ~/projects/orbit-cli/web/app/Http/Controllers/Api/ServiceController.php" -> File exists ✓
 - php artisan route:list --path=api/services -> All 6 routes registered ✓

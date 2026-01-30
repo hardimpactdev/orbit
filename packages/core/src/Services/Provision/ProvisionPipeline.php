@@ -35,6 +35,19 @@ final readonly class ProvisionPipeline
 {
     public function __construct(
         private GitHubService $github,
+        private InstallComposerDependencies $installComposerDependencies,
+        private DetectNodePackageManager $detectNodePackageManager,
+        private InstallNodeDependencies $installNodeDependencies,
+        private BuildAssets $buildAssets,
+        private ConfigureEnvironment $configureEnvironment,
+        private CreateDatabase $createDatabase,
+        private GenerateAppKey $generateAppKey,
+        private RunMigrations $runMigrations,
+        private ConfigureTrustedProxies $configureTrustedProxies,
+        private SetPhpVersion $setPhpVersion,
+        private CloneRepository $cloneRepository,
+        private CreateGitHubRepository $createGitHubRepository,
+        private ForkRepository $forkRepository,
     ) {}
 
     /**
@@ -57,7 +70,7 @@ final readonly class ProvisionPipeline
         $logger->info('Running minimal setup (composer install only)...');
         $logger->broadcast('installing_composer');
 
-        $result = app(InstallComposerDependencies::class)->handle($context, $logger);
+        $result = $this->installComposerDependencies->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
@@ -76,13 +89,13 @@ final readonly class ProvisionPipeline
 
         // Step 1: Composer install
         $logger->broadcast('installing_composer');
-        $result = app(InstallComposerDependencies::class)->handle($context, $logger);
+        $result = $this->installComposerDependencies->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 2: Detect Node package manager
-        $detectResult = app(DetectNodePackageManager::class)->handle($context, $logger);
+        $detectResult = $this->detectNodePackageManager->handle($context, $logger);
         if ($detectResult->isFailed()) {
             return $detectResult;
         }
@@ -91,7 +104,7 @@ final readonly class ProvisionPipeline
         // Step 3: Install Node dependencies
         if ($packageManager) {
             $logger->broadcast('installing_npm');
-            $result = app(InstallNodeDependencies::class)->handle($context, $logger, $packageManager);
+            $result = $this->installNodeDependencies->handle($context, $logger, $packageManager);
             if ($result->isFailed()) {
                 return $result;
             }
@@ -100,7 +113,7 @@ final readonly class ProvisionPipeline
         // Step 4: Build assets
         if ($packageManager) {
             $logger->broadcast('building');
-            $result = app(BuildAssets::class)->handle($context, $logger, $packageManager);
+            $result = $this->buildAssets->handle($context, $logger, $packageManager);
             if ($result->isFailed()) {
                 return $result;
             }
@@ -108,37 +121,37 @@ final readonly class ProvisionPipeline
 
         // Step 5: Configure environment
         $postgresConfig = $this->getPostgresConfig();
-        $result = app(ConfigureEnvironment::class)->handle($context, $logger, $postgresConfig);
+        $result = $this->configureEnvironment->handle($context, $logger, $postgresConfig);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 6: Create database
-        $result = app(CreateDatabase::class)->handle($context, $logger);
+        $result = $this->createDatabase->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 7: Generate app key
-        $result = app(GenerateAppKey::class)->handle($context, $logger);
+        $result = $this->generateAppKey->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 8: Run migrations
-        $result = app(RunMigrations::class)->handle($context, $logger);
+        $result = $this->runMigrations->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 9: Configure trusted proxies
-        $result = app(ConfigureTrustedProxies::class)->handle($context, $logger);
+        $result = $this->configureTrustedProxies->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 10: Set PHP version
-        $result = app(SetPhpVersion::class)->handle($context, $logger);
+        $result = $this->setPhpVersion->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
@@ -155,7 +168,7 @@ final readonly class ProvisionPipeline
     {
         $logger->broadcast('cloning');
 
-        return app(CloneRepository::class)->handle($context, $logger);
+        return $this->cloneRepository->handle($context, $logger);
     }
 
     /**
@@ -165,8 +178,7 @@ final readonly class ProvisionPipeline
     {
         $logger->broadcast('creating_repo');
 
-        return app(CreateGitHubRepository::class, ['github' => $this->github])
-            ->handle($context, $logger, $targetRepo);
+        return $this->createGitHubRepository->handle($context, $logger, $targetRepo);
     }
 
     /**
@@ -176,8 +188,7 @@ final readonly class ProvisionPipeline
     {
         $logger->broadcast('forking');
 
-        return app(ForkRepository::class, ['github' => $this->github])
-            ->handle($context, $logger);
+        return $this->forkRepository->handle($context, $logger);
     }
 
     /**
@@ -193,14 +204,14 @@ final readonly class ProvisionPipeline
      */
     private function getPostgresConfig(): array
     {
-        $home = $_SERVER['HOME'] ?? '/home/orbit';
+        $home = $_SERVER['HOME'] ?? config('orbit.home_directory');
         $servicesPath = "{$home}/.config/orbit/services.yaml";
 
         if (! file_exists($servicesPath)) {
             return [
-                'POSTGRES_USER' => 'orbit',
-                'POSTGRES_PASSWORD' => 'secret',
-                'port' => 5432,
+                'POSTGRES_USER' => config('orbit.postgres.user'),
+                'POSTGRES_PASSWORD' => config('orbit.postgres.password'),
+                'port' => config('orbit.postgres.port'),
             ];
         }
 
@@ -210,19 +221,19 @@ final readonly class ProvisionPipeline
         if (preg_match('/postgres:.*?POSTGRES_USER:\s*(\S+)/s', $content, $userMatch)) {
             $user = $userMatch[1];
         } else {
-            $user = 'orbit';
+            $user = config('orbit.postgres.user');
         }
 
         if (preg_match('/postgres:.*?POSTGRES_PASSWORD:\s*(\S+)/s', $content, $passMatch)) {
             $password = $passMatch[1];
         } else {
-            $password = 'secret';
+            $password = config('orbit.postgres.password');
         }
 
         if (preg_match('/postgres:.*?port:\s*(\d+)/s', $content, $portMatch)) {
             $port = (int) $portMatch[1];
         } else {
-            $port = 5432;
+            $port = config('orbit.postgres.port');
         }
 
         return [

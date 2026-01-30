@@ -10,7 +10,7 @@ Add support for a new PHP version to the Orbit stack. This involves updating the
 
 ## Prerequisites
 
-- SSH access to the remote server (`ssh launchpad@ai`)
+- SSH access to the remote server (`ssh orbit@ai`)
 - The new PHP version must be available in the `dunglas/frankenphp` Docker image
 
 ## Parameters
@@ -24,7 +24,7 @@ Ask the user for the PHP version to add (e.g., `8.6`, `8.7`).
 First, check if the Docker image exists for the requested PHP version:
 
 ```bash
-ssh launchpad@ai "docker pull dunglas/frankenphp:php{VERSION} 2>&1 | head -5"
+ssh orbit@ai "docker pull dunglas/frankenphp:php{VERSION} 2>&1 | head -5"
 ```
 
 If the image doesn't exist, inform the user and stop.
@@ -34,12 +34,12 @@ If the image doesn't exist, inform the user and stop.
 Create a new Dockerfile for the PHP version in the config directory:
 
 ```bash
-ssh launchpad@ai "cat > ~/.config/orbit/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
+ssh orbit@ai "cat > ~/.config/orbit/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
 FROM dunglas/frankenphp:php{VERSION}
 
 RUN install-php-extensions     redis     pdo_pgsql     pdo_mysql     pcntl     intl     exif     gd     zip     bcmath
 
-# Install Docker CLI for launchpad status checks
+# Install Docker CLI for orbit status checks
 RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
 EOF"
 ```
@@ -58,7 +58,7 @@ Add a new service block following the existing pattern:
     build:
       context: .
       dockerfile: Dockerfile.php{VERSION_NO_DOT}
-    image: launchpad-php:{VERSION}
+    image: orbit-php:{VERSION}
     container_name: orbit-php-{VERSION_NO_DOT}
     ports:
       - \"{PORT}:8080\"
@@ -67,7 +67,7 @@ Add a new service block following the existing pattern:
       - ./Caddyfile:/etc/frankenphp/Caddyfile:ro
     restart: unless-stopped
     networks:
-      - launchpad
+      - orbit
 ```
 
 Port numbers follow the pattern: 8083 for PHP 8.3, 8084 for PHP 8.4, 8085 for PHP 8.5, 8086 for PHP 8.6, etc.
@@ -89,7 +89,7 @@ Update the return statement to include the new result.
 Run the CLI from source to regenerate configs and restart:
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad restart"
+ssh orbit@ai "cd ~/projects/orbit-cli && php orbit restart"
 ```
 
 ### 6. Verify Containers
@@ -97,7 +97,7 @@ ssh launchpad@ai "cd ~/projects/orbit-cli && php launchpad restart"
 Confirm all PHP containers are running:
 
 ```bash
-ssh launchpad@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=orbit-php-'"
+ssh orbit@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=orbit-php-'"
 ```
 
 Wait for containers to become healthy (may take 30-60 seconds on first build).
@@ -128,7 +128,7 @@ If `dunglas/frankenphp:php{VERSION}` doesn't exist, the PHP version may not be r
 Check Docker build logs:
 
 ```bash
-ssh launchpad@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
+ssh orbit@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
 ```
 
 ### Container Not Starting
@@ -136,7 +136,7 @@ ssh launchpad@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO
 Check container logs:
 
 ```bash
-ssh launchpad@ai "docker logs orbit-php-{VERSION_NO_DOT}"
+ssh orbit@ai "docker logs orbit-php-{VERSION_NO_DOT}"
 ```
 
 ## Files Modified

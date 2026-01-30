@@ -22,8 +22,14 @@ use HardImpact\Orbit\Core\Services\Deletion\Actions\RegenerateCaddyConfig;
  * Note: Project model deletion is handled by the caller (CLI or Job)
  * to allow for transaction control.
  */
-class DeletionPipeline
+readonly class DeletionPipeline
 {
+    public function __construct(
+        private DropPostgresDatabase $dropPostgresDatabase,
+        private DeleteProjectFiles $deleteProjectFiles,
+        private RegenerateCaddyConfig $regenerateCaddyConfig,
+    ) {}
+
     /**
      * Run the full deletion pipeline.
      */
@@ -34,7 +40,7 @@ class DeletionPipeline
         // Step 1: Drop database (unless keepDatabase flag is set)
         if (! $context->keepDatabase) {
             $logger->broadcast('dropping_database');
-            $result = app(DropPostgresDatabase::class)->handle($context, $logger);
+            $result = $this->dropPostgresDatabase->handle($context, $logger);
             // Database errors are non-fatal - log warning and continue
             if ($result->isFailed()) {
                 $logger->warn("Database drop failed (continuing): {$result->error}");
@@ -45,14 +51,14 @@ class DeletionPipeline
 
         // Step 2: Delete project files
         $logger->broadcast('removing_files');
-        $result = app(DeleteProjectFiles::class)->handle($context, $logger);
+        $result = $this->deleteProjectFiles->handle($context, $logger);
         if ($result->isFailed()) {
             return $result;
         }
 
         // Step 3: Regenerate Caddy config (remove site from Caddyfile)
         $logger->broadcast('regenerating_caddy');
-        $result = app(RegenerateCaddyConfig::class)->handle($context, $logger);
+        $result = $this->regenerateCaddyConfig->handle($context, $logger);
         // Caddy errors are non-fatal - log warning but don't fail pipeline
         if ($result->isFailed()) {
             $logger->warn("Caddy regeneration failed (continuing): {$result->error}");
@@ -60,7 +66,7 @@ class DeletionPipeline
 
         // Future: Step 4 - Delete GitHub repository (when keepRepository=false)
         // if (!$context->keepRepository && $context->githubRepo) {
-        //     $result = app(DeleteGitHubRepository::class)->handle($context, $logger);
+        //     $result = $this->deleteGitHubRepository->handle($context, $logger);
         // }
 
         $logger->info('Deletion pipeline completed');

@@ -7,11 +7,11 @@ Plan: docs/mac-provisioning-migration-plan.md
 
 | Check                          | Command                                                                                                                                      | Expected | Source       |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------ |
-| SetupCommand.php exists        | `ssh launchpad@ai 'test -f ~/projects/orbit-cli/app/Commands/SetupCommand.php && echo exists'`                                               | `exists` | plan:64      |
-| MacSetup.php exists            | `ssh launchpad@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/MacSetup.php && echo exists'`                                             | `exists` | plan:249-250 |
-| LinuxSetup.php exists          | `ssh launchpad@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/LinuxSetup.php && echo exists'`                                           | `exists` | plan:251     |
-| SetupProgress.php trait exists | `ssh launchpad@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/SetupProgress.php && echo exists'`                                        | `exists` | plan:252     |
-| Command has expected options   | `ssh launchpad@ai 'cd ~/projects/orbit-cli && php launchpad setup --help' \| grep -c '\-\-tld\|\-\-php-versions\|\-\-skip-docker\|\-\-json'` | `4`      | plan:67-72   |
+| SetupCommand.php exists        | `ssh orbit@ai 'test -f ~/projects/orbit-cli/app/Commands/SetupCommand.php && echo exists'`                                               | `exists` | plan:64      |
+| MacSetup.php exists            | `ssh orbit@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/MacSetup.php && echo exists'`                                             | `exists` | plan:249-250 |
+| LinuxSetup.php exists          | `ssh orbit@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/LinuxSetup.php && echo exists'`                                           | `exists` | plan:251     |
+| SetupProgress.php trait exists | `ssh orbit@ai 'test -f ~/projects/orbit-cli/app/Commands/Setup/SetupProgress.php && echo exists'`                                        | `exists` | plan:252     |
+| Command has expected options   | `ssh orbit@ai 'cd ~/projects/orbit-cli && php orbit setup --help' \| grep -c '\-\-tld\|\-\-php-versions\|\-\-skip-docker\|\-\-json'` | `4`      | plan:67-72   |
 
 ## Phase 2: Desktop Integration
 
@@ -19,7 +19,7 @@ Plan: docs/mac-provisioning-migration-plan.md
 | ------------------------------- | ------------------------------------------------------------------------------------- | -------- | --------------- |
 | parseCliProgress method exists  | `grep -c 'function parseCliProgress' app/Http/Controllers/ProvisioningController.php` | `1`      | plan:325-355    |
 | run() handles is_local          | `grep -c 'is_local' app/Http/Controllers/ProvisioningController.php`                  | `>= 1`   | plan:273-303    |
-| Calls launchpad setup for local | `grep -c 'launchpad.*setup' app/Http/Controllers/ProvisioningController.php`          | `>= 1`   | plan:277        |
+| Calls orbit setup for local | `grep -c 'orbit.*setup' app/Http/Controllers/ProvisioningController.php`          | `>= 1`   | plan:277        |
 | localChecklistItems in Vue      | `grep -c 'localChecklistItems' resources/js/pages/environments/Provisioning.vue`      | `>= 1`   | plan:363-369    |
 | Provisioning tests pass         | `php artisan test --filter=Provisioning`                                              | exit 0   | test convention |
 
@@ -44,12 +44,12 @@ Plan: docs/mac-provisioning-migration-plan.md
 
 | Check                          | Command                                                                                   | Expected             | Source    |
 | ------------------------------ | ----------------------------------------------------------------------------------------- | -------------------- | --------- |
-| CLI phar builds                | `ssh launchpad@ai 'cd ~/projects/orbit-cli && ~/.config/composer/vendor/bin/box compile'` | exit 0               | CLAUDE.md |
+| CLI phar builds                | `ssh orbit@ai 'cd ~/projects/orbit-cli && ~/.config/composer/vendor/bin/box compile'` | exit 0               | CLAUDE.md |
 | GitHub release exists          | `gh release view --repo nckrtl/orbit-cli`                                                 | shows latest release | plan:417  |
-| CLI version updated on server  | `ssh launchpad@ai 'launchpad --version'`                                                  | new version number   | plan:418  |
+| CLI version updated on server  | `ssh orbit@ai 'orbit --version'`                                                  | new version number   | plan:418  |
 | PHP-FPM services running (Mac) | `brew services list \| grep -E 'php.*started'`                                            | matches              | plan:447  |
 | Caddy service running (Mac)    | `brew services list \| grep 'caddy.*started'`                                             | matches              | plan:447  |
-| Docker containers running      | `docker ps \| grep -c launchpad`                                                          | `>= 4`               | plan:448  |
+| Docker containers running      | `docker ps \| grep -c orbit`                                                          | `>= 4`               | plan:448  |
 | DNS resolution works           | `dig orbit.test @127.0.0.1 +short`                                                        | IP address           | plan:449  |
 
 ## Summary
@@ -60,7 +60,7 @@ Plan: docs/mac-provisioning-migration-plan.md
 
 ### Notes
 
-- Phase 1 checks run on remote server via SSH (`ssh launchpad@ai`)
+- Phase 1 checks run on remote server via SSH (`ssh orbit@ai`)
 - Phase 2-3 checks run locally in orbit-desktop repo
 - Phase 4 checks are split between remote (CLI build/release) and local (Mac services)
 - DoctorService and its test will be removed per user decision

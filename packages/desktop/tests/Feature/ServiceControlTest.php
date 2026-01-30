@@ -31,7 +31,7 @@ class ServiceControlTest extends TestCase
         $this->environment = Environment::create([
             'name' => 'Test Server',
             'host' => '1.2.3.4',
-            'user' => 'launchpad',
+            'user' => 'orbit',
             'port' => 22,
             'is_local' => false,
             'status' => 'active',

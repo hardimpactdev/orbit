@@ -1,19 +1,20 @@
 <?php
+declare(strict_types=1);
 
 namespace App\Services;
 
 use Illuminate\Support\Facades\File;
 
-class CaddyfileGenerator
+final readonly class CaddyfileGenerator
 {
     protected string $caddyfilePath;
 
     public function __construct(
         protected ConfigManager $configManager,
         protected ProjectScanner $projectScanner,
-        protected ?PhpManager $phpManager = null,
-        protected ?WorktreeService $worktreeService = null,
-        protected ?ServiceManager $serviceManager = null
+        protected PhpManager $phpManager,
+        protected WorktreeService $worktreeService,
+        protected ServiceManager $serviceManager
     ) {
         $this->caddyfilePath = $this->configManager->getConfigPath().'/caddy/Caddyfile';
     }
@@ -23,10 +24,6 @@ class CaddyfileGenerator
      */
     protected function getSocketPath(string $version): string
     {
-        if ($this->phpManager === null) {
-            $this->phpManager = app(PhpManager::class);
-        }
-
         return $this->phpManager->getSocketPath($version);
     }
 
@@ -119,9 +116,6 @@ class CaddyfileGenerator
         }
 
         // Add Reverb WebSocket service if enabled
-        if ($this->serviceManager === null) {
-            $this->serviceManager = app(ServiceManager::class);
-        }
         if ($this->serviceManager->isEnabled('reverb')) {
             $caddyfile .= "reverb.{$tld} {
     tls internal
@@ -142,19 +136,11 @@ class CaddyfileGenerator
 
     public function reload(): bool
     {
-        if ($this->phpManager === null) {
-            $this->phpManager = app(PhpManager::class);
-        }
-
         return $this->phpManager->getAdapter()->reloadCaddy();
     }
 
     public function reloadPhp(): bool
     {
-        if ($this->phpManager === null) {
-            $this->phpManager = app(PhpManager::class);
-        }
-
         $defaultVersion = $this->configManager->get('default_php_version', '8.4');
 
         // Use graceful reload to avoid killing active connections
@@ -163,10 +149,6 @@ class CaddyfileGenerator
 
     protected function getWorktreesForCaddy(): array
     {
-        if ($this->worktreeService === null) {
-            $this->worktreeService = app(WorktreeService::class);
-        }
-
         try {
             return $this->worktreeService->getLinkedWorktreesForCaddy();
         } catch (\Exception) {

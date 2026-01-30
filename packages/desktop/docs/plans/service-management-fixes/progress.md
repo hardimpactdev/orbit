@@ -29,8 +29,8 @@
 
 **Verification results:**
 
-- `php launchpad list` shows 3 `host:` commands ✓
-- `php launchpad host:start caddy --json` returns success ✓
+- `php orbit list` shows 3 `host:` commands ✓
+- `php orbit host:start caddy --json` returns success ✓
 - API routes `/api/host-services/{service}/start` etc. registered ✓
 
 ### 2026-01-14 - Phase 5: E2E Verification

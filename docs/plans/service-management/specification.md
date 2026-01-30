@@ -24,7 +24,7 @@ Desktop UI (Vue) → NativePHP → LaunchpadService → CLI Commands → Service
 
 ### Phase 1: CLI Service Management System
 
-**Location:** Remote server `ssh launchpad@ai:~/projects/orbit-cli/`
+**Location:** Remote server `ssh orbit@ai:~/projects/orbit-cli/`
 
 #### Step 1.1: Create Service Template DTOs and Loader
 
@@ -68,7 +68,7 @@ class ServiceTemplate
     ],
     'password' => [
         'type' => 'string',
-        'default' => 'launchpad',
+        'default' => 'orbit',
         'secret' => true,
         'label' => 'Password',
     ],
@@ -147,11 +147,11 @@ config:
         label: 'Port'
     user:
         type: string
-        default: 'launchpad'
+        default: 'orbit'
         label: 'Username'
     password:
         type: string
-        default: 'launchpad'
+        default: 'orbit'
         secret: true
         label: 'Password'
 
@@ -166,7 +166,7 @@ docker:
     volumes:
         - ${data_path}/postgres:/var/lib/postgresql/data
     networks:
-        - launchpad
+        - orbit
     healthcheck:
         test: ['CMD-SHELL', 'pg_isready -U ${user}']
         interval: 10s
@@ -189,11 +189,11 @@ depends_on: []
 **Command signatures:**
 
 ```bash
-launchpad service:list [--available] [--json]
-launchpad service:enable {service} [--json]
-launchpad service:disable {service} [--json]
-launchpad service:configure {service} [--set key=value]... [--json]
-launchpad service:info {service} [--json]
+orbit service:list [--available] [--json]
+orbit service:enable {service} [--json]
+orbit service:disable {service} [--json]
+orbit service:configure {service} [--set key=value]... [--json]
+orbit service:info {service} [--json]
 ```
 
 **JSON output format for service:list:**
@@ -210,7 +210,7 @@ launchpad service:info {service} [--json]
             "config": {
                 "version": "17",
                 "port": 5432,
-                "user": "launchpad"
+                "user": "orbit"
             }
         }
     ],
@@ -244,8 +244,8 @@ services:
         config:
             port: 5432
             version: '17'
-            user: launchpad
-            password: launchpad
+            user: orbit
+            password: orbit
     mailpit:
         enabled: true
         config:
@@ -255,14 +255,14 @@ services:
         enabled: true
         config:
             port: 6001
-            app_id: launchpad
+            app_id: orbit
 ```
 
 #### Step 1.7: Build and Release CLI
 
 ```bash
 # On remote server
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
 
 # Build phar
@@ -720,33 +720,33 @@ Each service template defines a `configSchema` that specifies:
 
 ```bash
 # SSH to remote server
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
 
 # Test template loading
-php launchpad service:list --available
+php orbit service:list --available
 
 # Enable a service
-php launchpad service:enable mysql --json
+php orbit service:enable mysql --json
 
 # Configure a service
-php launchpad service:configure mysql --set port=3307 --set version=8.0 --json
+php orbit service:configure mysql --set port=3307 --set version=8.0 --json
 
 # Check generated files
 cat ~/.config/orbit/services.yaml
 cat ~/.config/orbit/docker-compose.yaml
 
 # Start services
-php launchpad start
+php orbit start
 
 # Check status
-php launchpad status --json
+php orbit status --json
 
 # Disable a service
-php launchpad service:disable mysql --json
+php orbit service:disable mysql --json
 
 # Try to disable required service (should fail)
-php launchpad service:disable dns --json
+php orbit service:disable dns --json
 ```
 
 ### Desktop Testing

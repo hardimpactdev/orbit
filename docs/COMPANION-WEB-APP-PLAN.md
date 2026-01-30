@@ -18,7 +18,7 @@ Ship a Laravel companion web app alongside the CLI that:
 - Handles async operations via proper Laravel queues
 - Uses Horizon for job management and auto-restart
 - Broadcasts status updates via Reverb (already working)
-- Integrates tightly with existing launchpad infrastructure
+- Integrates tightly with existing orbit infrastructure
 
 ## Architecture
 
@@ -82,12 +82,12 @@ orbit-cli/
 └── (no database - stateless)
 
 ~/.local/bin/
-└── launchpad               ← CLI binary
+└── orbit               ← CLI binary
 ```
 
 ## Infrastructure Services
 
-After `launchpad init`, the following services run:
+After `orbit init`, the following services run:
 
 ### Containers (Docker)
 
@@ -118,7 +118,7 @@ After `launchpad init`, the following services run:
 
 **Horizon runs on the HOST, not in a container.**
 
-Why? Jobs need to call `launchpad` CLI commands, which need access to:
+Why? Jobs need to call `orbit` CLI commands, which need access to:
 
 - Docker socket
 - Host filesystem
@@ -168,12 +168,12 @@ private function isHorizonRunning(): bool
 ### Single Cron Entry
 
 ```cron
-* * * * * launchpad ensure >> ~/.config/orbit/logs/ensure.log 2>&1
+* * * * * orbit ensure >> ~/.config/orbit/logs/ensure.log 2>&1
 ```
 
-Installed during `launchpad init` in the `launchpad` user's crontab.
+Installed during `orbit init` in the `orbit` user's crontab.
 
-### What `launchpad ensure` Does
+### What `orbit ensure` Does
 
 ```php
 public function handle()
@@ -222,23 +222,23 @@ Within 2-3 minutes of reboot, everything is up.
 
 ## Installation & Updates
 
-### On `launchpad init`
+### On `orbit init`
 
 ```bash
-launchpad init
+orbit init
 # 1. Start Docker containers (FrankenPHP, Redis, Reverb, DNS, Postgres)
 # 2. Copy bundled web/ to ~/.config/orbit/web/
 # 3. Generate .env with known values
 # 4. Run composer install (platform-specific dependencies)
 # 5. Configure FrankenPHP to serve orbit.{tld}
-# 6. Install cron job: * * * * * launchpad ensure
+# 6. Install cron job: * * * * * orbit ensure
 # 7. Start Horizon
 ```
 
-### On `launchpad update`
+### On `orbit update`
 
 ```bash
-launchpad update
+orbit update
 # 1. Download new CLI binary
 # 2. Copy web/ to ~/.config/orbit/web/ (overwrite all files)
 # 3. Regenerate .env (we know all values)
@@ -280,9 +280,9 @@ SESSION_DRIVER=redis
 BROADCAST_CONNECTION=reverb
 
 # Reverb (values match existing setup)
-REVERB_APP_ID=launchpad
-REVERB_APP_KEY=launchpad-key
-REVERB_APP_SECRET=launchpad-secret
+REVERB_APP_ID=orbit
+REVERB_APP_KEY=orbit-key
+REVERB_APP_SECRET=orbit-secret
 REVERB_HOST=reverb.{tld}
 REVERB_PORT=443
 REVERB_SCHEME=https
@@ -321,13 +321,13 @@ If Redis is flushed, job history is lost. For a dev tool, this is acceptable.
 
 ### `orbit.{tld}` is Reserved
 
-- Users cannot create projects named "launchpad"
-- CLI validates project names and rejects "launchpad"
+- Users cannot create projects named "orbit"
+- CLI validates project names and rejects "orbit"
 - The domain `orbit.{tld}` always serves the companion web app
 
 ### FrankenPHP Configuration
 
-During `launchpad init`, FrankenPHP/Caddy is configured to serve:
+During `orbit init`, FrankenPHP/Caddy is configured to serve:
 
 - `orbit.{tld}` → `~/.config/orbit/web/public`
 - `*.{tld}` → User projects as usual
@@ -347,10 +347,10 @@ class CreateProjectJob implements ShouldQueue
     {
         try {
             $this->broadcast('creating_repo');
-            Process::run("launchpad repo:create {$this->slug}");
+            Process::run("orbit repo:create {$this->slug}");
 
             $this->broadcast('cloning');
-            Process::run("launchpad site:clone {$this->slug}");
+            Process::run("orbit site:clone {$this->slug}");
 
             // ... more steps ...
 
@@ -440,7 +440,7 @@ class CreateProjectJob implements ShouldQueue
 
     private function runCli(string $command): void
     {
-        $result = Process::run("launchpad {$command}");
+        $result = Process::run("orbit {$command}");
         if (!$result->successful()) {
             throw new \Exception("CLI command failed: {$command}\n{$result->errorOutput()}");
         }
@@ -486,8 +486,8 @@ class ProjectController extends Controller
         ]);
 
         // Reject reserved name
-        if ($validated['slug'] === 'launchpad') {
-            return response()->json(['error' => 'Name "launchpad" is reserved'], 422);
+        if ($validated['slug'] === 'orbit') {
+            return response()->json(['error' => 'Name "orbit" is reserved'], 422);
         }
 
         CreateProjectJob::dispatch(
@@ -542,14 +542,14 @@ If auth is needed later:
 
 ```php
 // Middleware
-if ($request->header('Authorization') !== 'Bearer ' . config('launchpad.api_token')) {
+if ($request->header('Authorization') !== 'Bearer ' . config('orbit.api_token')) {
     abort(401);
 }
 ```
 
 Token would be:
 
-- Generated on `launchpad init`
+- Generated on `orbit init`
 - Stored in `~/.config/orbit/api_token`
 - Desktop retrieves it and includes in requests
 
@@ -558,11 +558,11 @@ Token would be:
 ### Provisioning Flow
 
 1. **Root user** - Initial server provisioning (create users, install packages)
-2. **launchpad user** - Everything else
+2. **orbit user** - Everything else
 
 ### Cron Job Ownership
 
-The ensure cron runs as `launchpad` user:
+The ensure cron runs as `orbit` user:
 
 - Has Docker group membership
 - Owns the web app files
@@ -575,16 +575,16 @@ The ensure cron runs as `launchpad` user:
 
 ```bash
 # Check containers
-docker ps | grep launchpad
+docker ps | grep orbit
 
 # Check Horizon
-launchpad horizon:status
+orbit horizon:status
 
 # Check web app
 curl https://orbit.{tld}/api/health
 
 # Check cron
-crontab -l | grep launchpad
+crontab -l | grep orbit
 ```
 
 ### Test Project Creation
@@ -614,4 +614,4 @@ This plan provides:
 - **Existing infrastructure**: Uses same Reverb, same event format
 - **Minimal desktop changes**: Same WebSocket, same status events
 
-The companion web app is a thin async layer that leverages Laravel's strengths while keeping the CLI as the source of truth for all launchpad operations.
+The companion web app is a thin async layer that leverages Laravel's strengths while keeping the CLI as the source of truth for all orbit operations.

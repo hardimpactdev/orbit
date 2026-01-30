@@ -210,6 +210,51 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'typeAliasClassName' => NULL,
          'traitData' => NULL,
       )),
+      '94483486b0e491185b899d838cda15f3' => 
+      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+         'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+         'uses' => 
+        array (
+          'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+        ),
+         'className' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
+         'functionName' => 'getTld',
+         'templatePhpDocNodes' => 
+        array (
+        ),
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+           'uses' => 
+          array (
+            'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
+         'typeAliasesMap' => 
+        array (
+        ),
+         'bypassTypeAliases' => false,
+         'constUses' => 
+        array (
+        ),
+         'typeAliasClassName' => NULL,
+         'traitData' => NULL,
+      )),
       'aa649d1c2390288f137a567ffe142cee' => 
       \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
          'namespace' => 'HardImpact\\Orbit\\Core\\Data',
@@ -258,7 +303,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php' => 'c798f5f2c6661c5208b1057ef6141d5a4c05997f80b476b6771677fc55dc4896',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php' => '1f448145a123c521bac4656d4188ee954b0d3bc359ef0f493ac6afcafbf13795',
     ),
   ),
 ));

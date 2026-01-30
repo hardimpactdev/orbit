@@ -1,17 +1,19 @@
 <?php
+declare(strict_types=1);
 
 namespace App\Services;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
-class WorktreeService
+final readonly class WorktreeService
 {
     protected string $worktreesPath;
 
     public function __construct(
         protected ConfigManager $configManager,
-        protected ProjectScanner $projectScanner
+        protected ProjectScanner $projectScanner,
+        protected CaddyfileGenerator $caddyfileGenerator
     ) {
         $this->worktreesPath = $this->configManager->getConfigPath().'/worktrees.json';
     }
@@ -323,10 +325,9 @@ class WorktreeService
     {
         // We need to regenerate the Caddyfile - the CaddyfileGenerator
         // will call getLinkedWorktreesForCaddy() to include worktrees
-        $caddyGenerator = app(CaddyfileGenerator::class);
-        $caddyGenerator->generate();
-        $caddyGenerator->reload();
-        $caddyGenerator->reloadPhp();
+        $this->caddyfileGenerator->generate();
+        $this->caddyfileGenerator->reload();
+        $this->caddyfileGenerator->reloadPhp();
     }
 
     /**

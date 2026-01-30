@@ -70,11 +70,6 @@ class Project extends Model
         'job_id',
     ];
 
-    public function deployments(): HasMany
-    {
-        return $this->hasMany(Deployment::class);
-    }
-
     public function environment(): BelongsTo
     {
         return $this->belongsTo(Environment::class);

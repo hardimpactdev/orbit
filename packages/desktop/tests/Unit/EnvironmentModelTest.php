@@ -1,6 +1,5 @@
 <?php
 
-use HardImpact\Orbit\Models\Deployment;
 use HardImpact\Orbit\Models\Environment;
 use HardImpact\Orbit\Models\Project;
 
@@ -8,7 +7,7 @@ test('environment can be created', function () {
     $environment = Environment::create([
         'name' => 'Test Server',
         'host' => 'ai',
-        'user' => 'launchpad',
+        'user' => 'orbit',
         'port' => 22,
         'is_local' => false,
         'status' => 'active',
@@ -45,24 +44,24 @@ test('get ssh connection string for remote environment', function () {
     $environment = Environment::create([
         'name' => 'Remote Server',
         'host' => 'ai',
-        'user' => 'launchpad',
+        'user' => 'orbit',
         'port' => 22,
         'is_local' => false,
     ]);
 
-    expect($environment->getSshConnectionString())->toBe('launchpad@ai');
+    expect($environment->getSshConnectionString())->toBe('orbit@ai');
 });
 
 test('get ssh connection string includes port when not 22', function () {
     $environment = Environment::create([
         'name' => 'Remote Server',
         'host' => 'ai',
-        'user' => 'launchpad',
+        'user' => 'orbit',
         'port' => 2222,
         'is_local' => false,
     ]);
 
-    expect($environment->getSshConnectionString())->toBe('launchpad@ai -p 2222');
+    expect($environment->getSshConnectionString())->toBe('orbit@ai -p 2222');
 });
 
 test('get ssh connection string returns local for local environment', function () {
@@ -130,29 +129,6 @@ test('get local environment', function () {
     ]);
 
     expect(Environment::getLocal()->id)->toBe($local->id);
-});
-
-test('environment has deployments relationship', function () {
-    $environment = Environment::create([
-        'name' => 'Test Server',
-        'host' => 'localhost',
-        'user' => 'test',
-        'port' => 22,
-        'is_local' => true,
-    ]);
-
-    $project = Project::create([
-        'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
-    ]);
-
-    Deployment::create([
-        'project_id' => $project->id,
-        'environment_id' => $environment->id,
-        'status' => 'active',
-    ]);
-
-    expect($environment->deployments)->toHaveCount(1);
 });
 
 test('metadata is cast to array', function () {

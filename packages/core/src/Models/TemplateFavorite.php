@@ -6,6 +6,19 @@ namespace HardImpact\Orbit\Core\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property int $id
+ * @property string $repo_url
+ * @property string $display_name
+ * @property int $usage_count
+ * @property \Carbon\Carbon|null $last_used_at
+ * @property string|null $db_driver
+ * @property string|null $session_driver
+ * @property string|null $cache_driver
+ * @property string|null $queue_driver
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class TemplateFavorite extends Model
 {
     protected $fillable = [

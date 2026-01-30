@@ -9,6 +9,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
+/**
+ * @property string $id
+ * @property string $name
+ * @property string $status
+ * @property string|null $output
+ * @property \Carbon\Carbon|null $started_at
+ * @property \Carbon\Carbon|null $finished_at
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class TrackedJob extends Model
 {
     use HasFactory, HasUuids;

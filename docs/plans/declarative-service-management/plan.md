@@ -2,7 +2,7 @@
 
 **Source Plan:** `docs/service-management-plan.md`
 **Verification:** `docs/plans/declarative-service-management/verification.md`
-**Target:** Remote CLI at `ssh launchpad@ai:~/projects/orbit-cli/`
+**Target:** Remote CLI at `ssh orbit@ai:~/projects/orbit-cli/`
 
 ## Overview
 
@@ -67,10 +67,10 @@ config:
     port: { type: integer, default: 5432 }
 docker:
     image: image:${version}
-    container_name: launchpad-service
+    container_name: orbit-service
     ports: ['${port}:5432']
     volumes: ['${data_path}/service:/data']
-    networks: [launchpad]
+    networks: [orbit]
 depends_on: []
 ```
 
@@ -100,7 +100,7 @@ depends_on: []
 Run test suite after each phase:
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && ./vendor/bin/pest"
+ssh orbit@ai "cd ~/projects/orbit-cli && ./vendor/bin/pest"
 ```
 
 Full verification criteria in `docs/plans/declarative-service-management/verification.md`
@@ -108,14 +108,14 @@ Full verification criteria in `docs/plans/declarative-service-management/verific
 ## End-to-End Test
 
 ```bash
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
-php launchpad init
-php launchpad service:list
-php launchpad service:enable mysql
-php launchpad service:configure mysql --set port=3307
-php launchpad start
-php launchpad status
-php launchpad service:disable mysql
-php launchpad restart
+php orbit init
+php orbit service:list
+php orbit service:enable mysql
+php orbit service:configure mysql --set port=3307
+php orbit start
+php orbit status
+php orbit service:disable mysql
+php orbit restart
 ```

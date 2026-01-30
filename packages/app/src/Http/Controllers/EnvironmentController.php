@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace HardImpact\Orbit\Ui\Http\Controllers;
 
@@ -17,9 +18,11 @@ use HardImpact\Orbit\Core\Services\OrbitCli\PackageService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ProjectCliService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ServiceControlService;
 use HardImpact\Orbit\Core\Services\OrbitCli\StatusService;
+use HardImpact\Orbit\Core\Services\NotificationService;
 use HardImpact\Orbit\Core\Services\OrbitCli\WorkspaceService;
 use HardImpact\Orbit\Core\Services\OrbitCli\WorktreeService;
 use HardImpact\Orbit\Core\Services\SshService;
+use HardImpact\Orbit\Core\Services\TemplateAnalyzer\EnvParser;
 use Illuminate\Http\Request;
 
 class EnvironmentController extends Controller
@@ -38,6 +41,8 @@ class EnvironmentController extends Controller
         protected MacPhpFpmConfigService $macPhpFpm,
         protected EnvironmentManager $environments,
         protected HorizonService $horizon,
+        protected NotificationService $notificationService,
+        protected EnvParser $envParser,
     ) {}
 
     /**
@@ -394,7 +399,7 @@ class EnvironmentController extends Controller
         $sshKeys = \HardImpact\Orbit\Core\Models\SshKey::orderBy('is_default', 'desc')->orderBy('name')->get();
         $availableSshKeys = \HardImpact\Orbit\Core\Models\Setting::getAvailableSshKeys();
         $templateFavorites = \HardImpact\Orbit\Core\Models\TemplateFavorite::orderByDesc('usage_count')->get();
-        $notificationsEnabled = app(\HardImpact\Orbit\Core\Services\NotificationService::class)->isEnabled();
+        $notificationsEnabled = $this->notificationService->isEnabled();
         $menuBarEnabled = \HardImpact\Orbit\Core\Models\UserPreference::getValue('menu_bar_enabled', false);
 
         return \Inertia\Inertia::render('environments/Configuration', [
@@ -669,7 +674,7 @@ class EnvironmentController extends Controller
             $config = $this->config->getConfig($environment);
             $availableVersions = $config['success'] && isset($config['data']['available_php_versions'])
                 ? $config['data']['available_php_versions']
-                : ['8.3', '8.4', '8.5'];
+                : config('orbit-ui.php.versions', ['8.3', '8.4', '8.5']);
 
             $validated = $request->validate([
                 'paths' => 'required|array',
@@ -969,7 +974,7 @@ class EnvironmentController extends Controller
             'display_name' => $validated['name'],
             'slug' => $projectSlug,
             'path' => $projectPath,
-            'php_version' => $validated['php_version'] ?? '8.4',
+            'php_version' => $validated['php_version'] ?? config('orbit-ui.php.default', '8.4'),
             'github_repo' => $validated['template'] ?? null,
             'has_public_folder' => false,
             'status' => Project::STATUS_QUEUED,
@@ -1147,8 +1152,7 @@ class EnvironmentController extends Controller
         ];
 
         if ($envContent !== null) {
-            $envParser = app(\HardImpact\Orbit\Core\Services\TemplateAnalyzer\EnvParser::class);
-            $envVars = $envParser->parse($envContent);
+            $envVars = $this->envParser->parse($envContent);
 
             $drivers = [
                 'db_driver' => $this->normalizeDriver($envVars['DB_CONNECTION'] ?? null),

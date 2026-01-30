@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Data/ProvisionContext.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Data\ProvisionContext
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-0d7808869f7e905bdb645c5183f6023485b64dbed87e5e76c27474596b913b06',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-cbaa14c99b952aeed46222316fa849ceef1d226e6fafb2d052bec3a28bd44ec0',
    'data' => 
   array (
     'locatedSource' => 
@@ -32,7 +32,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 13,
-    'endLine' => 106,
+    'endLine' => 114,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -744,7 +744,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'startLine' => 31,
         'endLine' => 31,
         'startColumn' => 9,
-        'endColumn' => 35,
+        'endColumn' => 34,
         'isPromoted' => true,
         'declaredAtCompileTime' => true,
         'immediateVirtual' => false,
@@ -1551,7 +1551,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'name' => 'tld',
             'default' => 
             array (
-              'code' => '\'ccc\'',
+              'code' => 'null',
               'attributes' => 
               array (
                 'startLine' => 31,
@@ -1559,7 +1559,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
                 'startTokenPos' => 210,
                 'startFilePos' => 979,
                 'endTokenPos' => 210,
-                'endFilePos' => 983,
+                'endFilePos' => 982,
               ),
             ),
             'type' => 
@@ -1599,7 +1599,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'startLine' => 31,
             'endLine' => 31,
             'startColumn' => 9,
-            'endColumn' => 35,
+            'endColumn' => 34,
             'parameterIndex' => 15,
             'isOptional' => true,
           ),
@@ -1614,9 +1614,9 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
                 'startLine' => 32,
                 'endLine' => 32,
                 'startTokenPos' => 222,
-                'startFilePos' => 1025,
+                'startFilePos' => 1024,
                 'endTokenPos' => 222,
-                'endFilePos' => 1028,
+                'endFilePos' => 1027,
               ),
             ),
             'type' => 
@@ -1682,6 +1682,43 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'currentClassName' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
         'aliasName' => NULL,
       ),
+      'getTld' => 
+      array (
+        'name' => 'getTld',
+        'parameters' => 
+        array (
+        ),
+        'returnsReference' => false,
+        'returnType' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'string',
+            'isIdentifier' => true,
+          ),
+        ),
+        'attributes' => 
+        array (
+        ),
+        'docComment' => '/**
+ * Get the TLD for this project.
+ */',
+        'startLine' => 38,
+        'endLine' => 41,
+        'startColumn' => 5,
+        'endColumn' => 5,
+        'couldThrow' => false,
+        'isClosure' => false,
+        'isGenerator' => false,
+        'isVariadic' => false,
+        'modifiers' => 1,
+        'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
+        'currentClassName' => 'HardImpact\\Orbit\\Core\\Data\\ProvisionContext',
+        'aliasName' => NULL,
+      ),
       'withRepoInfo' => 
       array (
         'name' => 'withRepoInfo',
@@ -1725,8 +1762,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 38,
-            'endLine' => 38,
+            'startLine' => 46,
+            'endLine' => 46,
             'startColumn' => 34,
             'endColumn' => 52,
             'parameterIndex' => 0,
@@ -1770,8 +1807,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 38,
-            'endLine' => 38,
+            'startLine' => 46,
+            'endLine' => 46,
             'startColumn' => 55,
             'endColumn' => 71,
             'parameterIndex' => 1,
@@ -1794,8 +1831,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Create new context with updated GitHub repo info.
  */',
-        'startLine' => 38,
-        'endLine' => 59,
+        'startLine' => 46,
+        'endLine' => 67,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -1822,12 +1859,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => 'null',
               'attributes' => 
               array (
-                'startLine' => 64,
-                'endLine' => 64,
-                'startTokenPos' => 414,
-                'startFilePos' => 2065,
-                'endTokenPos' => 414,
-                'endFilePos' => 2068,
+                'startLine' => 72,
+                'endLine' => 72,
+                'startTokenPos' => 445,
+                'startFilePos' => 2217,
+                'endTokenPos' => 445,
+                'endFilePos' => 2220,
               ),
             ),
             'type' => 
@@ -1864,8 +1901,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 64,
-            'endLine' => 64,
+            'startLine' => 72,
+            'endLine' => 72,
             'startColumn' => 36,
             'endColumn' => 67,
             'parameterIndex' => 0,
@@ -1907,8 +1944,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the GitHub owner (organization or personal username).
  */',
-        'startLine' => 64,
-        'endLine' => 67,
+        'startLine' => 72,
+        'endLine' => 75,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -1942,8 +1979,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 69,
-        'endLine' => 72,
+        'startLine' => 77,
+        'endLine' => 80,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -1977,8 +2014,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 74,
-        'endLine' => 80,
+        'startLine' => 82,
+        'endLine' => 88,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -2014,8 +2051,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the PATH string for clean environment commands.
  */',
-        'startLine' => 85,
-        'endLine' => 90,
+        'startLine' => 93,
+        'endLine' => 98,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -2053,8 +2090,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 99,
-            'endLine' => 99,
+            'startLine' => 107,
+            'endLine' => 107,
             'startColumn' => 38,
             'endColumn' => 52,
             'parameterIndex' => 0,
@@ -2081,8 +2118,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * environment variables. When running artisan commands from within
  * Horizon, the parent process\'s env vars would otherwise take precedence.
  */',
-        'startLine' => 99,
-        'endLine' => 105,
+        'startLine' => 107,
+        'endLine' => 113,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

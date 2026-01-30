@@ -694,7 +694,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'hasuuids' => 'Illuminate\\Database\\Eloquent\\Concerns\\HasUuids',
+            'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+            'str' => 'Illuminate\\Support\\Str',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -720,7 +745,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'hasuuids' => 'Illuminate\\Database\\Eloquent\\Concerns\\HasUuids',
+            'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+            'str' => 'Illuminate\\Support\\Str',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -746,7 +796,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'hasuuids' => 'Illuminate\\Database\\Eloquent\\Concerns\\HasUuids',
+            'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+            'str' => 'Illuminate\\Support\\Str',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -772,7 +847,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'hasuuids' => 'Illuminate\\Database\\Eloquent\\Concerns\\HasUuids',
+            'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+            'str' => 'Illuminate\\Support\\Str',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -798,7 +898,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'hasuuids' => 'Illuminate\\Database\\Eloquent\\Concerns\\HasUuids',
+            'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+            'str' => 'Illuminate\\Support\\Str',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -812,7 +937,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TrackedJob.php' => '372e67f193799d31c462b6ee2e5f0fec7ca6046a889a5377eace8ce39d52ae84',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TrackedJob.php' => '99df92a9384025c64abbdbfbe4259c8c4829a5a5142743e801e7cca70b20922c',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../laravel/framework/src/Illuminate/Database/Eloquent/Factories/HasFactory.php' => 'b6cb2b164e90168e80963a5549541f5f3188a3ec8cfd368bf3611bd94fbd46a7',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../laravel/framework/src/Illuminate/Database/Eloquent/Concerns/HasUuids.php' => 'f75b8db33aafd61f17652a5e4bb5b8989e62197b306e9f7ae60bb3ac2c34d534',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../laravel/framework/src/Illuminate/Database/Eloquent/Concerns/HasUniqueStringIds.php' => '3d5612d3c0a56c6c9f19e628b02085d4d68a64d9d07656742725cec78d4a79c5',

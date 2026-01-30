@@ -6,6 +6,13 @@ namespace HardImpact\Orbit\Core\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property int $id
+ * @property string $key
+ * @property array|null $value
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class UserPreference extends Model
 {
     protected $fillable = [

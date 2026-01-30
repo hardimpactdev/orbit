@@ -95,21 +95,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
-    '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_26_000005_create_deployments_table.php' => 
-    array (
-      0 => 'd73bae7d6a21d77f04d3f71493cc5944fd34b266fba46dfb85dc628d59287dbe',
-      1 => 
-      array (
-      ),
-      2 => 
-      array (
-        0 => 'up',
-        1 => 'down',
-      ),
-      3 => 
-      array (
-      ),
-    ),
     '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_26_000008_create_tracked_jobs_table.php' => 
     array (
       0 => 'b72175bd5bb53e685a76dbc5cf6af50f299f14f658cf7737453776cc9542309a',

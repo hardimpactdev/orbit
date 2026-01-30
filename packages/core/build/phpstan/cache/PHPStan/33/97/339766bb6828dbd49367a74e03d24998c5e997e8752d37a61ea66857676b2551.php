@@ -214,56 +214,10 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'typeAliasClassName' => NULL,
          'traitData' => NULL,
       )),
-      'e575e927dc703c0e79ee1cfae9b79b9e' => 
-      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
-         'namespace' => 'HardImpact\\Orbit\\Core\\Services',
-         'uses' => 
-        array (
-          'userpreference' => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
-        ),
-         'className' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-         'functionName' => 'deploymentUpdated',
-         'templatePhpDocNodes' => 
-        array (
-        ),
-         'parent' => NULL,
-         'typeAliasesMap' => 
-        array (
-        ),
-         'bypassTypeAliases' => false,
-         'constUses' => 
-        array (
-        ),
-         'typeAliasClassName' => NULL,
-         'traitData' => NULL,
-      )),
-      '27cc60db04fa62492219d32b1e1bcd66' => 
-      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
-         'namespace' => 'HardImpact\\Orbit\\Core\\Services',
-         'uses' => 
-        array (
-          'userpreference' => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
-        ),
-         'className' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-         'functionName' => 'deploymentUpgraded',
-         'templatePhpDocNodes' => 
-        array (
-        ),
-         'parent' => NULL,
-         'typeAliasesMap' => 
-        array (
-        ),
-         'bypassTypeAliases' => false,
-         'constUses' => 
-        array (
-        ),
-         'typeAliasClassName' => NULL,
-         'traitData' => NULL,
-      )),
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => 'd3641499a2708d071e1530ba51a7a167ea40a43e5a4f35333b2b0984fdc91877',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => '929a433c23b5ce972c8cab147924c1fad4071f4b9e55732dd0b7ddbe000d7eb4',
     ),
   ),
 ));

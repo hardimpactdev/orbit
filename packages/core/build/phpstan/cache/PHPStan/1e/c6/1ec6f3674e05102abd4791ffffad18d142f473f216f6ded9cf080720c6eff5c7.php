@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\NotificationService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-d3641499a2708d071e1530ba51a7a167ea40a43e5a4f35333b2b0984fdc91877',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-929a433c23b5ce972c8cab147924c1fad4071f4b9e55732dd0b7ddbe000d7eb4',
    'data' => 
   array (
     'locatedSource' => 
@@ -27,7 +27,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 8,
-    'endLine' => 123,
+    'endLine' => 102,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -593,132 +593,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  */',
         'startLine' => 94,
         'endLine' => 100,
-        'startColumn' => 5,
-        'endColumn' => 5,
-        'couldThrow' => false,
-        'isClosure' => false,
-        'isGenerator' => false,
-        'isVariadic' => false,
-        'modifiers' => 1,
-        'namespace' => 'HardImpact\\Orbit\\Core\\Services',
-        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'currentClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'aliasName' => NULL,
-      ),
-      'deploymentUpdated' => 
-      array (
-        'name' => 'deploymentUpdated',
-        'parameters' => 
-        array (
-          'projectName' => 
-          array (
-            'name' => 'projectName',
-            'default' => NULL,
-            'type' => 
-            array (
-              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
-              'data' => 
-              array (
-                'name' => 'string',
-                'isIdentifier' => true,
-              ),
-            ),
-            'isVariadic' => false,
-            'byRef' => false,
-            'isPromoted' => false,
-            'attributes' => 
-            array (
-            ),
-            'startLine' => 105,
-            'endLine' => 105,
-            'startColumn' => 39,
-            'endColumn' => 57,
-            'parameterIndex' => 0,
-            'isOptional' => false,
-          ),
-        ),
-        'returnsReference' => false,
-        'returnType' => 
-        array (
-          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
-          'data' => 
-          array (
-            'name' => 'void',
-            'isIdentifier' => true,
-          ),
-        ),
-        'attributes' => 
-        array (
-        ),
-        'docComment' => '/**
- * Notify about deployment update.
- */',
-        'startLine' => 105,
-        'endLine' => 111,
-        'startColumn' => 5,
-        'endColumn' => 5,
-        'couldThrow' => false,
-        'isClosure' => false,
-        'isGenerator' => false,
-        'isVariadic' => false,
-        'modifiers' => 1,
-        'namespace' => 'HardImpact\\Orbit\\Core\\Services',
-        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'currentClassName' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-        'aliasName' => NULL,
-      ),
-      'deploymentUpgraded' => 
-      array (
-        'name' => 'deploymentUpgraded',
-        'parameters' => 
-        array (
-          'projectName' => 
-          array (
-            'name' => 'projectName',
-            'default' => NULL,
-            'type' => 
-            array (
-              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
-              'data' => 
-              array (
-                'name' => 'string',
-                'isIdentifier' => true,
-              ),
-            ),
-            'isVariadic' => false,
-            'byRef' => false,
-            'isPromoted' => false,
-            'attributes' => 
-            array (
-            ),
-            'startLine' => 116,
-            'endLine' => 116,
-            'startColumn' => 40,
-            'endColumn' => 58,
-            'parameterIndex' => 0,
-            'isOptional' => false,
-          ),
-        ),
-        'returnsReference' => false,
-        'returnType' => 
-        array (
-          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
-          'data' => 
-          array (
-            'name' => 'void',
-            'isIdentifier' => true,
-          ),
-        ),
-        'attributes' => 
-        array (
-        ),
-        'docComment' => '/**
- * Notify about deployment upgrade.
- */',
-        'startLine' => 116,
-        'endLine' => 122,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

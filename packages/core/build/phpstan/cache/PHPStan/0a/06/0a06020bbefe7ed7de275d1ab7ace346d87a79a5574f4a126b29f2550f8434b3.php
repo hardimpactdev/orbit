@@ -42,7 +42,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\SshKey',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -65,7 +87,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\SshKey',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -88,7 +132,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+           'uses' => 
+          array (
+            'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Models\\SshKey',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -102,7 +168,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php' => '6a713630416a44f5be1d6d98e90fa6db205ba98bbc2922f3fa4e40d0587e2a3d',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php' => 'e9b96c250982f0611e95bc37133011ec59f2b4fae7e8fb54ce84f99b117ad99a',
     ),
   ),
 ));

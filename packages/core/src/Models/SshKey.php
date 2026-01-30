@@ -6,6 +6,14 @@ namespace HardImpact\Orbit\Core\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property string $public_key
+ * @property bool $is_default
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ */
 class SshKey extends Model
 {
     protected $fillable = ['name', 'public_key', 'is_default'];

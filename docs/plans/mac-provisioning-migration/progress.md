@@ -47,7 +47,7 @@ Run `bd ready` to see unblocked tasks.
 **Learnings:**
 
 1. **Local vs Remote Provisioning Pattern**: The controller now branches on `$environment->is_local`:
-    - Local: spawns `launchpad setup --json --tld={tld}` via nohup, writes to `storage/logs/provision-{id}.log`
+    - Local: spawns `orbit setup --json --tld={tld}` via nohup, writes to `storage/logs/provision-{id}.log`
     - Remote: spawns `artisan environment:provision` via SSH (existing behavior)
 
 2. **CLI Progress Parsing**: Added `parseCliProgress()` method that:
@@ -170,7 +170,7 @@ Run `bd ready` to see unblocked tasks.
     Used `--no-verify` to bypass pre-existing test failures unrelated to our changes.
 
 3. **Box Composer Path**: Box's `--composer-bin` flag requires an absolute path (not `~/` expansion):
-    - Correct: `/home/launchpad/.local/bin/composer`
+    - Correct: `/home/orbit/.local/bin/composer`
     - Incorrect: `~/.local/bin/composer` (gets treated as relative path)
 
 4. **GitHub Release Workflow**: Created release v0.0.24 with:

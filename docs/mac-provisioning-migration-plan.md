@@ -6,14 +6,14 @@
 
 ## Overview
 
-Add a unified `launchpad setup` command to the CLI that auto-detects the platform (Mac/Linux) and provisions the full Orbit stack. The desktop app remains a "dumb UI shell" that simply invokes this CLI command and displays progress.
+Add a unified `orbit setup` command to the CLI that auto-detects the platform (Mac/Linux) and provisions the full Orbit stack. The desktop app remains a "dumb UI shell" that simply invokes this CLI command and displays progress.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Desktop App (orbit-desktop)                                │
-│  - Invokes: launchpad setup --json                              │
+│  - Invokes: orbit setup --json                              │
 │  - Parses JSON progress output                                  │
 │  - Displays progress in UI                                      │
 └───────────────────────┬─────────────────────────────────────────┘
@@ -23,7 +23,7 @@ Add a unified `launchpad setup` command to the CLI that auto-detects the platfor
 ┌─────────────────────────────────────────────────────────────────┐
 │  Orbit CLI (~/projects/orbit-cli/)                      │
 │                                                                 │
-│  launchpad setup [--tld=test] [--json]                          │
+│  orbit setup [--tld=test] [--json]                          │
 │      │                                                          │
 │      ├─► Detect platform (PHP_OS_FAMILY)                        │
 │      │                                                          │
@@ -57,7 +57,7 @@ Add a unified `launchpad setup` command to the CLI that auto-detects the platfor
 
 ### Location
 
-All CLI changes in: `ssh launchpad@ai:~/projects/orbit-cli/`
+All CLI changes in: `ssh orbit@ai:~/projects/orbit-cli/`
 
 ### New Command: `SetupCommand.php`
 
@@ -254,7 +254,7 @@ app/Commands/
 
 The desktop app just needs to:
 
-1. Invoke `launchpad setup --json`
+1. Invoke `orbit setup --json`
 2. Parse JSON lines from stdout
 3. Update UI with progress
 
@@ -379,7 +379,7 @@ const checklistItems = computed(() =>
 5. Add `CaddyfileGenerator` to CLI (move/adapt from desktop)
 6. Add PHP-FPM pool config generation to CLI
 7. Add Horizon service management (launchd/systemd) to CLI
-8. Test locally on Mac: `php launchpad setup --json`
+8. Test locally on Mac: `php orbit setup --json`
 
 ### Phase 2: Desktop Integration
 
@@ -421,14 +421,14 @@ Remove redundant Mac-specific files from desktop app (now handled by CLI):
 ### CLI Testing (on Mac)
 
 ```bash
-ssh launchpad@ai
+ssh orbit@ai
 cd ~/projects/orbit-cli
 
 # Test on Mac (copy to local machine first)
 scp -r . your-mac:~/orbit-cli-dev/
 ssh your-mac
 cd ~/orbit-cli-dev
-php launchpad setup --json
+php orbit setup --json
 ```
 
 ### Desktop Testing
@@ -451,7 +451,7 @@ php launchpad setup --json
 | Decision                              | Rationale                                                       |
 | ------------------------------------- | --------------------------------------------------------------- |
 | **CLI owns all provisioning logic**   | Desktop app stays simple, CLI can be used standalone            |
-| **Unified `launchpad setup` command** | Auto-detects platform, no need for `setup:mac` vs `setup:linux` |
+| **Unified `orbit setup` command** | Auto-detects platform, no need for `setup:mac` vs `setup:linux` |
 | **JSON output format**                | Enables any client (desktop, CI, scripts) to track progress     |
 | **OrbStack over Docker Desktop**      | Better performance on Mac, but falls back to Docker Desktop     |
 | **Idempotent steps**                  | Safe to re-run, checks before each action                       |

@@ -121,7 +121,7 @@ Key features:
 - Variable interpolation (`${version}`, `${port}`, etc.)
 - System variables (`${data_path}`, `${config_path}`)
 - Dependency sorting (topological sort)
-- Network configuration (external `launchpad` network)
+- Network configuration (external `orbit` network)
 
 ### Step 4: Create Service Manager
 
@@ -188,7 +188,7 @@ config:
 
 docker:
     image: mysql:${version}
-    container_name: launchpad-mysql
+    container_name: orbit-mysql
     ports:
         - '${port}:3306'
     environment:
@@ -196,7 +196,7 @@ docker:
     volumes:
         - ${data_path}/mysql:/var/lib/mysql
     networks:
-        - launchpad
+        - orbit
     healthcheck:
         test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost']
         interval: 10s
@@ -239,28 +239,28 @@ depends_on: []
 
 ```bash
 # List available services
-$ launchpad service:list --available
+$ orbit service:list --available
 postgres, mysql, redis, mailpit, reverb, dns, meilisearch
 
 # Enable MySQL
-$ launchpad service:enable mysql
+$ orbit service:enable mysql
 Service 'mysql' enabled.
 Start the service now? [Y/n] y
 Service 'mysql' started.
 
 # Configure MySQL
-$ launchpad service:configure mysql --set port=3307
+$ orbit service:configure mysql --set port=3307
 Configuration updated. Restart the service to apply changes.
 
 # Check status
-$ launchpad service:list
+$ orbit service:list
 SERVICE      STATUS    PORT   VERSION
 postgres     running   5432   17
 mysql        running   3307   8.0
 redis        running   6379   7
 
 # Disable service
-$ launchpad service:disable mysql
+$ orbit service:disable mysql
 Service 'mysql' disabled.
 ```
 
@@ -268,10 +268,10 @@ Service 'mysql' disabled.
 
 ```yaml
 # AUTO-GENERATED - Do not edit manually
-name: launchpad
+name: orbit
 
 networks:
-    launchpad:
+    orbit:
         external: true
 
 services:
@@ -281,14 +281,14 @@ services:
         ports:
             - '5432:5432'
         environment:
-            POSTGRES_USER: launchpad
-            POSTGRES_PASSWORD: launchpad
+            POSTGRES_USER: orbit
+            POSTGRES_PASSWORD: orbit
         volumes:
-            - /home/launchpad/.config/orbit/service-data/postgres:/var/lib/postgresql/data
+            - /home/orbit/.config/orbit/service-data/postgres:/var/lib/postgresql/data
         networks:
-            - launchpad
+            - orbit
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U launchpad']
+            test: ['CMD-SHELL', 'pg_isready -U orbit']
             interval: 10s
             timeout: 5s
             retries: 3
@@ -299,28 +299,28 @@ services:
         ports:
             - '6379:6379'
         volumes:
-            - /home/launchpad/.config/orbit/service-data/redis:/data
+            - /home/orbit/.config/orbit/service-data/redis:/data
         networks:
-            - launchpad
+            - orbit
 
     mysql:
         image: mysql:8.0
-        container_name: launchpad-mysql
+        container_name: orbit-mysql
         ports:
             - '3307:3306'
         environment:
             MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
         volumes:
-            - /home/launchpad/.config/orbit/service-data/mysql:/var/lib/mysql
+            - /home/orbit/.config/orbit/service-data/mysql:/var/lib/mysql
         networks:
-            - launchpad
+            - orbit
 ```
 
 ## Breaking Changes
 
 This is a breaking change that replaces the legacy stub-based system entirely:
 
-- Container names remain `launchpad-*` for consistency
+- Container names remain `orbit-*` for consistency
 - Existing service data directories are preserved and migrated to `service-data/`
 
 ## Critical Files to Modify
@@ -352,25 +352,25 @@ This is a breaking change that replaces the legacy stub-based system entirely:
 
     ```bash
     # Initialize with default services
-    launchpad init
+    orbit init
 
     # Check generated files
     cat ~/.config/orbit/services.yaml
     cat ~/.config/orbit/docker-compose.yaml
 
     # List services
-    launchpad service:list
+    orbit service:list
 
     # Enable a new service
-    launchpad service:enable mysql
+    orbit service:enable mysql
 
     # Start all services
-    launchpad start
+    orbit start
 
     # Check status
-    launchpad status
+    orbit status
 
     # Configure a service
-    launchpad service:configure mysql --set port=3307
-    launchpad restart
+    orbit service:configure mysql --set port=3307
+    orbit restart
     ```

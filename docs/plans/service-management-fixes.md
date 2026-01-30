@@ -141,9 +141,9 @@ Add `startHostService()`, `stopHostService()`, `restartHostService()` methods.
 
 Commands:
 
-- `launchpad host:start {service}` - Start a host service (caddy, php-fpm-8.4, horizon)
-- `launchpad host:stop {service}` - Stop a host service
-- `launchpad host:restart {service}` - Restart a host service
+- `orbit host:start {service}` - Start a host service (caddy, php-fpm-8.4, horizon)
+- `orbit host:stop {service}` - Stop a host service
+- `orbit host:restart {service}` - Restart a host service
 
 Implementation uses existing managers:
 
@@ -285,7 +285,7 @@ The CLI already has these managers for host services:
 - `start()`, `stop()`, `restart()`
 - `isRunning()`, `isInstalled()`
 - Mac: uses `launchctl` with plist at `~/Library/LaunchAgents/com.orbit.horizon.plist`
-- Linux: uses `systemctl` with service `launchpad-horizon`
+- Linux: uses `systemctl` with service `orbit-horizon`
 
 ### StatusCommand Output
 
@@ -308,7 +308,7 @@ The CLI `StatusCommand` already outputs services with type information:
 SSH to remote server requires:
 
 ```bash
-SSH_AUTH_SOCK=$(launchctl getenv SSH_AUTH_SOCK) ssh launchpad@ai "command"
+SSH_AUTH_SOCK=$(launchctl getenv SSH_AUTH_SOCK) ssh orbit@ai "command"
 ```
 
 ---
@@ -316,6 +316,6 @@ SSH_AUTH_SOCK=$(launchctl getenv SSH_AUTH_SOCK) ssh launchpad@ai "command"
 ## Questions Resolved
 
 1. **PHP versions:** Dynamically detected via `PhpManager::getInstalledVersions()`
-2. **Horizon plist:** Confirmed at `~/Library/LaunchAgents/com.orbit.horizon.plist` (Mac), `launchpad-horizon.service` (Linux)
+2. **Horizon plist:** Confirmed at `~/Library/LaunchAgents/com.orbit.horizon.plist` (Mac), `orbit-horizon.service` (Linux)
 3. **Remote environments:** Also use host services (Caddy, PHP-FPM) - not Docker
 4. **Caddy:** Runs on host for both Mac AND Linux (not in Docker container)

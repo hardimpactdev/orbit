@@ -78,9 +78,9 @@
 
 **Verification results:**
 
-- php launchpad list | grep -c 'service:' -> 5 ✓
-- php launchpad service:list --available --json | jq -e '.available | contains(["mysql", "meilisearch"])' -> exit code 0 ✓
-- ! php launchpad service:disable dns --json 2>&1 | grep -qi 'required' -> exit code 0 ✓
+- php orbit list | grep -c 'service:' -> 5 ✓
+- php orbit service:list --available --json | jq -e '.available | contains(["mysql", "meilisearch"])' -> exit code 0 ✓
+- ! php orbit service:disable dns --json 2>&1 | grep -qi 'required' -> exit code 0 ✓
 
 ### 2026-01-14 - Phase 2.1-2.3: Desktop Backend Services
 

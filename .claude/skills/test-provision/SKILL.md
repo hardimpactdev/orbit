@@ -38,7 +38,7 @@ Desktop App                    Remote Server (ai)
                               │  │ HOST (supervisord)              │ │
                               │  │  └─ Horizon Worker               │ │
                               │  │      └─ CreateProjectJob         │ │
-                              │  │          └─ launchpad provision  │ │
+                              │  │          └─ orbit provision  │ │
                               │  └─────────────────────────────────┘ │
                               └──────────────────────────────────────┘
 ```
@@ -49,10 +49,10 @@ Desktop App                    Remote Server (ai)
 
 ```bash
 # Clean up any existing project first
-ssh launchpad@ai 'gh repo delete nckrtl/test-api --yes 2>/dev/null; rm -rf ~/projects/test-api'
+ssh orbit@ai 'gh repo delete nckrtl/test-api --yes 2>/dev/null; rm -rf ~/projects/test-api'
 
 # Create via API
-curl -s -X POST https://launchpad.ccc/api/projects \
+curl -s -X POST https://orbit.ccc/api/projects \
   -H "Content-Type: application/json" \
   -d '{"name": "test-api", "template": "hardimpactdev/liftoff-starterkit", "db_driver": "pgsql", "visibility": "private"}'
 ```
@@ -72,7 +72,7 @@ Expected response:
 
 ```bash
 # Watch the web app logs for job progress
-ssh launchpad@ai 'tail -f ~/.config/orbit/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
+ssh orbit@ai 'tail -f ~/.config/orbit/web/storage/logs/laravel.log | grep -E "CreateProjectJob|test-api"'
 ```
 
 Expected log entries:
@@ -86,19 +86,19 @@ CreateProjectJob: Completed {"slug":"test-api"}
 
 ```bash
 # Check if project folder exists with .env
-ssh launchpad@ai 'ls -la ~/projects/test-api/.env'
+ssh orbit@ai 'ls -la ~/projects/test-api/.env'
 
 # Check if site responds
 curl -s -o /dev/null -w "%{http_code}" https://test-api.ccc/
 
 # Check if project appears in API
-curl -s https://launchpad.ccc/api/projects | jq '.data.projects[] | select(.name=="test-api")'
+curl -s https://orbit.ccc/api/projects | jq '.data.projects[] | select(.name=="test-api")'
 ```
 
 ### Step 4: Cleanup
 
 ```bash
-ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api --yes'
+ssh orbit@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api --yes'
 ```
 
 ## Expected Timings
@@ -123,19 +123,19 @@ ssh launchpad@ai 'rm -rf ~/projects/test-api && gh repo delete nckrtl/test-api -
 Check Horizon status:
 
 ```bash
-ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:status'
+ssh orbit@ai 'cd ~/.config/orbit/web && php artisan horizon:status'
 ```
 
 Check for failed jobs:
 
 ```bash
-ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan queue:failed'
+ssh orbit@ai 'cd ~/.config/orbit/web && php artisan queue:failed'
 ```
 
 Restart Horizon:
 
 ```bash
-ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
+ssh orbit@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
 # Supervisord will restart it automatically
 ```
 
@@ -144,23 +144,23 @@ ssh launchpad@ai 'cd ~/.config/orbit/web && php artisan horizon:terminate'
 Check if bun is in PATH:
 
 ```bash
-ssh launchpad@ai 'ls -la ~/.bun/bin/bun'
+ssh orbit@ai 'ls -la ~/.bun/bin/bun'
 ```
 
 Verify CreateProjectJob has correct PATH:
 
 ```bash
-ssh launchpad@ai 'grep -A5 "PATH" ~/.config/orbit/web/app/Jobs/CreateProjectJob.php'
+ssh orbit@ai 'grep -A5 "PATH" ~/.config/orbit/web/app/Jobs/CreateProjectJob.php'
 ```
 
-The PATH must include `{$home}/.bun/bin` (NOT `$home/home/launchpad/.bun/bin`).
+The PATH must include `{$home}/.bun/bin` (NOT `$home/home/orbit/.bun/bin`).
 
 ### Job Times Out
 
 Check Horizon timeout setting:
 
 ```bash
-ssh launchpad@ai 'grep timeout ~/.config/orbit/web/config/horizon.php'
+ssh orbit@ai 'grep timeout ~/.config/orbit/web/config/horizon.php'
 ```
 
 Should be `'timeout' => 120` (120 seconds).
@@ -170,7 +170,7 @@ Should be `'timeout' => 120` (120 seconds).
 The CLI should be mounted into PHP containers:
 
 ```bash
-ssh launchpad@ai 'grep launchpad ~/.config/orbit/php/docker-compose.yml'
+ssh orbit@ai 'grep orbit ~/.config/orbit/php/docker-compose.yml'
 ```
 
 Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
@@ -180,7 +180,7 @@ Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
 ### PATH Bug in CreateProjectJob
 
 - **Issue**: Bun install hung indefinitely
-- **Cause**: PATH was malformed as `/home/launchpad/home/launchpad/.bun/bin`
+- **Cause**: PATH was malformed as `/home/orbit/home/orbit/.bun/bin`
 - **Fix**: Changed to proper interpolation `{$home}/.bun/bin`
 
 ### ProjectController Using `at now`
@@ -192,7 +192,7 @@ Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
 ### Broadcast Exceptions Failing Jobs
 
 - **Issue**: Jobs failed with "Could not resolve host: reverb.ccc"
-- **Cause**: Horizon runs on HOST which doesn't use launchpad DNS
+- **Cause**: Horizon runs on HOST which doesn't use orbit DNS
 - **Fix**: Made broadcast() catch exceptions (non-blocking)
 
 ## Key Files

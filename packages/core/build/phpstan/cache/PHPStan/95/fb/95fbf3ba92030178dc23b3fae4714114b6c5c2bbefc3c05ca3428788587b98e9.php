@@ -7,7 +7,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
   array (
     '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php' => 
     array (
-      0 => '8c626534bd5c3a02a5dd795eb947b6af91c3f5767f37c27a41e226b3ff9bdd2e',
+      0 => '8cc661afaea0edcaffbecd3282b2b39f36c22f2ca30f4299ae25870529a7194a',
       1 => 
       array (
       ),

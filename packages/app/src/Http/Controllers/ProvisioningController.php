@@ -1,16 +1,22 @@
 <?php
+declare(strict_types=1);
 
 namespace HardImpact\Orbit\Ui\Http\Controllers;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Models\Setting;
 use HardImpact\Orbit\Core\Models\SshKey;
+use HardImpact\Orbit\Core\Services\CliUpdateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 class ProvisioningController extends Controller
 {
+    public function __construct(
+        protected CliUpdateService $cliUpdateService,
+    ) {}
+
     public function create(): \Inertia\Response
     {
         $sshKeys = SshKey::orderBy('is_default', 'desc')->orderBy('name')->get();
@@ -41,7 +47,7 @@ class ProvisioningController extends Controller
             'name' => $validated['name'],
             'host' => $validated['host'],
             'user' => $validated['user'],
-            'port' => 22,
+            'port' => config('orbit-ui.ports.ssh', 22),
             'is_local' => false,
             'status' => Environment::STATUS_PROVISIONING,
         ]);
@@ -93,7 +99,7 @@ class ProvisioningController extends Controller
         $logPath = storage_path("logs/provision-{$environment->id}.log");
 
         // Ensure the CLI is installed
-        $cliUpdate = app(\App\Services\CliUpdateService::class);
+        $cliUpdate = $this->cliUpdateService;
         if (! $cliUpdate->isInstalled()) {
             return response()->json([
                 'success' => false,
@@ -155,7 +161,7 @@ class ProvisioningController extends Controller
 
         $log = [];
         $currentStep = 0;
-        $totalSteps = 15; // Mac setup has 15 steps
+        $totalSteps = config('orbit-ui.provisioning.mac_setup_steps', 15);
         $hasError = false;
         $errorMessage = null;
 

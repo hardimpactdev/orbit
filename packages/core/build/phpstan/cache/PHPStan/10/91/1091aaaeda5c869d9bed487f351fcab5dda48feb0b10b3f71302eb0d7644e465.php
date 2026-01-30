@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Data\DeletionContext
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-c798f5f2c6661c5208b1057ef6141d5a4c05997f80b476b6771677fc55dc4896',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-1f448145a123c521bac4656d4188ee954b0d3bc359ef0f493ac6afcafbf13795',
    'data' => 
   array (
     'locatedSource' => 
@@ -32,7 +32,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 15,
-    'endLine' => 106,
+    'endLine' => 114,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -329,11 +329,30 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'modifiers' => 1,
         'type' => 
         array (
-          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionUnionType',
           'data' => 
           array (
-            'name' => 'string',
-            'isIdentifier' => true,
+            'types' => 
+            array (
+              0 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'string',
+                  'isIdentifier' => true,
+                ),
+              ),
+              1 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'null',
+                  'isIdentifier' => true,
+                ),
+              ),
+            ),
           ),
         ),
         'default' => NULL,
@@ -664,24 +683,43 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'name' => 'tld',
             'default' => 
             array (
-              'code' => '\'ccc\'',
+              'code' => 'null',
               'attributes' => 
               array (
                 'startLine' => 25,
                 'endLine' => 25,
-                'startTokenPos' => 121,
-                'startFilePos' => 735,
-                'endTokenPos' => 121,
+                'startTokenPos' => 122,
+                'startFilePos' => 736,
+                'endTokenPos' => 122,
                 'endFilePos' => 739,
               ),
             ),
             'type' => 
             array (
-              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionUnionType',
               'data' => 
               array (
-                'name' => 'string',
-                'isIdentifier' => true,
+                'types' => 
+                array (
+                  0 => 
+                  array (
+                    'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                    'data' => 
+                    array (
+                      'name' => 'string',
+                      'isIdentifier' => true,
+                    ),
+                  ),
+                  1 => 
+                  array (
+                    'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                    'data' => 
+                    array (
+                      'name' => 'null',
+                      'isIdentifier' => true,
+                    ),
+                  ),
+                ),
               ),
             ),
             'isVariadic' => false,
@@ -760,9 +798,9 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               array (
                 'startLine' => 31,
                 'endLine' => 31,
-                'startTokenPos' => 150,
+                'startTokenPos' => 151,
                 'startFilePos' => 890,
-                'endTokenPos' => 150,
+                'endTokenPos' => 151,
                 'endFilePos' => 894,
               ),
             ),
@@ -894,6 +932,43 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'currentClassName' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
         'aliasName' => NULL,
       ),
+      'getTld' => 
+      array (
+        'name' => 'getTld',
+        'parameters' => 
+        array (
+        ),
+        'returnsReference' => false,
+        'returnType' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'string',
+            'isIdentifier' => true,
+          ),
+        ),
+        'attributes' => 
+        array (
+        ),
+        'docComment' => '/**
+ * Get the TLD for this project.
+ */',
+        'startLine' => 96,
+        'endLine' => 99,
+        'startColumn' => 5,
+        'endColumn' => 5,
+        'couldThrow' => false,
+        'isClosure' => false,
+        'isGenerator' => false,
+        'isVariadic' => false,
+        'modifiers' => 1,
+        'namespace' => 'HardImpact\\Orbit\\Core\\Data',
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
+        'currentClassName' => 'HardImpact\\Orbit\\Core\\Data\\DeletionContext',
+        'aliasName' => NULL,
+      ),
       'extractTldFromDomain' => 
       array (
         'name' => 'extractTldFromDomain',
@@ -937,8 +1012,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 96,
-            'endLine' => 96,
+            'startLine' => 104,
+            'endLine' => 104,
             'startColumn' => 50,
             'endColumn' => 64,
             'parameterIndex' => 0,
@@ -948,11 +1023,30 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'returnsReference' => false,
         'returnType' => 
         array (
-          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionUnionType',
           'data' => 
           array (
-            'name' => 'string',
-            'isIdentifier' => true,
+            'types' => 
+            array (
+              0 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'string',
+                  'isIdentifier' => true,
+                ),
+              ),
+              1 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'null',
+                  'isIdentifier' => true,
+                ),
+              ),
+            ),
           ),
         ),
         'attributes' => 
@@ -961,8 +1055,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Extract TLD from a domain string.
  */',
-        'startLine' => 96,
-        'endLine' => 105,
+        'startLine' => 104,
+        'endLine' => 113,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

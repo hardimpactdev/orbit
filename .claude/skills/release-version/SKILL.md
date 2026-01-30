@@ -15,13 +15,13 @@ The CLI is a Laravel Zero app on the remote server. Follow these steps:
 ### 1. Check Current State
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && git status && git tag --sort=-version:refname | head -5"
+ssh orbit@ai "cd ~/projects/orbit-cli && git status && git tag --sort=-version:refname | head -5"
 ```
 
 ### 2. Commit Changes (if needed)
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && git add -A && git commit -m 'Description of changes' && git push"
+ssh orbit@ai "cd ~/projects/orbit-cli && git add -A && git commit -m 'Description of changes' && git push"
 ```
 
 ### 3. Build the Phar
@@ -29,7 +29,7 @@ ssh launchpad@ai "cd ~/projects/orbit-cli && git add -A && git commit -m 'Descri
 Use Box directly (Laravel Zero's bundled Box has a PHP 8.5 bug):
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && ~/.config/composer/vendor/bin/box compile"
+ssh orbit@ai "cd ~/projects/orbit-cli && ~/.config/composer/vendor/bin/box compile"
 ```
 
 This creates `builds/orbit.phar`.
@@ -45,19 +45,19 @@ Follow semantic versioning (MAJOR.MINOR.PATCH):
 ### 5. Create GitHub Release
 
 ```bash
-ssh launchpad@ai "cd ~/projects/orbit-cli && gh release create vX.Y.Z builds/orbit.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
+ssh orbit@ai "cd ~/projects/orbit-cli && gh release create vX.Y.Z builds/orbit.phar --title 'vX.Y.Z' --notes 'Changelog summary'"
 ```
 
 ### 6. Update CLI on Server
 
 ```bash
-ssh launchpad@ai "curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit"
+ssh orbit@ai "curl -L -o ~/.local/bin/orbit https://github.com/nckrtl/orbit-cli/releases/latest/download/orbit.phar && chmod +x ~/.local/bin/orbit"
 ```
 
 ### 7. Verify
 
 ```bash
-ssh launchpad@ai "launchpad --version"
+ssh orbit@ai "orbit --version"
 ```
 
 ---
