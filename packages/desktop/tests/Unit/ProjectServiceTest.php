@@ -1,7 +1,7 @@
 <?php
 
 use HardImpact\Orbit\Http\Integrations\Orbit\OrbitConnector;
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Services\OrbitCli\ConfigurationService;
 use HardImpact\Orbit\Services\OrbitCli\ProjectService;
 use HardImpact\Orbit\Services\OrbitCli\Shared\CommandService;

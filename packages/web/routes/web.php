@@ -1,5 +1,5 @@
 <?php
 
-use HardImpact\Orbit\Ui\UiServiceProvider;
+use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
 
-UiServiceProvider::routes();
+OrbitAppServiceProvider::routes();

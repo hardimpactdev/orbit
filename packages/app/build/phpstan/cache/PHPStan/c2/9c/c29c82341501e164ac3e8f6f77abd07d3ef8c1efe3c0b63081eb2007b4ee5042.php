@@ -34,6 +34,29 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
+    '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
+    array (
+      0 => 'c60af00cb088d47b1193ee08b4abbf69c79f8872ace53744c3a040ca71dd587d',
+      1 => 
+      array (
+        0 => 'hardimpact\\orbit\\ui\\orbitappserviceprovider',
+      ),
+      2 => 
+      array (
+        0 => 'hardimpact\\orbit\\ui\\register',
+        1 => 'hardimpact\\orbit\\ui\\boot',
+        2 => 'hardimpact\\orbit\\ui\\registerroutebindings',
+        3 => 'hardimpact\\orbit\\ui\\registermiddleware',
+        4 => 'hardimpact\\orbit\\ui\\configurevite',
+        5 => 'hardimpact\\orbit\\ui\\registerviews',
+        6 => 'hardimpact\\orbit\\ui\\routes',
+        7 => 'hardimpact\\orbit\\ui\\registerpublishing',
+        8 => 'hardimpact\\orbit\\ui\\registermcp',
+      ),
+      3 => 
+      array (
+      ),
+    ),
     '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SettingsController.php' => 
     array (
       0 => '73d663a336855e895804b349d52fc878a819df41c4ce782344363fdb58a24773',
@@ -84,7 +107,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
     array (
-      0 => 'bd1e6defc6196dc4c7013cea093cb98bbc3e0a25dcfde56a7aec38c50ecb81a7',
+      0 => '5e0315dbc56041207daca0c88a2693632e55c6bd3f84644203dfa4e179428e52',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\ui\\http\\controllers\\environmentcontroller',
@@ -633,28 +656,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         3 => 'hardimpact\\orbit\\ui\\mcp\\resources\\description',
         4 => 'hardimpact\\orbit\\ui\\mcp\\resources\\handle',
         5 => 'hardimpact\\orbit\\ui\\mcp\\resources\\getcontainerports',
-      ),
-      3 => 
-      array (
-      ),
-    ),
-    '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php' => 
-    array (
-      0 => '20e5ebeb5758b86027c14724326f4f455912b40bb8fa0f53ce9a4314855a5107',
-      1 => 
-      array (
-        0 => 'hardimpact\\orbit\\ui\\uiserviceprovider',
-      ),
-      2 => 
-      array (
-        0 => 'hardimpact\\orbit\\ui\\register',
-        1 => 'hardimpact\\orbit\\ui\\boot',
-        2 => 'hardimpact\\orbit\\ui\\registermiddleware',
-        3 => 'hardimpact\\orbit\\ui\\configurevite',
-        4 => 'hardimpact\\orbit\\ui\\registerviews',
-        5 => 'hardimpact\\orbit\\ui\\routes',
-        6 => 'hardimpact\\orbit\\ui\\registerpublishing',
-        7 => 'hardimpact\\orbit\\ui\\registermcp',
       ),
       3 => 
       array (

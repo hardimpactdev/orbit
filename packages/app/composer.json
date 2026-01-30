@@ -72,7 +72,7 @@
   "extra": {
     "laravel": {
       "providers": [
-        "HardImpact\\Orbit\\Ui\\UiServiceProvider"
+        "HardImpact\\Orbit\\Ui\\OrbitAppServiceProvider"
       ],
       "aliases": {
         "Ui": "HardImpact\\Orbit\\Ui\\Facades\\Ui"

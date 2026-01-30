@@ -1,6 +1,6 @@
 <?php
 
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Services\OrbitCli\ConfigurationService;
 use HardImpact\Orbit\Services\OrbitCli\ProjectService;
 

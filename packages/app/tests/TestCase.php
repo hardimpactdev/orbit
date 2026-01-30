@@ -2,7 +2,7 @@
 
 namespace HardImpact\Orbit\Ui\Tests;
 
-use HardImpact\Orbit\Ui\UiServiceProvider;
+use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -20,7 +20,7 @@ class TestCase extends Orchestra
     protected function getPackageProviders($app)
     {
         return [
-            UiServiceProvider::class,
+            OrbitAppServiceProvider::class,
         ];
     }
 

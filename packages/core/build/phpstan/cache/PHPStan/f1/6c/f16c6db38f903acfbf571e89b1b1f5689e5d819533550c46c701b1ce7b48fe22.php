@@ -20,6 +20,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => NULL,
@@ -50,6 +51,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => '__construct',
@@ -69,6 +71,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
+         'typeAliasesMap' => 
+        array (
+        ),
+         'bypassTypeAliases' => false,
+         'constUses' => 
+        array (
+        ),
+         'typeAliasClassName' => NULL,
+         'traitData' => NULL,
+      )),
+      '525afcbf026a639f6a5308b1b396799d' => 
+      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+         'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
+         'uses' => 
+        array (
+          'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+          'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+          'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+          'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+          'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+          'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+        ),
+         'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+         'functionName' => 'shouldUseCli',
+         'templatePhpDocNodes' => 
+        array (
+        ),
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
+           'uses' => 
+          array (
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+            'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -109,6 +173,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => 'workspacesList',
@@ -128,6 +193,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -168,6 +234,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => 'workspaceCreate',
@@ -187,6 +254,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -227,6 +295,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => 'workspaceDelete',
@@ -246,6 +315,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -286,6 +356,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => 'workspaceAddProject',
@@ -305,6 +376,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -345,6 +417,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
          'functionName' => 'workspaceRemoveProject',
@@ -364,6 +437,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
             'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
             'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+            'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
            'functionName' => NULL,
@@ -394,7 +468,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => '60effb0d79b37506ff814229a7ff370284e85c5b5e610249377876ff540e8937',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => 'a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
     ),
   ),
 ));

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 

@@ -1,7 +1,7 @@
 <?php declare(strict_types = 1);
 
 return [
-	'lastFullAnalysisTime' => 1769731939,
+	'lastFullAnalysisTime' => 1769783502,
 	'meta' => array (
   'cacheVersion' => 'v12-linesToIgnore',
   'phpstanVersion' => '2.1.37',
@@ -22,7 +22,7 @@ return [
   ),
   'composerLocks' => 
   array (
-    '/home/nckrtl/projects/orbit-dev/packages/app/composer.lock' => '9b231b558293a3dcb5d1e128d425a1844368a656ef2f46070552dd4e789e48c5',
+    '/home/nckrtl/projects/orbit-dev/packages/app/composer.lock' => '445d25c9bc7ac38e61bee10b92f3abf9b60fa0c1614a52509d0c7176b2a0e472',
   ),
   'composerInstalled' => 
   array (
@@ -1298,6 +1298,18 @@ return [
           ),
           'dev_requirement' => true,
         ),
+        'projektgopher/whisky' => 
+        array (
+          'pretty_version' => 'v0.7.4',
+          'version' => '0.7.4.0',
+          'reference' => 'd26a06fa4055fcfe3ea2dba89b82d692ab07bcf6',
+          'type' => 'project',
+          'install_path' => '/home/nckrtl/projects/orbit-dev/packages/app/vendor/composer/../projektgopher/whisky',
+          'aliases' => 
+          array (
+          ),
+          'dev_requirement' => true,
+        ),
         'psr/clock' => 
         array (
           'pretty_version' => '1.0.0',
@@ -2392,12 +2404,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 109,
+       'line' => 129,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 109,
+       'nodeLine' => 129,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2409,12 +2421,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 165,
+       'line' => 185,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 165,
+       'nodeLine' => 185,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2426,12 +2438,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 173,
+       'line' => 193,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 173,
+       'nodeLine' => 193,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2443,12 +2455,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 178,
+       'line' => 198,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 178,
+       'nodeLine' => 198,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2460,12 +2472,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 234,
+       'line' => 254,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 234,
+       'nodeLine' => 254,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2477,12 +2489,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 240,
+       'line' => 260,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 240,
+       'nodeLine' => 260,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2494,12 +2506,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 269,
+       'line' => 289,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 269,
+       'nodeLine' => 289,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2511,12 +2523,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 334,
+       'line' => 354,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 334,
+       'nodeLine' => 354,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2528,12 +2540,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Expression on left side of ?? is not nullable.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 741,
+       'line' => 761,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 741,
+       'nodeLine' => 761,
        'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
        'identifier' => 'nullCoalesce.expr',
        'metadata' => 
@@ -2545,12 +2557,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Offset \'exists\' on array{exists: bool, error?: string} on left side of ?? always exists and is not nullable.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1064,
+       'line' => 1084,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 1064,
+       'nodeLine' => 1084,
        'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
        'identifier' => 'nullCoalesce.offset',
        'metadata' => 
@@ -2562,12 +2574,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1585,
+       'line' => 1605,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1585,
+       'nodeLine' => 1605,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2579,12 +2591,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1598,
+       'line' => 1618,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1598,
+       'nodeLine' => 1618,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2596,12 +2608,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1786,
+       'line' => 1806,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1786,
+       'nodeLine' => 1806,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2613,12 +2625,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$tld.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1787,
+       'line' => 1807,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1787,
+       'nodeLine' => 1807,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2630,12 +2642,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$cli_version.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1788,
+       'line' => 1808,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1788,
+       'nodeLine' => 1808,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2647,12 +2659,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1817,
+       'line' => 1837,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1817,
+       'nodeLine' => 1837,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2664,12 +2676,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$tld.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1818,
+       'line' => 1838,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1818,
+       'nodeLine' => 1838,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -2681,12 +2693,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$cli_version.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1819,
+       'line' => 1839,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1819,
+       'nodeLine' => 1839,
        'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
        'identifier' => 'property.notFound',
        'metadata' => 
@@ -3058,12 +3070,12 @@ return [
       0 => 
       array (
         0 => 'usort',
-        1 => 784,
+        1 => 804,
       ),
       1 => 
       array (
         0 => 'usort',
-        1 => 1625,
+        1 => 1645,
       ),
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -3072,7 +3084,7 @@ return [
       array (
         0 => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
         1 => 'dispatch',
-        2 => 964,
+        2 => 984,
       ),
     ),
   ),
@@ -3387,14 +3399,14 @@ return [
       0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\WorktreesTool',
     ),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\PossiblyPureFuncCallCollector' => 
     array (
       0 => 
       array (
         0 => 'config',
-        1 => 68,
+        1 => 76,
       ),
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -3403,13 +3415,13 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Vite',
         1 => 'useHotFile',
-        2 => 61,
+        2 => 69,
       ),
       1 => 
       array (
         0 => 'Illuminate\\Support\\Facades\\Vite',
         1 => 'useBuildDirectory',
-        2 => 62,
+        2 => 70,
       ),
     ),
   ),
@@ -3474,7 +3486,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
   array (
-    'fileHash' => 'bd1e6defc6196dc4c7013cea093cb98bbc3e0a25dcfde56a7aec38c50ecb81a7',
+    'fileHash' => '5e0315dbc56041207daca0c88a2693632e55c6bd3f84644203dfa4e179428e52',
     'dependentFiles' => 
     array (
     ),
@@ -3519,7 +3531,7 @@ return [
     'fileHash' => '7aa1c810feca7ef58ef96d529807233a29dfe8a3d0787b1d9187482c6debc8f8',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/ImplicitEnvironment.php' => 
@@ -3527,7 +3539,7 @@ return [
     'fileHash' => 'ca6c6b659ad447f4c4eca744abbdc5a4b3dcf3e59eb07121d7567cd4724a98d3',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php' => 
@@ -3665,19 +3677,19 @@ return [
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
     ),
   ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
+  array (
+    'fileHash' => 'c60af00cb088d47b1193ee08b4abbf69c79f8872ace53744c3a040ca71dd587d',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Ui.php' => 
   array (
     'fileHash' => '25d0dc07a4614da863d517929d62b740e5b0d5166f2212f535d6397126d23a26',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Facades/Ui.php',
-    ),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php' => 
-  array (
-    'fileHash' => '20e5ebeb5758b86027c14724326f4f455912b40bb8fa0f53ce9a4314855a5107',
-    'dependentFiles' => 
-    array (
     ),
   ),
 ),
@@ -4479,7 +4491,7 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => 'Inertia\\Response',
+           'returnType' => 'Inertia\\Response|Illuminate\\Http\\RedirectResponse',
            'parameters' => 
           array (
           ),
@@ -14598,37 +14610,11 @@ return [
       ),
     )),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Ui.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Ui',
-       'phpDoc' => NULL,
-       'abstract' => false,
-       'final' => false,
-       'extends' => NULL,
-       'implements' => 
-      array (
-      ),
-       'usedTraits' => 
-      array (
-      ),
-       'traitUseAdaptations' => 
-      array (
-      ),
-       'statements' => 
-      array (
-      ),
-       'attributes' => 
-      array (
-      ),
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/UiServiceProvider.php' => 
-  array (
-    0 => 
-    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\UiServiceProvider',
+       'name' => 'HardImpact\\Orbit\\Ui\\OrbitAppServiceProvider',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -14682,7 +14668,7 @@ return [
         )),
         2 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'registerMiddleware',
+           'name' => 'registerRouteBindings',
            'phpDoc' => NULL,
            'byRef' => false,
            'public' => false,
@@ -14700,7 +14686,7 @@ return [
         )),
         3 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'configureVite',
+           'name' => 'registerMiddleware',
            'phpDoc' => NULL,
            'byRef' => false,
            'public' => false,
@@ -14718,7 +14704,7 @@ return [
         )),
         4 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'registerViews',
+           'name' => 'configureVite',
            'phpDoc' => NULL,
            'byRef' => false,
            'public' => false,
@@ -14735,6 +14721,24 @@ return [
           ),
         )),
         5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'registerViews',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'routes',
            'phpDoc' => 
@@ -14768,7 +14772,7 @@ return [
           array (
           ),
         )),
-        6 => 
+        7 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'registerPublishing',
            'phpDoc' => NULL,
@@ -14786,7 +14790,7 @@ return [
           array (
           ),
         )),
-        7 => 
+        8 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'registerMcp',
            'phpDoc' => 
@@ -14819,6 +14823,32 @@ return [
           array (
           ),
         )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Ui.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\Ui\\Ui',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => NULL,
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
       ),
        'attributes' => 
       array (

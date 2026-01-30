@@ -18,7 +18,7 @@ All notable changes to `orbit-core` will be documented in this file.
 ### Changes
 
 - **Removed**: MCP code (Tools, Resources, Prompts, OrbitServer) moved to orbit-ui
-- **Fixed**: TestCase namespace references for CoreServiceProvider
+- **Fixed**: TestCase namespace references for OrbitCoreServiceProvider
 - orbit-core now remains CLI-compatible without laravel/mcp dependency
 
 This is a breaking change if you were using MCP directly from orbit-core. Update to orbit-ui for MCP functionality.

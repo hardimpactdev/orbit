@@ -29,7 +29,7 @@ src/
     Middleware/
       HandleInertiaRequests.php
       ImplicitEnvironment.php
-  UiServiceProvider.php      # Package service provider
+  OrbitAppServiceProvider.php      # Package service provider
 resources/
   views/
     app.blade.php            # Root Blade template (Horizon-style)
@@ -110,7 +110,7 @@ composer format         # Format with Pint
 
 - Always import models/services from `HardImpact\Orbit\Core\` namespace
 - Never use `App\Models\*` - always `HardImpact\Orbit\Core\Models\*`
-- Routes are registered via `UiServiceProvider::routes()` in consumer apps
+- Routes are registered via `OrbitAppServiceProvider::routes()` in consumer apps
 - Asset publishing tag is `orbit-assets`
 
 ## Horizon-Style Architecture
@@ -126,7 +126,7 @@ orbit-ui follows the Laravel Horizon pattern - a self-contained package that ser
 **Shell apps only need:**
 ```php
 // routes/web.php
-\HardImpact\Orbit\Ui\UiServiceProvider::routes();
+\HardImpact\Orbit\Ui\OrbitAppServiceProvider::routes();
 ```
 
 ## UI Conventions

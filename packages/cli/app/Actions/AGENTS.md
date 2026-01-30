@@ -37,7 +37,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Install\Shared;
 
-use HardImpact\Orbit\Data\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 
 final readonly class MyAction
 {
@@ -105,7 +105,7 @@ Install actions are orchestrated by `InstallLinuxPipeline` or `InstallMacPipelin
 Actions return `StepResult` from orbit-core:
 
 ```php
-use HardImpact\Orbit\Data\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 
 // Success
 return StepResult::success();

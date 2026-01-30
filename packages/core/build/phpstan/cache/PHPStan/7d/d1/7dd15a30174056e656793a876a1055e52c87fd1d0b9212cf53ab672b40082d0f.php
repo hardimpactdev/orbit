@@ -20,6 +20,21 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => 
+    array (
+      0 => '37cb0724c0cfb01497bda544616629d21ccabd3c2f2bc8e422c453ecc5252cf0',
+      1 => 
+      array (
+      ),
+      2 => 
+      array (
+        0 => 'up',
+        1 => 'down',
+      ),
+      3 => 
+      array (
+      ),
+    ),
     '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_26_000001_create_environments_table.php' => 
     array (
       0 => '8cbd872c02b8b611e66a1d71f7ee946e793f14c5773dbd83ad55b207aaa3a4da',

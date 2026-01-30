@@ -106,6 +106,26 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
+    array (
+      0 => '2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+      1 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\models\\workspace',
+      ),
+      2 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\models\\environment',
+        1 => 'hardimpact\\orbit\\core\\models\\getprojectcountattribute',
+        2 => 'hardimpact\\orbit\\core\\models\\gethasworkspacefileattribute',
+        3 => 'hardimpact\\orbit\\core\\models\\addproject',
+        4 => 'hardimpact\\orbit\\core\\models\\removeproject',
+        5 => 'hardimpact\\orbit\\core\\models\\tofrontendarray',
+      ),
+      3 => 
+      array (
+      ),
+    ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 
     array (
       0 => '8b6cdf804fdaf156038f94a4ca215b8a18e833b1b5bab20bef46af39cdf3d270',
@@ -879,26 +899,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
-    '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php' => 
-    array (
-      0 => '9daf9895205ee2789a4d3ab2d113bce6be3a808306a0fe453987c316da9874f4',
-      1 => 
-      array (
-        0 => 'hardimpact\\orbit\\core\\coreserviceprovider',
-      ),
-      2 => 
-      array (
-        0 => 'hardimpact\\orbit\\core\\register',
-        1 => 'hardimpact\\orbit\\core\\boot',
-        2 => 'hardimpact\\orbit\\core\\registercommands',
-        3 => 'hardimpact\\orbit\\core\\registermigrations',
-        4 => 'hardimpact\\orbit\\core\\registerpublishing',
-        5 => 'hardimpact\\orbit\\core\\provides',
-      ),
-      3 => 
-      array (
-      ),
-    ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Contracts/ProvisionLoggerContract.php' => 
     array (
       0 => 'a4e4e7be6e225e4025af0c84c5ab69ef107002c86977c32f4f4852df3ad1d38c',
@@ -915,6 +915,27 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         4 => 'hardimpact\\orbit\\core\\contracts\\broadcast',
         5 => 'hardimpact\\orbit\\core\\contracts\\getslug',
         6 => 'hardimpact\\orbit\\core\\contracts\\getprojectid',
+      ),
+      3 => 
+      array (
+      ),
+    ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
+    array (
+      0 => 'b147b5d297202c0468ee8948e59d1dc25dfa5b4b983c3c57751ffacc61a015e0',
+      1 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\orbitcoreserviceprovider',
+      ),
+      2 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\register',
+        1 => 'hardimpact\\orbit\\core\\boot',
+        2 => 'hardimpact\\orbit\\core\\registerroutebindings',
+        3 => 'hardimpact\\orbit\\core\\registercommands',
+        4 => 'hardimpact\\orbit\\core\\registermigrations',
+        5 => 'hardimpact\\orbit\\core\\registerpublishing',
+        6 => 'hardimpact\\orbit\\core\\provides',
       ),
       3 => 
       array (
@@ -1007,6 +1028,28 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
       ),
     ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php' => 
+    array (
+      0 => 'f84f5bd1f0156e234a5cca86e8dfe9e95ceac332ebfb1b872c941db93ba989e7',
+      1 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\services\\workspacedbservice',
+      ),
+      2 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\services\\workspaceslist',
+        1 => 'hardimpact\\orbit\\core\\services\\workspacecreate',
+        2 => 'hardimpact\\orbit\\core\\services\\workspacedelete',
+        3 => 'hardimpact\\orbit\\core\\services\\workspaceaddproject',
+        4 => 'hardimpact\\orbit\\core\\services\\workspaceremoveproject',
+        5 => 'hardimpact\\orbit\\core\\services\\getdefaultworkspacespath',
+        6 => 'hardimpact\\orbit\\core\\services\\createworkspacedirectory',
+        7 => 'hardimpact\\orbit\\core\\services\\updateworkspacefile',
+      ),
+      3 => 
+      array (
+      ),
+    ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php' => 
     array (
       0 => '7f81d1db1172b1391f49c46ac50d3baa6fa31503ad7fae761035f2bced42b4bb',
@@ -1061,7 +1104,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => 
     array (
-      0 => '60effb0d79b37506ff814229a7ff370284e85c5b5e610249377876ff540e8937',
+      0 => 'a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceservice',
@@ -1069,11 +1112,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       2 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\__construct',
-        1 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceslist',
-        2 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspacecreate',
-        3 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspacedelete',
-        4 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceaddproject',
-        5 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceremoveproject',
+        1 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shouldusecli',
+        2 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceslist',
+        3 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspacecreate',
+        4 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspacedelete',
+        5 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceaddproject',
+        6 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceremoveproject',
       ),
       3 => 
       array (
@@ -1119,7 +1163,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => 
     array (
-      0 => 'd6f4a7d185e95c8dd6e0a869cb34017af563a2dd6060f8d3e7517910c1fe2fe2',
+      0 => '8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\commandservice',
@@ -1135,6 +1179,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         6 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\getlocalclipath',
         7 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\executerawcommand',
         8 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\getclipath',
+        9 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\gethomedirectory',
       ),
       3 => 
       array (
@@ -1414,7 +1459,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => 
     array (
-      0 => '4e11cebed1641383f9f0e95e829b4f0650824d5da276af5a1deae00d707fc8b4',
+      0 => '4d96f5afd799809795c4430bc989019fc55d4c63e735ac4239544068b82507c9',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitservice',

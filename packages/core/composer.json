@@ -63,7 +63,7 @@
   "extra": {
     "laravel": {
       "providers": [
-        "HardImpact\\Orbit\\Core\\CoreServiceProvider"
+        "HardImpact\\Orbit\\Core\\OrbitCoreServiceProvider"
       ]
     },
     "branch-alias": {

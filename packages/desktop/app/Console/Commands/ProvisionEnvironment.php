@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Console\Commands;
 
-use App\Models\Environment;
-use App\Services\ProvisioningService;
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Services\ProvisioningService;
 use Illuminate\Console\Command;
 
 class ProvisionEnvironment extends Command

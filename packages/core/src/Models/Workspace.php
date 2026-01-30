@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property \Carbon\Carbon $created_at
  * @property \Carbon\Carbon $updated_at
  * @property-read Environment $environment
+ * @property-read int $project_count
+ * @property-read bool $has_workspace_file
+ * @method static \Illuminate\Database\Eloquent\Builder<static> where(string $column, mixed $operator = null, mixed $value = null, string $boolean = 'and')
+ * @method static static create(array $attributes = [])
  */
 class Workspace extends Model
 {

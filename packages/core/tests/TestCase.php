@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Tests;
 
-use HardImpact\Orbit\Core\CoreServiceProvider;
+use HardImpact\Orbit\Core\OrbitCoreServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -21,7 +21,7 @@ class TestCase extends Orchestra
     protected function getPackageProviders($app)
     {
         return [
-            CoreServiceProvider::class,
+            OrbitCoreServiceProvider::class,
         ];
     }
 

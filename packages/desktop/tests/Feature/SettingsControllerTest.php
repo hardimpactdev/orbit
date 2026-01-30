@@ -1,8 +1,8 @@
 <?php
 
-use HardImpact\Orbit\Models\Environment;
-use HardImpact\Orbit\Models\TemplateFavorite;
-use HardImpact\Orbit\Models\UserPreference;
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Models\TemplateFavorite;
+use HardImpact\Orbit\Core\Models\UserPreference;
 
 beforeEach(function () {
     createEnvironment();

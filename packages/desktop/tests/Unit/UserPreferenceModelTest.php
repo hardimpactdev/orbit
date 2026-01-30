@@ -1,6 +1,6 @@
 <?php
 
-use HardImpact\Orbit\Models\UserPreference;
+use HardImpact\Orbit\Core\Models\UserPreference;
 
 test('preference can be created', function () {
     UserPreference::create([

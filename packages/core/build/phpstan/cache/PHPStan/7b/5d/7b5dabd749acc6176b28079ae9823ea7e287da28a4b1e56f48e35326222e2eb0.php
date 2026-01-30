@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\OrbitCli\Shared\CommandService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-d6f4a7d185e95c8dd6e0a869cb34017af563a2dd6060f8d3e7517910c1fe2fe2',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
    'data' => 
   array (
     'locatedSource' => 
@@ -30,7 +30,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     array (
     ),
     'startLine' => 14,
-    'endLine' => 212,
+    'endLine' => 285,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -833,10 +833,67 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => '/**
- * Get the CLI executable path from config.
+ * Get the CLI executable path from config or auto-detect.
  */',
         'startLine' => 208,
-        'endLine' => 211,
+        'endLine' => 247,
+        'startColumn' => 5,
+        'endColumn' => 5,
+        'couldThrow' => false,
+        'isClosure' => false,
+        'isGenerator' => false,
+        'isVariadic' => false,
+        'modifiers' => 2,
+        'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared',
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+        'currentClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+        'aliasName' => NULL,
+      ),
+      'getHomeDirectory' => 
+      array (
+        'name' => 'getHomeDirectory',
+        'parameters' => 
+        array (
+        ),
+        'returnsReference' => false,
+        'returnType' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionUnionType',
+          'data' => 
+          array (
+            'types' => 
+            array (
+              0 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'string',
+                  'isIdentifier' => true,
+                ),
+              ),
+              1 => 
+              array (
+                'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+                'data' => 
+                array (
+                  'name' => 'null',
+                  'isIdentifier' => true,
+                ),
+              ),
+            ),
+          ),
+        ),
+        'attributes' => 
+        array (
+        ),
+        'docComment' => '/**
+ * Get the user\'s home directory reliably.
+ * Works in both CLI and HTTP context.
+ */',
+        'startLine' => 253,
+        'endLine' => 284,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

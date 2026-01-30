@@ -22,9 +22,9 @@ Data/
 ### Using orbit-core Data Classes
 
 ```php
-use HardImpact\Orbit\Data\ProvisionContext;
-use HardImpact\Orbit\Data\StepResult;
-use HardImpact\Orbit\Enums\RepoIntent;
+use HardImpact\Orbit\Core\Data\ProvisionContext;
+use HardImpact\Orbit\Core\Data\StepResult;
+use HardImpact\Orbit\Core\Enums\RepoIntent;
 ```
 
 ## StepResult (from orbit-core)
@@ -32,7 +32,7 @@ use HardImpact\Orbit\Enums\RepoIntent;
 Result object returned by all provision and install actions:
 
 ```php
-use HardImpact\Orbit\Data\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 
 // Success
 return StepResult::success();

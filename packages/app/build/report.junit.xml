@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
-  <testsuite name="/home/nckrtl/projects/orbit-dev/packages/app/phpunit.xml.dist" tests="2" assertions="4" errors="0" failures="0" skipped="0" time="0.248974">
-    <testsuite name="HardImpact\Orbit\Ui Test Suite" tests="2" assertions="4" errors="0" failures="0" skipped="0" time="0.248974">
-      <testsuite name="Tests\ArchTest" file="tests/ArchTest.php" tests="1" assertions="3" errors="0" failures="0" skipped="0" time="0.222731">
-        <testcase name="it will not use debugging functions" file="tests/ArchTest.php::it will not use debugging functions" class="Tests\ArchTest" classname="Tests.ArchTest" assertions="3" time="0.222731"/>
+  <testsuite name="/home/nckrtl/projects/orbit-dev/packages/app/phpunit.xml.dist" tests="2" assertions="4" errors="0" failures="0" skipped="0" time="0.249964">
+    <testsuite name="HardImpact\Orbit\Ui Test Suite" tests="2" assertions="4" errors="0" failures="0" skipped="0" time="0.249964">
+      <testsuite name="Tests\ExampleTest" file="tests/ExampleTest.php" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.093432">
+        <testcase name="it can test" file="tests/ExampleTest.php::it can test" class="Tests\ExampleTest" classname="Tests.ExampleTest" assertions="1" time="0.093432"/>
       </testsuite>
-      <testsuite name="Tests\ExampleTest" file="tests/ExampleTest.php" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.026242">
-        <testcase name="it can test" file="tests/ExampleTest.php::it can test" class="Tests\ExampleTest" classname="Tests.ExampleTest" assertions="1" time="0.026242"/>
+      <testsuite name="Tests\ArchTest" file="tests/ArchTest.php" tests="1" assertions="3" errors="0" failures="0" skipped="0" time="0.156532">
+        <testcase name="it will not use debugging functions" file="tests/ArchTest.php::it will not use debugging functions" class="Tests\ArchTest" classname="Tests.ArchTest" assertions="3" time="0.156532"/>
       </testsuite>
     </testsuite>
   </testsuite>

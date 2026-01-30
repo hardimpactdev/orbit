@@ -1,6 +1,6 @@
 <?php
 
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;

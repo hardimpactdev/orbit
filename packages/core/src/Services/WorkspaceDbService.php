@@ -22,7 +22,7 @@ class WorkspaceDbService
         return [
             'success' => true,
             'data' => [
-                'workspaces' => $workspaces->map->toFrontendArray()->all(),
+                'workspaces' => collect($workspaces)->map(fn (Workspace $w): array => $w->toFrontendArray())->all(),
             ],
         ];
     }
@@ -160,7 +160,10 @@ class WorkspaceDbService
      */
     protected function getDefaultWorkspacesPath(): string
     {
-        $home = $_SERVER['HOME'] ?? getenv('HOME') ?? '/tmp';
+        $home = $_SERVER['HOME'] ?? null;
+        if ($home === null) {
+            $home = getenv('HOME') ?: '/tmp';
+        }
         return $home . '/Workspaces';
     }
 

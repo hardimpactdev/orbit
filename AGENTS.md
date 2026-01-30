@@ -1,5 +1,19 @@
 # Agent Instructions
 
+## Development Methodology
+
+This project follows **Compound Engineering** - each unit of work makes subsequent work easier. See [COMPOUND.md](COMPOUND.md) for the full methodology.
+
+**Quick workflow:**
+```
+Plan → Work → Review → Compound → (repeat)
+```
+
+- **Plan:** Create plan in `plans/`
+- **Work:** Execute with continuous testing
+- **Review:** Run quality gates (PHPStan, tests, format)
+- **Compound:** Document solutions in `docs/solutions/`
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
@@ -64,11 +78,11 @@ MULTI_ENVIRONMENT_MANAGEMENT=true
 Routes are registered in `AppServiceProvider`:
 
 ```php
-use HardImpact\Orbit\OrbitServiceProvider;
+use HardImpact\Orbit\OrbitAppServiceProvider;
 
 public function boot(): void
 {
-    OrbitServiceProvider::routes();
+    OrbitAppServiceProvider::routes();
 }
 ```
 
@@ -159,8 +173,8 @@ php artisan native:build    # Build for distribution
 Tests use orbit-core namespaces:
 
 ```php
-use HardImpact\Orbit\Models\Environment;
-use HardImpact\Orbit\Services\OrbitCli\ProjectService;
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Services\OrbitCli\ProjectCliService;
 
 // Use the helper function for creating environments
 $environment = createEnvironment(['is_local' => true]);
@@ -171,7 +185,7 @@ $environment = createEnvironment(['is_local' => true]);
 When mocking orbit-core services:
 
 ```php
-$this->mock(\HardImpact\Orbit\Services\DoctorService::class, function ($mock) {
+$this->mock(\HardImpact\Orbit\Core\Services\DoctorService::class, function ($mock) {
     $mock->shouldReceive('runChecks')->andReturn(['success' => true]);
 });
 ```
@@ -216,7 +230,7 @@ All orbit-core classes use `HardImpact\Orbit\*` namespace, not `App\*`:
 
 ```php
 // Correct
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 
 // Wrong - will fail
 use App\Models\Environment;
@@ -249,3 +263,106 @@ The `config/inertia.php` includes orbit-core's page paths for testing:
 3. **Verify** - All changes committed AND pushed
 
 **CRITICAL:** Work is NOT complete until `git push` succeeds.
+
+---
+
+## Code Quality Learnings
+
+### Namespace Structure (CRITICAL)
+
+All orbit-core classes use `HardImpact\Orbit\Core\*` namespace:
+
+```php
+// CORRECT
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Services\EnvironmentManager;
+
+// WRONG - Missing \Core\ segment
+use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Services\EnvironmentManager;
+```
+
+See: `docs/solutions/namespace-issues/missing-core-segment-20260130.md`
+
+### Dependency Injection (REQUIRED)
+
+Never use `app()` helper in business logic. Use constructor injection:
+
+```php
+// WRONG - Service locator
+$result = app(InstallComposerDependencies::class)->handle($context, $logger);
+
+// CORRECT - Dependency injection
+final readonly class ProvisionPipeline
+{
+    public function __construct(
+        private InstallComposerDependencies $installComposer,
+        // ...
+    ) {}
+}
+```
+
+See: `docs/solutions/service-locator/app-helper-anti-pattern-20260130.md`
+
+### Strict Types (REQUIRED)
+
+All PHP files MUST have `declare(strict_types=1);`:
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace App\...;
+```
+
+### Model PHPDoc (REQUIRED)
+
+All Eloquent models must have @property annotations:
+
+```php
+/**
+ * @property int $id
+ * @property string $name
+ * @property \Carbon\Carbon $created_at
+ */
+class Environment extends Model
+```
+
+See: `docs/solutions/model-phpdoc/eloquent-property-annotations-20260130.md`
+
+### PHPStan Baseline Maintenance
+
+When fixing PHPStan errors, regenerate baseline:
+
+```bash
+vendor/bin/phpstan analyse --generate-baseline
+```
+
+See: `docs/solutions/phpstan-baseline/baseline-maintenance-20260130.md`
+
+### Service Provider Naming (REQUIRED)
+
+Package providers MUST use `Orbit[Package]ServiceProvider` naming:
+
+```php
+// Package providers (shared)
+use HardImpact\Orbit\Core\OrbitCoreServiceProvider;
+use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
+
+// Application providers (shells) - keep Laravel convention
+use App\Providers\AppServiceProvider;
+use App\Providers\NativeAppServiceProvider; // When avoiding Laravel conflict
+```
+
+See: `docs/solutions/patterns/service-provider-naming-convention-20260130.md`
+
+---
+
+## Documentation Index
+
+- `docs/solutions/namespace-issues/` - Namespace fixes
+- `docs/solutions/service-locator/` - Dependency injection patterns
+- `docs/solutions/phpstan-baseline/` - Static analysis maintenance
+- `docs/solutions/model-phpdoc/` - Model annotation patterns
+- `docs/solutions/code-quality/` - Strict types and quality gates
+- `docs/solutions/patterns/` - Project patterns and conventions

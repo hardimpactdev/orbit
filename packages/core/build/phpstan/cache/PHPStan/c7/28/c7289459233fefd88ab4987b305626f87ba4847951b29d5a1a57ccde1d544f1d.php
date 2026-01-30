@@ -473,10 +473,59 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'typeAliasClassName' => NULL,
          'traitData' => NULL,
       )),
+      '215c87e124864b0b26648bad782144b2' => 
+      \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+         'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared',
+         'uses' => 
+        array (
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+          'process' => 'Illuminate\\Support\\Facades\\Process',
+        ),
+         'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+         'functionName' => 'getHomeDirectory',
+         'templatePhpDocNodes' => 
+        array (
+        ),
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared',
+           'uses' => 
+          array (
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
+         'typeAliasesMap' => 
+        array (
+        ),
+         'bypassTypeAliases' => false,
+         'constUses' => 
+        array (
+        ),
+         'typeAliasClassName' => NULL,
+         'traitData' => NULL,
+      )),
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => 'd6f4a7d185e95c8dd6e0a869cb34017af563a2dd6060f8d3e7517910c1fe2fe2',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => '8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
     ),
   ),
 ));

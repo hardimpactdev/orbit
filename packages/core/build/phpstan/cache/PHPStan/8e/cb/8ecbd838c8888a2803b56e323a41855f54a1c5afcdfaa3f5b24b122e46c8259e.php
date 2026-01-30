@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\OrbitCli\WorkspaceService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-60effb0d79b37506ff814229a7ff370284e85c5b5e610249377876ff540e8937',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
    'data' => 
   array (
     'locatedSource' => 
@@ -24,12 +24,13 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'modifiers' => 0,
     'docComment' => '/**
  * Service for workspace management.
+ * Uses CLI when available, falls back to database otherwise.
  */',
     'attributes' => 
     array (
     ),
-    'startLine' => 18,
-    'endLine' => 94,
+    'startLine' => 20,
+    'endLine' => 129,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -64,8 +65,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 21,
-        'endLine' => 21,
+        'startLine' => 23,
+        'endLine' => 23,
         'startColumn' => 9,
         'endColumn' => 45,
         'isPromoted' => true,
@@ -95,10 +96,41 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 22,
-        'endLine' => 22,
+        'startLine' => 24,
+        'endLine' => 24,
         'startColumn' => 9,
         'endColumn' => 41,
+        'isPromoted' => true,
+        'declaredAtCompileTime' => true,
+        'immediateVirtual' => false,
+        'immediateHooks' => 
+        array (
+        ),
+      ),
+      'dbService' => 
+      array (
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+        'name' => 'dbService',
+        'modifiers' => 2,
+        'type' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+            'isIdentifier' => false,
+          ),
+        ),
+        'default' => NULL,
+        'docComment' => NULL,
+        'attributes' => 
+        array (
+        ),
+        'startLine' => 25,
+        'endLine' => 25,
+        'startColumn' => 9,
+        'endColumn' => 47,
         'isPromoted' => true,
         'declaredAtCompileTime' => true,
         'immediateVirtual' => false,
@@ -133,8 +165,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 21,
-            'endLine' => 21,
+            'startLine' => 23,
+            'endLine' => 23,
             'startColumn' => 9,
             'endColumn' => 45,
             'parameterIndex' => 0,
@@ -159,11 +191,37 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 22,
-            'endLine' => 22,
+            'startLine' => 24,
+            'endLine' => 24,
             'startColumn' => 9,
             'endColumn' => 41,
             'parameterIndex' => 1,
+            'isOptional' => false,
+          ),
+          'dbService' => 
+          array (
+            'name' => 'dbService',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => true,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 25,
+            'endLine' => 25,
+            'startColumn' => 9,
+            'endColumn' => 47,
+            'parameterIndex' => 2,
             'isOptional' => false,
           ),
         ),
@@ -173,8 +231,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 20,
-        'endLine' => 23,
+        'startLine' => 22,
+        'endLine' => 26,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -182,6 +240,69 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'isGenerator' => false,
         'isVariadic' => false,
         'modifiers' => 1,
+        'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
+        'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+        'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+        'currentClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+        'aliasName' => NULL,
+      ),
+      'shouldUseCli' => 
+      array (
+        'name' => 'shouldUseCli',
+        'parameters' => 
+        array (
+          'environment' => 
+          array (
+            'name' => 'environment',
+            'default' => NULL,
+            'type' => 
+            array (
+              'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+              'data' => 
+              array (
+                'name' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+                'isIdentifier' => false,
+              ),
+            ),
+            'isVariadic' => false,
+            'byRef' => false,
+            'isPromoted' => false,
+            'attributes' => 
+            array (
+            ),
+            'startLine' => 31,
+            'endLine' => 31,
+            'startColumn' => 37,
+            'endColumn' => 60,
+            'parameterIndex' => 0,
+            'isOptional' => false,
+          ),
+        ),
+        'returnsReference' => false,
+        'returnType' => 
+        array (
+          'class' => 'PHPStan\\BetterReflection\\Reflection\\ReflectionNamedType',
+          'data' => 
+          array (
+            'name' => 'bool',
+            'isIdentifier' => true,
+          ),
+        ),
+        'attributes' => 
+        array (
+        ),
+        'docComment' => '/**
+ * Check if CLI is available for local environments.
+ */',
+        'startLine' => 31,
+        'endLine' => 38,
+        'startColumn' => 5,
+        'endColumn' => 5,
+        'couldThrow' => false,
+        'isClosure' => false,
+        'isGenerator' => false,
+        'isVariadic' => false,
+        'modifiers' => 2,
         'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
         'declaringClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
         'implementingClassName' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
@@ -212,8 +333,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 28,
-            'endLine' => 28,
+            'startLine' => 43,
+            'endLine' => 43,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -236,8 +357,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * List all workspaces.
  */',
-        'startLine' => 28,
-        'endLine' => 35,
+        'startLine' => 43,
+        'endLine' => 54,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -275,8 +396,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 40,
-            'endLine' => 40,
+            'startLine' => 59,
+            'endLine' => 59,
             'startColumn' => 37,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -301,8 +422,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 40,
-            'endLine' => 40,
+            'startLine' => 59,
+            'endLine' => 59,
             'startColumn' => 63,
             'endColumn' => 74,
             'parameterIndex' => 1,
@@ -325,8 +446,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Create a new workspace.
  */',
-        'startLine' => 40,
-        'endLine' => 49,
+        'startLine' => 59,
+        'endLine' => 72,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -364,8 +485,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 54,
-            'endLine' => 54,
+            'startLine' => 77,
+            'endLine' => 77,
             'startColumn' => 37,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -390,8 +511,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 54,
-            'endLine' => 54,
+            'startLine' => 77,
+            'endLine' => 77,
             'startColumn' => 63,
             'endColumn' => 74,
             'parameterIndex' => 1,
@@ -414,8 +535,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Delete a workspace.
  */',
-        'startLine' => 54,
-        'endLine' => 63,
+        'startLine' => 77,
+        'endLine' => 90,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -453,8 +574,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 68,
-            'endLine' => 68,
+            'startLine' => 95,
+            'endLine' => 95,
             'startColumn' => 41,
             'endColumn' => 64,
             'parameterIndex' => 0,
@@ -479,8 +600,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 68,
-            'endLine' => 68,
+            'startLine' => 95,
+            'endLine' => 95,
             'startColumn' => 67,
             'endColumn' => 83,
             'parameterIndex' => 1,
@@ -505,8 +626,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 68,
-            'endLine' => 68,
+            'startLine' => 95,
+            'endLine' => 95,
             'startColumn' => 86,
             'endColumn' => 100,
             'parameterIndex' => 2,
@@ -529,8 +650,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Add a project to a workspace.
  */',
-        'startLine' => 68,
-        'endLine' => 78,
+        'startLine' => 95,
+        'endLine' => 109,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -568,8 +689,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 83,
-            'endLine' => 83,
+            'startLine' => 114,
+            'endLine' => 114,
             'startColumn' => 44,
             'endColumn' => 67,
             'parameterIndex' => 0,
@@ -594,8 +715,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 83,
-            'endLine' => 83,
+            'startLine' => 114,
+            'endLine' => 114,
             'startColumn' => 70,
             'endColumn' => 86,
             'parameterIndex' => 1,
@@ -620,8 +741,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 83,
-            'endLine' => 83,
+            'startLine' => 114,
+            'endLine' => 114,
             'startColumn' => 89,
             'endColumn' => 103,
             'parameterIndex' => 2,
@@ -644,8 +765,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Remove a project from a workspace.
  */',
-        'startLine' => 83,
-        'endLine' => 93,
+        'startLine' => 114,
+        'endLine' => 128,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

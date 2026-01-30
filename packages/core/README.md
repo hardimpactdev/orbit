@@ -43,11 +43,11 @@ php artisan vendor:publish --tag="orbit-core-config"
 In your `AppServiceProvider`:
 
 ```php
-use HardImpact\Orbit\OrbitServiceProvider;
+use HardImpact\Orbit\OrbitAppServiceProvider;
 
 public function boot(): void
 {
-    OrbitServiceProvider::routes();
+    OrbitAppServiceProvider::routes();
 }
 ```
 

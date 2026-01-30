@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use HardImpact\Orbit\Core\Models\Environment;
-use HardImpact\Orbit\Ui\UiServiceProvider;
+use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
@@ -24,7 +24,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // Register orbit-app routes
-        UiServiceProvider::routes();
+        OrbitAppServiceProvider::routes();
         
         // Register desktop-specific routes
         $this->loadDesktopRoutes();

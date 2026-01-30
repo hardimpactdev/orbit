@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use HardImpact\Orbit\Models\Environment;
-use HardImpact\Orbit\Models\SshKey;
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Models\SshKey;
 use HardImpact\Orbit\Services\OrbitCli\ServiceControlService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery\MockInterface;

@@ -9,7 +9,7 @@ orbit-web is intentionally minimal - just Laravel boilerplate + `composer requir
 ```
 orbit-web/
 ├── app/Providers/
-│   ├── AppServiceProvider.php     ← calls OrbitServiceProvider::routes()
+│   ├── AppServiceProvider.php     ← calls OrbitAppServiceProvider::routes()
 │   └── HorizonServiceProvider.php
 ├── bootstrap/
 │   └── app.php                    ← registers HandleInertiaRequests middleware
@@ -27,7 +27,7 @@ orbit-web/
 
 ## How It Works
 
-1. **Routes**: `OrbitServiceProvider::routes()` registers all routes from orbit-core
+1. **Routes**: `OrbitAppServiceProvider::routes()` registers all routes from orbit-core
 2. **Views**: orbit-core provides `resources/views/app.blade.php` via `loadViewsFrom()`
 3. **Assets**: In dev, Vite serves from orbit-core's dev server. In prod, published to `public/vendor/orbit/build/`
 4. **Middleware**: `HandleInertiaRequests` comes from orbit-core
@@ -63,7 +63,7 @@ php artisan vendor:publish --tag=orbit-assets --force
 
 | File | Purpose |
 |------|---------|
-| `app/Providers/AppServiceProvider.php` | Calls `OrbitServiceProvider::routes()` |
+| `app/Providers/AppServiceProvider.php` | Calls `OrbitAppServiceProvider::routes()` |
 | `bootstrap/app.php` | Registers `HandleInertiaRequests` middleware |
 | `config/orbit.php` | Published orbit-core config |
 | `.env` | Environment config (ORBIT_MODE, ORBIT_CLI_PATH, etc.) |

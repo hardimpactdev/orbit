@@ -1,7 +1,7 @@
 <?php declare(strict_types = 1);
 
 return [
-	'lastFullAnalysisTime' => 1769729640,
+	'lastFullAnalysisTime' => 1769783501,
 	'meta' => array (
   'cacheVersion' => 'v12-linesToIgnore',
   'phpstanVersion' => '2.1.37',
@@ -22,7 +22,7 @@ return [
   ),
   'composerLocks' => 
   array (
-    '/home/nckrtl/projects/orbit-dev/packages/core/composer.lock' => 'a3175ea1ffe3eed26bebb99d2c3a600a8ca266976ad3051b33df5e623965dd17',
+    '/home/nckrtl/projects/orbit-dev/packages/core/composer.lock' => '7696786a038fae04f155ffb74e4a3614c60e0372048258b7695c248fdda918aa',
   ),
   'composerInstalled' => 
   array (
@@ -1197,6 +1197,18 @@ return [
           'reference' => '37ddb96c14bfee10304825edbb7e66d341ec6889',
           'type' => 'library',
           'install_path' => '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../phpunit/phpunit',
+          'aliases' => 
+          array (
+          ),
+          'dev_requirement' => true,
+        ),
+        'projektgopher/whisky' => 
+        array (
+          'pretty_version' => 'v0.7.4',
+          'version' => '0.7.4.0',
+          'reference' => 'd26a06fa4055fcfe3ea2dba89b82d692ab07bcf6',
+          'type' => 'project',
+          'install_path' => '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../projektgopher/whisky',
           'aliases' => 
           array (
           ),
@@ -2982,18 +2994,6 @@ return [
 	'unmatchedLineIgnores' => array (
 ),
 	'collectedDataCallback' => static function (): array { return array (
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php' => 
-  array (
-    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
-    array (
-      0 => 
-      array (
-        0 => 'HardImpact\\Orbit\\Core\\CoreServiceProvider',
-        1 => 'provides',
-        2 => 'HardImpact\\Orbit\\Core\\CoreServiceProvider',
-      ),
-    ),
-  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
@@ -3669,6 +3669,28 @@ return [
       ),
     ),
   ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
+  array (
+    'PHPStan\\Rules\\Traits\\TraitUseCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+      ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\Core\\OrbitCoreServiceProvider',
+        1 => 'provides',
+        2 => 'HardImpact\\Orbit\\Core\\OrbitCoreServiceProvider',
+      ),
+    ),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Deletion/Actions/DropPostgresDatabase.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -4131,12 +4153,19 @@ return [
     array (
     ),
   ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => 
+  array (
+    'fileHash' => '37cb0724c0cfb01497bda544616629d21ccabd3c2f2bc8e422c453ecc5252cf0',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php' => 
   array (
     'fileHash' => '9da129149b14ba9bd89262aac417b9d014147ff16e41440d099ada30278dd7e1',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Contracts/ProvisionLoggerContract.php' => 
@@ -4168,13 +4197,6 @@ return [
       21 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/GitHubService.php',
       22 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/ProvisionLogger.php',
       23 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/ProvisionPipeline.php',
-    ),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php' => 
-  array (
-    'fileHash' => '9daf9895205ee2789a4d3ab2d113bce6be3a808306a0fe453987c316da9874f4',
-    'dependentFiles' => 
-    array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php' => 
@@ -4610,23 +4632,25 @@ return [
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/database/factories/EnvironmentFactory.php',
       1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php',
       2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Deployment.php',
-      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php',
-      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
-      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
-      7 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-      8 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
-      9 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
-      10 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-      11 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
-      12 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php',
-      13 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
-      14 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
-      15 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
-      16 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
-      17 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
-      18 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php',
-      19 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/SshService.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php',
+      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php',
+      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
+      7 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
+      8 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
+      9 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
+      10 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
+      11 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
+      12 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
+      13 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php',
+      14 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
+      15 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
+      16 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
+      17 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
+      18 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
+      19 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php',
+      20 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/SshService.php',
+      21 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 
@@ -4637,10 +4661,9 @@ return [
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php',
       1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
       2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/DeleteProjectJob.php',
-      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Deployment.php',
-      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
-      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/Actions/SetPhpVersion.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
+      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
+      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/Actions/SetPhpVersion.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php' => 
@@ -4679,6 +4702,21 @@ return [
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
+  array (
+    'fileHash' => '2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+    'dependentFiles' => 
+    array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
+  array (
+    'fileHash' => 'b147b5d297202c0468ee8948e59d1dc25dfa5b4b983c3c57751ffacc61a015e0',
+    'dependentFiles' => 
+    array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => 
@@ -4749,8 +4787,8 @@ return [
     'fileHash' => 'dea1dc742bb150d121c52f0f801b2b2a5da6ea2fb0b57eed3080500b37903e4d',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php',
-      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/HorizonService.php' => 
@@ -4808,7 +4846,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => 
   array (
-    'fileHash' => 'd6f4a7d185e95c8dd6e0a869cb34017af563a2dd6060f8d3e7517910c1fe2fe2',
+    'fileHash' => '8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4845,7 +4883,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => 
   array (
-    'fileHash' => '60effb0d79b37506ff814229a7ff370284e85c5b5e610249377876ff540e8937',
+    'fileHash' => 'a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
     'dependentFiles' => 
     array (
     ),
@@ -4859,7 +4897,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => 
   array (
-    'fileHash' => '4e11cebed1641383f9f0e95e829b4f0650824d5da276af5a1deae00d707fc8b4',
+    'fileHash' => '4d96f5afd799809795c4430bc989019fc55d4c63e735ac4239544068b82507c9',
     'dependentFiles' => 
     array (
     ),
@@ -5068,6 +5106,14 @@ return [
     'fileHash' => 'dd6d4b133ea6a447fdef3992c72e690c0c2aef45918bcafc1b08c9ae2a3554e1',
     'dependentFiles' => 
     array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php' => 
+  array (
+    'fileHash' => 'f84f5bd1f0156e234a5cca86e8dfe9e95ceac332ebfb1b872c941db93ba989e7',
+    'dependentFiles' => 
+    array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
     ),
   ),
 ),
@@ -5804,155 +5850,6 @@ return [
           array (
           ),
         )),
-      ),
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/CoreServiceProvider.php' => 
-  array (
-    0 => 
-    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Core\\CoreServiceProvider',
-       'phpDoc' => NULL,
-       'abstract' => false,
-       'final' => false,
-       'extends' => 'Illuminate\\Support\\ServiceProvider',
-       'implements' => 
-      array (
-      ),
-       'usedTraits' => 
-      array (
-      ),
-       'traitUseAdaptations' => 
-      array (
-      ),
-       'statements' => 
-      array (
-        0 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'register',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'void',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        1 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'boot',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'void',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        2 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'registerCommands',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'void',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        3 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'registerMigrations',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'void',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        4 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'registerPublishing',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'void',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        5 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'provides',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get the services provided by the provider.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Core',
-             'uses' => 
-            array (
-              'orbitinit' => 'HardImpact\\Orbit\\Core\\Console\\Commands\\OrbitInit',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'serviceprovider' => 'Illuminate\\Support\\ServiceProvider',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'array',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-      ),
-       'attributes' => 
-      array (
       ),
     )),
   ),
@@ -14228,6 +14125,481 @@ return [
       ),
     )),
   ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * @property int $id
+ * @property int $environment_id
+ * @property string $name
+ * @property string|null $path
+ * @property array|null $projects
+ * @property \\Carbon\\Carbon $created_at
+ * @property \\Carbon\\Carbon $updated_at
+ * @property-read Environment $environment
+ * @property-read int $project_count
+ * @property-read bool $has_workspace_file
+ * @method static \\Illuminate\\Database\\Eloquent\\Builder<static> where(string $column, mixed $operator = null, mixed $value = null, string $boolean = \'and\')
+ * @method static static create(array $attributes = [])
+ */',
+         'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+         'uses' => 
+        array (
+          'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+          'model' => 'Illuminate\\Database\\Eloquent\\Model',
+          'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'Illuminate\\Database\\Eloquent\\Model',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+        0 => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedPropertiesNode::__set_state(array(
+           'names' => 
+          array (
+            0 => 'fillable',
+          ),
+           'phpDoc' => NULL,
+           'type' => NULL,
+           'public' => false,
+           'private' => false,
+           'static' => false,
+           'readonly' => false,
+           'abstract' => false,
+           'final' => false,
+           'publicSet' => false,
+           'protectedSet' => false,
+           'privateSet' => false,
+           'virtual' => false,
+           'attributes' => 
+          array (
+          ),
+           'hooks' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedPropertiesNode::__set_state(array(
+           'names' => 
+          array (
+            0 => 'casts',
+          ),
+           'phpDoc' => NULL,
+           'type' => NULL,
+           'public' => false,
+           'private' => false,
+           'static' => false,
+           'readonly' => false,
+           'abstract' => false,
+           'final' => false,
+           'publicSet' => false,
+           'protectedSet' => false,
+           'privateSet' => false,
+           'virtual' => false,
+           'attributes' => 
+          array (
+          ),
+           'hooks' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'environment',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getProjectCountAttribute',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the number of projects in this workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+             'uses' => 
+            array (
+              'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+              'model' => 'Illuminate\\Database\\Eloquent\\Model',
+              'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'int',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getHasWorkspaceFileAttribute',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Check if workspace has a .code-workspace file.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+             'uses' => 
+            array (
+              'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+              'model' => 'Illuminate\\Database\\Eloquent\\Model',
+              'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'bool',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'addProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Add a project to this workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+             'uses' => 
+            array (
+              'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+              'model' => 'Illuminate\\Database\\Eloquent\\Model',
+              'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'projectName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'removeProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Remove a project from this workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+             'uses' => 
+            array (
+              'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+              'model' => 'Illuminate\\Database\\Eloquent\\Model',
+              'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'projectName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        7 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'toFrontendArray',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Convert to array format expected by frontend.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Models',
+             'uses' => 
+            array (
+              'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
+              'model' => 'Illuminate\\Database\\Eloquent\\Model',
+              'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\Core\\OrbitCoreServiceProvider',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'Illuminate\\Support\\ServiceProvider',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'register',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'boot',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'registerRouteBindings',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'registerCommands',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'registerMigrations',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'registerPublishing',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'provides',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the services provided by the provider.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core',
+             'uses' => 
+            array (
+              'orbitinit' => 'HardImpact\\Orbit\\Core\\Console\\Commands\\OrbitInit',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'serviceprovider' => 'Illuminate\\Support\\ServiceProvider',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => 
   array (
     0 => 
@@ -21738,7 +22110,41 @@ return [
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Get the CLI executable path from config.
+     * Get the CLI executable path from config or auto-detect.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'process' => 'Illuminate\\Support\\Facades\\Process',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        10 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getHomeDirectory',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the user\'s home directory reliably.
+     * Works in both CLI and HTTP context.
      */',
              'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared',
              'uses' => 
@@ -22545,6 +22951,7 @@ return [
       \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
          'phpDocString' => '/**
  * Service for workspace management.
+ * Uses CLI when available, falls back to database otherwise.
  */',
          'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
          'uses' => 
@@ -22557,6 +22964,7 @@ return [
           'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
           'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
           'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+          'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
         ),
          'constUses' => 
         array (
@@ -22611,6 +23019,17 @@ return [
               array (
               ),
             )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'dbService',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
           ),
            'attributes' => 
           array (
@@ -22618,11 +23037,11 @@ return [
         )),
         1 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspacesList',
+           'name' => 'shouldUseCli',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * List all workspaces.
+     * Check if CLI is available for local environments.
      */',
              'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
              'uses' => 
@@ -22635,18 +23054,19 @@ return [
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
               'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
             ),
              'constUses' => 
             array (
             ),
           )),
            'byRef' => false,
-           'public' => true,
+           'public' => false,
            'private' => false,
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => 'array',
+           'returnType' => 'bool',
            'parameters' => 
           array (
             0 => 
@@ -22667,11 +23087,11 @@ return [
         )),
         2 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspaceCreate',
+           'name' => 'workspacesList',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Create a new workspace.
+     * List all workspaces.
      */',
              'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
              'uses' => 
@@ -22684,6 +23104,7 @@ return [
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
               'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
             ),
              'constUses' => 
             array (
@@ -22709,17 +23130,6 @@ return [
               array (
               ),
             )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'name',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
           ),
            'attributes' => 
           array (
@@ -22727,11 +23137,11 @@ return [
         )),
         3 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspaceDelete',
+           'name' => 'workspaceCreate',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Delete a workspace.
+     * Create a new workspace.
      */',
              'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
              'uses' => 
@@ -22744,6 +23154,7 @@ return [
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
               'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
             ),
              'constUses' => 
             array (
@@ -22787,6 +23198,67 @@ return [
         )),
         4 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspaceDelete',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Delete a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli',
+             'uses' => 
+            array (
+              'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+              'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+              'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+              'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+              'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+              'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'name',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'workspaceAddProject',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
@@ -22804,6 +23276,7 @@ return [
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
               'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
             ),
              'constUses' => 
             array (
@@ -22856,7 +23329,7 @@ return [
           array (
           ),
         )),
-        5 => 
+        6 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'workspaceRemoveProject',
            'phpDoc' => 
@@ -22875,6 +23348,7 @@ return [
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
               'connectorservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\ConnectorService',
+              'workspacedbservice' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
             ),
              'constUses' => 
             array (
@@ -32916,6 +33390,446 @@ return [
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
                'name' => 'template',
                'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\Core\\Services\\WorkspaceDbService',
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * Database-backed workspace service.
+ * Used when CLI is not available (desktop app without CLI installed).
+ */',
+         'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+         'uses' => 
+        array (
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
+       'abstract' => false,
+       'final' => false,
+       'extends' => NULL,
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspacesList',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * List all workspaces for an environment.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspaceCreate',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Create a new workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'name',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspaceDelete',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Delete a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'name',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspaceAddProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Add a project to a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspaceName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'projectName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'workspaceRemoveProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Remove a project from a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspaceName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'projectName',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getDefaultWorkspacesPath',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the default workspaces path for local environments.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'string',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'createWorkspaceDirectory',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Create the workspace directory and initial files.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        7 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'updateWorkspaceFile',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Update the .code-workspace file with current projects.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspace' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'void',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,

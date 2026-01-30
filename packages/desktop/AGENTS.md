@@ -64,11 +64,11 @@ MULTI_ENVIRONMENT_MANAGEMENT=true
 Routes are registered in `AppServiceProvider`:
 
 ```php
-use HardImpact\Orbit\OrbitServiceProvider;
+use HardImpact\Orbit\OrbitAppServiceProvider;
 
 public function boot(): void
 {
-    OrbitServiceProvider::routes();
+    OrbitAppServiceProvider::routes();
 }
 ```
 
@@ -159,8 +159,8 @@ php artisan native:build    # Build for distribution
 Tests use orbit-core namespaces:
 
 ```php
-use HardImpact\Orbit\Models\Environment;
-use HardImpact\Orbit\Services\OrbitCli\ProjectService;
+use HardImpact\Orbit\Core\Models\Environment;
+use HardImpact\Orbit\Core\Services\OrbitCli\ProjectService;
 
 // Use the helper function for creating environments
 $environment = createEnvironment(['is_local' => true]);
@@ -171,7 +171,7 @@ $environment = createEnvironment(['is_local' => true]);
 When mocking orbit-core services:
 
 ```php
-$this->mock(\HardImpact\Orbit\Services\DoctorService::class, function ($mock) {
+$this->mock(\HardImpact\Orbit\Core\Services\DoctorService::class, function ($mock) {
     $mock->shouldReceive('runChecks')->andReturn(['success' => true]);
 });
 ```
@@ -216,7 +216,7 @@ All orbit-core classes use `HardImpact\Orbit\*` namespace, not `App\*`:
 
 ```php
 // Correct
-use HardImpact\Orbit\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 
 // Wrong - will fail
 use App\Models\Environment;
