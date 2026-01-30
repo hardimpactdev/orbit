@@ -48,7 +48,7 @@
     "post-update-cmd": [
       "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
       "@php artisan vendor:publish --tag=orbit-assets --ansi --force",
-      "whisky update"
+      "command -v whisky > /dev/null && whisky update || true"
     ],
     "post-root-package-install": [
       "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
@@ -60,7 +60,7 @@
     ],
     "post-install-cmd": [
       "@php artisan vendor:publish --tag=orbit-assets --ansi --force",
-      "whisky update"
+      "command -v whisky > /dev/null && whisky update || true"
     ]
   },
   "extra": {

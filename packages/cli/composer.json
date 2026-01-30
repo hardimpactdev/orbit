@@ -42,10 +42,10 @@
     },
     "scripts": {
         "post-install-cmd": [
-            "whisky update"
+            "command -v whisky > /dev/null && whisky update || true"
         ],
         "post-update-cmd": [
-            "whisky update"
+            "command -v whisky > /dev/null && whisky update || true"
         ],
         "analyse": "vendor/bin/phpstan analyse",
         "test": "vendor/bin/pest",

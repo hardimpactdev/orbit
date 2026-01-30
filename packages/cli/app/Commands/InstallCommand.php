@@ -24,6 +24,13 @@ final class InstallCommand extends Command
 
     private const MIN_PHP_VERSION = '8.4.0';
 
+    public function __construct(
+        private InstallMacPipeline $macPipeline,
+        private InstallLinuxPipeline $linuxPipeline
+    ) {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         // Validate prerequisites installed by bootstrap
@@ -44,8 +51,8 @@ final class InstallCommand extends Command
 
         // Select platform-specific pipeline
         $pipeline = PHP_OS_FAMILY === 'Darwin'
-            ? app(InstallMacPipeline::class)
-            : app(InstallLinuxPipeline::class);
+            ? $this->macPipeline
+            : $this->linuxPipeline;
 
         $result = $pipeline->run($context, $logger);
 
