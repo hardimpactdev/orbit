@@ -33,7 +33,7 @@ it('uses provided PHP version', function () {
         phpVersion: '8.4',
     );
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -55,7 +55,7 @@ it('detects PHP version from composer.json caret constraint', function () {
         'require' => ['php' => '^8.3'],
     ], JSON_PRETTY_PRINT));
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -74,7 +74,7 @@ it('detects PHP version from tilde constraint', function () {
         'require' => ['php' => '~8.3.0'],
     ], JSON_PRETTY_PRINT));
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -92,7 +92,7 @@ it('detects PHP version from upper bound constraint', function () {
         'require' => ['php' => '<8.5'],
     ], JSON_PRETTY_PRINT));
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -107,7 +107,7 @@ it('uses default version when no composer.json exists', function () {
 
     unlink("{$this->projectPath}/composer.json");
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -124,7 +124,7 @@ it('uses default version when no PHP constraint in composer.json', function () {
         'require' => ['laravel/framework' => '^12.0'],
     ], JSON_PRETTY_PRINT));
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $result = $action->handle($context, $this->logger);
 
     expect($result->isSuccess())->toBeTrue();
@@ -138,7 +138,7 @@ it('writes .php-version file', function () {
         phpVersion: '8.3',
     );
 
-    $action = new SetPhpVersion;
+    $action = new SetPhpVersion(app(DatabaseService::class));
     $action->handle($context, $this->logger);
 
     $versionFile = "{$this->projectPath}/.php-version";
