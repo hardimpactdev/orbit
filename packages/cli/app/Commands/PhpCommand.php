@@ -6,7 +6,7 @@ namespace App\Commands;
 
 use App\Concerns\WithJsonOutput;
 use App\Enums\ExitCode;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use App\Services\DatabaseService;
 use App\Services\ProjectScanner;
@@ -29,7 +29,7 @@ class PhpCommand extends Command
     public function handle(
         ConfigManager $configManager,
         ProjectScanner $projectScanner,
-        CaddyfileGenerator $caddyfileGenerator,
+        CaddyfileGeneratorInterface $caddyfileGenerator,
         DatabaseService $databaseService
     ): int {
         $project = $this->argument('project');
@@ -130,7 +130,7 @@ class PhpCommand extends Command
         return self::SUCCESS;
     }
 
-    private function regenerateAndReload(CaddyfileGenerator $caddyfileGenerator): bool
+    private function regenerateAndReload(CaddyfileGeneratorInterface $caddyfileGenerator): bool
     {
         if (! $this->wantsJson()) {
             $this->task('Regenerating Caddyfile', function () use ($caddyfileGenerator) {

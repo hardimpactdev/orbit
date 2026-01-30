@@ -6,7 +6,7 @@ namespace App\Commands;
 
 use App\Concerns\WithJsonOutput;
 use App\Enums\ExitCode;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\CaddyManager;
 use App\Services\HorizonManager;
 use App\Services\PhpManager;
@@ -23,7 +23,7 @@ class StartCommand extends Command
 
     public function handle(
         ServiceManager $serviceManager,
-        CaddyfileGenerator $caddyfileGenerator,
+        CaddyfileGeneratorInterface $caddyfileGenerator,
         PhpManager $phpManager,
         CaddyManager $caddyManager,
         HorizonManager $horizonManager

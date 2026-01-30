@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Concerns\WithJsonOutput;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\CaddyManager;
 use App\Services\DockerManager;
 use App\Services\HorizonManager;
@@ -26,7 +26,7 @@ class MigrateToFpmCommand extends Command
     public function handle(
         PhpManager $phpManager,
         CaddyManager $caddyManager,
-        CaddyfileGenerator $caddyfileGenerator,
+        CaddyfileGeneratorInterface $caddyfileGenerator,
         HorizonManager $horizonManager,
         DockerManager $dockerManager
     ): int {

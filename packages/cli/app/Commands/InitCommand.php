@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands;
 
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use App\Services\DockerManager;
 use App\Services\PlatformService;
@@ -33,7 +33,7 @@ class InitCommand extends Command
         ServiceManager $serviceManager,
         ConfigManager $configManager,
         DockerManager $dockerManager,
-        CaddyfileGenerator $caddyfileGenerator,
+        CaddyfileGeneratorInterface $caddyfileGenerator,
         PlatformService $platformService
     ): int {
         $this->warn('⚠️  The "init" command is deprecated and will be removed in a future version.');

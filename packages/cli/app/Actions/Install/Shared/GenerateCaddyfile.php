@@ -6,14 +6,14 @@ namespace App\Actions\Install\Shared;
 
 use App\Data\Install\InstallContext;
 use App\Data\Provision\StepResult;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use App\Services\Install\InstallLogger;
 
 final readonly class GenerateCaddyfile
 {
     public function __construct(
-        private CaddyfileGenerator $caddyfileGenerator,
+        private CaddyfileGeneratorInterface $caddyfileGenerator,
         private ConfigManager $configManager,
     ) {}
 

@@ -7,7 +7,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
-final readonly class WorktreeService
+class WorktreeService
 {
     protected string $worktreesPath;
 

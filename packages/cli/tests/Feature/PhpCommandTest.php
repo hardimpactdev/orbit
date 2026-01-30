@@ -1,7 +1,7 @@
 <?php
 
 use App\Enums\ExitCode;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use App\Services\DatabaseService;
 use App\Services\ProjectScanner;
@@ -9,12 +9,12 @@ use App\Services\ProjectScanner;
 beforeEach(function () {
     $this->configManager = Mockery::mock(ConfigManager::class);
     $this->projectScanner = Mockery::mock(ProjectScanner::class);
-    $this->caddyfileGenerator = Mockery::mock(CaddyfileGenerator::class);
+    $this->caddyfileGenerator = Mockery::mock(CaddyfileGeneratorInterface::class);
     $this->databaseService = Mockery::mock(DatabaseService::class);
 
     $this->app->instance(ConfigManager::class, $this->configManager);
     $this->app->instance(ProjectScanner::class, $this->projectScanner);
-    $this->app->instance(CaddyfileGenerator::class, $this->caddyfileGenerator);
+    $this->app->instance(CaddyfileGeneratorInterface::class, $this->caddyfileGenerator);
     $this->app->instance(DatabaseService::class, $this->databaseService);
 });
 

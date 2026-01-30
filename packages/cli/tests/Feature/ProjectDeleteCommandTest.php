@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use HardImpact\Orbit\Core\Data\DeletionContext;
 use HardImpact\Orbit\Core\Data\StepResult;
@@ -20,10 +20,10 @@ beforeEach(function () {
     $this->configManager->shouldReceive('get')->with('paths', [])->andReturn(['/tmp/projects']);
     $this->app->instance(ConfigManager::class, $this->configManager);
 
-    $this->caddyfileGenerator = Mockery::mock(CaddyfileGenerator::class);
+    $this->caddyfileGenerator = Mockery::mock(CaddyfileGeneratorInterface::class);
     $this->caddyfileGenerator->shouldReceive('generate')->andReturn(true);
     $this->caddyfileGenerator->shouldReceive('reload')->andReturn(true);
-    $this->app->instance(CaddyfileGenerator::class, $this->caddyfileGenerator);
+    $this->app->instance(CaddyfileGeneratorInterface::class, $this->caddyfileGenerator);
 
     // Mock the DeletionPipeline to always succeed
     $this->deletionPipeline = Mockery::mock(DeletionPipeline::class);

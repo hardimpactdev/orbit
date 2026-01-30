@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Contracts\CaddyfileGeneratorInterface;
 use Illuminate\Support\Facades\File;
 
-final readonly class CaddyfileGenerator
+final readonly class CaddyfileGenerator implements CaddyfileGeneratorInterface
 {
     protected string $caddyfilePath;
 

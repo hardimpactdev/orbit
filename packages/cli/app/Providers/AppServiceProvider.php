@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\CaddyfileGeneratorInterface;
+use App\Services\CaddyfileGenerator;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\ServiceProvider;
 
@@ -25,6 +27,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Bind interface to concrete implementation for mockability
+        $this->app->bind(CaddyfileGeneratorInterface::class, CaddyfileGenerator::class);
+
         // Register HTTP client factory
         $this->app->singleton(Factory::class, fn ($app) => new Factory);
 

@@ -6,7 +6,7 @@ namespace App\Commands;
 
 use App\Concerns\WithJsonOutput;
 use App\Enums\ExitCode;
-use App\Services\CaddyfileGenerator;
+use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\ConfigManager;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;
@@ -27,7 +27,7 @@ final class ProjectUpdateCommand extends Command
 
     public function handle(
         ConfigManager $config,
-        CaddyfileGenerator $caddy,
+        CaddyfileGeneratorInterface $caddy,
     ): int {
         /** @var string|null $path */
         $path = $this->argument('path');

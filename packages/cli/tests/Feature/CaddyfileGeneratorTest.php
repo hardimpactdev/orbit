@@ -2,8 +2,10 @@
 
 use App\Services\CaddyfileGenerator;
 use App\Services\ConfigManager;
+use App\Services\PhpManager;
 use App\Services\ProjectScanner;
 use App\Services\ServiceManager;
+use App\Services\WorktreeService;
 use Illuminate\Support\Facades\File;
 
 beforeEach(function () {
@@ -14,6 +16,8 @@ beforeEach(function () {
     $this->configManager = Mockery::mock(ConfigManager::class);
     $this->projectScanner = Mockery::mock(ProjectScanner::class);
     $this->serviceManager = Mockery::mock(ServiceManager::class);
+    $this->phpManager = Mockery::mock(PhpManager::class);
+    $this->worktreeService = Mockery::mock(WorktreeService::class);
 
     $this->configManager->shouldReceive('getConfigPath')->andReturn($this->tempDir);
     $this->configManager->shouldReceive('isServiceEnabled')->andReturn(false);
@@ -21,6 +25,14 @@ beforeEach(function () {
     $this->configManager->shouldReceive('get')->andReturnUsing(function ($key, $default = null) {
         return $default;
     });
+
+    // Mock PhpManager socket paths
+    $this->phpManager->shouldReceive('getSocketPath')->with('8.3')->andReturn($this->tempDir.'/php/php83.sock');
+    $this->phpManager->shouldReceive('getSocketPath')->with('8.4')->andReturn($this->tempDir.'/php/php84.sock');
+    $this->phpManager->shouldReceive('getSocketPath')->andReturn($this->tempDir.'/php/php83.sock');
+
+    // Mock WorktreeService
+    $this->worktreeService->shouldReceive('getLinkedWorktreesForCaddy')->andReturn([]);
 
     // Default: Reverb disabled
     $this->serviceManager->shouldReceive('isEnabled')->with('reverb')->andReturn(false);
@@ -51,7 +63,7 @@ it('generates caddyfile with sites', function () {
         ],
     ]);
 
-    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, null, null, $this->serviceManager);
+    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, $this->phpManager, $this->worktreeService, $this->serviceManager);
     $generator->generate();
 
     $caddyfile = File::get($this->tempDir.'/caddy/Caddyfile');
@@ -79,7 +91,7 @@ it('generates caddyfile with php_fastcgi directives', function () {
         ],
     ]);
 
-    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, null, null, $this->serviceManager);
+    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, $this->phpManager, $this->worktreeService, $this->serviceManager);
     $generator->generate();
 
     $caddyfile = File::get($this->tempDir.'/caddy/Caddyfile');
@@ -96,7 +108,7 @@ it('generates empty caddyfile when no sites exist', function () {
 
     $this->projectScanner->shouldReceive('scanProjects')->andReturn([]);
 
-    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, null, null, $this->serviceManager);
+    $generator = new CaddyfileGenerator($this->configManager, $this->projectScanner, $this->phpManager, $this->worktreeService, $this->serviceManager);
     $generator->generate();
 
     $caddyfile = File::get($this->tempDir.'/caddy/Caddyfile');
