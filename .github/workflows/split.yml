@@ -41,9 +41,8 @@ jobs:
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           echo "Split SHA: $SHA"
           
-          # Push directly using the token in the URL, unsetting any conflicting auth headers
-          git remote add ${{ matrix.package.remote }} https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
-          git -c http.extraheader="" push ${{ matrix.package.remote }} ${SHA}:refs/heads/main --force
+          # Push directly using the token in the URL, strictly unsetting the GitHub Actions auth header
+          git -c http.https://github.com/.extraheader="" push https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git ${SHA}:refs/heads/main --force
           
       - name: Push tags
         if: startsWith(github.ref, 'refs/tags/')
@@ -55,4 +54,4 @@ jobs:
           
           # Create local tag pointing to split SHA and push using token directly
           git tag -f $TAG $SHA
-          git -c http.extraheader="" push https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git $TAG --force
+          git -c http.https://github.com/.extraheader="" push https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git $TAG --force
