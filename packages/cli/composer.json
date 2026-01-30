@@ -43,10 +43,10 @@
     },
     "scripts": {
         "post-install-cmd": [
-            "whisky update"
+            "@php -r 'if (!getenv(\"CI\")) { exec(\"vendor/bin/whisky update\"); }'"
         ],
         "post-update-cmd": [
-            "whisky update"
+            "@php -r 'if (!getenv(\"CI\")) { exec(\"vendor/bin/whisky update\"); }'"
         ],
         "analyse": "vendor/bin/phpstan analyse",
         "test": "vendor/bin/pest",

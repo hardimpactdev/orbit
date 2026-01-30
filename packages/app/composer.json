@@ -51,10 +51,10 @@
   "scripts": {
     "post-autoload-dump": "@composer run prepare",
     "post-install-cmd": [
-      "whisky update"
+      "@php -r 'if (!getenv(\"CI\")) { exec(\"vendor/bin/whisky update\"); }'"
     ],
     "post-update-cmd": [
-      "whisky update"
+      "@php -r 'if (!getenv(\"CI\")) { exec(\"vendor/bin/whisky update\"); }'"
     ],
     "prepare": "@php vendor/bin/testbench package:discover --ansi",
     "analyse": "vendor/bin/phpstan analyse",
