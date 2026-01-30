@@ -50,10 +50,10 @@
   "scripts": {
     "post-autoload-dump": "@composer run prepare",
     "post-install-cmd": [
-      "whisky update"
+      "command -v whisky > /dev/null && whisky update || true"
     ],
     "post-update-cmd": [
-      "whisky update"
+      "command -v whisky > /dev/null && whisky update || true"
     ],
     "prepare": "@php vendor/bin/testbench package:discover --ansi",
     "analyse": "vendor/bin/phpstan analyse",

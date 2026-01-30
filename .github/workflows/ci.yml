@@ -105,7 +105,8 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Install monorepo dependencies (for path repos)
+      - name: Install dependencies
+        working-directory: packages/cli
         run: composer install --prefer-dist --no-progress
 
       - name: Check code style with Pint
@@ -140,7 +141,8 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Install monorepo dependencies (for path repos)
+      - name: Install dependencies
+        working-directory: packages/web
         run: composer install --prefer-dist --no-progress
 
       - name: Run tests
