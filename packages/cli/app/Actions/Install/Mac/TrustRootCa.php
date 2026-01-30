@@ -20,11 +20,11 @@ final readonly class TrustRootCa
         }
 
         $home = $_SERVER['HOME'] ?? getenv('HOME') ?: '/tmp';
-        $certPath = $home . '/Library/Application Support/Caddy/pki/authorities/local/root.crt';
+        $certPath = $home.'/Library/Application Support/Caddy/pki/authorities/local/root.crt';
 
         if (! file_exists($certPath)) {
             $logger->warn('Caddy root certificate not found - certificates may not be trusted');
-            $logger->info('Certificate expected at: ' . $certPath);
+            $logger->info('Certificate expected at: '.$certPath);
             $logger->info('Try running Caddy first to generate certificates');
 
             return StepResult::success();
@@ -38,6 +38,7 @@ final readonly class TrustRootCa
         if (! $trustResult->successful()) {
             if (str_contains($trustResult->errorOutput(), 'already')) {
                 $logger->success('Certificate already trusted');
+
                 return StepResult::success();
             }
 

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Commands\Service;
@@ -111,7 +112,7 @@ SQL;
     {
         // Check if mysql command exists
         exec('which mysql 2>/dev/null', $output, $exitCode);
-        
+
         if ($exitCode !== 0) {
             if ($this->wantsJson()) {
                 return;
@@ -120,12 +121,12 @@ SQL;
             $this->newLine();
             $this->warn('  ⚠ MySQL client not found on your system.');
             $this->line('  <fg=gray>Laravel needs the mysql CLI to load schema dumps.</>');
-            
+
             if ($this->confirm('  Install mysql-client via Homebrew?', true)) {
                 $this->line('  Installing mysql-client...');
-                
+
                 exec('brew install mysql-client 2>&1', $brewOutput, $brewExit);
-                
+
                 if ($brewExit === 0) {
                     $this->info('  ✓ mysql-client installed');
                     $this->newLine();

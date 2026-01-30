@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Commands\Setup;
@@ -430,7 +431,6 @@ class MacSetup
 
         return true;
     }
-
 
     protected function startPhpFpm(array $versions): bool
     {

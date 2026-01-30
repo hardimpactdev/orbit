@@ -1,10 +1,11 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Commands;
 
-use App\Actions\Install\Mac\TrustRootCa as MacTrustRootCa;
 use App\Actions\Install\Linux\TrustRootCa as LinuxTrustRootCa;
+use App\Actions\Install\Mac\TrustRootCa as MacTrustRootCa;
 use App\Data\Install\InstallContext;
 use App\Services\Install\InstallLogger;
 use LaravelZero\Framework\Commands\Command;
@@ -31,6 +32,7 @@ class TrustCommand extends Command
 
         if ($result->isFailed()) {
             $this->error($result->error ?? 'Unknown error');
+
             return self::FAILURE;
         }
 

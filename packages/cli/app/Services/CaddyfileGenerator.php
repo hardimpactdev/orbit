@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Services;
@@ -63,7 +64,7 @@ final readonly class CaddyfileGenerator
         $orbitDomain = "orbit.{$tld}";
         foreach ($projects as $project) {
             // Skip if this project would conflict with the orbit UI domain
-            if (($project["domain"] ?? null) === $orbitDomain) {
+            if (($project['domain'] ?? null) === $orbitDomain) {
                 continue;
             }
 
