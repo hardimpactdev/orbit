@@ -8,8 +8,8 @@ export default defineConfig({
     plugins: [
         laravel({
             input: [
-                'vendor/hardimpactdev/orbit-core/resources/js/app.ts',
-                'vendor/hardimpactdev/orbit-core/resources/css/app.css',
+                'vendor/hardimpactdev/orbit-app/resources/js/app.ts',
+                'vendor/hardimpactdev/orbit-app/resources/css/app.css',
             ],
             refresh: true,
         }),
@@ -25,8 +25,8 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': resolve(__dirname, 'vendor/hardimpactdev/orbit-core/resources/js'),
-            '@orbit': resolve(__dirname, 'vendor/hardimpactdev/orbit-core/resources/js'),
+            '@': resolve(__dirname, 'vendor/hardimpactdev/orbit-app/resources/js'),
+            '@orbit': resolve(__dirname, 'vendor/hardimpactdev/orbit-app/resources/js'),
             vue: 'vue/dist/vue.esm-bundler.js',
         },
     },
