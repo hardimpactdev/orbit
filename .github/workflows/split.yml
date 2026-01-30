@@ -41,7 +41,10 @@ jobs:
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           echo "Split SHA: $SHA"
           
-          # Push directly using the token in the URL (no git config rewriting)
+          # Remove GitHub Actions default auth header so our URL token works
+          git config --global --unset http.https://github.com/.extraheader
+          
+          # Push directly using the token in the URL
           git remote add ${{ matrix.package.remote }} https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
           git push ${{ matrix.package.remote }} ${SHA}:refs/heads/main --force
           
@@ -52,6 +55,9 @@ jobs:
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
+          
+          # Remove GitHub Actions default auth header
+          git config --global --unset http.https://github.com/.extraheader
           
           # Create local tag pointing to split SHA and push using token directly
           git tag -f $TAG $SHA
