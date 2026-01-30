@@ -203,10 +203,39 @@ BASH;
     }
 
     /**
-     * Get the CLI executable path from config.
+     * Get the CLI executable path from config or auto-detect.
      */
     protected function getCliPath(): ?string
     {
-        return config('orbit.cli_path');
+        // First check config
+        $configPath = config('orbit.cli_path');
+        if ($configPath && file_exists($configPath)) {
+            return $configPath;
+        }
+
+        // Auto-detect via common paths
+        $commonPaths = [
+            '/usr/local/bin/orbit',
+            '/opt/homebrew/bin/orbit',
+            getenv('HOME') . '/.local/bin/orbit',
+            getenv('HOME') . '/.composer/vendor/bin/orbit',
+        ];
+
+        foreach ($commonPaths as $path) {
+            if (file_exists($path) && is_executable($path)) {
+                return $path;
+            }
+        }
+
+        // Try `which orbit` as last resort
+        $result = @shell_exec('which orbit 2>/dev/null');
+        if ($result) {
+            $path = trim($result);
+            if (file_exists($path) && is_executable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 }
