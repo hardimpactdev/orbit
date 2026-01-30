@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_KEY" value="base64:oYB8w4eDY1i3tdFVj4vRHTJv2RVEu8L/eMjrc9gWiMc="/>
+        <env name="APP_CIPHER" value="AES-256-CBC"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
