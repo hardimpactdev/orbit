@@ -8,8 +8,11 @@
       }
     },
     {
-      "type": "vcs",
-      "url": "https://github.com/hardimpactdev/orbit-app.git"
+      "type": "path",
+      "url": "../app",
+      "options": {
+        "symlink": true
+      }
     }
   ],
   "$schema": "https://getcomposer.org/schema.json",
