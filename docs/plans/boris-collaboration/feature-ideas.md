@@ -122,12 +122,53 @@
 
 ## Technical Debt (Discovered)
 
-1. **Final class mocking** — Several service classes are marked `final readonly` which prevents Mockery from mocking them in tests. Consider:
-   - Extract interfaces for testability
-   - Or use integration tests instead
-   - Affects: CaddyfileGenerator, possibly others
+### 1. Final Class Mocking Issue
 
-2. **CLI test failures** — 17 tests fail due to above mocking issue
+**Problem:** Several service classes are marked `final readonly` which prevents Mockery from mocking them in tests. This causes 17 test failures.
+
+**Affected classes:**
+- `CaddyfileGenerator` (main culprit - used in many tests)
+- `DeletionLogger`
+- `GitHubService`
+- `McpClient`
+- `ProvisionLogger`
+- `ReverbBroadcaster`
+- `WorktreeService`
+
+**Potential fixes:**
+
+**Option A: Extract interfaces (recommended)**
+```php
+// app/Contracts/CaddyfileGeneratorInterface.php
+interface CaddyfileGeneratorInterface {
+    public function generate(): void;
+    // ...
+}
+
+// app/Services/CaddyfileGenerator.php
+final readonly class CaddyfileGenerator implements CaddyfileGeneratorInterface {
+    // ...
+}
+```
+Then mock the interface instead of the class.
+
+**Option B: Remove `final` keyword**
+- Simplest but loses immutability guarantee
+- Could add `@final` docblock for IDE hints instead
+
+**Option C: Use partial mocks**
+```php
+$mock = Mockery::mock(CaddyfileGenerator::class)->makePartial();
+```
+But this requires instantiating the real object.
+
+**Recommendation:** Go with Option A for core services used in many tests. This is cleaner and maintains the benefits of `final`.
+
+### 2. Test Setup Permission Issues
+
+29 tests show warnings due to `mkdir(): Permission denied`. Tests are trying to create directories in protected locations. Consider:
+- Using a dedicated temp directory for test fixtures
+- Mocking the filesystem operations
 
 ---
 
