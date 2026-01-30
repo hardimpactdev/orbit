@@ -23,9 +23,9 @@
     "hardimpactdev/orbit-core": "^0.1"
   },
   "require-dev": {
+    "larastan/larastan": "^3.0",
     "laravel/pint": "^1.14",
     "nunomaduro/collision": "^8.8",
-    "larastan/larastan": "^3.0",
     "orchestra/testbench": "^10.0.0||^9.0.0",
     "pestphp/pest": "^4.0",
     "pestphp/pest-plugin-arch": "^4.0",
@@ -33,6 +33,7 @@
     "phpstan/extension-installer": "^1.4",
     "phpstan/phpstan-deprecation-rules": "^2.0",
     "phpstan/phpstan-phpunit": "^2.0",
+    "projektgopher/whisky": "^0.7.4",
     "spatie/laravel-ray": "^1.35"
   },
   "autoload": {
@@ -50,10 +51,10 @@
   "scripts": {
     "post-autoload-dump": "@composer run prepare",
     "post-install-cmd": [
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ],
     "post-update-cmd": [
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ],
     "prepare": "@php vendor/bin/testbench package:discover --ansi",
     "analyse": "vendor/bin/phpstan analyse",

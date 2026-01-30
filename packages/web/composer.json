@@ -26,7 +26,8 @@
     "mockery/mockery": "^1.6",
     "nunomaduro/collision": "^8.6",
     "pestphp/pest": "^4.0",
-    "pestphp/pest-plugin-laravel": "^4.0"
+    "pestphp/pest-plugin-laravel": "^4.0",
+    "projektgopher/whisky": "^0.7.4"
   },
   "autoload": {
     "psr-4": {
@@ -48,7 +49,7 @@
     "post-update-cmd": [
       "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
       "@php artisan vendor:publish --tag=orbit-assets --ansi --force",
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ],
     "post-root-package-install": [
       "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
@@ -60,7 +61,7 @@
     ],
     "post-install-cmd": [
       "@php artisan vendor:publish --tag=orbit-assets --ansi --force",
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ]
   },
   "extra": {

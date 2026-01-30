@@ -25,11 +25,12 @@
   },
   "suggest": {},
   "require-dev": {
-    "laravel/pint": "^1.14",
     "larastan/larastan": "^3.0",
+    "laravel/pint": "^1.14",
     "orchestra/testbench": "^10.0.0||^9.0.0",
     "pestphp/pest": "^4.0",
-    "pestphp/pest-plugin-laravel": "^4.0"
+    "pestphp/pest-plugin-laravel": "^4.0",
+    "projektgopher/whisky": "^0.7.4"
   },
   "autoload": {
     "psr-4": {
@@ -44,10 +45,10 @@
   },
   "scripts": {
     "post-install-cmd": [
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ],
     "post-update-cmd": [
-      "command -v whisky > /dev/null && whisky update || true"
+      "whisky update"
     ],
     "analyse": "vendor/bin/phpstan analyse",
     "test": "vendor/bin/pest",
