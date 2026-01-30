@@ -16,6 +16,13 @@ final class TrustRootCaCommand extends Command
 
     protected $description = 'Trust Caddy\'s root CA certificate for HTTPS';
 
+    public function __construct(
+        private MacTrustRootCa $macTrustRootCa,
+        private LinuxTrustRootCa $linuxTrustRootCa
+    ) {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         $context = InstallContext::fromOptions([]);
@@ -24,8 +31,8 @@ final class TrustRootCaCommand extends Command
         $logger->step('Trusting SSL certificate');
 
         $action = PHP_OS_FAMILY === 'Darwin'
-            ? app(MacTrustRootCa::class)
-            : app(LinuxTrustRootCa::class);
+            ? $this->macTrustRootCa
+            : $this->linuxTrustRootCa;
 
         $result = $action->handle($context, $logger);
 

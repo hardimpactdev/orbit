@@ -15,6 +15,10 @@ final readonly class SetPhpVersion
 
     private const DEFAULT_VERSION = '8.5';
 
+    public function __construct(
+        private DatabaseService $databaseService
+    ) {}
+
     public function handle(ProvisionContext $context, ProvisionLogger $logger): StepResult
     {
         // Determine PHP version
@@ -32,7 +36,7 @@ final readonly class SetPhpVersion
         $logger->log('Wrote .php-version file');
 
         // Update database
-        app(DatabaseService::class)->setSitePhpVersion(
+        $this->databaseService->setSitePhpVersion(
             $context->slug,
             $context->projectPath,
             $version

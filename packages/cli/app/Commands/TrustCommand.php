@@ -10,11 +10,18 @@ use App\Data\Install\InstallContext;
 use App\Services\Install\InstallLogger;
 use LaravelZero\Framework\Commands\Command;
 
-class TrustCommand extends Command
+final class TrustCommand extends Command
 {
     protected $signature = 'trust';
 
     protected $description = 'Trust Caddy root CA certificate for local HTTPS';
+
+    public function __construct(
+        private MacTrustRootCa $macTrustRootCa,
+        private LinuxTrustRootCa $linuxTrustRootCa
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -25,8 +32,8 @@ class TrustCommand extends Command
         $logger = new InstallLogger($this);
 
         $action = PHP_OS_FAMILY === 'Darwin'
-            ? app(MacTrustRootCa::class)
-            : app(LinuxTrustRootCa::class);
+            ? $this->macTrustRootCa
+            : $this->linuxTrustRootCa;
 
         $result = $action->handle($context, $logger);
 
