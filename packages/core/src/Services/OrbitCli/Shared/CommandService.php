@@ -213,13 +213,20 @@ BASH;
             return $configPath;
         }
 
-        // Auto-detect via common paths
+        // Get home directory reliably (works in both CLI and HTTP context)
+        $home = $this->getHomeDirectory();
+
+        // Auto-detect via common paths (absolute paths first, then home-relative)
         $commonPaths = [
             '/usr/local/bin/orbit',
             '/opt/homebrew/bin/orbit',
-            getenv('HOME') . '/.local/bin/orbit',
-            getenv('HOME') . '/.composer/vendor/bin/orbit',
         ];
+
+        // Add home-based paths if we have a valid home directory
+        if ($home) {
+            $commonPaths[] = $home . '/.local/bin/orbit';
+            $commonPaths[] = $home . '/.composer/vendor/bin/orbit';
+        }
 
         foreach ($commonPaths as $path) {
             if (file_exists($path) && is_executable($path)) {
@@ -227,12 +234,49 @@ BASH;
             }
         }
 
-        // Try `which orbit` as last resort
+        // Try `which orbit` as last resort (may not work in HTTP context)
         $result = @shell_exec('which orbit 2>/dev/null');
         if ($result) {
             $path = trim($result);
-            if (file_exists($path) && is_executable($path)) {
+            if ($path && file_exists($path) && is_executable($path)) {
                 return $path;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the user's home directory reliably.
+     * Works in both CLI and HTTP context.
+     */
+    protected function getHomeDirectory(): ?string
+    {
+        // Try environment variables first
+        $home = getenv('HOME');
+        if ($home && is_dir($home)) {
+            return $home;
+        }
+
+        // Try posix extension (available on most Unix systems)
+        if (function_exists('posix_getpwuid') && function_exists('posix_getuid')) {
+            $userInfo = posix_getpwuid(posix_getuid());
+            if (isset($userInfo['dir']) && is_dir($userInfo['dir'])) {
+                return $userInfo['dir'];
+            }
+        }
+
+        // Try common patterns
+        $user = getenv('USER') ?: (getenv('LOGNAME') ?: null);
+        if ($user) {
+            $possibleHomes = [
+                '/Users/' . $user,  // macOS
+                '/home/' . $user,   // Linux
+            ];
+            foreach ($possibleHomes as $possibleHome) {
+                if (is_dir($possibleHome)) {
+                    return $possibleHome;
+                }
             }
         }
 
