@@ -11,22 +11,41 @@ use HardImpact\Orbit\Core\Http\Integrations\Orbit\Requests\RemoveWorkspaceProjec
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Services\OrbitCli\Shared\CommandService;
 use HardImpact\Orbit\Core\Services\OrbitCli\Shared\ConnectorService;
+use HardImpact\Orbit\Core\Services\WorkspaceDbService;
 
 /**
  * Service for workspace management.
+ * Uses CLI when available, falls back to database otherwise.
  */
 class WorkspaceService
 {
     public function __construct(
         protected ConnectorService $connector,
-        protected CommandService $command
+        protected CommandService $command,
+        protected WorkspaceDbService $dbService
     ) {}
+
+    /**
+     * Check if CLI is available for local environments.
+     */
+    protected function shouldUseCli(Environment $environment): bool
+    {
+        if (!$environment->is_local) {
+            return true; // Remote always uses CLI/API
+        }
+
+        return $this->command->isLocalCliInstalled();
+    }
 
     /**
      * List all workspaces.
      */
     public function workspacesList(Environment $environment): array
     {
+        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+            return $this->dbService->workspacesList($environment);
+        }
+
         if ($environment->is_local) {
             return $this->command->executeCommand($environment, 'workspaces --json');
         }
@@ -39,6 +58,10 @@ class WorkspaceService
      */
     public function workspaceCreate(Environment $environment, string $name): array
     {
+        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+            return $this->dbService->workspaceCreate($environment, $name);
+        }
+
         if ($environment->is_local) {
             $escapedName = escapeshellarg($name);
 
@@ -53,6 +76,10 @@ class WorkspaceService
      */
     public function workspaceDelete(Environment $environment, string $name): array
     {
+        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+            return $this->dbService->workspaceDelete($environment, $name);
+        }
+
         if ($environment->is_local) {
             $escapedName = escapeshellarg($name);
 
@@ -67,6 +94,10 @@ class WorkspaceService
      */
     public function workspaceAddProject(Environment $environment, string $workspace, string $project): array
     {
+        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+            return $this->dbService->workspaceAddProject($environment, $workspace, $project);
+        }
+
         if ($environment->is_local) {
             $escapedWorkspace = escapeshellarg($workspace);
             $escapedProject = escapeshellarg($project);
@@ -82,6 +113,10 @@ class WorkspaceService
      */
     public function workspaceRemoveProject(Environment $environment, string $workspace, string $project): array
     {
+        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+            return $this->dbService->workspaceRemoveProject($environment, $workspace, $project);
+        }
+
         if ($environment->is_local) {
             $escapedWorkspace = escapeshellarg($workspace);
             $escapedProject = escapeshellarg($project);
