@@ -10,7 +10,7 @@ use App\Enums\ExitCode;
 use App\Services\DockerManager;
 use LaravelZero\Framework\Commands\Command;
 
-class UpgradeCommand extends Command
+final class UpgradeCommand extends Command
 {
     use WithJsonOutput;
 
@@ -21,6 +21,13 @@ class UpgradeCommand extends Command
     protected $description = 'Upgrade Orbit to the latest version';
 
     private const GITHUB_API_URL = 'https://api.github.com/repos/hardimpactdev/orbit-cli/releases/latest';
+
+    public function __construct(
+        private UpdateWebApp $updateWebApp,
+        private DockerManager $dockerManager
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -153,8 +160,7 @@ class UpgradeCommand extends Command
 
                 // Update companion web app
                 $this->info('Updating companion web app...');
-                $updateWebApp = app(UpdateWebApp::class);
-                if (! $updateWebApp->handle()) {
+                if (! $this->updateWebApp->handle()) {
                     $this->warn('Failed to update web app. You may need to run `orbit install` manually.');
                 } else {
                     $this->info('✓ Web app updated');
@@ -163,9 +169,8 @@ class UpgradeCommand extends Command
                 // Restart services
                 $this->info('Restarting services...');
                 try {
-                    $dockerManager = app(DockerManager::class);
-                    $dockerManager->stopAll();
-                    $dockerManager->startAll();
+                    $this->dockerManager->stopAll();
+                    $this->dockerManager->startAll();
                     $this->info('✓ Services restarted');
                 } catch (\Exception) {
                     $this->warn('Failed to restart some services. Run `orbit restart` to try again.');
