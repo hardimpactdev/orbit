@@ -35,23 +35,24 @@ jobs:
           sudo mv splitsh-lite /usr/local/bin/
 
       - name: Split and push ${{ matrix.package.local }}
+        env:
+          SPLIT_PAT: ${{ secrets.SPLIT_TOKEN }}
         run: |
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           echo "Split SHA: $SHA"
           
-          # Configure git credentials for target repo
-          git config --global url."https://x-access-token:${{ secrets.SPLIT_TOKEN }}@github.com/".insteadOf "https://github.com/"
-          
-          # Push split SHA directly to target repo
-          git remote add ${{ matrix.package.remote }} https://github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
+          # Push directly using the token in the URL (no git config rewriting)
+          git remote add ${{ matrix.package.remote }} https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
           git push ${{ matrix.package.remote }} ${SHA}:refs/heads/main --force
           
       - name: Push tags
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          SPLIT_PAT: ${{ secrets.SPLIT_TOKEN }}
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           
-          # Create local tag pointing to split SHA and push
+          # Create local tag pointing to split SHA and push using token directly
           git tag -f $TAG $SHA
-          git push ${{ matrix.package.remote }} $TAG --force
+          git push https://nckrtl:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git $TAG --force
