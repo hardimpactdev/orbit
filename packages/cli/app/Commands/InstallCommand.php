@@ -25,8 +25,8 @@ final class InstallCommand extends Command
     private const MIN_PHP_VERSION = '8.4.0';
 
     public function __construct(
-        private InstallMacPipeline $macPipeline,
-        private InstallLinuxPipeline $linuxPipeline
+        private readonly InstallMacPipeline $macPipeline,
+        private readonly InstallLinuxPipeline $linuxPipeline
     ) {
         parent::__construct();
     }

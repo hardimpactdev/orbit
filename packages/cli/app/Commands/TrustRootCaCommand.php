@@ -17,8 +17,8 @@ final class TrustRootCaCommand extends Command
     protected $description = 'Trust Caddy\'s root CA certificate for HTTPS';
 
     public function __construct(
-        private MacTrustRootCa $macTrustRootCa,
-        private LinuxTrustRootCa $linuxTrustRootCa
+        private readonly MacTrustRootCa $macTrustRootCa,
+        private readonly LinuxTrustRootCa $linuxTrustRootCa
     ) {
         parent::__construct();
     }
