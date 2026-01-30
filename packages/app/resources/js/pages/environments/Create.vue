@@ -138,7 +138,7 @@ const checkServer = async () => {
 };
 
 const addWithoutProvisioning = () => {
-    router.post('/servers', {
+    router.post('/environments', {
         name: remoteForm.name,
         host: remoteForm.host,
         user: checkResult.value?.connected_as === 'orbit' ? 'orbit' : remoteForm.user,
@@ -148,7 +148,7 @@ const addWithoutProvisioning = () => {
 };
 
 const submitLocal = () => {
-    localForm.post('/servers');
+    localForm.post('/environments');
 };
 
 const submitRemote = () => {

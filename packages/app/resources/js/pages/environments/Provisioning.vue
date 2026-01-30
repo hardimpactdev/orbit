@@ -22,15 +22,15 @@ interface Environment {
 }
 
 const props = defineProps<{
-    server: Environment;
+    environment: Environment;
     sshPublicKey: string;
 }>();
 
-const status = ref(props.server.status);
-const currentStep = ref(props.server.provisioning_step ?? 0);
-const totalSteps = ref(props.server.provisioning_total_steps ?? 17);
-const log = ref<LogEntry[]>(props.server.provisioning_log ?? []);
-const error = ref(props.server.provisioning_error);
+const status = ref(props.environment.status);
+const currentStep = ref(props.environment.provisioning_step ?? 0);
+const totalSteps = ref(props.environment.provisioning_total_steps ?? 17);
+const log = ref<LogEntry[]>(props.environment.provisioning_log ?? []);
+const error = ref(props.environment.provisioning_error);
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let isProvisioning = false;
@@ -68,7 +68,7 @@ const localChecklistItems = [
 ];
 
 const checklistItems = computed(() => {
-    return props.server.is_local ? localChecklistItems : remoteChecklistItems;
+    return props.environment.is_local ? localChecklistItems : remoteChecklistItems;
 });
 
 const getChecklistStatus = (itemStep: number) => {
@@ -86,7 +86,7 @@ async function startProvisioning() {
     isProvisioning = true;
 
     try {
-        await fetch(`/provision/${props.server.id}/run`, {
+        await fetch(`/provision/${props.environment.id}/run`, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN':
@@ -105,7 +105,7 @@ async function startProvisioning() {
 
 async function pollStatus() {
     try {
-        const response = await fetch(`/provision/${props.server.id}/status`);
+        const response = await fetch(`/provision/${props.environment.id}/status`);
         const data = await response.json();
 
         status.value = data.status;
@@ -157,14 +157,14 @@ async function retryProvisioning() {
     await startProvisioning();
 }
 
-function deleteServer() {
+function deleteEnvironment() {
     if (confirm('Are you sure you want to delete this environment?')) {
-        router.delete(`/environments/${props.server.id}`);
+        router.delete(`/environments/${props.environment.id}`);
     }
 }
 
 onMounted(() => {
-    if (props.server.status === 'provisioning') {
+    if (props.environment.status === 'provisioning') {
         startPolling();
         setTimeout(startProvisioning, 100);
     }
@@ -176,11 +176,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <Head :title="`${server.name} - Provisioning`" />
+    <Head :title="`${environment.name} - Provisioning`" />
 
     <div class="p-6 max-w-2xl">
         <div class="mb-6">
-            <Link href="/servers" class="text-blue-600 hover:text-blue-800 flex items-center">
+            <Link href="/environments" class="text-blue-600 hover:text-blue-800 flex items-center">
                 <ChevronLeft class="w-4 h-4 mr-1" />
                 Back to Environments
             </Link>
@@ -188,8 +188,8 @@ onUnmounted(() => {
 
         <div class="flex justify-between items-start mb-6">
             <div>
-                <h2 class="text-2xl font-bold text-gray-800 dark:text-white">{{ server.name }}</h2>
-                <p class="text-gray-500 dark:text-gray-400">{{ server.host }}</p>
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-white">{{ environment.name }}</h2>
+                <p class="text-gray-500 dark:text-gray-400">{{ environment.host }}</p>
             </div>
         </div>
 
@@ -285,7 +285,7 @@ onUnmounted(() => {
                     Retry Provisioning
                 </button>
                 <button
-                    @click="deleteServer"
+                    @click="deleteEnvironment"
                     class="px-4 py-2 border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"
                 >
                     <Trash2 class="w-4 h-4 inline mr-2" />
@@ -297,7 +297,7 @@ onUnmounted(() => {
         <!-- What's Being Installed -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-                {{ server.is_local ? "What's being installed (Mac)" : "What's being installed" }}
+                {{ environment.is_local ? "What's being installed (Mac)" : "What's being installed" }}
             </h3>
             <ul class="space-y-2 text-gray-600 dark:text-gray-400">
                 <li v-for="item in checklistItems" :key="item.step" class="flex items-center">

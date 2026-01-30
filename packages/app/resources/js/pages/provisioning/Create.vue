@@ -127,7 +127,7 @@ const checkServer = async () => {
 
 const addWithoutProvisioning = () => {
     // Create server directly without provisioning
-    router.post('/servers', {
+    router.post('/environments', {
         name: form.name,
         host: form.host,
         user: checkResult.value?.connected_as === 'orbit' ? 'orbit' : form.user,

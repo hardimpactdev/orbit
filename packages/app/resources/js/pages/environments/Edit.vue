@@ -23,17 +23,17 @@ interface Config {
 }
 
 const props = defineProps<{
-    server: Environment;
+    environment: Environment;
 }>();
 
 const form = useForm({
-    name: props.server.name,
-    host: props.server.host,
-    user: props.server.user,
-    port: props.server.port,
-    is_local: props.server.is_local,
-    external_access: props.server.external_access,
-    external_host: props.server.external_host ?? '',
+    name: props.environment.name,
+    host: props.environment.host,
+    user: props.environment.user,
+    port: props.environment.port,
+    is_local: props.environment.is_local,
+    external_access: props.environment.external_access,
+    external_host: props.environment.external_host ?? '',
 });
 
 // TLD Configuration
@@ -47,7 +47,7 @@ const tldPreview = computed(() => tld.value || 'test');
 const conflictingServers = computed(() => {
     const currentTld = tld.value || 'test';
     return Object.entries(otherServerTlds.value)
-        .filter(([id, serverTld]) => serverTld === currentTld && parseInt(id) !== props.server.id)
+        .filter(([id, serverTld]) => serverTld === currentTld && parseInt(id) !== props.environment.id)
         .map(([id]) => parseInt(id));
 });
 
@@ -55,7 +55,7 @@ const hasConflict = computed(() => conflictingServers.value.length > 0);
 
 const loadConfig = async () => {
     try {
-        const response = await fetch(`/environments/${props.server.id}/config`);
+        const response = await fetch(`/environments/${props.environment.id}/config`);
         const result = await response.json();
 
         if (result.success && result.data) {
@@ -89,7 +89,7 @@ const saveTldConfig = async (): Promise<{ success: boolean; error?: string }> =>
     }
 
     try {
-        const response = await fetch(`/environments/${props.server.id}/config`, {
+        const response = await fetch(`/environments/${props.environment.id}/config`, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN':
@@ -130,7 +130,7 @@ const submit = async () => {
     }
 
     // Then submit the form
-    form.put(`/environments/${props.server.id}`);
+    form.put(`/environments/${props.environment.id}`);
 };
 
 onMounted(() => {

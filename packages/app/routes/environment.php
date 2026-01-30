@@ -45,6 +45,7 @@ Route::put('services/{service}/config', [EnvironmentController::class, 'configur
 Route::get('services/{service}/info', [EnvironmentController::class, 'serviceInfo'])->name('environments.services.info');
 
 // Note: GET config and worktrees moved to routes/api.php (stateless)
+Route::get('config', [EnvironmentController::class, 'getConfig'])->name('environments.config');
 Route::post('config', [EnvironmentController::class, 'saveConfig'])->name('environments.config.save');
 Route::get('browse-directories', [EnvironmentController::class, 'browseDirectories'])->name('environments.browse-directories');
 Route::get('reverb-config', [EnvironmentController::class, 'getReverbConfig'])->name('environments.reverb-config');
