@@ -36,19 +36,19 @@ jobs:
 
       - name: Split and push ${{ matrix.package.local }}
         env:
-          GITHUB_TOKEN: ${{ secrets.SPLIT_TOKEN }}
+          SPLIT_PAT: ${{ secrets.SPLIT_TOKEN }}
         run: |
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
           echo "Split SHA: $SHA"
           
           # Push split SHA directly to target repo
-          git remote add ${{ matrix.package.remote }} https://x-access-token:${GITHUB_TOKEN}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
+          git remote add ${{ matrix.package.remote }} https://x-access-token:${SPLIT_PAT}@github.com/hardimpactdev/${{ matrix.package.remote }}.git || true
           git push ${{ matrix.package.remote }} ${SHA}:refs/heads/main --force
           
       - name: Push tags
         if: startsWith(github.ref, 'refs/tags/')
         env:
-          GITHUB_TOKEN: ${{ secrets.SPLIT_TOKEN }}
+          SPLIT_PAT: ${{ secrets.SPLIT_TOKEN }}
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           SHA=$(splitsh-lite --prefix=packages/${{ matrix.package.local }})
