@@ -147,6 +147,8 @@ jobs:
           # Use local monorepo packages instead of Packagist
           composer config repositories.orbit-core path ../core
           composer config repositories.orbit-app path ../app
+          # Update monorepo packages to use latest from path, then install rest
+          composer update hardimpactdev/orbit-core hardimpactdev/orbit-app --no-progress
           composer install --prefer-dist --no-progress
 
       - name: Run tests
