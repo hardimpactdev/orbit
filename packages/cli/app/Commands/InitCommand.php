@@ -30,7 +30,6 @@ final class InitCommand extends Command
     protected bool $autoConfirm = false;
 
     public function handle(
-        ServiceManager $serviceManager,
         ConfigManager $configManager,
         DockerManager $dockerManager,
         CaddyfileGeneratorInterface $caddyfileGenerator,
@@ -138,7 +137,12 @@ final class InitCommand extends Command
         });
 
         // 4.5. Initialize services.yaml and generate docker-compose.yaml
-        $this->task('Initializing service configuration', function () use ($serviceManager) {
+        // NOTE: ServiceManager is resolved here (not in handle() signature) to avoid
+        // early file reads during DI resolution. This allows prerequisites and directories
+        // to be set up first.
+        $this->task('Initializing service configuration', function () {
+            $serviceManager = app(ServiceManager::class);
+
             // ServiceManager will auto-create services.yaml from stub if missing
             $serviceManager->loadServices();
 
