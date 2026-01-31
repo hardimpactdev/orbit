@@ -18,15 +18,13 @@ class NativeAppServiceProvider implements ProvidesPhpIni
      */
     public function boot(): void
     {
+        // Open main window - keep it simple for reliability
         Window::open()
             ->title('Orbit')
             ->width(1200)
             ->height(800)
             ->minWidth(800)
-            ->minHeight(600)
-            ->titleBarHiddenInset()
-            ->trafficLightPosition(16, 14)
-            ->backgroundColor('#09090b');
+            ->minHeight(600);
 
         // Create menu bar if enabled in user preferences
         $this->initializeMenuBar();
