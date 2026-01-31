@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Install\Shared;
 
 use App\Data\Install\InstallContext;
-use HardImpact\Orbit\Core\Data\StepResult;
 use App\Services\ConfigManager;
 use App\Services\DockerManager;
 use App\Services\Install\InstallLogger;
 use App\Services\PhpManager;
 use App\Services\ServiceManager;
+use HardImpact\Orbit\Core\Data\StepResult;
 use HardImpact\Orbit\Core\Models\Environment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
