@@ -51,9 +51,13 @@ php artisan vendor:publish --tag="orbit-ui-views"
 
 ## Usage
 
+Register the service provider in your application:
+
 ```php
-$ui = new HardImpact\Orbit\Ui\Ui();
-echo $ui->echoPhrase('Hello, HardImpact\Orbit\Ui!');
+// config/app.php
+'providers' => [
+    HardImpact\Orbit\Ui\OrbitAppServiceProvider::class,
+],
 ```
 
 ## Testing

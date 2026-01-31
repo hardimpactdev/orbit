@@ -2,10 +2,10 @@
 
 Stops all Orbit services in reverse order of start.
 
-- Detects architecture (php-fpm vs frankenphp)
+- Detects PHP-FPM sockets on the host
 - Stops Horizon first
 - Stops host Caddy
-- Stops all Docker services
+- Stops all Docker services (dns, reverb, postgres, redis, mailpit)
 - Note: Does NOT stop PHP-FPM pools (keeps them for other projects)
 
 Failure and recovery paths

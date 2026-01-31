@@ -8,16 +8,16 @@ beforeEach(function () {
     createEnvironment();
 });
 
-test('settings page loads', function () {
+test('configuration page loads', function () {
     $environment = Environment::first();
 
-    $response = $this->get("/environments/{$environment->id}/settings");
+    $response = $this->get("/environments/{$environment->id}/configuration");
 
     $response->assertStatus(200);
-    $response->assertInertia(fn ($page) => $page->component('environments/Settings'));
+    $response->assertInertia(fn ($page) => $page->component('environments/Configuration'));
 });
 
-test('settings page includes template favorites', function () {
+test('configuration page includes template favorites', function () {
     $environment = Environment::first();
 
     TemplateFavorite::create([
@@ -26,7 +26,7 @@ test('settings page includes template favorites', function () {
         'usage_count' => 5,
     ]);
 
-    $response = $this->get("/environments/{$environment->id}/settings");
+    $response = $this->get("/environments/{$environment->id}/configuration");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page
@@ -94,10 +94,10 @@ test('template favorite can be deleted', function () {
     $this->assertDatabaseMissing('template_favorites', ['id' => $template->id]);
 });
 
-test('settings page includes notification preference', function () {
+test('configuration page includes notification preference', function () {
     $environment = Environment::first();
 
-    $response = $this->get("/environments/{$environment->id}/settings");
+    $response = $this->get("/environments/{$environment->id}/configuration");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->has('notificationsEnabled'));
@@ -130,10 +130,10 @@ test('notifications can be enabled', function () {
     expect($pref->value)->toBeTrue();
 });
 
-test('settings page includes menu bar preference', function () {
+test('configuration page includes menu bar preference', function () {
     $environment = Environment::first();
 
-    $response = $this->get("/environments/{$environment->id}/settings");
+    $response = $this->get("/environments/{$environment->id}/configuration");
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page->has('menuBarEnabled'));

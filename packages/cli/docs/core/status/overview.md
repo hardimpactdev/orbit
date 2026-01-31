@@ -2,7 +2,7 @@
 
 Shows Orbit status including all running services and configuration.
 
-- Detects architecture (php-fpm vs frankenphp)
+- Detects PHP-FPM sockets on the host
 - Checks PHP-FPM pools, Caddy, Horizon status
 - Gets Docker service statuses via ServiceManager
 - Scans sites and counts them

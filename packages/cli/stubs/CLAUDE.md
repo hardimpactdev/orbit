@@ -15,7 +15,7 @@ orbit php <site> <version>  # Set PHP version
 
 ## Horizon (Queue Worker)
 
-Orbit includes a web app with Horizon for background job processing. Horizon runs in a Docker container (`orbit-horizon`).
+Orbit includes a web app with Horizon for background job processing. Horizon runs on the host as a system service.
 
 ```bash
 # Check Horizon status
@@ -25,28 +25,27 @@ docker ps | grep orbit-horizon
 # Start/Stop Horizon
 orbit horizon:start
 orbit horizon:stop
-docker restart orbit-horizon
 
 # View logs
-docker logs orbit-horizon --tail 100 -f
+sudo journalctl -u orbit-horizon -f
 
 # Access dashboard (when running)
 open https://orbit.{tld}/horizon
 ```
 
-Docker configuration is at `~/.config/orbit/horizon/docker-compose.yml`.
+Systemd unit name: `orbit-horizon`.
 
 ## Direct Docker Access
 
 ```bash
 # Start/stop individual services
-docker compose -f ~/.config/orbit/php/docker-compose.yml up -d
-docker compose -f ~/.config/orbit/postgres/docker-compose.yml down
+docker compose -f ~/.config/orbit/postgres/docker-compose.yml up -d
+docker compose -f ~/.config/orbit/reverb/docker-compose.yml up -d
 
 # View logs
-docker logs -f orbit-php-83
+docker logs -f orbit-postgres
+docker logs -f orbit-reverb
 docker logs -f orbit-redis
-docker logs -f orbit-horizon
 ```
 
 ## Host Services (systemd)
@@ -83,8 +82,7 @@ Then restart: `orbit restart`
 ## Add a New Path
 
 1. Edit ~/.config/orbit/config.json, add path to "paths" array
-2. Edit ~/.config/orbit/php/docker-compose.yml, add volume mount
-3. Run: `orbit restart`
+2. Run: `orbit restart`
 
 ## Config Locations
 
@@ -92,7 +90,7 @@ Then restart: `orbit restart`
 - Caddy: ~/.config/orbit/caddy/Caddyfile (host service, reload with `sudo systemctl reload caddy`)
 - Sites: ~/.config/orbit/config.json
 - DNS: ~/.config/orbit/dns/Dockerfile
-- Horizon: ~/.config/orbit/horizon/docker-compose.yml
+- Horizon: system service (systemd/launchd)
 - Web app: ~/.config/orbit/web/
 
 ## Troubleshooting
@@ -103,7 +101,7 @@ orbit status --json | jq .
 
 # Check Horizon specifically
 orbit horizon:status
-docker logs orbit-horizon --tail 50
+sudo journalctl -u orbit-horizon --tail 50
 
 # Check Caddy (runs on host, not Docker)
 sudo systemctl status caddy
@@ -112,7 +110,7 @@ sudo journalctl -u caddy --tail 50
 # Restart everything
 orbit restart
 
-# Clear config cache in Horizon container
-docker exec orbit-horizon php artisan config:clear
-docker restart orbit-horizon
+# Clear config cache in Horizon service
+php ~/.config/orbit/web/artisan config:clear
+sudo systemctl restart orbit-horizon
 ```

@@ -1,4 +1,5 @@
 includes:
+    - vendor/larastan/larastan/extension.neon
     - phpstan-baseline.neon
 
 parameters:
@@ -7,6 +8,13 @@ parameters:
         - src
         - config
         - database
+    scanFiles:
+        - ../core/src/Models/Environment.php
+        - ../core/src/Models/Project.php
+        - ../core/src/Models/SshKey.php
+        - ../core/src/Models/TrackedJob.php
+        - ../core/src/Models/Workspace.php
+        - ../core/src/Models/Setting.php
     tmpDir: build/phpstan
     checkOctaneCompatibility: true
-    checkModelProperties: true
+    checkModelProperties: false

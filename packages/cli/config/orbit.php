@@ -20,7 +20,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | The PHP versions that Orbit supports. These correspond to the
-    | FrankenPHP Docker images that will be pulled during init.
+    | host PHP-FPM versions that will be installed and managed.
     |
     */
 

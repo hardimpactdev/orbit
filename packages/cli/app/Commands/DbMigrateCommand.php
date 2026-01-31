@@ -7,7 +7,7 @@ namespace App\Commands;
 use Illuminate\Support\Facades\Artisan;
 use LaravelZero\Framework\Commands\Command;
 
-class DbMigrateCommand extends Command
+final class DbMigrateCommand extends Command
 {
     protected $signature = 'db:migrate 
         {--status : Show migration status only}

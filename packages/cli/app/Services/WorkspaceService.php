@@ -6,7 +6,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\File;
 
-class WorkspaceService
+final class WorkspaceService
 {
     protected string $workspacesDir;
 

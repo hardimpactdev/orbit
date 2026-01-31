@@ -2,12 +2,12 @@
 
 namespace App\Providers;
 
-use HardImpact\Orbit\Core\Models\UserPreference;
 use App\Services\CliInstallService;
+use HardImpact\Orbit\Core\Models\UserPreference;
 use Native\Laravel\Contracts\ProvidesPhpIni;
 use Native\Laravel\Facades\MenuBar;
-use Native\Laravel\Facades\Window;
 use Native\Laravel\Facades\Notification;
+use Native\Laravel\Facades\Window;
 use Native\Laravel\Menu\Menu;
 
 class NativeAppServiceProvider implements ProvidesPhpIni
@@ -30,7 +30,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
 
         // Create menu bar if enabled in user preferences
         $this->initializeMenuBar();
-        
+
         // Check CLI installation on first launch
         $this->checkCliInstallation();
     }
@@ -42,8 +42,8 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     {
         try {
             $cliService = app(CliInstallService::class);
-            
-            if (!$cliService->isInstalled()) {
+
+            if (! $cliService->isInstalled()) {
                 // Show notification prompting user to install CLI
                 // The actual installation will be triggered from the UI
                 Notification::title('Orbit CLI')
@@ -68,7 +68,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             return;
         }
 
-        if (!$menuBarEnabled) {
+        if (! $menuBarEnabled) {
             return;
         }
 

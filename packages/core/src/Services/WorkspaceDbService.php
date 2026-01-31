@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services;
@@ -47,7 +48,7 @@ class WorkspaceDbService
         // Determine workspace path
         $config = $environment->metadata ?? [];
         $basePath = $config['workspaces_path'] ?? ($environment->is_local ? $this->getDefaultWorkspacesPath() : null);
-        $workspacePath = $basePath ? rtrim($basePath, '/') . '/' . $name : null;
+        $workspacePath = $basePath ? rtrim($basePath, '/').'/'.$name : null;
 
         $workspace = Workspace::create([
             'environment_id' => $environment->id,
@@ -78,7 +79,7 @@ class WorkspaceDbService
             ->where('name', $name)
             ->first();
 
-        if (!$workspace) {
+        if (! $workspace) {
             return [
                 'success' => false,
                 'error' => "Workspace '{$name}' not found",
@@ -102,7 +103,7 @@ class WorkspaceDbService
             ->where('name', $workspaceName)
             ->first();
 
-        if (!$workspace) {
+        if (! $workspace) {
             return [
                 'success' => false,
                 'error' => "Workspace '{$workspaceName}' not found",
@@ -133,7 +134,7 @@ class WorkspaceDbService
             ->where('name', $workspaceName)
             ->first();
 
-        if (!$workspace) {
+        if (! $workspace) {
             return [
                 'success' => false,
                 'error' => "Workspace '{$workspaceName}' not found",
@@ -164,7 +165,8 @@ class WorkspaceDbService
         if ($home === null) {
             $home = getenv('HOME') ?: '/tmp';
         }
-        return $home . '/Workspaces';
+
+        return $home.'/Workspaces';
     }
 
     /**
@@ -172,12 +174,12 @@ class WorkspaceDbService
      */
     protected function createWorkspaceDirectory(Workspace $workspace): void
     {
-        if (!$workspace->path) {
+        if (! $workspace->path) {
             return;
         }
 
         // Create directory
-        if (!is_dir($workspace->path)) {
+        if (! is_dir($workspace->path)) {
             mkdir($workspace->path, 0755, true);
         }
 
@@ -190,17 +192,17 @@ class WorkspaceDbService
      */
     protected function updateWorkspaceFile(Workspace $workspace): void
     {
-        if (!$workspace->path) {
+        if (! $workspace->path) {
             return;
         }
 
-        $workspaceFile = rtrim($workspace->path, '/') . '/' . $workspace->name . '.code-workspace';
-        
+        $workspaceFile = rtrim($workspace->path, '/').'/'.$workspace->name.'.code-workspace';
+
         $content = [
-            'folders' => collect($workspace->projects ?? [])->map(fn($project) => [
-                'path' => '../' . $project,
+            'folders' => collect($workspace->projects ?? [])->map(fn ($project) => [
+                'path' => '../'.$project,
             ])->all(),
-            'settings' => (object)[],
+            'settings' => (object) [],
         ];
 
         file_put_contents($workspaceFile, json_encode($content, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

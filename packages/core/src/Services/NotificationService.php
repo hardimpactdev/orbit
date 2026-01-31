@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services;
@@ -98,5 +99,4 @@ class NotificationService
             "'{$projectName}' has been deleted."
         );
     }
-
 }

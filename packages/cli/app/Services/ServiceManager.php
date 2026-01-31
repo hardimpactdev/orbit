@@ -351,7 +351,11 @@ class ServiceManager
 
         // Use docker compose to start the service
         $composePath = $this->configManager->getConfigPath().'/docker-compose.yaml';
-        $result = shell_exec("docker compose -f {$composePath} up -d {$name} 2>&1");
+        $result = shell_exec(sprintf(
+            'docker compose -f %s up -d %s 2>&1',
+            escapeshellarg($composePath),
+            escapeshellarg($name)
+        ));
 
         return $result !== null && ! str_contains($result, 'error');
     }
@@ -362,7 +366,11 @@ class ServiceManager
     public function stop(string $name): bool
     {
         $composePath = $this->configManager->getConfigPath().'/docker-compose.yaml';
-        $result = shell_exec("docker compose -f {$composePath} stop {$name} 2>&1");
+        $result = shell_exec(sprintf(
+            'docker compose -f %s stop %s 2>&1',
+            escapeshellarg($composePath),
+            escapeshellarg($name)
+        ));
 
         return $result !== null && ! str_contains($result, 'error');
     }
@@ -381,7 +389,10 @@ class ServiceManager
         $this->regenerateCompose();
 
         $composePath = $this->configManager->getConfigPath().'/docker-compose.yaml';
-        $result = shell_exec("docker compose -f {$composePath} up -d 2>&1");
+        $result = shell_exec(sprintf(
+            'docker compose -f %s up -d 2>&1',
+            escapeshellarg($composePath)
+        ));
 
         return $result !== null && ! str_contains($result, 'error');
     }
@@ -392,7 +403,10 @@ class ServiceManager
     public function stopAll(): bool
     {
         $composePath = $this->configManager->getConfigPath().'/docker-compose.yaml';
-        $result = shell_exec("docker compose -f {$composePath} down 2>&1");
+        $result = shell_exec(sprintf(
+            'docker compose -f %s down 2>&1',
+            escapeshellarg($composePath)
+        ));
 
         return $result !== null && ! str_contains($result, 'error');
     }

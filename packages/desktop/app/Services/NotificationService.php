@@ -97,5 +97,4 @@ class NotificationService
             "'{$projectName}' has been deleted."
         );
     }
-
 }

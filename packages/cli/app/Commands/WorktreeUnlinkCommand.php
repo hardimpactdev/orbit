@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\WorktreeService;
 use LaravelZero\Framework\Commands\Command;
 
-class WorktreeUnlinkCommand extends Command
+final class WorktreeUnlinkCommand extends Command
 {
     use WithJsonOutput;
 

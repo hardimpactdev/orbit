@@ -62,7 +62,7 @@ orbit upgrade                                  # Update local installation
 | Static Analysis | PHPStan |
 | Code Style | Laravel Pint |
 | Refactoring | Rector |
-| Containers | Docker Compose |
+| Containers | Docker Compose (dns, reverb, postgres) |
 | Web Server | Caddy |
 | PHP Runtime | PHP-FPM (8.3, 8.4, 8.5) |
 | Platforms | Linux, macOS |
@@ -86,7 +86,7 @@ Sites created via dev CLI won't appear in production, and vice versa. This preve
 
 ## Project Architecture
 
-**Orbit CLI** - Local PHP dev environment powered by Docker.
+**Orbit CLI** - Local PHP dev environment with host PHP-FPM/Caddy and Docker-backed services.
 
 ### Directory Structure
 

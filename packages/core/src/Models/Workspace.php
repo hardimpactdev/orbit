@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Models;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property \Carbon\Carbon $updated_at
  * @property-read Environment $environment
  * @property-read int $project_count
- * @property-read bool $has_workspace_file
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static> where(string $column, mixed $operator = null, mixed $value = null, string $boolean = 'and')
  * @method static static create(array $attributes = [])
  */
@@ -51,14 +52,19 @@ class Workspace extends Model
 
     /**
      * Check if workspace has a .code-workspace file.
+     *
+     * NOTE: This is an explicit method (not an accessor) because it performs
+     * filesystem I/O. Call only when needed to avoid N file_exists() calls
+     * when iterating over collections.
      */
-    public function getHasWorkspaceFileAttribute(): bool
+    public function hasWorkspaceFile(): bool
     {
-        if (!$this->path) {
+        if (! $this->path) {
             return false;
         }
-        
-        $workspaceFile = rtrim($this->path, '/') . '/' . $this->name . '.code-workspace';
+
+        $workspaceFile = rtrim($this->path, '/').'/'.$this->name.'.code-workspace';
+
         return file_exists($workspaceFile);
     }
 
@@ -68,7 +74,7 @@ class Workspace extends Model
     public function addProject(string $projectName): void
     {
         $projects = $this->projects ?? [];
-        if (!in_array($projectName, $projects)) {
+        if (! in_array($projectName, $projects)) {
             $projects[] = $projectName;
             $this->projects = $projects;
             $this->save();
@@ -81,7 +87,7 @@ class Workspace extends Model
     public function removeProject(string $projectName): void
     {
         $projects = $this->projects ?? [];
-        $this->projects = array_values(array_filter($projects, fn($p) => $p !== $projectName));
+        $this->projects = array_values(array_filter($projects, fn ($p) => $p !== $projectName));
         $this->save();
     }
 
@@ -93,12 +99,12 @@ class Workspace extends Model
         return [
             'name' => $this->name,
             'path' => $this->path,
-            'projects' => collect($this->projects ?? [])->map(fn($name) => [
+            'projects' => collect($this->projects ?? [])->map(fn ($name) => [
                 'name' => $name,
                 'path' => null, // Will be filled by caller if needed
             ])->all(),
             'project_count' => $this->project_count,
-            'has_workspace_file' => $this->has_workspace_file,
+            'has_workspace_file' => $this->hasWorkspaceFile(),
             'has_claude_md' => false, // TODO: implement
         ];
     }

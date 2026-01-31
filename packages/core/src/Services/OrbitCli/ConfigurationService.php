@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services\OrbitCli;
@@ -182,20 +183,15 @@ class ConfigurationService
      */
     protected function getLocalAvailablePhpVersions(): array
     {
-        // Query docker for running orbit-php-* containers
-        $output = shell_exec("docker ps --format '{{.Names}}' --filter 'name=orbit-php-' 2>/dev/null | grep -oE '[0-9]+' | sort -u");
-
-        if (in_array($output, ['', '0', false, null], true)) {
-            return ['8.3', '8.4', '8.5'];
-        }
-
+        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
+        $sockets = glob($home.'/.config/orbit/php/php*.sock') ?: [];
         $versions = [];
-        $numbers = explode("\n", trim($output));
 
-        foreach ($numbers as $num) {
-            $num = trim($num);
-            if (strlen($num) === 2) {
-                $versions[] = substr($num, 0, 1).'.'.substr($num, 1);
+        foreach ($sockets as $socket) {
+            $name = basename($socket, '.sock');
+            if (preg_match('/^php(\d{2})$/', $name, $matches)) {
+                $digits = $matches[1];
+                $versions[] = substr($digits, 0, 1).'.'.substr($digits, 1);
             }
         }
 
@@ -253,32 +249,7 @@ class ConfigurationService
             return ['8.3', '8.4', '8.5'];
         }
 
-        // For local environments, query docker for running orbit-php-* containers
-        $result = $this->ssh->execute(
-            $environment,
-            "docker ps --format '{{.Names}}' --filter 'name=orbit-php-' 2>/dev/null | grep -oE '[0-9]+' | sort -u"
-        );
-
-        if (! $result['success'] || in_array(trim((string) $result['output']), ['', '0'], true)) {
-            // Fallback to default versions
-            return ['8.3', '8.4', '8.5'];
-        }
-
-        $versions = [];
-        $numbers = explode("\n", trim((string) $result['output']));
-
-        foreach ($numbers as $num) {
-            $num = trim($num);
-            if (strlen($num) === 2) {
-                // Convert "83" to "8.3", "84" to "8.4", "85" to "8.5"
-                $versions[] = substr($num, 0, 1).'.'.substr($num, 1);
-            }
-        }
-
-        // Sort versions
-        usort($versions, version_compare(...));
-
-        return $versions === [] ? ['8.3', '8.4', '8.5'] : $versions;
+        return $this->getLocalAvailablePhpVersions();
     }
 
     /**

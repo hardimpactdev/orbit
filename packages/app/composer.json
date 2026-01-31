@@ -10,7 +10,7 @@
   "license": "MIT",
   "authors": [
     {
-      "name": "Nick Ratel",
+      "name": "Nick Retel",
       "email": "nick@hardimpact.dev",
       "role": "Developer"
     }
@@ -24,7 +24,7 @@
   },
   "require-dev": {
     "larastan/larastan": "^3.0",
-    "laravel/pint": "^1.14",
+    "laravel/pint": "^1.25",
     "nunomaduro/collision": "^8.8",
     "orchestra/testbench": "^10.0.0||^9.0.0",
     "pestphp/pest": "^4.0",
@@ -59,7 +59,7 @@
     "prepare": "@php vendor/bin/testbench package:discover --ansi",
     "analyse": "vendor/bin/phpstan analyse",
     "test": "vendor/bin/pest",
-    "test-coverage": "vendor/bin/pest --coverage",
+    "test-coverage": "vendor/bin/pest --coverage --min=50",
     "format": "vendor/bin/pint"
   },
   "config": {
@@ -74,9 +74,7 @@
       "providers": [
         "HardImpact\\Orbit\\Ui\\OrbitAppServiceProvider"
       ],
-      "aliases": {
-        "Ui": "HardImpact\\Orbit\\Ui\\Facades\\Ui"
-      }
+      "aliases": {}
     }
   },
   "minimum-stability": "dev",

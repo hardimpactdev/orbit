@@ -4,14 +4,14 @@ description: Add support for a new PHP version to Launchpad. Use when user wants
 allowed-tools: Bash(ssh:*), Read, Edit
 ---
 
-# Upgrade PHP Version
+# Upgrade PHP Version (Host PHP-FPM)
 
-Add support for a new PHP version to the Orbit stack. This involves updating the CLI on the remote server and rebuilding containers.
+Add support for a new PHP version in the Orbit stack. PHP runs as host PHP-FPM, and Caddy runs on the host. No FrankenPHP containers.
 
 ## Prerequisites
 
 - SSH access to the remote server (`ssh orbit@ai`)
-- The new PHP version must be available in the `dunglas/frankenphp` Docker image
+- sudo privileges for package installs and service management
 
 ## Parameters
 
@@ -19,95 +19,54 @@ Ask the user for the PHP version to add (e.g., `8.6`, `8.7`).
 
 ## Steps
 
-### 1. Verify the FrankenPHP Image Exists
+### 1. Update supported version lists
 
-First, check if the Docker image exists for the requested PHP version:
+Update the CLI's supported versions and any validation lists:
 
-```bash
-ssh orbit@ai "docker pull dunglas/frankenphp:php{VERSION} 2>&1 | head -5"
-```
+- `packages/cli/config/orbit.php` (`php_versions` array)
+- `packages/cli/app/Commands/PhpCommand.php`:
+  - Update the signature help text
+  - Update `$validVersions`
+- `packages/cli/app/Services/Platform/MacAdapter.php`:
+  - Extend the unlink list in `setDefaultPhpCli()`
+  - If the new version becomes Homebrew's default, update `getBrewPhpFormula()`
 
-If the image doesn't exist, inform the user and stop.
-
-### 2. Create the Dockerfile
-
-Create a new Dockerfile for the PHP version in the config directory:
-
-```bash
-ssh orbit@ai "cat > ~/.config/orbit/php/Dockerfile.php{VERSION_NO_DOT} << 'EOF'
-FROM dunglas/frankenphp:php{VERSION}
-
-RUN install-php-extensions     redis     pdo_pgsql     pdo_mysql     pcntl     intl     exif     gd     zip     bcmath
-
-# Install Docker CLI for orbit status checks
-RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
-EOF"
-```
-
-Replace `{VERSION}` with e.g., `8.6` and `{VERSION_NO_DOT}` with e.g., `86`.
-
-### 3. Update PhpComposeGenerator.php
-
-Read the current file and add the new PHP service. The file is at:
-`~/projects/orbit-cli/app/Services/PhpComposeGenerator.php`
-
-Add a new service block following the existing pattern:
-
-```php
-  php-{VERSION_NO_DOT}:
-    build:
-      context: .
-      dockerfile: Dockerfile.php{VERSION_NO_DOT}
-    image: orbit-php:{VERSION}
-    container_name: orbit-php-{VERSION_NO_DOT}
-    ports:
-      - \"{PORT}:8080\"
-    volumes:
-{\$volumeMounts}{\$worktreeMount}{\$vibeKanbanMount}      - ./php.ini:/usr/local/etc/php/php.ini:ro
-      - ./Caddyfile:/etc/frankenphp/Caddyfile:ro
-    restart: unless-stopped
-    networks:
-      - orbit
-```
-
-Port numbers follow the pattern: 8083 for PHP 8.3, 8084 for PHP 8.4, 8085 for PHP 8.5, 8086 for PHP 8.6, etc.
-
-### 4. Update CaddyfileGenerator.php
-
-Read and update `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php`.
-
-Find the `reloadPhp()` method and add a reload command for the new container:
-
-```php
-$result{VERSION_NO_DOT} = Process::run('docker exec orbit-php-{VERSION_NO_DOT} frankenphp reload --config /etc/frankenphp/Caddyfile 2>/dev/null');
-```
-
-Update the return statement to include the new result.
-
-### 5. Regenerate and Restart
-
-Run the CLI from source to regenerate configs and restart:
+Search for hard-coded version lists and update tests/docs as needed:
 
 ```bash
-ssh orbit@ai "cd ~/projects/orbit-cli && php orbit restart"
+rg "8\.3|8\.4|8\.5" packages/cli
 ```
 
-### 6. Verify Containers
+### 2. Install PHP-FPM on the host
 
-Confirm all PHP containers are running:
+Install the new PHP version on the target host:
 
 ```bash
-ssh orbit@ai "docker ps --format '{{.Names}} {{.Status}}' --filter 'name=orbit-php-'"
+# Linux (Ubuntu)
+sudo apt-get update
+sudo apt-get install -y php{VERSION}-fpm php{VERSION}-cli php{VERSION}-common php{VERSION}-curl php{VERSION}-mbstring php{VERSION}-xml php{VERSION}-zip php{VERSION}-gd php{VERSION}-bcmath php{VERSION}-pgsql php{VERSION}-mysql php{VERSION}-redis
+
+# macOS
+brew install php@{VERSION}
+brew services start php@{VERSION}
 ```
 
-Wait for containers to become healthy (may take 30-60 seconds on first build).
+### 3. Install the Orbit PHP-FPM pool
 
-### 7. Update Desktop App (Optional)
+Ensure Orbit's pool config is installed and linked (via setup/migration pipeline or directly through `PhpManager::installPool()` when running locally). Restart or reload PHP-FPM after linking the pool.
 
-The desktop app dynamically detects available PHP versions from running Docker containers, so no code changes are needed. The new version will appear automatically in:
+### 4. Validate
 
-- Settings page: Default PHP version dropdown
-- Projects page: Per-project PHP version dropdown
+Verify the new version is detected and the socket exists:
+
+```bash
+orbit status
+ls ~/.config/orbit/php/php{VERSION_NO_DOT}.sock
+```
+
+### 5. Update documentation
+
+If any docs list supported PHP versions, update them to include the new version.
 
 ## Example
 
@@ -115,34 +74,11 @@ To add PHP 8.6:
 
 1. `VERSION` = `8.6`
 2. `VERSION_NO_DOT` = `86`
-3. `PORT` = `8086`
-
-## Troubleshooting
-
-### Image Not Found
-
-If `dunglas/frankenphp:php{VERSION}` doesn't exist, the PHP version may not be released yet. Check https://hub.docker.com/r/dunglas/frankenphp/tags for available versions.
-
-### Container Build Fails
-
-Check Docker build logs:
-
-```bash
-ssh orbit@ai "cd ~/.config/orbit/php && docker compose build php-{VERSION_NO_DOT} 2>&1"
-```
-
-### Container Not Starting
-
-Check container logs:
-
-```bash
-ssh orbit@ai "docker logs orbit-php-{VERSION_NO_DOT}"
-```
 
 ## Files Modified
 
-| Location      | File                                                        | Change      |
-| ------------- | ----------------------------------------------------------- | ----------- |
-| Remote config | `~/.config/orbit/php/Dockerfile.php{XX}`                    | Created     |
-| Remote CLI    | `~/projects/orbit-cli/app/Services/PhpComposeGenerator.php` | Add service |
-| Remote CLI    | `~/projects/orbit-cli/app/Services/CaddyfileGenerator.php`  | Add reload  |
+| Location | File | Change |
+| --- | --- | --- |
+| Repo | `packages/cli/config/orbit.php` | Add version |
+| Repo | `packages/cli/app/Commands/PhpCommand.php` | Update valid versions |
+| Repo | `packages/cli/app/Services/Platform/MacAdapter.php` | Update brew version handling |

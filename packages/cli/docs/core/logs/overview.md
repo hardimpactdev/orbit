@@ -12,7 +12,7 @@ Failure and recovery paths
 
 Inputs and options
 
-- container (required): Container name (e.g., orbit-php-83, orbit-redis, orbit-postgres)
+- container (required): Container name (e.g., orbit-reverb, orbit-redis, orbit-postgres)
 - --no-follow: Do not follow log output
 
 Note: Caddy runs on the host via systemd, not in Docker. Use `sudo journalctl -u caddy -f` for Caddy logs.

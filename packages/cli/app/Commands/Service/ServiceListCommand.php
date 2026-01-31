@@ -9,7 +9,7 @@ use App\Services\ServiceManager;
 use App\Services\ServiceTemplateLoader;
 use LaravelZero\Framework\Commands\Command;
 
-class ServiceListCommand extends Command
+final class ServiceListCommand extends Command
 {
     use WithJsonOutput;
 

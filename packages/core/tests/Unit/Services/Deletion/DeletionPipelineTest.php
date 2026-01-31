@@ -1,8 +1,8 @@
 <?php
+
 declare(strict_types=1);
 
 use HardImpact\Orbit\Core\Data\DeletionContext;
-use HardImpact\Orbit\Core\Data\StepResult;
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Models\Project;
 use HardImpact\Orbit\Core\Services\Deletion\Actions\DeleteProjectFiles;

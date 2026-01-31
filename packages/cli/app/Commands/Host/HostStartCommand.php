@@ -11,7 +11,7 @@ use App\Services\HorizonManager;
 use App\Services\PhpManager;
 use LaravelZero\Framework\Commands\Command;
 
-class HostStartCommand extends Command
+final class HostStartCommand extends Command
 {
     use WithJsonOutput;
 

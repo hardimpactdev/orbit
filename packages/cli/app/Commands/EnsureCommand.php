@@ -10,7 +10,7 @@ use App\Services\DockerManager;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;
 
-class EnsureCommand extends Command
+final class EnsureCommand extends Command
 {
     use WithJsonOutput;
 

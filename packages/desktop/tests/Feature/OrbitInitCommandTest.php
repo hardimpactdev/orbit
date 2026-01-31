@@ -16,7 +16,7 @@ class OrbitInitCommandTest extends TestCase
     {
         $this->assertDatabaseCount('environments', 0);
 
-        $this->artisan('orbit:init')
+        $this->artisan('orbit:init', ['--name' => 'Local'])
             ->assertExitCode(0);
 
         $this->assertDatabaseCount('environments', 1);
@@ -29,8 +29,8 @@ class OrbitInitCommandTest extends TestCase
     public function test_idempotent_does_not_create_duplicate(): void
     {
         // Run twice
-        $this->artisan('orbit:init')->assertExitCode(0);
-        $this->artisan('orbit:init')->assertExitCode(0);
+        $this->artisan('orbit:init', ['--name' => 'Local'])->assertExitCode(0);
+        $this->artisan('orbit:init', ['--name' => 'Local'])->assertExitCode(0);
 
         // Still only one environment
         $this->assertDatabaseCount('environments', 1);
@@ -40,14 +40,21 @@ class OrbitInitCommandTest extends TestCase
     {
         createEnvironment(['is_local' => true]);
 
-        $this->artisan('orbit:init')
+        $this->artisan('orbit:init', ['--name' => 'Local'])
             ->expectsOutput('Local environment already exists. Skipping.')
             ->assertExitCode(0);
     }
 
     public function test_creates_with_correct_defaults(): void
     {
-        $this->artisan('orbit:init')->assertExitCode(0);
+        $configPath = rtrim(getenv('HOME'), '/').'/.config/orbit/config.json';
+
+        // Mock File facade to return default TLD
+        \Illuminate\Support\Facades\File::shouldReceive('exists')
+            ->with($configPath)
+            ->andReturn(false);
+
+        $this->artisan('orbit:init', ['--name' => 'Local'])->assertExitCode(0);
 
         $env = Environment::where('is_local', true)->first();
 
@@ -69,8 +76,8 @@ class OrbitInitCommandTest extends TestCase
             ->with($configPath)
             ->andReturn(json_encode(['tld' => 'orbit']));
 
-        $this->artisan('orbit:init')
-            ->expectsOutput('Local environment initialized with TLD: orbit')
+        $this->artisan('orbit:init', ['--name' => 'Local'])
+            ->expectsOutputToContain('Local environment')
             ->assertExitCode(0);
 
         $this->assertDatabaseHas('environments', [

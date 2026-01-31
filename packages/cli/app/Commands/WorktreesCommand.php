@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\WorktreeService;
 use LaravelZero\Framework\Commands\Command;
 
-class WorktreesCommand extends Command
+final class WorktreesCommand extends Command
 {
     use WithJsonOutput;
 

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;
 
-class PackageLinkedCommand extends Command
+final class PackageLinkedCommand extends Command
 {
     use WithJsonOutput;
 

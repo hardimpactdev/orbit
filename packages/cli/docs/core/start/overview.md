@@ -2,11 +2,11 @@
 
 Starts all Orbit services including PHP-FPM, Caddy, Docker services, and Horizon.
 
-- Detects architecture (php-fpm vs frankenphp)
+- Detects PHP-FPM sockets on the host
 - Generates Caddyfile configuration
 - Starts PHP-FPM pools for installed versions (8.3, 8.4)
 - Starts host Caddy server
-- Starts all enabled Docker services
+- Starts all enabled Docker services (dns, reverb, postgres, redis, mailpit)
 - Starts Horizon queue worker
 
 Failure and recovery paths

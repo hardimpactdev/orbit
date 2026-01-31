@@ -15,7 +15,7 @@ use App\Services\PhpManager;
 use App\Services\PlatformService;
 use LaravelZero\Framework\Commands\Command;
 
-class SetupCommand extends Command
+final class SetupCommand extends Command
 {
     protected $signature = 'setup
         {--tld=test : TLD for local development sites}

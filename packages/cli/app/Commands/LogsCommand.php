@@ -7,10 +7,10 @@ namespace App\Commands;
 use App\Services\DockerManager;
 use LaravelZero\Framework\Commands\Command;
 
-class LogsCommand extends Command
+final class LogsCommand extends Command
 {
     protected $signature = 'logs
-        {container : The container name to show logs for (e.g., orbit-php-83, orbit-caddy)}
+        {container : The container name to show logs for (e.g., orbit-reverb, orbit-postgres)}
         {--no-follow : Do not follow log output}';
 
     protected $description = 'Tail container logs';

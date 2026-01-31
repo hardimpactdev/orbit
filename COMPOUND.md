@@ -19,9 +19,6 @@ Plan → Work → Review → Compound → (repeat)
 
 ```
 orbit-dev/
-├── plans/                    # Implementation plans
-│   ├── feat-*.md            # Feature plans
-│   └── fix-*.md             # Bug fix plans
 ├── docs/
 │   └── solutions/           # Compounded knowledge (auto-generated)
 │       ├── namespace-issues/
@@ -45,11 +42,7 @@ orbit-dev/
 
 ### 1. Plan (`/workflows-plan`)
 
-Before starting work, create a plan in `plans/`:
-
-```bash
-# Template: plans/feat-[name].md or plans/fix-[name].md
-```
+Before starting work, capture a short plan in the issue/task notes:
 
 **Plan must include:**
 - Problem statement

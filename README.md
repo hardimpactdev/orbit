@@ -61,6 +61,12 @@ bun build
 bun test
 ```
 
+### Compound Engineering
+
+We use the Plan -> Work -> Review -> Compound loop. See:
+
+- `docs/solutions/patterns/compound-engineering-monorepo.md`
+
 ## Versioning
 
 All packages are versioned together using [Changesets](https://github.com/changesets/changesets).

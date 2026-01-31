@@ -11,6 +11,13 @@
     "dashboard"
   ],
   "license": "MIT",
+  "authors": [
+    {
+      "name": "Nick Retel",
+      "email": "nick@hardimpact.dev",
+      "role": "Developer"
+    }
+  ],
   "require": {
     "php": "^8.4",
     "hardimpactdev/orbit-app": "^0.1",
@@ -21,8 +28,9 @@
   },
   "require-dev": {
     "fakerphp/faker": "^1.23",
+    "larastan/larastan": "^3.0",
     "laravel/pail": "^1.2.2",
-    "laravel/pint": "^1.24",
+    "laravel/pint": "^1.25",
     "mockery/mockery": "^1.6",
     "nunomaduro/collision": "^8.6",
     "pestphp/pest": "^4.0",
@@ -62,7 +70,10 @@
     "post-install-cmd": [
       "@php artisan vendor:publish --tag=orbit-assets --ansi --force",
       "@php -r 'if (!getenv(\"CI\")) { exec(\"vendor/bin/whisky update\"); }'"
-    ]
+    ],
+    "analyse": "vendor/bin/phpstan analyse",
+    "test": "vendor/bin/pest",
+    "format": "vendor/bin/pint"
   },
   "extra": {
     "laravel": {

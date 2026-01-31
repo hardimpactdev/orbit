@@ -89,6 +89,7 @@ const repoExists = ref<boolean | null>(null);
 const checkingRepo = ref(false);
 const repoCheckError = ref<string | null>(null);
 let repoCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let repoCheckController: AbortController | null = null;
 
 // Slugify helper
 const slugify = (str: string) =>
@@ -203,6 +204,10 @@ async function checkRepoExists(org: string, name: string) {
         return;
     }
 
+    // Cancel previous request to prevent race conditions
+    repoCheckController?.abort();
+    repoCheckController = new AbortController();
+
     const slug = slugify(name);
     const repo = `${org}/${slug}`;
 
@@ -216,6 +221,7 @@ async function checkRepoExists(org: string, name: string) {
                     '',
             },
             body: JSON.stringify({ repo }),
+            signal: repoCheckController.signal,
         });
         const result = await response.json();
 
@@ -226,6 +232,10 @@ async function checkRepoExists(org: string, name: string) {
             repoCheckError.value = result.error || 'Failed to check repository';
         }
     } catch (error) {
+        // Ignore abort errors (expected when new request cancels old one)
+        if (error instanceof Error && error.name === 'AbortError') {
+            return;
+        }
         console.error('Failed to check repo:', error);
         repoCheckError.value = 'Failed to check repository availability';
     } finally {

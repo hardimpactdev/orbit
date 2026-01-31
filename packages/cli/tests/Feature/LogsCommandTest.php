@@ -9,20 +9,20 @@ beforeEach(function () {
 
 it('shows logs for a container', function () {
     $this->dockerManager->shouldReceive('logs')
-        ->with('orbit-caddy', true)
+        ->with('orbit-reverb', true)
         ->once();
 
-    $this->artisan('logs orbit-caddy')
-        ->expectsOutputToContain('Showing logs for orbit-caddy')
+    $this->artisan('logs orbit-reverb')
+        ->expectsOutputToContain('Showing logs for orbit-reverb')
         ->assertExitCode(0);
 });
 
 it('can disable follow mode', function () {
     $this->dockerManager->shouldReceive('logs')
-        ->with('orbit-php-83', false)
+        ->with('orbit-postgres', false)
         ->once();
 
-    $this->artisan('logs orbit-php-83 --no-follow')
-        ->expectsOutputToContain('Showing logs for orbit-php-83')
+    $this->artisan('logs orbit-postgres --no-follow')
+        ->expectsOutputToContain('Showing logs for orbit-postgres')
         ->assertExitCode(0);
 });

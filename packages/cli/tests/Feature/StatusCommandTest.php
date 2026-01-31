@@ -27,7 +27,7 @@ beforeEach(function () {
 });
 
 it('shows status with all services running', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
     $this->phpManager->shouldReceive('getInstalledVersions')->andReturn([]);
 
@@ -61,7 +61,7 @@ it('shows status with all services running', function () {
 });
 
 it('shows status with all services stopped', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
     $this->phpManager->shouldReceive('getInstalledVersions')->andReturn([]);
 
@@ -93,7 +93,7 @@ it('shows status with all services stopped', function () {
 });
 
 it('outputs json when --json flag is used', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
     $this->phpManager->shouldReceive('getInstalledVersions')->andReturn([]);
 

@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\WorkspaceService;
 use LaravelZero\Framework\Commands\Command;
 
-class WorkspaceRemoveCommand extends Command
+final class WorkspaceRemoveCommand extends Command
 {
     use WithJsonOutput;
 

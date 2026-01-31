@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\ServiceManager;
 use LaravelZero\Framework\Commands\Command;
 
-class ServiceDisableCommand extends Command
+final class ServiceDisableCommand extends Command
 {
     use WithJsonOutput;
 

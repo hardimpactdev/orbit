@@ -24,17 +24,20 @@ class DesktopModeTest extends TestCase
         config(['orbit.multi_environment' => true]);
     }
 
-    public function test_sites_page_loads_with_route_parameter(): void
+    public function test_projects_page_loads_with_route_parameter(): void
     {
         $environment = createEnvironment();
 
-        $response = $this->get("/environments/{$environment->id}/sites");
+        $response = $this->get("/environments/{$environment->id}/projects");
 
         $response->assertStatus(200);
     }
 
     public function test_environment_management_accessible(): void
     {
+        // Need more than one environment to avoid redirect to show page
+        createEnvironment(['name' => 'Env 1']);
+        createEnvironment(['name' => 'Env 2', 'is_default' => false]);
         $this->get('/environments')->assertStatus(200);
         $this->get('/environments/create')->assertStatus(200);
     }
@@ -44,15 +47,22 @@ class DesktopModeTest extends TestCase
         $environment = createEnvironment();
 
         // Mock services to avoid real SSH/Process calls
-        $this->mock(\HardImpact\Orbit\Services\OrbitCli\StatusService::class, function ($mock) {
+        $this->mock(\HardImpact\Orbit\Core\Services\OrbitCli\StatusService::class, function ($mock) {
             $mock->shouldReceive('checkInstallation')->andReturn([
                 'installed' => true,
                 'version' => '0.0.1',
                 'path' => '/usr/local/bin/orbit',
             ]);
+            $mock->shouldReceive('status')->andReturn([
+                'success' => true,
+                'data' => [
+                    'services' => [],
+                    'host_services' => [],
+                ],
+            ]);
         });
 
-        $this->mock(\HardImpact\Orbit\Services\DoctorService::class, function ($mock) {
+        $this->mock(\HardImpact\Orbit\Core\Services\DoctorService::class, function ($mock) {
             $mock->shouldReceive('runChecks')->andReturn([
                 'success' => true,
                 'status' => 'healthy',
@@ -61,8 +71,19 @@ class DesktopModeTest extends TestCase
             ]);
         });
 
+        $this->mock(\HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService::class, function ($mock) {
+            $mock->shouldReceive('getReverbConfig')->andReturn([
+                'success' => true,
+                'data' => ['enabled' => false],
+            ]);
+            $mock->shouldReceive('getConfig')->andReturn([
+                'success' => true,
+                'data' => ['tld' => 'test', 'available_php_versions' => ['8.4', '8.5']],
+            ]);
+        });
+
         $this->get("/environments/{$environment->id}/services")->assertStatus(200);
-        $this->get("/environments/{$environment->id}/settings")->assertStatus(200);
+        $this->get("/environments/{$environment->id}/configuration")->assertStatus(200);
         $this->get("/environments/{$environment->id}/workspaces")->assertStatus(200);
         $this->get("/environments/{$environment->id}/doctor")->assertStatus(200);
     }
@@ -71,7 +92,7 @@ class DesktopModeTest extends TestCase
     {
         $environment = createEnvironment();
 
-        $response = $this->get("/environments/{$environment->id}/sites");
+        $response = $this->get("/environments/{$environment->id}/projects");
 
         $response->assertInertia(fn ($page) => $page->where('multi_environment', true)
             ->where('currentEnvironment', null)

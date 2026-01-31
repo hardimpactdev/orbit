@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Install\Shared;
 
 use App\Data\Install\InstallContext;
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 use App\Services\ConfigManager;
 use App\Services\Install\InstallLogger;
 

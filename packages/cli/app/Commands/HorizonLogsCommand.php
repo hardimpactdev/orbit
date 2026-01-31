@@ -7,7 +7,7 @@ namespace App\Commands;
 use App\Services\HorizonManager;
 use LaravelZero\Framework\Commands\Command;
 
-class HorizonLogsCommand extends Command
+final class HorizonLogsCommand extends Command
 {
     protected $signature = 'horizon:logs {--lines=100 : Number of lines to show}';
 

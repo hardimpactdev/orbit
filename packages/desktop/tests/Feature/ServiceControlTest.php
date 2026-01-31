@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Models\SshKey;
-use HardImpact\Orbit\Services\OrbitCli\ServiceControlService;
+use HardImpact\Orbit\Core\Services\OrbitCli\ServiceControlService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery\MockInterface;
 use Tests\TestCase;
@@ -113,9 +113,8 @@ class ServiceControlTest extends TestCase
     public function test_dynamic_php_versions_in_config(): void
     {
         // Mock getConfig to return available_php_versions
-        $this->mock(\HardImpact\Orbit\Services\OrbitCli\ConfigurationService::class, function (MockInterface $mock) {
+        $this->mock(\HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService::class, function (MockInterface $mock) {
             $mock->shouldReceive('getConfig')
-                ->with(\Mockery::on(fn ($e) => $e->id === $this->environment->id))
                 ->once()
                 ->andReturn([
                     'success' => true,

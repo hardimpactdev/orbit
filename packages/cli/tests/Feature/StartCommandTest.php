@@ -22,7 +22,7 @@ beforeEach(function () {
 });
 
 it('starts all services successfully', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->caddyfileGenerator->shouldReceive('generate')->once();
@@ -34,7 +34,7 @@ it('starts all services successfully', function () {
 });
 
 it('reports failure when a service fails to start', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->caddyfileGenerator->shouldReceive('generate')->once();
@@ -46,7 +46,7 @@ it('reports failure when a service fails to start', function () {
 });
 
 it('outputs json when --json flag is used', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->caddyfileGenerator->shouldReceive('generate')->once();

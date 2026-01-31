@@ -3,13 +3,12 @@
 declare(strict_types=1);
 
 use HardImpact\Orbit\Core\Data\ProvisionContext;
-use HardImpact\Orbit\Core\Data\StepResult;
 use HardImpact\Orbit\Core\Services\Provision\Actions\SetPhpVersion;
 use HardImpact\Orbit\Core\Services\Provision\ProvisionLogger;
 
 describe('SetPhpVersion', function () {
     it('writes .php-version file with specified version', function () {
-        $projectDir = sys_get_temp_dir() . '/php-version-test-' . uniqid();
+        $projectDir = sys_get_temp_dir().'/php-version-test-'.uniqid();
         mkdir($projectDir, 0755, true);
 
         $context = new ProvisionContext(
@@ -32,7 +31,7 @@ describe('SetPhpVersion', function () {
     });
 
     it('uses default version when not specified', function () {
-        $projectDir = sys_get_temp_dir() . '/php-default-test-' . uniqid();
+        $projectDir = sys_get_temp_dir().'/php-default-test-'.uniqid();
         mkdir($projectDir, 0755, true);
 
         $context = new ProvisionContext(
@@ -53,7 +52,7 @@ describe('SetPhpVersion', function () {
     });
 
     it('overwrites existing .php-version file', function () {
-        $projectDir = sys_get_temp_dir() . '/php-overwrite-test-' . uniqid();
+        $projectDir = sys_get_temp_dir().'/php-overwrite-test-'.uniqid();
         mkdir($projectDir, 0755, true);
         file_put_contents("{$projectDir}/.php-version", '7.4');
 

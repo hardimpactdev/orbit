@@ -9,7 +9,7 @@ use App\Services\ConfigManager;
 use App\Services\ProjectScanner;
 use LaravelZero\Framework\Commands\Command;
 
-class ProjectsCommand extends Command
+final class ProjectsCommand extends Command
 {
     use WithJsonOutput;
 

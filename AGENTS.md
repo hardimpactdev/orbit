@@ -9,7 +9,7 @@ This project follows **Compound Engineering** - each unit of work makes subseque
 Plan → Work → Review → Compound → (repeat)
 ```
 
-- **Plan:** Create plan in `plans/`
+- **Plan:** Capture scope + verification in issue/notes
 - **Work:** Execute with continuous testing
 - **Review:** Run quality gates (PHPStan, tests, format)
 - **Compound:** Document solutions in `docs/solutions/`
@@ -187,6 +187,21 @@ When mocking orbit-core services:
 ```php
 $this->mock(\HardImpact\Orbit\Core\Services\DoctorService::class, function ($mock) {
     $mock->shouldReceive('runChecks')->andReturn(['success' => true]);
+});
+```
+
+**Important:** Mock ALL methods that will be called during the request, not just the one being tested. A page request may call multiple service methods internally. Trace the request path to identify dependencies.
+
+```php
+// Wrong - only mocks what test asserts
+$this->mock(StatusService::class, function ($mock) {
+    $mock->shouldReceive('checkInstallation')->andReturn([...]);
+});
+
+// Correct - mocks all methods called during the request
+$this->mock(StatusService::class, function ($mock) {
+    $mock->shouldReceive('checkInstallation')->andReturn([...]);
+    $mock->shouldReceive('status')->andReturn([...]); // Also called by controller!
 });
 ```
 

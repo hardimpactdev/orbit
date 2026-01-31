@@ -6,7 +6,7 @@ namespace App\Actions\Install\Shared;
 
 use App\Contracts\CaddyfileGeneratorInterface;
 use App\Data\Install\InstallContext;
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 use App\Services\ConfigManager;
 use App\Services\Install\InstallLogger;
 

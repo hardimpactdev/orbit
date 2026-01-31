@@ -9,7 +9,7 @@ use App\Services\ServiceManager;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
-class ServiceConfigureCommand extends Command
+final class ServiceConfigureCommand extends Command
 {
     use WithJsonOutput;
 

@@ -6,7 +6,7 @@ namespace App\Services\Platform;
 
 use Illuminate\Support\Facades\Process;
 
-class MacAdapter implements PlatformAdapter
+final class MacAdapter implements PlatformAdapter
 {
     /**
      * Install a PHP version with FPM.

@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Install\Shared;
 
 use App\Data\Install\InstallContext;
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 use App\Services\Install\InstallLogger;
-use App\Services\PhpComposeGenerator;
 use App\Services\ServiceManager;
 
 final readonly class InitializeServices
 {
     public function __construct(
         private ServiceManager $serviceManager,
-        private PhpComposeGenerator $phpComposeGenerator,
     ) {}
 
     public function handle(InstallContext $context, InstallLogger $logger): StepResult
@@ -26,9 +24,6 @@ final readonly class InitializeServices
         if (! $this->serviceManager->regenerateCompose()) {
             return StepResult::failed('Failed to generate docker-compose.yaml');
         }
-
-        // Generate PHP docker-compose.yml for building PHP images
-        $this->phpComposeGenerator->generate();
 
         $logger->success('Service configuration initialized');
 

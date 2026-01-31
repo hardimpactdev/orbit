@@ -9,7 +9,7 @@ use App\Contracts\CaddyfileGeneratorInterface;
 use App\Services\CaddyManager;
 use LaravelZero\Framework\Commands\Command;
 
-class CaddyReloadCommand extends Command
+final class CaddyReloadCommand extends Command
 {
     use WithJsonOutput;
 

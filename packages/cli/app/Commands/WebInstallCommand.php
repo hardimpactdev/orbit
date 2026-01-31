@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use LaravelZero\Framework\Commands\Command;
 
-class WebInstallCommand extends Command
+final class WebInstallCommand extends Command
 {
     protected $signature = 'web:install {--force : Overwrite existing installation} {--dry-run : Show what would be done without making changes}';
 

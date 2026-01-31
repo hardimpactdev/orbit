@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\HorizonManager;
 use LaravelZero\Framework\Commands\Command;
 
-class HorizonStartCommand extends Command
+final class HorizonStartCommand extends Command
 {
     use WithJsonOutput;
 

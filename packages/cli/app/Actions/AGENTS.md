@@ -93,7 +93,7 @@ Install actions are orchestrated by `InstallLinuxPipeline` or `InstallMacPipelin
 | `GenerateCaddyfile` | Generate initial Caddyfile |
 | `CreateDockerNetwork` | Create orbit Docker network |
 | `PullServiceImages` | Pull Redis, Postgres images |
-| `BuildDockerImages` | Build custom PHP images |
+| `BuildDockerImages` | Build Docker service images (if needed) |
 | `InitializeServices` | Start Docker containers |
 | `StartServices` | Start all services |
 | `ConfigureHostsFile` | Add entries to /etc/hosts |

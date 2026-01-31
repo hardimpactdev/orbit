@@ -13,7 +13,7 @@ use App\Services\PhpManager;
 use App\Services\ServiceManager;
 use LaravelZero\Framework\Commands\Command;
 
-class StartCommand extends Command
+final class StartCommand extends Command
 {
     use WithJsonOutput;
 
@@ -30,6 +30,7 @@ class StartCommand extends Command
     ): int {
         $results = [];
         $usingFpm = $this->isUsingFpm($phpManager);
+        $architecture = $usingFpm ? 'php-fpm' : 'php-fpm-missing';
 
         // Generate configuration
         $configResult = $this->runStep('config', 'Generating configuration', function () use ($caddyfileGenerator) {
@@ -79,7 +80,7 @@ class StartCommand extends Command
                 'success' => $allSuccess,
                 'data' => [
                     'action' => 'start',
-                    'architecture' => $usingFpm ? 'php-fpm' : 'frankenphp',
+                    'architecture' => $architecture,
                     'services' => $results,
                 ],
             ], $allSuccess ? self::SUCCESS : ExitCode::ServiceFailed->value);

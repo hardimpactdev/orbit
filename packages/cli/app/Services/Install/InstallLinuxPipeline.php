@@ -7,7 +7,7 @@ namespace App\Services\Install;
 use App\Actions\Install\Linux;
 use App\Actions\Install\Shared;
 use App\Data\Install\InstallContext;
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 
 final readonly class InstallLinuxPipeline
 {

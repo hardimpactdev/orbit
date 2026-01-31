@@ -6,7 +6,7 @@ namespace App\Services\Platform;
 
 use Illuminate\Support\Facades\Process;
 
-class LinuxAdapter implements PlatformAdapter
+final class LinuxAdapter implements PlatformAdapter
 {
     /**
      * Install a PHP version with FPM.

@@ -7,7 +7,7 @@ namespace App\Commands;
 use App\Concerns\WithJsonOutput;
 use LaravelZero\Framework\Commands\Command;
 
-class RestartCommand extends Command
+final class RestartCommand extends Command
 {
     use WithJsonOutput;
 

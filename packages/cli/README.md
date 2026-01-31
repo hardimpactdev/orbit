@@ -1,6 +1,6 @@
 # Orbit CLI
 
-A local PHP development environment powered by Docker. Orbit provides a simple, fast way to run PHP applications locally with automatic HTTPS, multiple PHP versions, and essential services.
+A local PHP development environment with host PHP-FPM and Caddy. Orbit provides a simple, fast way to run PHP applications locally with automatic HTTPS, multiple PHP versions, and Docker-backed services.
 
 ## Features
 
@@ -78,11 +78,10 @@ Once installed, it will be available at `https://orbit.test` (or your configured
 | `orbit status` | Show status and running services |
 | `orbit projects` | List all projects with their PHP versions |
 | `orbit php <project> <version>` | Set PHP version for a project (8.3, 8.4, 8.5) |
-| `orbit logs` | Tail container logs |
+| `orbit logs` | Tail Docker service logs |
 | `orbit trust` | Install Caddy root CA for local HTTPS |
 | `orbit caddy:reload` | Regenerate Caddyfile and reload Caddy |
 | `orbit upgrade` | Upgrade to the latest version |
-| `orbit rebuild` | Rebuild PHP images with Redis and other extensions |
 | `orbit upgrade --check` | Check for available updates |
 | `orbit worktrees` | List all git worktrees |
 | `orbit worktree:refresh` | Auto-detect and link new worktrees |

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, usePage, Link, router } from '@inertiajs/vue3';
-import { computed, watch, ref, onMounted } from 'vue';
+import { computed, watch, ref, onMounted, type Component } from 'vue';
 import {
     LayoutDashboard,
     Server,
@@ -64,7 +64,7 @@ const currentEnvironment = computed(
     () => page.props.currentEnvironment as Environment | null | undefined,
 );
 
-const iconMap: Record<string, any> = {
+const iconMap: Record<string, Component> = {
     LayoutDashboard,
     Server,
     Settings,

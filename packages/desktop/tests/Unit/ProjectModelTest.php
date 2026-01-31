@@ -1,61 +1,52 @@
 <?php
 
-use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Models\Project;
 
 test('project can be created', function () {
     Project::create([
         'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
+        'slug' => 'test-project',
+        'path' => '/home/user/projects/test-project',
+        'github_repo' => 'test/project',
     ]);
 
     $this->assertDatabaseHas('projects', [
         'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
+        'slug' => 'test-project',
+        'github_repo' => 'test/project',
     ]);
 });
 
-test('find by github url', function () {
+test('project can find by slug', function () {
     $project = Project::create([
         'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
+        'slug' => 'test-project',
+        'path' => '/home/user/projects/test-project',
+        'github_repo' => 'test/project',
     ]);
 
-    $found = Project::findByGithubUrl('https://github.com/test/project');
+    $found = Project::where('slug', 'test-project')->first();
 
     expect($found)->not->toBeNull()
         ->and($found->id)->toBe($project->id);
 });
 
-test('find by github url returns null when not found', function () {
-    $found = Project::findByGithubUrl('https://github.com/nonexistent/project');
-
-    expect($found)->toBeNull();
-});
-
-test('find or create by github url creates new', function () {
-    Project::findOrCreateByGithubUrl(
-        'https://github.com/test/project',
-        'Test Project'
-    );
-
-    $this->assertDatabaseHas('projects', [
+test('project status helpers work correctly', function () {
+    $project = Project::create([
         'name' => 'Test Project',
-        'github_url' => 'https://github.com/test/project',
-    ]);
-});
-
-test('find or create by github url finds existing', function () {
-    $existing = Project::create([
-        'name' => 'Existing Project',
-        'github_url' => 'https://github.com/test/project',
+        'slug' => 'test-project',
+        'path' => '/home/user/projects/test-project',
+        'status' => Project::STATUS_QUEUED,
     ]);
 
-    $project = Project::findOrCreateByGithubUrl(
-        'https://github.com/test/project',
-        'Different Name'
-    );
+    expect($project->isProvisioning())->toBeTrue()
+        ->and($project->isReady())->toBeFalse()
+        ->and($project->isFailed())->toBeFalse();
 
-    expect($project->id)->toBe($existing->id)
-        ->and($project->name)->toBe('Existing Project');
+    $project->update(['status' => Project::STATUS_READY]);
+    $project->refresh();
+
+    expect($project->isProvisioning())->toBeFalse()
+        ->and($project->isReady())->toBeTrue()
+        ->and($project->isFailed())->toBeFalse();
 });

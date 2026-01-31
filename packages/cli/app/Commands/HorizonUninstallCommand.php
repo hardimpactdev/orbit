@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\HorizonManager;
 use LaravelZero\Framework\Commands\Command;
 
-class HorizonUninstallCommand extends Command
+final class HorizonUninstallCommand extends Command
 {
     use WithJsonOutput;
 

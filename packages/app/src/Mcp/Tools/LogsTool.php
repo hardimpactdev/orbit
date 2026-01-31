@@ -18,7 +18,7 @@ class LogsTool extends Tool
 {
     protected string $name = 'orbit_logs';
 
-    protected string $description = 'Get service logs from Docker containers';
+    protected string $description = 'Get service logs from Docker services';
 
     public function __construct(protected ServiceControlService $serviceControl) {}
 
@@ -28,7 +28,7 @@ class LogsTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'service' => $schema->string()->required()->description('Container name (e.g., orbit-php-83, orbit-redis, orbit-postgres). Note: Caddy runs on host via systemd, use journalctl for its logs.'),
+            'service' => $schema->string()->required()->description('Service/container name (e.g., orbit-reverb, orbit-redis, orbit-postgres). Note: Caddy and PHP-FPM run on the host; use system logs for those.'),
             'lines' => $schema->integer()->default(100)->min(1)->max(1000)->description('Number of lines to retrieve (1-1000)'),
         ];
     }

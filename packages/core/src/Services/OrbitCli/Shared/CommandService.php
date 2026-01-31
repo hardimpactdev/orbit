@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services\OrbitCli\Shared;
@@ -224,8 +225,8 @@ BASH;
 
         // Add home-based paths if we have a valid home directory
         if ($home) {
-            $commonPaths[] = $home . '/.local/bin/orbit';
-            $commonPaths[] = $home . '/.composer/vendor/bin/orbit';
+            $commonPaths[] = $home.'/.local/bin/orbit';
+            $commonPaths[] = $home.'/.composer/vendor/bin/orbit';
         }
 
         foreach ($commonPaths as $path) {
@@ -270,8 +271,8 @@ BASH;
         $user = getenv('USER') ?: (getenv('LOGNAME') ?: null);
         if ($user) {
             $possibleHomes = [
-                '/Users/' . $user,  // macOS
-                '/home/' . $user,   // Linux
+                '/Users/'.$user,  // macOS
+                '/home/'.$user,   // Linux
             ];
             foreach ($possibleHomes as $possibleHome) {
                 if (is_dir($possibleHome)) {

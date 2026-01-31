@@ -70,7 +70,7 @@ final class MyCommand extends Command
 |---------|-------------|
 | `site:create` | Create new site (dispatches job to Horizon) |
 | `site:delete` | Remove site and cleanup resources |
-| `start`/`stop`/`restart` | Container lifecycle |
+| `start`/`stop`/`restart` | Host + Docker service lifecycle |
 | `status` | Show running services |
 | `php` | Manage PHP versions |
 | `setup` | Initial Orbit configuration |

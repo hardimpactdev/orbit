@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Install\Mac;
 
 use App\Data\Install\InstallContext;
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 use App\Services\Install\InstallLogger;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;

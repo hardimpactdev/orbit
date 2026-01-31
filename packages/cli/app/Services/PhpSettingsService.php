@@ -8,7 +8,7 @@ use App\Services\Platform\PlatformAdapter;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
-class PhpSettingsService
+final class PhpSettingsService
 {
     protected PlatformAdapter $adapter;
 

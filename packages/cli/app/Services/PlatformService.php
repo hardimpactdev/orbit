@@ -6,7 +6,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Process;
 
-class PlatformService
+final class PlatformService
 {
     // ===========================================
     // OS Detection

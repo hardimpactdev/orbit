@@ -113,6 +113,17 @@ composer format         # Format with Pint
 - Routes are registered via `OrbitAppServiceProvider::routes()` in consumer apps
 - Asset publishing tag is `orbit-assets`
 
+## Controller Naming Conventions
+
+Two patterns exist for environment-related controllers:
+
+| Pattern | Example | When to Use |
+|---------|---------|-------------|
+| `EnvironmentXxxController` | `EnvironmentProjectController` | Explicit environment from route parameter |
+| `XxxController` | `ProjectController` | Uses "active environment" from Saloon connector |
+
+When creating new controllers that operate on a specific environment passed as a route parameter, prefix with `Environment` to avoid conflicts with controllers using the implicit active environment pattern.
+
 ## Horizon-Style Architecture
 
 orbit-ui follows the Laravel Horizon pattern - a self-contained package that serves its own views and assets. Shell apps (orbit-web, orbit-desktop) are empty wrappers.

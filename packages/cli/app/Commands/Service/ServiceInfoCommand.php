@@ -10,7 +10,7 @@ use App\Services\ServiceTemplateLoader;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
-class ServiceInfoCommand extends Command
+final class ServiceInfoCommand extends Command
 {
     use WithJsonOutput;
 

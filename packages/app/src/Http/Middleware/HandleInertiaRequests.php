@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Ui\Http\Middleware;
@@ -145,7 +146,10 @@ class HandleInertiaRequests extends Middleware
 
                 // In desktop mode, try to get environment from route parameter
                 if ($multiEnvironment && $request->route('environment')) {
-                    $currentEnv = $request->route('environment');
+                    $routeEnv = $request->route('environment');
+                    if ($routeEnv instanceof Environment) {
+                        $currentEnv = $routeEnv;
+                    }
                 }
 
                 $envId = $currentEnv?->id;

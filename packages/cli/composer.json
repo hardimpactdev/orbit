@@ -1,14 +1,15 @@
 {
     "name": "hardimpactdev/orbit-cli",
-    "description": "Local PHP development environment powered by Docker",
-    "keywords": ["php", "docker", "development", "local", "cli"],
+    "description": "Local PHP development environment with host PHP-FPM/Caddy and Docker services",
+    "keywords": ["php", "php-fpm", "caddy", "docker", "development", "local", "cli"],
     "homepage": "https://github.com/hardimpactdev/orbit-cli",
     "type": "project",
     "license": "MIT",
     "authors": [
         {
-            "name": "Nick Rutten",
-            "email": "nick@shockmedia.nl"
+            "name": "Nick Retel",
+            "email": "nick@hardimpact.dev",
+            "role": "Developer"
         }
     ],
     "require": {
@@ -25,7 +26,7 @@
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.25.1",
         "mockery/mockery": "^1.6.12",
-        "pestphp/pest": "^3.8.4|^4.1.2",
+        "pestphp/pest": "^4.0",
         "projektgopher/whisky": "^0.7.4",
         "rector/rector": "^2.3"
     },

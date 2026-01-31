@@ -27,17 +27,11 @@ The monorepo lacked a systematic approach to development:
 
 Implemented **Compound Engineering** methodology from Every.to:
 
-### 1. Created Planning Infrastructure
+### 1. Standardized Planning Guidance
 
-**Directory:** `plans/`
+**Location:** Issue/task notes and `COMPOUND.md`
 
-```
-plans/
-├── TEMPLATE.md              # Standard plan template
-└── feat-[name].md           # Feature plans
-```
-
-**Template includes:**
+**Plan includes:**
 - Problem statement
 - Research checklist
 - Implementation options
@@ -89,7 +83,7 @@ Plan → Work → Review → Compound → (repeat)
 ```
 
 **Plan:**
-- Create plan in `plans/feat-[name].md`
+- Capture plan in issue/task notes
 - Include research, approach, verification
 
 **Work:**
@@ -135,11 +129,7 @@ Plan → Work → Review → Compound → (repeat)
 
 ### When Starting New Work
 
-1. **Create a plan:**
-   ```bash
-   cp plans/TEMPLATE.md plans/feat-my-feature.md
-   # Fill in details
-   ```
+1. **Create a plan in issue/task notes** (problem, approach, verification)
 
 2. **Document solutions:**
    ```bash
@@ -156,7 +146,7 @@ Plan → Work → Review → Compound → (repeat)
 
 ### Code Review Checklist
 
-- [ ] Plan exists in `plans/` (for significant work)
+- [ ] Plan captured in issue/task notes (for significant work)
 - [ ] Solution documented in `docs/solutions/` (if applicable)
 - [ ] All PHPStan checks pass
 - [ ] All tests pass
@@ -171,12 +161,44 @@ Plan → Work → Review → Compound → (repeat)
 4. **Onboarding** - New developers learn from documented patterns
 5. **Reduced rework** - Prevention section stops repeated mistakes
 
-## Example Plans Created
+## Monorepo Peer Review Checklist (2026-01-31)
 
-- `plans/feat-phpstan-level-increase.md` - Increasing PHPStan to level 8
+Added from comprehensive quality review session:
+
+### Parallel Agent Analysis
+
+| Agent | Focus |
+|-------|-------|
+| `vue-inertia-reviewer` | Composition API, TypeScript, reactivity |
+| `security-sentinel` | Injection, auth, secrets, OWASP |
+| `code-simplicity-reviewer` | Over-engineering, duplication |
+| `Explore` (consistency) | Namespaces, configs, dependencies |
+| `Explore` (Laravel) | Service providers, models, routes |
+| `performance-oracle` | N+1, indexes, caching, singletons |
+
+### Package Consistency Checklist
+
+- [ ] PHP version constraint matches (`^8.4`)
+- [ ] Pint version matches (`^1.25`)
+- [ ] Pest version matches (`^4.0`)
+- [ ] PHPStan includes Larastan extension
+- [ ] Singleton bindings for stateless services
+- [ ] No path repositories in composer.json (breaks CI)
+
+### Common Issues to Check
+
+| Issue | Pattern | Fix |
+|-------|---------|-----|
+| Command injection | `shell_exec("{$var}")` | `escapeshellarg()` |
+| Missing FK index | `foreignId()` only | Add explicit `index()` |
+| Accessor I/O | `getXAttribute()` with file_exists | Change to method |
+| Dead facades | Empty class + facade | Delete both |
+| `any` types | `Record<string, any>` | Use proper type |
 
 ## Related
 
+- `docs/solutions/performance-issues/filesystem-io-in-eloquent-accessor-20260131.md`
+- `docs/solutions/security-issues/command-injection-shell-exec-20260131.md`
 - `docs/solutions/monorepo-quality-cleanup-20260130.md`
 - `COMPOUND.md`
 - `AGENTS.md`

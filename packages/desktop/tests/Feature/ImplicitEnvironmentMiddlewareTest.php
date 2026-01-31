@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Route;
 beforeEach(function () {
     Config::set('orbit.multi_environment', false);
 
-    Route::middleware([\HardImpact\Orbit\Http\Middleware\ImplicitEnvironment::class])
+    Route::middleware([\HardImpact\Orbit\Ui\Http\Middleware\ImplicitEnvironment::class])
         ->get('/test-middleware/{environment?}', function (Environment $environment) {
             return response()->json(['id' => $environment->id]);
         });

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class MacSetup
+final class MacSetup
 {
     use SetupProgress;
 

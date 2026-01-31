@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services;
@@ -44,6 +45,19 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Saloon\Http\Request;
 
+/**
+ * @deprecated Use specialized services instead:
+ * - StatusService for environment status
+ * - ServiceControlService for Docker service management
+ * - ConfigurationService for configuration
+ * - ProjectCliService for projects
+ * - WorkspaceService for workspaces
+ * - WorktreeService for worktrees
+ * - PackageService for package linking
+ *
+ * This facade class is no longer used by the app package and will be removed
+ * in a future version. All consumers should inject the specialized services directly.
+ */
 class OrbitService
 {
     // Common installation paths for orbit on remote servers
@@ -397,13 +411,10 @@ BASH;
      */
     protected function getContainerName(string $service): string
     {
-        // Map service keys to container names
-        // Note: Caddy runs on the host via systemd, not in Docker
+        // Map Docker service keys to container names
+        // Note: Caddy and PHP-FPM run on the host
         $containerMap = [
             'dns' => 'orbit-dns',
-            'php-83' => 'orbit-php-83',
-            'php-84' => 'orbit-php-84',
-            'php-85' => 'orbit-php-85',
             'postgres' => 'orbit-postgres',
             'redis' => 'orbit-redis',
             'mailpit' => 'orbit-mailpit',
@@ -853,20 +864,15 @@ BASH;
      */
     protected function getLocalAvailablePhpVersions(): array
     {
-        // Query docker for running orbit-php-* containers
-        $output = shell_exec("docker ps --format '{{.Names}}' --filter 'name=orbit-php-' 2>/dev/null | grep -oE '[0-9]+' | sort -u");
-
-        if (in_array($output, ['', '0', false, null], true)) {
-            return ['8.3', '8.4', '8.5'];
-        }
-
+        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
+        $sockets = glob($home.'/.config/orbit/php/php*.sock') ?: [];
         $versions = [];
-        $numbers = explode("\n", trim($output));
 
-        foreach ($numbers as $num) {
-            $num = trim($num);
-            if (strlen($num) === 2) {
-                $versions[] = substr($num, 0, 1).'.'.substr($num, 1);
+        foreach ($sockets as $socket) {
+            $name = basename($socket, '.sock');
+            if (preg_match('/^php(\d{2})$/', $name, $matches)) {
+                $digits = $matches[1];
+                $versions[] = substr($digits, 0, 1).'.'.substr($digits, 1);
             }
         }
 
@@ -921,32 +927,7 @@ BASH;
             return ['8.3', '8.4', '8.5'];
         }
 
-        // For local environments, query docker for running orbit-php-* containers
-        $result = $this->ssh->execute(
-            $environment,
-            "docker ps --format '{{.Names}}' --filter 'name=orbit-php-' 2>/dev/null | grep -oE '[0-9]+' | sort -u"
-        );
-
-        if (! $result['success'] || in_array(trim((string) $result['output']), ['', '0'], true)) {
-            // Fallback to default versions
-            return ['8.3', '8.4', '8.5'];
-        }
-
-        $versions = [];
-        $numbers = explode("\n", trim((string) $result['output']));
-
-        foreach ($numbers as $num) {
-            $num = trim($num);
-            if (strlen($num) === 2) {
-                // Convert "83" to "8.3", "84" to "8.4", "85" to "8.5"
-                $versions[] = substr($num, 0, 1).'.'.substr($num, 1);
-            }
-        }
-
-        // Sort versions
-        usort($versions, version_compare(...));
-
-        return $versions === [] ? ['8.3', '8.4', '8.5'] : $versions;
+        return $this->getLocalAvailablePhpVersions();
     }
 
     public function saveConfig(Environment $environment, array $config): array
@@ -1301,7 +1282,7 @@ BASH;
             return ['success' => true, 'data' => ['message' => 'Project directory not found (already deleted?)']];
         }
 
-        // Delete the project directory (sudo needed because FrankenPHP runs as root and creates root-owned cache files)
+        // Delete the project directory (sudo may be needed for root-owned files)
         $deleteResult = $this->ssh->execute($environment, "sudo rm -rf {$projectPath}");
         if (! $deleteResult['success']) {
             return ['success' => false, 'error' => 'Failed to delete project directory: '.($deleteResult['error'] ?? 'Unknown error')];

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Ui\Http\Controllers;
@@ -70,7 +71,7 @@ class ProvisioningController extends Controller
         // Handle remote environment provisioning
         // Clear old SSH host keys BEFORE starting provisioning
         // This must happen synchronously before the background process starts
-        Process::run("ssh-keygen -R {$environment->host} 2>/dev/null");
+        Process::run(sprintf('ssh-keygen -R %s 2>/dev/null', escapeshellarg($environment->host)));
 
         // Run provisioning in the background so the HTTP request returns immediately
         $sshKey = $validated['ssh_public_key'];
@@ -234,7 +235,7 @@ class ProvisioningController extends Controller
             'user' => 'required|string|max:255',
         ]);
 
-        $result = \App\Services\ProvisioningService::checkExistingSetup(
+        $result = \HardImpact\Orbit\Core\Services\ProvisioningService::checkExistingSetup(
             $validated['host'],
             $validated['user']
         );

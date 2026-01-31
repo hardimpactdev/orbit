@@ -6,7 +6,7 @@ namespace App\Services;
 
 use App\Data\ServiceTemplate;
 
-class ServiceConfigValidator
+final class ServiceConfigValidator
 {
     /**
      * Validate user configuration against a service template schema.

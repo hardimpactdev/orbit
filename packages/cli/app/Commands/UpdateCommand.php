@@ -10,7 +10,7 @@ use App\Services\Updater\GitHubReleasesStrategy;
 use Humbug\SelfUpdate\Updater as PharUpdater;
 use LaravelZero\Framework\Commands\Command;
 
-class UpdateCommand extends Command
+final class UpdateCommand extends Command
 {
     use WithJsonOutput;
 

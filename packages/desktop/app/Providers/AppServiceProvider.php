@@ -25,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Register orbit-app routes
         OrbitAppServiceProvider::routes();
-        
+
         // Register desktop-specific routes
         $this->loadDesktopRoutes();
 
@@ -43,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
             ],
         ]);
     }
-    
+
     protected function loadDesktopRoutes(): void
     {
         Route::middleware('web')

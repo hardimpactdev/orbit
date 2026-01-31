@@ -9,7 +9,7 @@ use App\Enums\ExitCode;
 use App\Services\PhpManager;
 use LaravelZero\Framework\Commands\Command;
 
-class PhpCliCommand extends Command
+final class PhpCliCommand extends Command
 {
     use WithJsonOutput;
 

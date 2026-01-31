@@ -1,6 +1,6 @@
 <?php
 
-use App\Data\Provision\StepResult;
+use HardImpact\Orbit\Core\Data\StepResult;
 
 it('creates successful result', function () {
     $result = StepResult::success();

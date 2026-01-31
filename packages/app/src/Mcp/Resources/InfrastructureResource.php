@@ -30,7 +30,7 @@ class InfrastructureResource extends Resource
 
     public function description(): string
     {
-        return 'All running services with their status, health, and ports. Supports both PHP-FPM and FrankenPHP architectures.';
+        return 'All running services with their status, health, and ports. Caddy/PHP-FPM run on the host; Docker runs dns, reverb, and postgres.';
     }
 
     public function handle(Request $request): Response
@@ -101,9 +101,6 @@ class InfrastructureResource extends Resource
             'mailpit' => ['1025/tcp', '8025/tcp'],
             'reverb' => ['8080/tcp'],
             'horizon' => [],
-            'php-83' => ['9000/tcp'],
-            'php-84' => ['9000/tcp'],
-            'php-85' => ['9000/tcp'],
             'php-fpm' => [],
         ];
 

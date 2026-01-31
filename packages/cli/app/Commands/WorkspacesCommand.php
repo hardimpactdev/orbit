@@ -8,7 +8,7 @@ use App\Concerns\WithJsonOutput;
 use App\Services\WorkspaceService;
 use LaravelZero\Framework\Commands\Command;
 
-class WorkspacesCommand extends Command
+final class WorkspacesCommand extends Command
 {
     use WithJsonOutput;
 

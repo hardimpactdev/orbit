@@ -6,7 +6,7 @@
     [
       "hardimpactdev/orbit-core",
       "hardimpactdev/orbit-cli",
-      "@hardimpactdev/orbit-app",
+      "hardimpactdev/orbit-app",
       "hardimpactdev/orbit-web",
       "hardimpactdev/orbit-desktop"
     ]

@@ -12,7 +12,7 @@ use App\Services\PhpManager;
 use App\Services\ServiceManager;
 use LaravelZero\Framework\Commands\Command;
 
-class StopCommand extends Command
+final class StopCommand extends Command
 {
     use WithJsonOutput;
 
@@ -28,6 +28,7 @@ class StopCommand extends Command
     ): int {
         $results = [];
         $usingFpm = $this->isUsingFpm($phpManager);
+        $architecture = $usingFpm ? 'php-fpm' : 'php-fpm-missing';
 
         // Stop Horizon first
         if ($usingFpm) {
@@ -54,7 +55,7 @@ class StopCommand extends Command
                 'success' => $allSuccess,
                 'data' => [
                     'action' => 'stop',
-                    'architecture' => $usingFpm ? 'php-fpm' : 'frankenphp',
+                    'architecture' => $architecture,
                     'services' => $results,
                 ],
             ], $allSuccess ? self::SUCCESS : ExitCode::ServiceFailed->value);

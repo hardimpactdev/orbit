@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services\OrbitCli;
@@ -30,7 +31,7 @@ class WorkspaceService
      */
     protected function shouldUseCli(Environment $environment): bool
     {
-        if (!$environment->is_local) {
+        if (! $environment->is_local) {
             return true; // Remote always uses CLI/API
         }
 
@@ -42,7 +43,7 @@ class WorkspaceService
      */
     public function workspacesList(Environment $environment): array
     {
-        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+        if ($environment->is_local && ! $this->shouldUseCli($environment)) {
             return $this->dbService->workspacesList($environment);
         }
 
@@ -58,7 +59,7 @@ class WorkspaceService
      */
     public function workspaceCreate(Environment $environment, string $name): array
     {
-        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+        if ($environment->is_local && ! $this->shouldUseCli($environment)) {
             return $this->dbService->workspaceCreate($environment, $name);
         }
 
@@ -76,7 +77,7 @@ class WorkspaceService
      */
     public function workspaceDelete(Environment $environment, string $name): array
     {
-        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+        if ($environment->is_local && ! $this->shouldUseCli($environment)) {
             return $this->dbService->workspaceDelete($environment, $name);
         }
 
@@ -94,7 +95,7 @@ class WorkspaceService
      */
     public function workspaceAddProject(Environment $environment, string $workspace, string $project): array
     {
-        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+        if ($environment->is_local && ! $this->shouldUseCli($environment)) {
             return $this->dbService->workspaceAddProject($environment, $workspace, $project);
         }
 
@@ -113,7 +114,7 @@ class WorkspaceService
      */
     public function workspaceRemoveProject(Environment $environment, string $workspace, string $project): array
     {
-        if ($environment->is_local && !$this->shouldUseCli($environment)) {
+        if ($environment->is_local && ! $this->shouldUseCli($environment)) {
             return $this->dbService->workspaceRemoveProject($environment, $workspace, $project);
         }
 

@@ -12,7 +12,7 @@ use App\Services\HorizonManager;
 use App\Services\PhpManager;
 use LaravelZero\Framework\Commands\Command;
 
-class MigrateToFpmCommand extends Command
+final class MigrateToFpmCommand extends Command
 {
     use WithJsonOutput;
 

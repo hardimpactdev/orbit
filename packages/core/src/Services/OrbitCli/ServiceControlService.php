@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace HardImpact\Orbit\Core\Services\OrbitCli;
@@ -509,12 +510,9 @@ class ServiceControlService
      */
     protected function getContainerName(string $service): string
     {
-        // Map service keys to container names
+        // Map Docker service keys to container names
         $containerMap = [
             'dns' => 'orbit-dns',
-            'php-83' => 'orbit-php-83',
-            'php-84' => 'orbit-php-84',
-            'php-85' => 'orbit-php-85',
             'postgres' => 'orbit-postgres',
             'redis' => 'orbit-redis',
             'mailpit' => 'orbit-mailpit',

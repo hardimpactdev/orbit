@@ -14,7 +14,7 @@ use App\Services\ProjectScanner;
 use App\Services\ServiceManager;
 use LaravelZero\Framework\Commands\Command;
 
-class StatusCommand extends Command
+final class StatusCommand extends Command
 {
     use WithJsonOutput;
 
@@ -33,7 +33,7 @@ class StatusCommand extends Command
     ): int {
         // Detect architecture
         $isUsingFpm = $this->isUsingFpm($phpManager);
-        $architecture = $isUsingFpm ? 'php-fpm' : 'frankenphp';
+        $architecture = $isUsingFpm ? 'php-fpm' : 'php-fpm-missing';
 
         $services = [];
         $runningCount = 0;

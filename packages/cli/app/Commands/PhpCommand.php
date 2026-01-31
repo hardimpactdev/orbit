@@ -12,7 +12,7 @@ use App\Services\DatabaseService;
 use App\Services\ProjectScanner;
 use LaravelZero\Framework\Commands\Command;
 
-class PhpCommand extends Command
+final class PhpCommand extends Command
 {
     use WithJsonOutput;
 

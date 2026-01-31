@@ -28,7 +28,7 @@ bash .claude/scripts/test-provision-flow.sh my-test-project
 Desktop App                    Remote Server (ai)
 ┌─────────────┐               ┌──────────────────────────────────────┐
 │ Vue Form    │               │                                      │
-│     │       │    HTTPS      │  PHP Container (orbit-php-XX)    │
+│     │       │    HTTPS      │  Host Caddy + PHP-FPM               │
 │     ▼       │ ─────────────►│  └─ Web App API                      │
 │ POST /api/  │               │      └─ ProjectController            │
 │  projects   │               │          └─ dispatch(CreateProjectJob)
@@ -165,15 +165,19 @@ ssh orbit@ai 'grep timeout ~/.config/orbit/web/config/horizon.php'
 
 Should be `'timeout' => 120` (120 seconds).
 
-### CLI Not Found in Container
+### CLI Not Found on Host
 
-The CLI should be mounted into PHP containers:
+Verify the CLI exists and is executable:
 
 ```bash
-ssh orbit@ai 'grep orbit ~/.config/orbit/php/docker-compose.yml'
+ssh orbit@ai 'ls -la ~/.local/bin/orbit'
 ```
 
-Should show: `~/.local/bin/orbit:/usr/local/bin/orbit:ro`
+If the web app uses a custom path, confirm `ORBIT_CLI_PATH`:
+
+```bash
+ssh orbit@ai 'grep ORBIT_CLI_PATH ~/.config/orbit/web/.env'
+```
 
 ## Historical Fixes (Jan 2026)
 

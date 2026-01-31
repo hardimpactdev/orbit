@@ -19,7 +19,7 @@ beforeEach(function () {
 });
 
 it('stops all services successfully', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->serviceManager->shouldReceive('stopAll')->once()->andReturn(true);
@@ -30,7 +30,7 @@ it('stops all services successfully', function () {
 });
 
 it('reports failure when a service fails to stop', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->serviceManager->shouldReceive('stopAll')->once()->andReturn(false);
@@ -41,7 +41,7 @@ it('reports failure when a service fails to stop', function () {
 });
 
 it('outputs json when --json flag is used', function () {
-    // No FPM sockets - FrankenPHP mode
+    // No FPM sockets - host PHP-FPM not detected
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     $this->serviceManager->shouldReceive('stopAll')->once()->andReturn(true);

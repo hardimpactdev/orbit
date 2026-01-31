@@ -1,6 +1,8 @@
 {
     "preset": "laravel",
     "exclude": [
+        "vendor",
+        "build",
         "var"
     ]
 }

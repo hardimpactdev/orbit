@@ -2,14 +2,13 @@
 
 Installs Caddy root CA certificate to trust local HTTPS certificates on macOS.
 
-- Extracts root CA from Caddy container
+- Uses root CA from host Caddy data directory
 - Adds to macOS System Keychain (requires sudo)
 - Sites will show as secure after browser restart
 
 Failure and recovery paths
 
-- Fails if Caddy container is not running
-- Fails if certificate extraction fails
+- Fails if Caddy has not generated a root CA yet
 - Requires password for Keychain access
 
 Inputs and options
@@ -18,5 +17,4 @@ Inputs and options
 
 Key integrations
 
-- DockerManager for container status
 - macOS security command for Keychain

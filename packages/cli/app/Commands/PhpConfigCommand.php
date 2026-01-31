@@ -10,7 +10,7 @@ use App\Services\PhpManager;
 use App\Services\PhpSettingsService;
 use LaravelZero\Framework\Commands\Command;
 
-class PhpConfigCommand extends Command
+final class PhpConfigCommand extends Command
 {
     use WithJsonOutput;
 

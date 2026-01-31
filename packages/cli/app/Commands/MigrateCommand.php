@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\File;
 use LaravelZero\Framework\Commands\Command;
 use PDO;
 
-class MigrateCommand extends Command
+final class MigrateCommand extends Command
 {
     protected $signature = 'schema:migrate {--dry-run : Show what would be done without making changes}';
 

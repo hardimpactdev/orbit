@@ -19,7 +19,7 @@ use function Laravel\Prompts\note;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\warning;
 
-class InitCommand extends Command
+final class InitCommand extends Command
 {
     protected $signature = 'init
         {--yes : Skip all confirmations}
