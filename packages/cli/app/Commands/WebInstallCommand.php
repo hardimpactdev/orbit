@@ -12,6 +12,11 @@ use LaravelZero\Framework\Commands\Command;
 
 final class WebInstallCommand extends Command
 {
+    /**
+     * GitHub releases URL for downloading the web bundle.
+     */
+    private const BUNDLE_DOWNLOAD_URL = 'https://github.com/nickorta12/orbit/releases/latest/download/orbit-web-bundle.tar.gz';
+
     protected $signature = 'web:install {--force : Overwrite existing installation} {--dry-run : Show what would be done without making changes}';
 
     protected $description = 'Install or update the companion web app from bundle';
@@ -21,11 +26,14 @@ final class WebInstallCommand extends Command
         $bundlePath = base_path('stubs/orbit-web-bundle.tar.gz');
         $destPath = $configManager->getWebAppPath();
 
+        // Check if bundle exists locally, otherwise download it
         if (! File::exists($bundlePath)) {
-            $this->error('Web app bundle not found at: '.$bundlePath);
-            $this->error('This CLI version may not include the web app bundle.');
+            $this->info('Web app bundle not included in this build.');
+            $bundlePath = $this->downloadBundle($configManager);
 
-            return self::FAILURE;
+            if ($bundlePath === null) {
+                return self::FAILURE;
+            }
         }
 
         // Check if already installed
@@ -83,6 +91,56 @@ final class WebInstallCommand extends Command
         $this->info("  2. Access at: https://orbit.{$tld}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Download the web bundle from GitHub releases.
+     */
+    protected function downloadBundle(ConfigManager $configManager): ?string
+    {
+        $cacheDir = $configManager->getConfigPath().'/cache';
+        File::ensureDirectoryExists($cacheDir);
+        $cachedBundle = $cacheDir.'/orbit-web-bundle.tar.gz';
+
+        // Use cached bundle if it exists and is recent (less than 24 hours old)
+        if (File::exists($cachedBundle)) {
+            $age = time() - File::lastModified($cachedBundle);
+            if ($age < 86400) {
+                $this->info('Using cached web bundle.');
+
+                return $cachedBundle;
+            }
+        }
+
+        $this->info('Downloading web app bundle from GitHub releases...');
+        $this->newLine();
+
+        // Use curl with progress bar
+        $result = Process::timeout(300)->run(
+            "curl -L --progress-bar -o {$cachedBundle} '".self::BUNDLE_DOWNLOAD_URL."' 2>&1",
+            function (string $type, string $output) {
+                $this->output->write($output);
+            }
+        );
+
+        if (! $result->successful() || ! File::exists($cachedBundle) || File::size($cachedBundle) < 1000) {
+            $this->newLine();
+            $this->error('Failed to download web app bundle.');
+            $this->error('URL: '.self::BUNDLE_DOWNLOAD_URL);
+            $this->error('Please check your internet connection or download manually.');
+
+            if (File::exists($cachedBundle)) {
+                @unlink($cachedBundle);
+            }
+
+            return null;
+        }
+
+        $this->newLine();
+        $size = number_format(File::size($cachedBundle) / 1024 / 1024, 1);
+        $this->info("Downloaded {$size} MB");
+
+        return $cachedBundle;
     }
 
     protected function extractBundle(string $bundlePath, string $destination): bool
