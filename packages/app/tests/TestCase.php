@@ -21,7 +21,7 @@ class TestCase extends Orchestra
             }
 
             // App models use app factories
-            return 'HardImpact\\Orbit\\Ui\\Database\\Factories\\'.class_basename($modelName).'Factory';
+            return 'HardImpact\\Orbit\\App\\Database\\Factories\\'.class_basename($modelName).'Factory';
         });
     }
 

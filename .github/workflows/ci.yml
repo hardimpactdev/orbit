@@ -143,7 +143,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: packages/web
-        run: composer install --prefer-dist --no-progress
+        run: |
+          # Use local monorepo packages instead of Packagist
+          composer config repositories.orbit-core path ../core
+          composer config repositories.orbit-app path ../app
+          composer install --prefer-dist --no-progress
 
       - name: Run tests
         working-directory: packages/web
