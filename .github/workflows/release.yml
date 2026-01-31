@@ -1,0 +1,188 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  # Wait for CI to pass
+  ci-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CI
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'core'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+      - name: Wait for CLI CI
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'cli'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+      - name: Wait for App CI
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'app'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+      - name: Wait for Web CI
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'web'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+  release:
+    needs: ci-check
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SPLIT_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest tag
+        id: latest
+        run: |
+          LATEST=$(git tag -l "v*" --sort=-v:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST"
+
+      - name: Bump version
+        id: bump
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          # Remove 'v' prefix
+          VERSION=${LATEST#v}
+          
+          # Split into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          
+          # Determine bump type
+          BUMP="${{ github.event.inputs.bump || 'patch' }}"
+          
+          case $BUMP in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "New tag: $NEW_TAG"
+
+      - name: Create and push tag
+        run: |
+          NEW_TAG="${{ steps.bump.outputs.new_tag }}"
+          git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+          git push origin "$NEW_TAG"
+          echo "✓ Created and pushed tag: $NEW_TAG"
+
+      - name: Create GitHub Release on monorepo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_TAG="${{ steps.bump.outputs.new_tag }}"
+          gh release create "$NEW_TAG" \
+            --title "Orbit $NEW_TAG" \
+            --generate-notes \
+            --repo ${{ github.repository }}
+
+  # Build desktop app for macOS (DMG)
+  build-desktop:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.new_tag }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, json, sqlite3
+          tools: composer:v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: packages/desktop
+        run: |
+          composer install --no-dev --optimize-autoloader
+          npm install
+
+      - name: Build desktop app
+        working-directory: packages/desktop
+        run: |
+          php artisan native:build
+        env:
+          APP_ENV: production
+
+      - name: Upload DMG to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_TAG="${{ needs.release.outputs.new_tag }}"
+          
+          # Find the built DMG files
+          DMG_ARM=$(find packages/desktop -name "*arm64*.dmg" -type f | head -1)
+          DMG_X64=$(find packages/desktop -name "*x64*.dmg" -o -name "*x86_64*.dmg" -type f | head -1)
+          
+          if [ -n "$DMG_ARM" ]; then
+            gh release upload "$NEW_TAG" "$DMG_ARM" --repo ${{ github.repository }}
+            echo "✓ Uploaded ARM64 DMG"
+          fi
+          
+          if [ -n "$DMG_X64" ]; then
+            gh release upload "$NEW_TAG" "$DMG_X64" --repo ${{ github.repository }}
+            echo "✓ Uploaded x64 DMG"
+          fi
