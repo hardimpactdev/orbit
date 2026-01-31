@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { ref, computed, onMounted } from 'vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { Loader2, Check, X, Rocket, AlertCircle, RefreshCw } from 'lucide-vue-next';
 
 interface SetupStatus {
@@ -35,7 +35,9 @@ const errorMessage = ref<string | null>(null);
 const completedSteps = ref<Record<string, StepResult>>({});
 const tld = ref('test');
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+const form = useForm({
+    tld: tld.value,
+});
 
 const progress = computed(() => {
     return totalSteps.value > 0 ? Math.round((currentStep.value / totalSteps.value) * 100) : 0;
@@ -75,54 +77,44 @@ async function startSetup() {
     completedSteps.value = {};
     currentMessage.value = 'Starting setup...';
 
-    try {
-        const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
+    form.tld = tld.value;
 
-        const response = await fetch('/setup/run', {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-            },
-            body: JSON.stringify({ tld: tld.value }),
-        });
+    form.post('/setup/run', {
+        onSuccess: (response) => {
+            const data = response.props as { success: boolean; steps?: Record<string, StepResult>; error?: string };
 
-        const data = await response.json();
+            if (data.success && data.steps) {
+                for (const [stepId, result] of Object.entries(data.steps)) {
+                    completedSteps.value[stepId] = result;
+                    currentStep.value = result.step;
+                    currentMessage.value = result.message;
 
-        if (data.success) {
-            // Process completed steps
-            for (const [stepId, result] of Object.entries(data.steps as Record<string, StepResult>)) {
-                completedSteps.value[stepId] = result;
-                currentStep.value = result.step;
-                currentMessage.value = result.message;
-
-                if (!result.success) {
-                    hasError.value = true;
-                    errorMessage.value = result.error || 'Unknown error';
-                    break;
+                    if (!result.success) {
+                        hasError.value = true;
+                        errorMessage.value = result.error || 'Unknown error';
+                        break;
+                    }
                 }
-            }
 
-            if (!hasError.value) {
-                isComplete.value = true;
-                currentMessage.value = 'Setup complete! Redirecting...';
-
-                // Redirect to dashboard after short delay
-                setTimeout(() => {
-                    router.visit('/');
-                }, 1500);
+                if (!hasError.value) {
+                    isComplete.value = true;
+                    currentMessage.value = 'Setup complete! Redirecting...';
+                    setTimeout(() => {
+                        router.visit('/');
+                    }, 1500);
+                }
+            } else {
+                hasError.value = true;
+                errorMessage.value = data.error || 'Setup failed';
             }
-        } else {
+            isRunning.value = false;
+        },
+        onError: (errors) => {
             hasError.value = true;
-            errorMessage.value = data.error || 'Setup failed';
-        }
-    } catch (err) {
-        hasError.value = true;
-        errorMessage.value = err instanceof Error ? err.message : 'Network error';
-    } finally {
-        isRunning.value = false;
-    }
+            errorMessage.value = errors.message || 'Network error';
+            isRunning.value = false;
+        },
+    });
 }
 
 async function retrySetup() {
@@ -135,12 +127,6 @@ onMounted(() => {
     // If already set up, redirect
     if (!props.status.needs_setup) {
         router.visit('/');
-    }
-});
-
-onUnmounted(() => {
-    if (pollInterval) {
-        clearInterval(pollInterval);
     }
 });
 </script>

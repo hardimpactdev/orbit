@@ -173,6 +173,9 @@ jobs:
         working-directory: packages/desktop
         run: |
           composer install --no-dev --optimize-autoloader
+          # Clear Laravel bootstrap cache to ensure fresh package discovery
+          rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
+          php artisan package:discover --ansi
           npm install
 
       - name: Build orbit-app Vite assets
