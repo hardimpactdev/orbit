@@ -79,7 +79,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: packages/app
-        run: composer install --prefer-dist --no-progress
+        run: |
+          # Use local core package instead of Packagist
+          composer config repositories.orbit-core path ../core
+          composer update hardimpactdev/orbit-core --no-progress
+          composer install --prefer-dist --no-progress
 
       - name: Run PHPStan
         working-directory: packages/app
@@ -147,8 +151,8 @@ jobs:
           # Use local monorepo packages instead of Packagist
           composer config repositories.orbit-core path ../core
           composer config repositories.orbit-app path ../app
-          # Update monorepo packages to use latest from path, then install rest
-          composer update hardimpactdev/orbit-core hardimpactdev/orbit-app --no-progress
+          # Install with fresh resolution (no lock file committed)
+          rm -f composer.lock
           composer install --prefer-dist --no-progress
 
       - name: Run tests
