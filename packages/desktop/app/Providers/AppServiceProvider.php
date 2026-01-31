@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\App\OrbitAppServiceProvider;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
@@ -15,7 +16,36 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Ensure APP_KEY exists before anything tries to use encryption
+        $this->ensureAppKeyExists();
+    }
+
+    /**
+     * Generate APP_KEY if missing (fixes fresh install issues).
+     */
+    protected function ensureAppKeyExists(): void
+    {
+        if (empty(config('app.key'))) {
+            try {
+                Artisan::call('key:generate', ['--force' => true]);
+            } catch (\Throwable $e) {
+                // If artisan isn't available yet, generate key manually
+                $key = 'base64:' . base64_encode(random_bytes(32));
+                config(['app.key' => $key]);
+
+                // Try to persist to .env if writable
+                $envPath = base_path('.env');
+                if (is_writable($envPath) || is_writable(dirname($envPath))) {
+                    $envContent = file_exists($envPath) ? file_get_contents($envPath) : '';
+                    if (str_contains($envContent, 'APP_KEY=')) {
+                        $envContent = preg_replace('/^APP_KEY=.*/m', "APP_KEY={$key}", $envContent);
+                    } else {
+                        $envContent .= "\nAPP_KEY={$key}\n";
+                    }
+                    file_put_contents($envPath, $envContent);
+                }
+            }
+        }
     }
 
     /**
