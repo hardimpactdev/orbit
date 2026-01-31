@@ -56,7 +56,7 @@ Register the service provider in your application:
 ```php
 // config/app.php
 'providers' => [
-    HardImpact\Orbit\Ui\OrbitAppServiceProvider::class,
+    HardImpact\Orbit\App\OrbitAppServiceProvider::class,
 ],
 ```
 

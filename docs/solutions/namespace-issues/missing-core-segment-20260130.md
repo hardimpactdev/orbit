@@ -14,7 +14,7 @@ tags: [namespace, core, environment, refactoring]
 # Missing \\Core\\ Segment in Namespace Imports
 
 ## Symptom
-After reorganizing packages into `HardImpact\Orbit\Core\` and `HardImpact\Orbit\Ui\` namespaces, runtime errors occurred:
+After reorganizing packages into `HardImpact\Orbit\Core\` and `HardImpact\Orbit\App\` namespaces, runtime errors occurred:
 
 ```
 Call to method current() on an unknown class HardImpact\Orbit\Services\EnvironmentManager

@@ -11,7 +11,7 @@ All notable changes to `orbit-ui` will be documented in this file.
 ### Changes
 
 - **Added**: MCP server from orbit-core (Tools, Resources, Prompts, OrbitServer)
-- **Updated**: Namespaces to HardImpact\Orbit\Ui\Mcp
+- **Updated**: Namespaces to HardImpact\Orbit\App\Mcp
 - **Removed**: Obsolete hasInertia() check from boot()
 - **Fixed**: Service provider guards for Inertia and MCP class availability
 
@@ -31,6 +31,6 @@ First stable release of orbit-ui package
 
 Initial release of orbit-ui package
 
-- Configured package with HardImpact\Orbit\Ui namespace
+- Configured package with HardImpact\Orbit\App namespace
 - Set up Laravel service provider with Spatie Package Tools
 - Includes config, views, and migration stubs

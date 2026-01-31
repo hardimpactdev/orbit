@@ -2,11 +2,11 @@
 
 namespace Database\Factories;
 
-use App\Models\Environment;
+use HardImpact\Orbit\Core\Models\Environment;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Environment>
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\HardImpact\Orbit\Core\Models\Environment>
  */
 class EnvironmentFactory extends Factory
 {

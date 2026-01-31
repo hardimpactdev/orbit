@@ -56,11 +56,11 @@ routes/
 
 ## Namespace Convention
 
-All classes use `HardImpact\Orbit\Ui` namespace:
+All classes use `HardImpact\Orbit\App` namespace:
 
 ```php
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentController;
-use HardImpact\Orbit\Ui\Http\Middleware\HandleInertiaRequests;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentController;
+use HardImpact\Orbit\App\Http\Middleware\HandleInertiaRequests;
 ```
 
 Controllers import models/services from orbit-core:
@@ -137,7 +137,7 @@ orbit-ui follows the Laravel Horizon pattern - a self-contained package that ser
 **Shell apps only need:**
 ```php
 // routes/web.php
-\HardImpact\Orbit\Ui\OrbitAppServiceProvider::routes();
+\HardImpact\Orbit\App\OrbitAppServiceProvider::routes();
 ```
 
 ## UI Conventions

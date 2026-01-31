@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Controllers;
+namespace HardImpact\Orbit\App\Http\Controllers;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Services\MacPhpFpmConfigService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService;
-use HardImpact\Orbit\Ui\Http\Controllers\Concerns\ProvidesRemoteApiUrl;
+use HardImpact\Orbit\App\Http\Controllers\Concerns\ProvidesRemoteApiUrl;
 use Illuminate\Http\Request;
 
 class PhpConfigController extends Controller

@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use HardImpact\Orbit\Core\Models\Environment;
-use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
+use HardImpact\Orbit\App\OrbitAppServiceProvider;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;

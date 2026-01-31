@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui;
+namespace HardImpact\Orbit\App;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Vite;
@@ -51,12 +51,12 @@ class OrbitAppServiceProvider extends ServiceProvider
 
         // Register Inertia middleware (only when Inertia is available)
         if (class_exists(\Inertia\Middleware::class)) {
-            $kernel->appendMiddlewareToGroup('web', \HardImpact\Orbit\Ui\Http\Middleware\HandleInertiaRequests::class);
+            $kernel->appendMiddlewareToGroup('web', \HardImpact\Orbit\App\Http\Middleware\HandleInertiaRequests::class);
         }
 
         // Register alias for route usage
-        if (class_exists(\HardImpact\Orbit\Ui\Http\Middleware\ImplicitEnvironment::class)) {
-            $this->app['router']->aliasMiddleware('implicit.environment', \HardImpact\Orbit\Ui\Http\Middleware\ImplicitEnvironment::class);
+        if (class_exists(\HardImpact\Orbit\App\Http\Middleware\ImplicitEnvironment::class)) {
+            $this->app['router']->aliasMiddleware('implicit.environment', \HardImpact\Orbit\App\Http\Middleware\ImplicitEnvironment::class);
         }
     }
 

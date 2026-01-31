@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
+use HardImpact\Orbit\App\OrbitAppServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider

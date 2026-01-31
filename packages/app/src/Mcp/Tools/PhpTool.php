@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Mcp\Tools;
+namespace HardImpact\Orbit\App\Mcp\Tools;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService;

@@ -362,7 +362,7 @@ Package providers MUST use `Orbit[Package]ServiceProvider` naming:
 ```php
 // Package providers (shared)
 use HardImpact\Orbit\Core\OrbitCoreServiceProvider;
-use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
+use HardImpact\Orbit\App\OrbitAppServiceProvider;
 
 // Application providers (shells) - keep Laravel convention
 use App\Providers\AppServiceProvider;

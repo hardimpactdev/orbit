@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Controllers;
+namespace HardImpact\Orbit\App\Http\Controllers;
 
 abstract class Controller
 {

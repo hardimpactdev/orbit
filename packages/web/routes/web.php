@@ -1,5 +1,5 @@
 <?php
 
-use HardImpact\Orbit\Ui\OrbitAppServiceProvider;
+use HardImpact\Orbit\App\OrbitAppServiceProvider;
 
 OrbitAppServiceProvider::routes();

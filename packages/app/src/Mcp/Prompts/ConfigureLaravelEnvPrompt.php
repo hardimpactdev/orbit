@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Mcp\Prompts;
+namespace HardImpact\Orbit\App\Mcp\Prompts;
 
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Prompt;

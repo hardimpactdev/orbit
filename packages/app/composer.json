@@ -38,13 +38,13 @@
   },
   "autoload": {
     "psr-4": {
-      "HardImpact\\Orbit\\Ui\\": "src/",
-      "HardImpact\\Orbit\\Ui\\Database\\Factories\\": "database/factories/"
+      "HardImpact\\Orbit\\App\\": "src/",
+      "HardImpact\\Orbit\\App\\Database\\Factories\\": "database/factories/"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "HardImpact\\Orbit\\Ui\\Tests\\": "tests/",
+      "HardImpact\\Orbit\\App\\Tests\\": "tests/",
       "Workbench\\App\\": "workbench/app/"
     }
   },
@@ -72,7 +72,7 @@
   "extra": {
     "laravel": {
       "providers": [
-        "HardImpact\\Orbit\\Ui\\OrbitAppServiceProvider"
+        "HardImpact\\Orbit\\App\\OrbitAppServiceProvider"
       ],
       "aliases": {}
     }

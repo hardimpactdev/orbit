@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Controllers\Concerns;
+namespace HardImpact\Orbit\App\Http\Controllers\Concerns;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use HardImpact\Orbit\Core\Services\SshService;

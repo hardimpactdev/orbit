@@ -76,7 +76,7 @@ Point routes to the new controller:
 
 ```php
 // routes/environment.php
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentServiceController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentServiceController;
 
 Route::post('start', [EnvironmentServiceController::class, 'start'])->name('environments.start');
 ```

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Middleware;
+namespace HardImpact\Orbit\App\Http\Middleware;
 
 use HardImpact\Orbit\Core\Models\Environment;
 use Illuminate\Http\Request;

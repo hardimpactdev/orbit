@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Controllers;
+namespace HardImpact\Orbit\App\Http\Controllers;
 
 use HardImpact\Orbit\Core\Http\Integrations\Orbit\Requests\CreateProjectRequest;
 use HardImpact\Orbit\Core\Http\Integrations\Orbit\Requests\DeleteProjectRequest;

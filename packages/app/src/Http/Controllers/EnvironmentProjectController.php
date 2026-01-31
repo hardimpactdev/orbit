@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace HardImpact\Orbit\Ui\Http\Controllers;
+namespace HardImpact\Orbit\App\Http\Controllers;
 
 use HardImpact\Orbit\Core\Jobs\CreateProjectJob;
 use HardImpact\Orbit\Core\Models\Environment;
@@ -12,8 +12,8 @@ use HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ProjectCliService;
 use HardImpact\Orbit\Core\Services\SshService;
 use HardImpact\Orbit\Core\Services\TemplateAnalyzer\EnvParser;
-use HardImpact\Orbit\Ui\Http\Controllers\Concerns\HandlesGitHubIntegration;
-use HardImpact\Orbit\Ui\Http\Controllers\Concerns\ProvidesRemoteApiUrl;
+use HardImpact\Orbit\App\Http\Controllers\Concerns\HandlesGitHubIntegration;
+use HardImpact\Orbit\App\Http\Controllers\Concerns\ProvidesRemoteApiUrl;
 use Illuminate\Http\Request;
 
 /**

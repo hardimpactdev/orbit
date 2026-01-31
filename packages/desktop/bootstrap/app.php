@@ -1,7 +1,7 @@
 <?php
 
-use HardImpact\Orbit\Ui\Http\Middleware\HandleInertiaRequests;
-use HardImpact\Orbit\Ui\Http\Middleware\ImplicitEnvironment;
+use HardImpact\Orbit\App\Http\Middleware\HandleInertiaRequests;
+use HardImpact\Orbit\App\Http\Middleware\ImplicitEnvironment;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
