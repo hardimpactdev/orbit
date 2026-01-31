@@ -40,7 +40,7 @@ class SetupController extends Controller
     public function run(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'tld' => 'nullable|string|max:20|alpha_num',
+            'tld' => ['nullable', 'string', 'max:20', 'regex:/^[a-z0-9]+(-[a-z0-9]+)*$/i'],
         ]);
 
         $tld = $validated['tld'] ?? 'test';

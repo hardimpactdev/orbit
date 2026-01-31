@@ -13,10 +13,18 @@ class WorktreeService
 
     public function __construct(
         protected ConfigManager $configManager,
-        protected ProjectScanner $projectScanner,
-        protected CaddyfileGenerator $caddyfileGenerator
+        protected ProjectScanner $projectScanner
     ) {
         $this->worktreesPath = $this->configManager->getConfigPath().'/worktrees.json';
+    }
+
+    /**
+     * Get CaddyfileGenerator lazily to avoid circular dependency.
+     * CaddyfileGenerator depends on WorktreeService, so we can't inject it in constructor.
+     */
+    protected function getCaddyfileGenerator(): CaddyfileGenerator
+    {
+        return app(CaddyfileGenerator::class);
     }
 
     /**
@@ -326,9 +334,10 @@ class WorktreeService
     {
         // We need to regenerate the Caddyfile - the CaddyfileGenerator
         // will call getLinkedWorktreesForCaddy() to include worktrees
-        $this->caddyfileGenerator->generate();
-        $this->caddyfileGenerator->reload();
-        $this->caddyfileGenerator->reloadPhp();
+        $generator = $this->getCaddyfileGenerator();
+        $generator->generate();
+        $generator->reload();
+        $generator->reloadPhp();
     }
 
     /**

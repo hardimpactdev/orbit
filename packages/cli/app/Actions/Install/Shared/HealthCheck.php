@@ -199,9 +199,9 @@ final readonly class HealthCheck
     {
         try {
             // Check if Horizon is running by looking for the process
-            $result = shell_exec('pgrep -f "artisan horizon" 2>/dev/null');
+            $result = Process::run('pgrep -f "artisan horizon"');
 
-            return ! empty(trim($result ?? ''));
+            return $result->successful() && ! empty(trim($result->output()));
         } catch (\Exception) {
             return false;
         }

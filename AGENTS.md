@@ -30,6 +30,25 @@ bd sync               # Sync with git
 
 **orbit-desktop** is a thin NativePHP shell that provides a macOS desktop app for managing Orbit CLI installations. All business logic comes from the [orbit-core](https://github.com/hardimpactdev/orbit-core) package.
 
+## Security Model
+
+### No Authentication (Explicit Design Choice)
+
+**Orbit is a local-only development tool.** It runs on `localhost` or local Unix sockets and is explicitly designed **without** authentication mechanisms:
+
+- No login/registration system
+- No session management
+- No authorization gates or policies
+- No password protection
+
+**Rationale:**
+- Orbit manages local PHP-FPM pools, Caddy web server, and Docker containers on the user's own machine
+- All interfaces bind to localhost (127.0.0.1) or Unix sockets only
+- The desktop app is a single-user application
+- Adding authentication would provide no security benefit while adding complexity
+
+**Important:** This is intentional. Do not add authentication mechanisms to Orbit unless the architecture fundamentally changes (e.g., moving to multi-user cloud hosting).
+
 ## Repository Locations
 
 | Project | Location | Purpose |
