@@ -154,6 +154,21 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Create .env before composer (needed for artisan)
+        working-directory: packages/desktop
+        run: |
+          cat > .env << 'EOF'
+          APP_NAME=OrbitDesktop
+          APP_ENV=production
+          APP_DEBUG=false
+          APP_URL=http://localhost
+          DB_CONNECTION=sqlite
+          NATIVEPHP_APP_ID=com.orbit.desktop
+          EOF
+          # Generate APP_KEY manually (artisan not available yet)
+          APP_KEY=$(php -r "echo 'base64:' . base64_encode(random_bytes(32));")
+          echo "APP_KEY=$APP_KEY" >> .env
+
       - name: Install dependencies
         working-directory: packages/desktop
         run: |
@@ -184,23 +199,12 @@ jobs:
           cp builds/orbit.phar ../desktop/bin/orbit.phar
           echo "✓ CLI phar built and copied with version $VERSION"
 
-      - name: Create .env for build
+      - name: Add version to .env
         working-directory: packages/desktop
         run: |
-          cat > .env << 'EOF'
-          APP_NAME=OrbitDesktop
-          APP_ENV=production
-          APP_DEBUG=false
-          APP_URL=http://localhost
-          DB_CONNECTION=sqlite
-          NATIVEPHP_APP_ID=com.orbit.desktop
-          EOF
-          
-          # Generate a proper APP_KEY
-          php artisan key:generate
-          
           # Set version from release tag
           echo "NATIVEPHP_APP_VERSION=${{ needs.release.outputs.new_tag }}" >> .env
+          cat .env
 
       - name: Build desktop app
         working-directory: packages/desktop
