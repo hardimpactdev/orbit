@@ -31,7 +31,7 @@ services:
     http_port: 8025
 
   reverb:
-    enabled: false
+    enabled: true
     version: latest
     port: 8080
     environment:

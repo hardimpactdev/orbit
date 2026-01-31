@@ -22,6 +22,7 @@ beforeEach(function () {
 
 it('restarts all services by calling stop and start', function () {
     // No FPM sockets - host PHP-FPM not detected
+    $this->phpManager->shouldReceive('getInstalledVersions')->andReturn([]);
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     // Stop phase
@@ -37,6 +38,7 @@ it('restarts all services by calling stop and start', function () {
 
 it('outputs json when --json flag is used', function () {
     // No FPM sockets - host PHP-FPM not detected
+    $this->phpManager->shouldReceive('getInstalledVersions')->andReturn([]);
     $this->phpManager->shouldReceive('getSocketPath')->andReturn('/tmp/nonexistent.sock');
 
     // Stop phase

@@ -45,11 +45,9 @@ final class StartCommand extends Command
             // PHP-FPM Architecture
             // Start PHP-FPM pools
             $result = $this->runStep('php', 'Starting php', function () use ($phpManager) {
-                $versions = ['8.3', '8.4'];
+                $versions = $phpManager->getInstalledVersions();
                 foreach ($versions as $version) {
-                    if ($phpManager->isInstalled($version)) {
-                        $phpManager->start($version);
-                    }
+                    $phpManager->start($version);
                 }
 
                 return true;
@@ -99,7 +97,7 @@ final class StartCommand extends Command
     private function isUsingFpm(PhpManager $phpManager): bool
     {
         // Check if any FPM socket exists
-        $versions = ['8.3', '8.4'];
+        $versions = $phpManager->getInstalledVersions();
         foreach ($versions as $version) {
             $socketPath = $phpManager->getSocketPath($version);
             if (file_exists($socketPath)) {

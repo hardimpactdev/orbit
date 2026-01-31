@@ -12,7 +12,8 @@ describe('InstallLinuxPipeline', function () {
         $steps = $pipeline->steps();
 
         // PHP installation moved to bootstrap installer (install.sh)
-        expect($steps)->toHaveCount(20);
+        // +1 for InstallHorizon
+        expect($steps)->toHaveCount(21);
     });
 
     it('starts with prerequisites check', function () {
@@ -40,6 +41,7 @@ describe('InstallLinuxPipeline', function () {
         expect($actions)->toContain(Shared\GenerateCaddyfile::class);
         expect($actions)->toContain(Shared\CreateDockerNetwork::class);
         expect($actions)->toContain(Shared\StartServices::class);
+        expect($actions)->toContain(Shared\InstallHorizon::class);
     });
 
     it('ends with health check', function () {
@@ -56,7 +58,8 @@ describe('InstallMacPipeline', function () {
         $steps = $pipeline->steps();
 
         // PHP and Homebrew installation moved to bootstrap installer (install.sh)
-        expect($steps)->toHaveCount(20);
+        // +1 for InstallHorizon
+        expect($steps)->toHaveCount(21);
     });
 
     it('starts with prerequisites check', function () {
@@ -93,6 +96,7 @@ describe('InstallMacPipeline', function () {
         expect($actions)->toContain(Shared\GenerateCaddyfile::class);
         expect($actions)->toContain(Shared\CreateDockerNetwork::class);
         expect($actions)->toContain(Shared\StartServices::class);
+        expect($actions)->toContain(Shared\InstallHorizon::class);
     });
 
     it('ends with health check', function () {

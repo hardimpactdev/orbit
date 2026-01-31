@@ -155,7 +155,8 @@ final readonly class HealthCheck
 
     private function checkDockerServices(InstallLogger $logger): bool
     {
-        $requiredServices = ['reverb'];
+        // Core services that should be checked
+        $coreServices = ['postgres', 'redis', 'reverb'];
         $enabledServices = $this->serviceManager->getEnabled();
         $allRunning = true;
 
@@ -167,16 +168,24 @@ final readonly class HealthCheck
             $allRunning = false;
         }
 
-        // Check required Docker services
-        foreach ($requiredServices as $service) {
+        // Check core Docker services
+        foreach ($coreServices as $service) {
             if (! isset($enabledServices[$service])) {
                 $logger->warn("Service {$service} is not enabled");
 
                 continue;
             }
 
-            if ($this->dockerManager->isRunning("orbit-{$service}")) {
-                $logger->info("Docker service {$service} is running");
+            $containerName = "orbit-{$service}";
+            if ($this->dockerManager->isRunning($containerName)) {
+                $health = $this->dockerManager->getHealthStatus($containerName);
+                if ($health === 'healthy' || $health === null) {
+                    $logger->info("Docker service {$service} is running" . ($health ? " ({$health})" : ''));
+                } elseif ($health === 'starting') {
+                    $logger->info("Docker service {$service} is starting");
+                } else {
+                    $logger->warn("Docker service {$service} is running but {$health}");
+                }
             } else {
                 $logger->error("Docker service {$service} is not running");
                 $allRunning = false;

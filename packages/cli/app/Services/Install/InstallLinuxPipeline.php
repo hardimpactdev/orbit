@@ -44,6 +44,7 @@ final readonly class InstallLinuxPipeline
 
             // Phase 5: Start & Finalize (Mixed)
             ['action' => Shared\StartServices::class, 'name' => 'Starting services'],
+            ['action' => Shared\InstallHorizon::class, 'name' => 'Installing Horizon service'],
             ['action' => Shared\InstallComposerLink::class, 'name' => 'Installing composer-link'],
             ['action' => Linux\TrustRootCa::class, 'name' => 'Trusting SSL certificate'],
 
