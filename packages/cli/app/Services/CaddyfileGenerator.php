@@ -15,8 +15,7 @@ final readonly class CaddyfileGenerator implements CaddyfileGeneratorInterface
         protected ConfigManager $configManager,
         protected ProjectScanner $projectScanner,
         protected PhpManager $phpManager,
-        protected WorktreeService $worktreeService,
-        protected ServiceManager $serviceManager
+        protected WorktreeService $worktreeService
     ) {
         $this->caddyfilePath = $this->configManager->getConfigPath().'/caddy/Caddyfile';
     }
@@ -118,7 +117,8 @@ final readonly class CaddyfileGenerator implements CaddyfileGeneratorInterface
         }
 
         // Add Reverb WebSocket service if enabled
-        if ($this->serviceManager->isEnabled('reverb')) {
+        // NOTE: ServiceManager is resolved lazily to avoid early file reads during DI resolution
+        if (app(ServiceManager::class)->isEnabled('reverb')) {
             $caddyfile .= "reverb.{$tld} {
     tls internal
     @websocket {
