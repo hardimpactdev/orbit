@@ -175,6 +175,25 @@ jobs:
           composer install --no-dev --optimize-autoloader
           npm install
 
+      - name: Build orbit-app Vite assets
+        working-directory: packages/app
+        run: |
+          npm install
+          npm run build
+          echo "✓ orbit-app assets built"
+
+      - name: Publish orbit-app assets to desktop
+        working-directory: packages/desktop
+        run: |
+          php artisan vendor:publish --tag=orbit-assets --force
+          echo "✓ orbit-app assets published to public/vendor/orbit"
+
+      - name: Build desktop Vite assets
+        working-directory: packages/desktop
+        run: |
+          npm run build
+          echo "✓ desktop assets built"
+
       - name: Build CLI phar with correct version
         run: |
           # Build CLI with proper version
