@@ -160,6 +160,24 @@ jobs:
           composer install --no-dev --optimize-autoloader
           npm install
 
+      - name: Create .env for build
+        working-directory: packages/desktop
+        run: |
+          cat > .env << 'EOF'
+          APP_NAME=OrbitDesktop
+          APP_ENV=production
+          APP_DEBUG=false
+          APP_URL=http://localhost
+          DB_CONNECTION=sqlite
+          NATIVEPHP_APP_ID=com.orbit.desktop
+          EOF
+          
+          # Generate a proper APP_KEY
+          php artisan key:generate
+          
+          # Set version from release tag
+          echo "NATIVEPHP_APP_VERSION=${{ needs.release.outputs.new_tag }}" >> .env
+
       - name: Build desktop app
         working-directory: packages/desktop
         run: |

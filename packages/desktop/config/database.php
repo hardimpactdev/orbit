@@ -2,6 +2,10 @@
 
 use Illuminate\Support\Str;
 
+// Shared database path - same as CLI and bundled web app
+$home = $_SERVER['HOME'] ?? getenv('HOME') ?: '/tmp';
+$defaultDbPath = "{$home}/.config/orbit/database.sqlite";
+
 return [
 
     /*
@@ -34,7 +38,7 @@ return [
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
-            'database' => env('DB_DATABASE', database_path('database.sqlite')),
+            'database' => env('DB_DATABASE', $defaultDbPath),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
             'busy_timeout' => null,
