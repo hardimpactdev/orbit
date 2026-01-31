@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import { Loader2, Check, X, Rocket, AlertCircle, RefreshCw } from 'lucide-vue-next';
 
 interface SetupStatus {
@@ -34,10 +34,6 @@ const currentMessage = ref('Ready to set up your local environment');
 const errorMessage = ref<string | null>(null);
 const completedSteps = ref<Record<string, StepResult>>({});
 const tld = ref('test');
-
-const form = useForm({
-    tld: tld.value,
-});
 
 const progress = computed(() => {
     return totalSteps.value > 0 ? Math.round((currentStep.value / totalSteps.value) * 100) : 0;
@@ -77,44 +73,49 @@ async function startSetup() {
     completedSteps.value = {};
     currentMessage.value = 'Starting setup...';
 
-    form.tld = tld.value;
+    try {
+        const response = await fetch('/setup/run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+            body: JSON.stringify({ tld: tld.value }),
+        });
 
-    form.post('/setup/run', {
-        onSuccess: (response) => {
-            const data = response.props as { success: boolean; steps?: Record<string, StepResult>; error?: string };
+        const data: { success: boolean; steps?: Record<string, StepResult>; error?: string } = await response.json();
 
-            if (data.success && data.steps) {
-                for (const [stepId, result] of Object.entries(data.steps)) {
-                    completedSteps.value[stepId] = result;
-                    currentStep.value = result.step;
-                    currentMessage.value = result.message;
+        if (data.success && data.steps) {
+            for (const [stepId, result] of Object.entries(data.steps)) {
+                completedSteps.value[stepId] = result;
+                currentStep.value = result.step;
+                currentMessage.value = result.message;
 
-                    if (!result.success) {
-                        hasError.value = true;
-                        errorMessage.value = result.error || 'Unknown error';
-                        break;
-                    }
+                if (!result.success) {
+                    hasError.value = true;
+                    errorMessage.value = result.error || 'Unknown error';
+                    break;
                 }
-
-                if (!hasError.value) {
-                    isComplete.value = true;
-                    currentMessage.value = 'Setup complete! Redirecting...';
-                    setTimeout(() => {
-                        router.visit('/');
-                    }, 1500);
-                }
-            } else {
-                hasError.value = true;
-                errorMessage.value = data.error || 'Setup failed';
             }
-            isRunning.value = false;
-        },
-        onError: (errors) => {
+
+            if (!hasError.value) {
+                isComplete.value = true;
+                currentMessage.value = 'Setup complete! Redirecting...';
+                setTimeout(() => {
+                    router.visit('/');
+                }, 1500);
+            }
+        } else {
             hasError.value = true;
-            errorMessage.value = errors.message || 'Network error';
-            isRunning.value = false;
-        },
-    });
+            errorMessage.value = data.error || 'Setup failed';
+        }
+    } catch (error) {
+        hasError.value = true;
+        errorMessage.value = error instanceof Error ? error.message : 'Network error';
+    } finally {
+        isRunning.value = false;
+    }
 }
 
 async function retrySetup() {
