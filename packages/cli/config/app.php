@@ -56,6 +56,7 @@ return [
     'providers' => [
         App\Providers\AppServiceProvider::class,
         App\Providers\DatabaseServiceProvider::class,
+        HardImpact\Orbit\Core\CoreServiceProvider::class,
     ],
 
 ];
