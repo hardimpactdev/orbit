@@ -3,9 +3,18 @@
 use HardImpact\Orbit\App\Http\Controllers\DashboardController;
 use HardImpact\Orbit\App\Http\Controllers\EnvironmentController;
 use HardImpact\Orbit\App\Http\Controllers\ProvisioningController;
+use HardImpact\Orbit\App\Http\Controllers\SetupController;
 use HardImpact\Orbit\App\Http\Controllers\SettingsController;
 use HardImpact\Orbit\App\Http\Controllers\SshKeyController;
 use Illuminate\Support\Facades\Route;
+
+// First-Run Setup Routes (accessible without middleware)
+Route::prefix('setup')->name('setup.')->group(function (): void {
+    Route::get('/', [SetupController::class, 'index'])->name('index');
+    Route::get('/check', [SetupController::class, 'check'])->name('check');
+    Route::post('/run', [SetupController::class, 'run'])->name('run');
+    Route::get('/status', [SetupController::class, 'status'])->name('status');
+});
 
 if (config('orbit.multi_environment')) {
     // Desktop: Environment management + prefixed routes

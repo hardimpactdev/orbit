@@ -16,6 +16,7 @@ use HardImpact\Orbit\Core\Services\OrbitCli\Shared\CommandService;
 use HardImpact\Orbit\Core\Services\OrbitCli\StatusService;
 use HardImpact\Orbit\Core\Services\OrbitCli\WorkspaceService;
 use HardImpact\Orbit\Core\Services\OrbitCli\WorktreeService;
+use HardImpact\Orbit\Core\Services\SetupService;
 use HardImpact\Orbit\Core\Services\SshService;
 use Illuminate\Support\ServiceProvider;
 
@@ -33,6 +34,7 @@ class OrbitCoreServiceProvider extends ServiceProvider
         $this->app->singleton(HorizonService::class);
         $this->app->singleton(DnsResolverService::class);
         $this->app->singleton(CliUpdateService::class);
+        $this->app->singleton(SetupService::class);
 
         // CLI wrapper services (stateless, reusable)
         $this->app->singleton(CommandService::class);
@@ -97,6 +99,7 @@ class OrbitCoreServiceProvider extends ServiceProvider
             HorizonService::class,
             DnsResolverService::class,
             CliUpdateService::class,
+            SetupService::class,
             CommandService::class,
             StatusService::class,
             ConfigurationService::class,

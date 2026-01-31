@@ -54,6 +54,11 @@ class OrbitAppServiceProvider extends ServiceProvider
             $kernel->appendMiddlewareToGroup('web', \HardImpact\Orbit\App\Http\Middleware\HandleInertiaRequests::class);
         }
 
+        // Register setup check middleware (only in desktop mode)
+        if (config('orbit.multi_environment') && class_exists(\HardImpact\Orbit\App\Http\Middleware\RedirectIfNeedsSetup::class)) {
+            $kernel->appendMiddlewareToGroup('web', \HardImpact\Orbit\App\Http\Middleware\RedirectIfNeedsSetup::class);
+        }
+
         // Register alias for route usage
         if (class_exists(\HardImpact\Orbit\App\Http\Middleware\ImplicitEnvironment::class)) {
             $this->app['router']->aliasMiddleware('implicit.environment', \HardImpact\Orbit\App\Http\Middleware\ImplicitEnvironment::class);

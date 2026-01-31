@@ -922,7 +922,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
     array (
-      0 => '1941cb4c4e5dd4d439cfb3df2ef5135cf0f6f64be98cfcab7046d5bfd21e432c',
+      0 => '0dbd3be12acb89a6e65c718590cf7e778a7a3731724a4ec30cfd5566bddad17d',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\orbitcoreserviceprovider',
@@ -1984,6 +1984,32 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         5 => 'hardimpact\\orbit\\core\\services\\error',
         6 => 'hardimpact\\orbit\\core\\services\\projectcreated',
         7 => 'hardimpact\\orbit\\core\\services\\projectdeleted',
+      ),
+      3 => 
+      array (
+      ),
+    ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/SetupService.php' => 
+    array (
+      0 => '8c88553460c513ea657d2c5e41049cfd8d8e2508a55068aa1918ea1b76408b65',
+      1 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\services\\setupservice',
+      ),
+      2 => 
+      array (
+        0 => 'hardimpact\\orbit\\core\\services\\__construct',
+        1 => 'hardimpact\\orbit\\core\\services\\needssetup',
+        2 => 'hardimpact\\orbit\\core\\services\\getstatus',
+        3 => 'hardimpact\\orbit\\core\\services\\iscliinstalled',
+        4 => 'hardimpact\\orbit\\core\\services\\haslocalenvironment',
+        5 => 'hardimpact\\orbit\\core\\services\\hasservicesconfigured',
+        6 => 'hardimpact\\orbit\\core\\services\\hastldconfigured',
+        7 => 'hardimpact\\orbit\\core\\services\\runsetup',
+        8 => 'hardimpact\\orbit\\core\\services\\initservices',
+        9 => 'hardimpact\\orbit\\core\\services\\configuretld',
+        10 => 'hardimpact\\orbit\\core\\services\\createlocalenvironment',
+        11 => 'hardimpact\\orbit\\core\\services\\runsetupsync',
       ),
       3 => 
       array (
