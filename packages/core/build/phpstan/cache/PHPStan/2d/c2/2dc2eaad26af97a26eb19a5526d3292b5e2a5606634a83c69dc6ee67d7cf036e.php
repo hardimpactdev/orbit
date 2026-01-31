@@ -14,7 +14,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
          'functionName' => NULL,
@@ -39,7 +38,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
          'functionName' => 'environment',
@@ -53,7 +51,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
             'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
            'functionName' => NULL,
@@ -88,7 +85,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
          'functionName' => 'isProvisioning',
@@ -102,7 +98,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
             'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
            'functionName' => NULL,
@@ -137,7 +132,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
          'functionName' => 'isReady',
@@ -151,7 +145,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
             'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
            'functionName' => NULL,
@@ -186,7 +179,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
          'functionName' => 'isFailed',
@@ -200,7 +192,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
             'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Project',
            'functionName' => NULL,
@@ -231,7 +222,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => '8b6cdf804fdaf156038f94a4ca215b8a18e833b1b5bab20bef46af39cdf3d270',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 'eeef06d046c3cfa96c04beca350ed50a33fc1a14686626e415836bf27c410802',
     ),
   ),
 ));

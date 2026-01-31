@@ -416,7 +416,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'typeAliasClassName' => NULL,
          'traitData' => NULL,
       )),
-      'd881d7911d6d13a902de78465e2825ea' => 
+      '2c21ee1a1d06c93c4239980b6f1126a4' => 
       \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
          'namespace' => 'HardImpact\\Orbit\\Core\\Models',
          'uses' => 
@@ -426,7 +426,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
-         'functionName' => 'getHasWorkspaceFileAttribute',
+         'functionName' => 'hasWorkspaceFile',
          'templatePhpDocNodes' => 
         array (
         ),
@@ -615,7 +615,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => '2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => '7135caac901af09f436b345a9c94ba052557805ed8be05efc2fa3a8d497c25ae',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../laravel/framework/src/Illuminate/Database/Eloquent/Factories/HasFactory.php' => 'b6cb2b164e90168e80963a5549541f5f3188a3ec8cfd368bf3611bd94fbd46a7',
     ),
   ),

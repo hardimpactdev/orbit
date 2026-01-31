@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ListAvailableServicesRequest.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Http\Integrations\Orbit\Requests\ListAvailableServicesRequest
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-54e9de7273c743475e621c5449e83b5e58f45809d4dca54d2028f49c2284f15a',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-ab8e3aa65bcedd169e6f3c0d27b0a576944d11d0e80d9e05a0779bb111b86e49',
    'data' => 
   array (
     'locatedSource' => 
@@ -26,8 +26,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 9,
-    'endLine' => 17,
+    'startLine' => 10,
+    'endLine' => 18,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => 'Saloon\\Http\\Request',
@@ -62,20 +62,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '\\Saloon\\Enums\\Method::GET',
           'attributes' => 
           array (
-            'startLine' => 11,
-            'endLine' => 11,
-            'startTokenPos' => 42,
-            'startFilePos' => 234,
-            'endTokenPos' => 44,
-            'endFilePos' => 244,
+            'startLine' => 12,
+            'endLine' => 12,
+            'startTokenPos' => 43,
+            'startFilePos' => 235,
+            'endTokenPos' => 45,
+            'endFilePos' => 245,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 11,
-        'endLine' => 11,
+        'startLine' => 12,
+        'endLine' => 12,
         'startColumn' => 5,
         'endColumn' => 43,
         'isPromoted' => false,
@@ -108,8 +108,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 13,
-        'endLine' => 16,
+        'startLine' => 14,
+        'endLine' => 17,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

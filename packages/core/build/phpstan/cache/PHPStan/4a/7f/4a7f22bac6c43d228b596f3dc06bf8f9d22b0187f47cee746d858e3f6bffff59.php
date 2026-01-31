@@ -956,7 +956,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php' => '469d4502ff2460d17f44d6c6f6d19bb118bba64867886d9d5a786337a8f2a047',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php' => '698a44fa06c3b96f49c24b788bb5bf1d8d8442645324506dda92d888c9f30059',
     ),
   ),
 ));

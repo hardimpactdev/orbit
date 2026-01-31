@@ -106,7 +106,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServiceRequest.php' => '77e6fe1a45b87f0376fc9d14497b9b72e5783410bfa04beebfd2f44088ea178a',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServiceRequest.php' => 'ec2f73759f642013b5dd8e6b5ff144b938e92366c533bffe33191d5a64f75195',
     ),
   ),
 ));

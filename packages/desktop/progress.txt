@@ -6,7 +6,7 @@ Started: 2026-01-12
 ### Services
 - Services live in `app/Services/`
 - Use Process facade for shell commands
-- ConfigManager handles ~/.config/launchpad/ paths
+- ConfigManager handles ~/.config/orbit/ paths
 
 ### Commands
 - Commands in `app/Console/Commands/`
@@ -43,7 +43,7 @@ Started: 2026-01-12
 
 ## 2026-01-12 - STORY-3: Update CaddyfileGenerator for host Caddy + FPM sockets
 **Changes:** app/Services/CaddyfileGenerator.php (new file)
-**Learnings:** Uses php_fastcgi with unix sockets for PHP-FPM. Injects MacPhpFpmService for socket paths. setupSystemCaddyfile() imports launchpad config into Homebrew's Caddy.
+**Learnings:** Uses php_fastcgi with unix sockets for PHP-FPM. Injects MacPhpFpmService for socket paths. setupSystemCaddyfile() imports orbit config into Homebrew's Caddy.
 ---
 
 ## 2026-01-12 - STORY-4: Create MacHorizonService for launchd management

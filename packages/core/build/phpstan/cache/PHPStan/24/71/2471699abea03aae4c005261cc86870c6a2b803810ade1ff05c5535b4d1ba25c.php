@@ -58,7 +58,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorkspacesRequest.php' => 'd0151f8e2fb93b8464fbb2494ba3573d4c0db15690b56e47964c47a14ff3e1ae',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorkspacesRequest.php' => '9b3989694583b3536b827e450e009755c4cc977cd4a6d86e43dd00c368bff4c5',
     ),
   ),
 ));

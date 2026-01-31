@@ -110,7 +110,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => '37cb0724c0cfb01497bda544616629d21ccabd3c2f2bc8e422c453ecc5252cf0',
+      '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => '9daf8fb3d6d90a0dfddcc12a65d45abf0ca08102704f6fbc187d6d8cf0441d06',
     ),
   ),
 ));

@@ -106,7 +106,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteProjectRequest.php' => 'ac1355fc5309e979b4e819ef2ed54eb8bb1d8fabaf785c3b8c35ec74135d7a23',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteProjectRequest.php' => '7ac08ee8e15549494147d7344dc1f94af9c80ebcd4cdbf2504ac52598529ef44',
     ),
   ),
 ));

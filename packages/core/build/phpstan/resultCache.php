@@ -1,7 +1,7 @@
 <?php declare(strict_types = 1);
 
 return [
-	'lastFullAnalysisTime' => 1769783501,
+	'lastFullAnalysisTime' => 1769815755,
 	'meta' => array (
   'cacheVersion' => 'v12-linesToIgnore',
   'phpstanVersion' => '2.1.37',
@@ -10,7 +10,7 @@ return [
   array (
   ),
   'phpVersion' => 80502,
-  'projectConfig' => '{parameters: {level: 5, paths: [/home/nckrtl/projects/orbit-dev/packages/core/src, /home/nckrtl/projects/orbit-dev/packages/core/config, /home/nckrtl/projects/orbit-dev/packages/core/database], tmpDir: /home/nckrtl/projects/orbit-dev/packages/core/build/phpstan}}',
+  'projectConfig' => '{conditionalTags: {Larastan\\Larastan\\Rules\\NoEnvCallsOutsideOfConfigRule: {phpstan.rules.rule: %noEnvCallsOutsideOfConfig%}, Larastan\\Larastan\\Rules\\NoModelMakeRule: {phpstan.rules.rule: %noModelMake%}, Larastan\\Larastan\\Rules\\NoUnnecessaryCollectionCallRule: {phpstan.rules.rule: %noUnnecessaryCollectionCall%}, Larastan\\Larastan\\Rules\\NoUnnecessaryEnumerableToArrayCallsRule: {phpstan.rules.rule: %noUnnecessaryEnumerableToArrayCalls%}, Larastan\\Larastan\\Rules\\OctaneCompatibilityRule: {phpstan.rules.rule: %checkOctaneCompatibility%}, Larastan\\Larastan\\Rules\\UnusedViewsRule: {phpstan.rules.rule: %checkUnusedViews%}, Larastan\\Larastan\\Rules\\NoMissingTranslationsRule: {phpstan.rules.rule: %checkMissingTranslations%}, Larastan\\Larastan\\Rules\\ModelAppendsRule: {phpstan.rules.rule: %checkModelAppends%}, Larastan\\Larastan\\Rules\\NoPublicModelScopeAndAccessorRule: {phpstan.rules.rule: %checkModelMethodVisibility%}, Larastan\\Larastan\\Rules\\NoAuthFacadeInRequestScopeRule: {phpstan.rules.rule: %checkAuthCallsWhenInRequestScope%}, Larastan\\Larastan\\Rules\\NoAuthHelperInRequestScopeRule: {phpstan.rules.rule: %checkAuthCallsWhenInRequestScope%}, Larastan\\Larastan\\ReturnTypes\\Helpers\\EnvFunctionDynamicFunctionReturnTypeExtension: {phpstan.broker.dynamicFunctionReturnTypeExtension: %generalizeEnvReturnType%}, Larastan\\Larastan\\ReturnTypes\\Helpers\\ConfigFunctionDynamicFunctionReturnTypeExtension: {phpstan.broker.dynamicFunctionReturnTypeExtension: %checkConfigTypes%}, Larastan\\Larastan\\ReturnTypes\\ConfigRepositoryDynamicMethodReturnTypeExtension: {phpstan.broker.dynamicMethodReturnTypeExtension: %checkConfigTypes%}, Larastan\\Larastan\\ReturnTypes\\ConfigFacadeCollectionDynamicStaticMethodReturnTypeExtension: {phpstan.broker.dynamicStaticMethodReturnTypeExtension: %checkConfigTypes%}, Larastan\\Larastan\\Rules\\ConfigCollectionRule: {phpstan.rules.rule: %checkConfigTypes%}}, parameters: {universalObjectCratesClasses: [Illuminate\\Http\\Request, Illuminate\\Support\\Optional], earlyTerminatingFunctionCalls: [abort, dd], mixinExcludeClasses: [Eloquent], bootstrapFiles: [bootstrap.php], checkOctaneCompatibility: true, noEnvCallsOutsideOfConfig: true, noModelMake: true, noUnnecessaryCollectionCall: true, noUnnecessaryCollectionCallOnly: [], noUnnecessaryCollectionCallExcept: [], noUnnecessaryEnumerableToArrayCalls: false, squashedMigrationsPath: [], databaseMigrationsPath: [], disableMigrationScan: false, disableSchemaScan: false, configDirectories: [], viewDirectories: [], translationDirectories: [], checkModelProperties: true, checkUnusedViews: false, checkMissingTranslations: false, checkModelAppends: true, checkModelMethodVisibility: false, generalizeEnvReturnType: false, checkConfigTypes: false, checkAuthCallsWhenInRequestScope: false, parseModelCastsMethod: false, enableMigrationCache: false, level: 5, paths: [/home/nckrtl/projects/orbit-dev/packages/core/src, /home/nckrtl/projects/orbit-dev/packages/core/config, /home/nckrtl/projects/orbit-dev/packages/core/database], tmpDir: /home/nckrtl/projects/orbit-dev/packages/core/build/phpstan}, rules: [Larastan\\Larastan\\Rules\\UselessConstructs\\NoUselessWithFunctionCallsRule, Larastan\\Larastan\\Rules\\UselessConstructs\\NoUselessValueFunctionCallsRule, Larastan\\Larastan\\Rules\\DeferrableServiceProviderMissingProvidesRule, Larastan\\Larastan\\Rules\\ConsoleCommand\\UndefinedArgumentOrOptionRule], services: {{class: Larastan\\Larastan\\Methods\\RelationForwardsCallsExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\ModelForwardsCallsExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\EloquentBuilderForwardsCallsExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\HigherOrderTapProxyExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\HigherOrderCollectionProxyExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\StorageMethodsClassReflectionExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\Extension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\ModelFactoryMethodsClassReflectionExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\RedirectResponseMethodsClassReflectionExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\MacroMethodsClassReflectionExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Methods\\ViewWithMethodsClassReflectionExtension, tags: [phpstan.broker.methodsClassReflectionExtension]}, {class: Larastan\\Larastan\\Properties\\ModelAccessorExtension, tags: [phpstan.broker.propertiesClassReflectionExtension]}, {class: Larastan\\Larastan\\Properties\\ModelPropertyExtension, tags: [phpstan.broker.propertiesClassReflectionExtension]}, {class: Larastan\\Larastan\\Properties\\HigherOrderCollectionProxyPropertyExtension, tags: [phpstan.broker.propertiesClassReflectionExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\HigherOrderTapProxyExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ContainerArrayAccessDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {className: Illuminate\\Contracts\\Container\\Container}}, {class: Larastan\\Larastan\\ReturnTypes\\ContainerArrayAccessDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {className: Illuminate\\Container\\Container}}, {class: Larastan\\Larastan\\ReturnTypes\\ContainerArrayAccessDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {className: Illuminate\\Foundation\\Application}}, {class: Larastan\\Larastan\\ReturnTypes\\ContainerArrayAccessDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {className: Illuminate\\Contracts\\Foundation\\Application}}, {class: Larastan\\Larastan\\Properties\\ModelRelationsExtension, tags: [phpstan.broker.propertiesClassReflectionExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ModelOnlyDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ModelFactoryDynamicStaticMethodReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ModelDynamicStaticMethodReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\AppMakeDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\AuthExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\GuardDynamicStaticMethodReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\AuthManagerExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\DateExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\GuardExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\RequestFileExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\RequestRouteExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\RequestUserExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\EloquentBuilderExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\RelationCollectionExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\TestCaseExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\Support\\CollectionHelper}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\AuthExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\CollectExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\NowAndTodayExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\ResponseExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\ValidatorExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\LiteralExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\CollectionFilterRejectDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\CollectionWhereNotNullDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\NewModelQueryDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\FactoryDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\Types\\AbortIfFunctionTypeSpecifyingExtension, tags: [phpstan.typeSpecifier.functionTypeSpecifyingExtension], arguments: {methodName: abort, negate: false}}, {class: Larastan\\Larastan\\Types\\AbortIfFunctionTypeSpecifyingExtension, tags: [phpstan.typeSpecifier.functionTypeSpecifyingExtension], arguments: {methodName: abort, negate: true}}, {class: Larastan\\Larastan\\Types\\AbortIfFunctionTypeSpecifyingExtension, tags: [phpstan.typeSpecifier.functionTypeSpecifyingExtension], arguments: {methodName: throw, negate: false}}, {class: Larastan\\Larastan\\Types\\AbortIfFunctionTypeSpecifyingExtension, tags: [phpstan.typeSpecifier.functionTypeSpecifyingExtension], arguments: {methodName: throw, negate: true}}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\AppExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\ValueExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\StrExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\TapExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\StorageDynamicStaticMethodReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\Types\\GenericEloquentCollectionTypeNodeResolverExtension, tags: [phpstan.phpDoc.typeNodeResolverExtension]}, {class: Larastan\\Larastan\\Types\\ViewStringTypeNodeResolverExtension, tags: [phpstan.phpDoc.typeNodeResolverExtension]}, {class: Larastan\\Larastan\\Rules\\OctaneCompatibilityRule}, {class: Larastan\\Larastan\\Rules\\NoEnvCallsOutsideOfConfigRule, arguments: {configDirectories: %configDirectories%}}, {class: Larastan\\Larastan\\Rules\\NoModelMakeRule}, {class: Larastan\\Larastan\\Rules\\NoUnnecessaryCollectionCallRule, arguments: {onlyMethods: %noUnnecessaryCollectionCallOnly%, excludeMethods: %noUnnecessaryCollectionCallExcept%}}, {class: Larastan\\Larastan\\Rules\\NoUnnecessaryEnumerableToArrayCallsRule}, {class: Larastan\\Larastan\\Rules\\ModelAppendsRule}, {class: Larastan\\Larastan\\Rules\\NoPublicModelScopeAndAccessorRule}, {class: Larastan\\Larastan\\Types\\GenericEloquentBuilderTypeNodeResolverExtension, tags: [phpstan.phpDoc.typeNodeResolverExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\AppEnvironmentReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {class: Illuminate\\Foundation\\Application}}, {class: Larastan\\Larastan\\ReturnTypes\\AppEnvironmentReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension], arguments: {class: Illuminate\\Contracts\\Foundation\\Application}}, {class: Larastan\\Larastan\\ReturnTypes\\AppFacadeEnvironmentReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\Types\\ModelProperty\\ModelPropertyTypeNodeResolverExtension, tags: [phpstan.phpDoc.typeNodeResolverExtension], arguments: {active: %checkModelProperties%}}, {class: Larastan\\Larastan\\Types\\CollectionOf\\CollectionOfTypeNodeResolverExtension, tags: [phpstan.phpDoc.typeNodeResolverExtension]}, {class: Larastan\\Larastan\\Properties\\MigrationHelper, arguments: {databaseMigrationPath: %databaseMigrationsPath%, disableMigrationScan: %disableMigrationScan%, parser: @migrationsParser, reflectionProvider: @reflectionProvider}}, iamcalSqlParser: {class: Larastan\\Larastan\\SQL\\IamcalSqlParser, autowired: false}, sqlParserFactory: {class: Larastan\\Larastan\\SQL\\SqlParserFactory, arguments: {iamcalSqlParser: @iamcalSqlParser}}, sqlParser: {type: Larastan\\Larastan\\SQL\\SqlParser, factory: [@sqlParserFactory, create]}, {class: Larastan\\Larastan\\Properties\\SquashedMigrationHelper, arguments: {schemaPaths: %squashedMigrationsPath%, disableSchemaScan: %disableSchemaScan%}}, {class: Larastan\\Larastan\\Properties\\ModelCastHelper, arguments: {parser: @currentPhpVersionSimpleDirectParser, parseModelCastsMethod: %parseModelCastsMethod%}}, {class: Larastan\\Larastan\\Properties\\MigrationCache, arguments: {cacheDirectory: %tmpDir%, enabled: %enableMigrationCache%}}, {class: Larastan\\Larastan\\Properties\\ModelPropertyHelper}, {class: Larastan\\Larastan\\Rules\\ModelRuleHelper}, {class: Larastan\\Larastan\\Methods\\BuilderHelper, arguments: {checkProperties: %checkModelProperties%}}, {class: Larastan\\Larastan\\Rules\\RelationExistenceRule, tags: [phpstan.rules.rule]}, {class: Larastan\\Larastan\\Rules\\CheckDispatchArgumentTypesCompatibleWithClassConstructorRule, arguments: {dispatchableClass: Illuminate\\Foundation\\Bus\\Dispatchable}, tags: [phpstan.rules.rule]}, {class: Larastan\\Larastan\\Rules\\CheckDispatchArgumentTypesCompatibleWithClassConstructorRule, arguments: {dispatchableClass: Illuminate\\Foundation\\Events\\Dispatchable}, tags: [phpstan.rules.rule]}, {class: Larastan\\Larastan\\Properties\\Schema\\MySqlDataTypeToPhpTypeConverter}, {class: Larastan\\Larastan\\LarastanStubFilesExtension, tags: [phpstan.stubFilesExtension]}, {class: Larastan\\Larastan\\Rules\\UnusedViewsRule}, {class: Larastan\\Larastan\\Collectors\\UsedViewFunctionCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedEmailViewCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedViewMakeCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedViewFacadeMakeCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedRouteFacadeViewCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedViewInAnotherViewCollector}, {class: Larastan\\Larastan\\Support\\ViewFileHelper, arguments: {viewDirectories: %viewDirectories%}}, {class: Larastan\\Larastan\\Support\\ViewParser, arguments: {parser: @currentPhpVersionSimpleDirectParser}}, {class: Larastan\\Larastan\\Rules\\NoMissingTranslationsRule, arguments: {translationDirectories: %translationDirectories%}}, {class: Larastan\\Larastan\\Collectors\\UsedTranslationFunctionCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedTranslationTranslatorCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedTranslationFacadeCollector, tags: [phpstan.collector]}, {class: Larastan\\Larastan\\Collectors\\UsedTranslationViewCollector}, {class: Larastan\\Larastan\\ReturnTypes\\ApplicationMakeDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ContainerMakeDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ConsoleCommand\\ArgumentDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ConsoleCommand\\HasArgumentDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ConsoleCommand\\OptionDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\ConsoleCommand\\HasOptionDynamicReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\TranslatorGetReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\LangGetReturnTypeExtension, tags: [phpstan.broker.dynamicStaticMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\TransHelperReturnTypeExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\DoubleUnderscoreHelperReturnTypeExtension, tags: [phpstan.broker.dynamicFunctionReturnTypeExtension]}, {class: Larastan\\Larastan\\ReturnTypes\\AppMakeHelper}, {class: Larastan\\Larastan\\Internal\\ConsoleApplicationResolver}, {class: Larastan\\Larastan\\Internal\\ConsoleApplicationHelper}, {class: Larastan\\Larastan\\Support\\HigherOrderCollectionProxyHelper}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\ConfigFunctionDynamicFunctionReturnTypeExtension}, {class: Larastan\\Larastan\\ReturnTypes\\ConfigRepositoryDynamicMethodReturnTypeExtension}, {class: Larastan\\Larastan\\ReturnTypes\\ConfigFacadeCollectionDynamicStaticMethodReturnTypeExtension}, {class: Larastan\\Larastan\\Support\\ConfigParser, arguments: {parser: @currentPhpVersionSimpleDirectParser, configPaths: %configDirectories%}}, {class: Larastan\\Larastan\\Internal\\ConfigHelper}, {class: Larastan\\Larastan\\ReturnTypes\\Helpers\\EnvFunctionDynamicFunctionReturnTypeExtension}, {class: Larastan\\Larastan\\ReturnTypes\\FormRequestSafeDynamicMethodReturnTypeExtension, tags: [phpstan.broker.dynamicMethodReturnTypeExtension]}, {class: Larastan\\Larastan\\Rules\\NoAuthFacadeInRequestScopeRule}, {class: Larastan\\Larastan\\Rules\\NoAuthHelperInRequestScopeRule}, {class: Larastan\\Larastan\\Rules\\ConfigCollectionRule}, {class: Illuminate\\Filesystem\\Filesystem, autowired: self}, migrationsParser: {class: PHPStan\\Parser\\CachedParser, arguments: {originalParser: @currentPhpVersionSimpleDirectParser, cachedNodesByStringCountMax: %cache.nodesByStringCountMax%}, autowired: false}}}',
   'analysedPaths' => 
   array (
     0 => '/home/nckrtl/projects/orbit-dev/packages/core/src',
@@ -2084,6 +2084,7 @@ return [
   ),
   'executedFilesHashes' => 
   array (
+    '/home/nckrtl/projects/orbit-dev/packages/core/vendor/larastan/larastan/bootstrap.php' => '5a3eacbf63b3e41659adfee92facededf8e020a932800f93c9a8b0e67f235805',
     'phar:///home/nckrtl/projects/orbit-dev/packages/core/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Attribute85.php' => 'cb8b31e82c61ce197871c9e8a6f122256751f2ab606dd2be90846d4fa5f8933e',
     'phar:///home/nckrtl/projects/orbit-dev/packages/core/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionAttribute.php' => 'b2bdc83dac3ac930a2b5387546b2da05f7f5135340549604e06d3d0fd4bc4205',
     'phar:///home/nckrtl/projects/orbit-dev/packages/core/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionIntersectionType.php' => '65fe0a8bc6fe285d8ddc8798ab5b9299920af70db5ad74596bc08df823e7c5d9',
@@ -2158,20 +2159,20 @@ return [
 	'projectExtensionFiles' => array (
 ),
 	'errorsCallback' => static function (): array { return array (
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php' => 
   array (
     0 => 
     \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php',
-       'line' => 32,
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 15,
        'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php',
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 32,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
+       'nodeLine' => 15,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
        'metadata' => 
       array (
       ),
@@ -2179,184 +2180,16 @@ return [
     )),
     1 => 
     \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::create().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php',
-       'line' => 60,
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 26,
        'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php',
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 60,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::findOrFail().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-       'line' => 61,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 61,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::findOrFail().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-       'line' => 62,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 62,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/DeleteProjectJob.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::findOrFail().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/DeleteProjectJob.php',
-       'line' => 53,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/DeleteProjectJob.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 53,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
-       'line' => 133,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 133,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
-       'line' => 138,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 138,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting::find().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php',
-       'line' => 27,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 27,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting::updateOrCreate().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php',
-       'line' => 34,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 34,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
-       'line' => 27,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 27,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey::first().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
-       'line' => 28,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 28,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
+       'nodeLine' => 26,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
        'metadata' => 
       array (
       ),
@@ -2364,16 +2197,169 @@ return [
     )),
     2 => 
     \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
-       'line' => 33,
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 38,
        'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php',
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 33,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
+       'nodeLine' => 38,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    3 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 48,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 48,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    4 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 63,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 63,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    5 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 64,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 64,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    6 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 65,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 65,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    7 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 76,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 76,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    8 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 86,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 86,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    9 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 97,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 97,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    10 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 98,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 98,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
+       'metadata' => 
+      array (
+      ),
+       'fixedErrorDiff' => NULL,
+    )),
+    11 => 
+    \PHPStan\Analyser\Error::__set_state(array(
+       'message' => 'Called \'env\' outside of the config directory which returns null when the config is cached, use \'config\'.',
+       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'line' => 99,
+       'canBeIgnored' => true,
+       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/config/orbit.php',
+       'traitFilePath' => NULL,
+       'tip' => NULL,
+       'nodeLine' => 99,
+       'nodeType' => 'PhpParser\\Node\\Expr\\FuncCall',
+       'identifier' => 'larastan.noEnvCallsOutsideOfConfig',
        'metadata' => 
       array (
       ),
@@ -2394,94 +2380,6 @@ return [
        'nodeLine' => 46,
        'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\NotIdentical',
        'identifier' => 'notIdentical.alwaysTrue',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\TemplateFavorite::orderByDesc().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TemplateFavorite.php',
-       'line' => 56,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TemplateFavorite.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 56,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\TemplateFavorite::orderByDesc().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TemplateFavorite.php',
-       'line' => 63,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TemplateFavorite.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 63,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'line' => 29,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 29,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference::updateOrCreate().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'line' => 36,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 36,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'line' => 44,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/UserPreference.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 44,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
        'metadata' => 
       array (
       ),
@@ -2599,12 +2497,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Parameter $configService of method HardImpact\\Orbit\\Core\\Services\\DnsResolverService::syncAllResolvers() has invalid type App\\Services\\OrbitCli\\ConfigurationService.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
-       'line' => 206,
+       'line' => 207,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 206,
+       'nodeLine' => 207,
        'nodeType' => 'PHPStan\\Node\\InClassMethodNode',
        'identifier' => 'class.notFound',
        'metadata' => 
@@ -2616,102 +2514,14 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Call to method getConfig() on an unknown class App\\Services\\OrbitCli\\ConfigurationService.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
-       'line' => 212,
+       'line' => 213,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php',
        'traitFilePath' => NULL,
        'tip' => 'Learn more at https://phpstan.org/user-guide/discovering-symbols',
-       'nodeLine' => 212,
+       'nodeLine' => 213,
        'nodeType' => 'PhpParser\\Node\\Expr\\MethodCall',
        'identifier' => 'class.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'line' => 12,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 12,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::first().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'line' => 18,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 18,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'line' => 18,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 18,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    3 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::findOrFail().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'line' => 29,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 29,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    4 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'line' => 31,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 31,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
        'metadata' => 
       array (
       ),
@@ -2724,68 +2534,14 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Left side of || is always false.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php',
-       'line' => 48,
+       'line' => 49,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 48,
+       'nodeLine' => 49,
        'nodeType' => 'PHPStan\\Node\\BooleanOrNode',
        'identifier' => 'booleanOr.leftAlwaysFalse',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'line' => 54,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 54,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::create().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'line' => 76,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 76,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'line' => 81,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 81,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
        'metadata' => 
       array (
       ),
@@ -2798,12 +2554,12 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Expression on left side of ?? is not nullable.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
-       'line' => 81,
+       'line' => 82,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 81,
+       'nodeLine' => 82,
        'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
        'identifier' => 'nullCoalesce.expr',
        'metadata' => 
@@ -2818,51 +2574,14 @@ return [
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Expression on left side of ?? is not nullable.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
-       'line' => 115,
+       'line' => 129,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 115,
+       'nodeLine' => 129,
        'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
        'identifier' => 'nullCoalesce.expr',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::where().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
-       'line' => 18,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 18,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::create().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
-       'line' => 23,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 23,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
        'metadata' => 
       array (
       ),
@@ -2889,38 +2608,18 @@ return [
        'fixedErrorDiff' => NULL,
     )),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/Actions/SetPhpVersion.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project::find().',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/Actions/SetPhpVersion.php',
-       'line' => 36,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Provision/Actions/SetPhpVersion.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 36,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'staticMethod.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php' => 
   array (
     0 => 
     \PHPStan\Analyser\Error::__set_state(array(
        'message' => 'Left side of || is always false.',
        'file' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php',
-       'line' => 517,
+       'line' => 518,
        'canBeIgnored' => true,
        'filePath' => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php',
        'traitFilePath' => NULL,
        'tip' => NULL,
-       'nodeLine' => 517,
+       'nodeLine' => 518,
        'nodeType' => 'PHPStan\\Node\\BooleanOrNode',
        'identifier' => 'booleanOr.leftAlwaysFalse',
        'metadata' => 
@@ -2994,6 +2693,18 @@ return [
 	'unmatchedLineIgnores' => array (
 ),
 	'collectedDataCallback' => static function (): array { return array (
+  '/home/nckrtl/projects/orbit-dev/packages/core/src/Console/Commands/OrbitInit.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'Illuminate\\Database\\Eloquent\\Builder',
+        1 => 'create',
+        2 => 60,
+      ),
+    ),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
@@ -3630,6 +3341,15 @@ return [
         2 => 'HardImpact\\Orbit\\Core\\Models\\Setting',
       ),
     ),
+    'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'Illuminate\\Database\\Eloquent\\Builder',
+        1 => 'updateOrCreate',
+        2 => 34,
+      ),
+    ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TrackedJob.php' => 
   array (
@@ -3743,7 +3463,7 @@ return [
       0 => 
       array (
         0 => 'preg_match',
-        1 => 195,
+        1 => 196,
       ),
     ),
   ),
@@ -3761,7 +3481,7 @@ return [
       0 => 
       array (
         0 => 'usort',
-        1 => 119,
+        1 => 120,
       ),
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -3770,13 +3490,13 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Process',
         1 => 'run',
-        2 => 277,
+        2 => 278,
       ),
       1 => 
       array (
         0 => 'Illuminate\\Support\\Facades\\Process',
         1 => 'run',
-        2 => 284,
+        2 => 285,
       ),
     ),
   ),
@@ -3788,13 +3508,13 @@ return [
       array (
         0 => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
         1 => 'setValue',
-        2 => 29,
+        2 => 30,
       ),
       1 => 
       array (
         0 => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
         1 => 'setValue',
-        2 => 37,
+        2 => 38,
       ),
     ),
   ),
@@ -3809,12 +3529,7 @@ return [
       0 => 
       array (
         0 => 'usort',
-        1 => 202,
-      ),
-      1 => 
-      array (
-        0 => 'usort',
-        1 => 279,
+        1 => 198,
       ),
     ),
   ),
@@ -3830,6 +3545,15 @@ return [
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
       0 => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+    ),
+    'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'Illuminate\\Database\\Eloquent\\Builder',
+        1 => 'create',
+        2 => 77,
+      ),
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php' => 
@@ -3903,12 +3627,7 @@ return [
       0 => 
       array (
         0 => 'usort',
-        1 => 873,
-      ),
-      1 => 
-      array (
-        0 => 'usort',
-        1 => 947,
+        1 => 879,
       ),
     ),
   ),
@@ -3987,7 +3706,7 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Process',
         1 => 'run',
-        2 => 254,
+        2 => 255,
       ),
     ),
   ),
@@ -3999,7 +3718,7 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Process',
         1 => 'run',
-        2 => 128,
+        2 => 129,
       ),
     ),
   ),
@@ -4155,7 +3874,14 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => 
   array (
-    'fileHash' => '37cb0724c0cfb01497bda544616629d21ccabd3c2f2bc8e422c453ecc5252cf0',
+    'fileHash' => '9daf8fb3d6d90a0dfddcc12a65d45abf0ca08102704f6fbc187d6d8cf0441d06',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_31_000001_add_indexes_to_projects_table.php' => 
+  array (
+    'fileHash' => 'c2fd09c585414d81709f167e060668a1ac917430f68158467aed29e40b81ad55',
     'dependentFiles' => 
     array (
     ),
@@ -4296,7 +4022,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/AddWorkspaceProjectRequest.php' => 
   array (
-    'fileHash' => '7a504e55bd2f3ce39b8cb30577db3410d624b0fce32f20c8c46c67e1f4367187',
+    'fileHash' => 'd9614fde65d5741b77469fe96ba2c6c0188682bdb8a04e7e5db5e612abbf5c33',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -4305,7 +4031,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ConfigureServiceRequest.php' => 
   array (
-    'fileHash' => '6e866218735f10ee0aa5b93ee665a2ad0fa7c483b49d4a756c8b976bc17c6c7d',
+    'fileHash' => '6a37143b5a9785b6de7cd46c56fbe864702f7ef88949481dbfe1244724e97778',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4314,7 +4040,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/CreateProjectRequest.php' => 
   array (
-    'fileHash' => '4dcf7119fc77b2fa45104e89683ed76225783a101e620e88b83f4da5b0dc1a99',
+    'fileHash' => 'a3edf43ff5d7eaed92eb1efb4389f6eca7788385963d4e9df97a2e512dcd119e',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
@@ -4323,7 +4049,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/CreateWorkspaceRequest.php' => 
   array (
-    'fileHash' => '5b1328bf5907c9ed5c68556a512c2870145b3e141af355fdcdf563591ca758cd',
+    'fileHash' => '1db5aeaaf71b91ab2d99f582d6c584dadbce6ba89c9accf1118fbb8a4578b26c',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -4332,7 +4058,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteProjectRequest.php' => 
   array (
-    'fileHash' => 'ac1355fc5309e979b4e819ef2ed54eb8bb1d8fabaf785c3b8c35ec74135d7a23',
+    'fileHash' => '7ac08ee8e15549494147d7344dc1f94af9c80ebcd4cdbf2504ac52598529ef44',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
@@ -4341,7 +4067,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteWorkspaceRequest.php' => 
   array (
-    'fileHash' => '2fae52fc1d65c1a33f1e80e33b06c0e422488ef99d349370f71a84fdd4721ce2',
+    'fileHash' => '5f2bf0953a74df7c0a4d213a951cb60c937b2964f8c1d1624ce10f9969afca99',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -4350,7 +4076,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DisableServiceRequest.php' => 
   array (
-    'fileHash' => '7f89cb9d66c61ac7bcc5cf048c9fff80ac8f15bbfc174c714ecdbbef59a40c62',
+    'fileHash' => 'c9203bd4bdcd8f5c151606a9a95250dc187ebfa136a6c02ea0fbf4c8a16ef8d9',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4359,7 +4085,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/EnableServiceRequest.php' => 
   array (
-    'fileHash' => 'dc41afa9104a0b4b4d113e0250a82981563b0e47d2243e7d4562901f6f3444fd',
+    'fileHash' => '3178bf4f660114638baba5ffb1073cbf2b47f268a5f47f0b7d5fe21483ee2b27',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4368,7 +4094,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetConfigRequest.php' => 
   array (
-    'fileHash' => 'f7a20a5983b9fa00177f9b25dc7c8997158593dd6569d87584b95f7b9b834066',
+    'fileHash' => '55f13579b3d80664ddb3e4763ebe32d78cccb464f44b495fa346cdd529a686e9',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4377,7 +4103,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetLinkedPackagesRequest.php' => 
   array (
-    'fileHash' => '14d7b8fbf295a0188c55204c722686376198e007625465cb17b65100cddc025f',
+    'fileHash' => '91314911a8e357a5e5190bfc16ec43d7c980e6abed4fba7d41ce62c9ba30ae7c',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
@@ -4386,7 +4112,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpRequest.php' => 
   array (
-    'fileHash' => 'e06b92c20e7506452aa9a2757ad664273a227f327e18d83bf03c4395d9ad623c',
+    'fileHash' => '9c15aae3ef65778ee8faf4ee7cce0c82396818b08b71c41941fd217b99b780ba',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4395,7 +4121,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpVersionsRequest.php' => 
   array (
-    'fileHash' => '88120746153aff74a534e8cb2bbe6752f8672f60297869ba4c09654d5e7b697e',
+    'fileHash' => '5cc31e9c02a151954be50e3fccf8dcad36f7b7550cfd2ce0f085178e343d0d1d',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4404,7 +4130,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetProjectsRequest.php' => 
   array (
-    'fileHash' => 'adae3ae964fd993cdf938f5e4bfe7f6e41a89d80cf42d270c0562b2f9e703990',
+    'fileHash' => '28923531d53ab21ed0d3213cb456fd576e49eddaec69b26afbe2991cf21bbf93',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
@@ -4414,7 +4140,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetProvisionStatusRequest.php' => 
   array (
-    'fileHash' => '989401c5742869b39fcf38a2ddf64c52e51066538dc40001f94207dd32af8226',
+    'fileHash' => 'c696be4820f2c82527c050542ee6a16873e20ddb55505a185143c58ef20cdea5',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
@@ -4423,7 +4149,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetServiceInfoRequest.php' => 
   array (
-    'fileHash' => '0a3e6094ba5199eb06fa5520cd001cd254ffe67dfa3e90693c2499b8fa9b96c5',
+    'fileHash' => '595e145629daf082400621827ef4a408060ae695de686ef0d37fedfa75a91f5b',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4432,7 +4158,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetServiceLogsRequest.php' => 
   array (
-    'fileHash' => '315f0c7633ac4353d86970ac0ab4e2945a35d0798d3f2604ea0a2f8b0f5113d6',
+    'fileHash' => 'ff7fa923f4a808312854c6eb821d9834470bee65f8461c72ff610f8b225fb8b6',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4441,7 +4167,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetStatusRequest.php' => 
   array (
-    'fileHash' => 'd6ed2a45b9a743a6ee0ae4e70f3ac5a3934118eb8fd4fd02d16c603d52ca2f58',
+    'fileHash' => 'c9d193209263f080725c4b1b959148dad3c6335af306117352fc79a55cbb3a43',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
@@ -4450,7 +4176,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorkspacesRequest.php' => 
   array (
-    'fileHash' => 'd0151f8e2fb93b8464fbb2494ba3573d4c0db15690b56e47964c47a14ff3e1ae',
+    'fileHash' => '9b3989694583b3536b827e450e009755c4cc977cd4a6d86e43dd00c368bff4c5',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -4459,7 +4185,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorktreesRequest.php' => 
   array (
-    'fileHash' => '3262e4e0230737e415e68942f7558ac5a087f515e709a4a8565266c5d99736e4',
+    'fileHash' => 'b2c6cdce3b5d265bdeb92a19b49f3787063e84ef97f7efc1556822657c28eaf8',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
@@ -4468,7 +4194,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/LinkPackageRequest.php' => 
   array (
-    'fileHash' => 'd0fbe04976ca997789a296f206d9b6d711a8a13a9beb0c6696b07b40c432142f',
+    'fileHash' => 'b98b53dffa96912f7d1c0f763b2d3406d2baeeb06194147ffe921021f549ac54',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
@@ -4477,7 +4203,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ListAvailableServicesRequest.php' => 
   array (
-    'fileHash' => '54e9de7273c743475e621c5449e83b5e58f45809d4dca54d2028f49c2284f15a',
+    'fileHash' => 'ab8e3aa65bcedd169e6f3c0d27b0a576944d11d0e80d9e05a0779bb111b86e49',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4486,7 +4212,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ListServicesRequest.php' => 
   array (
-    'fileHash' => '26094f3e7262fc68a75bf37ebf6c201d60150e54a70f58c69572ca7ebdbae764',
+    'fileHash' => 'c854074b2dbe2c9ee9df7913d466130974503258ae8bf52530d0e7e730a7fe74',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4495,7 +4221,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RebuildProjectRequest.php' => 
   array (
-    'fileHash' => 'f8e608e3e3bfd13287ece3761187ac2e79c5072a3aae27082b6ee0b6fa951969',
+    'fileHash' => '7069364196ad3bbfaba0f8d5ac607166896316cafb15d6bea7eed267dedce60f',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
@@ -4504,7 +4230,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RefreshWorktreesRequest.php' => 
   array (
-    'fileHash' => 'a262f767bbe6858aa0e805798e192d140c722f5104989564716e5ddb47b56918',
+    'fileHash' => '3e930277059cafd8349446f8b3e2bf7608644e45ad79d63c14e9a3e37900481d',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
@@ -4513,7 +4239,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RemoveWorkspaceProjectRequest.php' => 
   array (
-    'fileHash' => '4fedd7ea10f6e5a315202f61beeea53ba90adca6c3e49a972aea363883a7c2e3',
+    'fileHash' => '06a366bb50dadd5ed1fc3e02bbc0e2e66e78ec88848d3f3b9ad62bdab7076cb9',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -4522,7 +4248,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ResetPhpRequest.php' => 
   array (
-    'fileHash' => 'cbdb040bef2d731788875546192ff90b20c02a46f9a6a5908391798b59c46fde',
+    'fileHash' => 'b1062fd6da700b5158e79ffc2b4c42cdbf720feb15941b74e2e48c4db64a0104',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4531,7 +4257,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServiceRequest.php' => 
   array (
-    'fileHash' => '77e6fe1a45b87f0376fc9d14497b9b72e5783410bfa04beebfd2f44088ea178a',
+    'fileHash' => 'ec2f73759f642013b5dd8e6b5ff144b938e92366c533bffe33191d5a64f75195',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4540,7 +4266,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServicesRequest.php' => 
   array (
-    'fileHash' => 'c98bc9a917781fd65b999d219122a531c2b49f296610192351a84c2307629cd7',
+    'fileHash' => '3ed0418bc4321244718c4ee9221bcbbb329c232c75fd2c4bde42994b4bc1feb3',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4549,7 +4275,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/SetPhpRequest.php' => 
   array (
-    'fileHash' => '147da5d80d3711c486cee21e87efb1d22104a75c14a76e01bf64ae718d07bb40',
+    'fileHash' => '0b9e7d41e703f69ce468686b689fdafac9ad850171a5d6a016644e3c67045a28',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4558,7 +4284,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StartServiceRequest.php' => 
   array (
-    'fileHash' => 'e74e1177e7b8f623f93670d667dc82070759be24fd39fde85646c9747b00363f',
+    'fileHash' => '51a341ff6486644cd53b7edd9ae933f07b6b5466bac273869ca6bc6c978b2549',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4567,7 +4293,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StartServicesRequest.php' => 
   array (
-    'fileHash' => '9aff59ddb5f67d515f5d497b7a3ca19132a9ee4fbf7d90ad19ccc898d7d1fee4',
+    'fileHash' => 'b85d2dfb5a4d83bee056936bd1522812fcf9160c3a4e3227cd6ed91cb89330fe',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4576,7 +4302,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServiceRequest.php' => 
   array (
-    'fileHash' => 'ca987e40497e602438aac351058a771e147933eee91af017dac6ca38e6dee02c',
+    'fileHash' => '86893c1299eeca140f1e635181190f0fca09dbc427d36cd8f29b2038f0a8ba99',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4585,7 +4311,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServicesRequest.php' => 
   array (
-    'fileHash' => '54c2079a14af2eeadb300b71897bc33dfc0bac9df9cbb764bab8fe9230e90123',
+    'fileHash' => '9afe384f34512ef3a24d5a6bfef49055f942220b0a18835c0cc820da85f28fd1',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
@@ -4594,7 +4320,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/UnlinkPackageRequest.php' => 
   array (
-    'fileHash' => 'db1198f09032afd9d2de02ced63ee3cfabf47539396da5fea85cdfdc3f185fa4',
+    'fileHash' => '7d7a4c4aba709885b0ee4813188c26e022ec37e8d2279b587c2d0ec78c226020',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
@@ -4603,7 +4329,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/UnlinkWorktreeRequest.php' => 
   array (
-    'fileHash' => '825e05b4f4d0eb5f9ef9fc3bdb7b63475a5ad7ec5b62e3e56f342128ceb6e375',
+    'fileHash' => '46f771a7c88c009b1ba18ad06935ce566cba833ee49d9eea21261f9ee10b16fd',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
@@ -4626,7 +4352,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 
   array (
-    'fileHash' => 'ca4c4f77740d7a7a0e0f27b3c35532aac60f5a2cbf8dcffe7fa7dd885287fcab',
+    'fileHash' => 'b0bdd508f5deae2ee22a295f53c84f78014234e122e1cf1ef7b3958fbb5217f1',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/database/factories/EnvironmentFactory.php',
@@ -4655,7 +4381,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 
   array (
-    'fileHash' => '8b6cdf804fdaf156038f94a4ca215b8a18e833b1b5bab20bef46af39cdf3d270',
+    'fileHash' => 'eeef06d046c3cfa96c04beca350ed50a33fc1a14686626e415836bf27c410802',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Data/DeletionContext.php',
@@ -4706,7 +4432,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
   array (
-    'fileHash' => '2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+    'fileHash' => '7135caac901af09f436b345a9c94ba052557805ed8be05efc2fa3a8d497c25ae',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php',
@@ -4714,17 +4440,18 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
   array (
-    'fileHash' => 'b147b5d297202c0468ee8948e59d1dc25dfa5b4b983c3c57751ffacc61a015e0',
+    'fileHash' => '1941cb4c4e5dd4d439cfb3df2ef5135cf0f6f64be98cfcab7046d5bfd21e432c',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => 
   array (
-    'fileHash' => 'b6503ea5a4bcaa450abfdaa31908a16a360c5e6b5d2142ae63ed40f8db10b46f',
+    'fileHash' => '1dcc4f8a1a88e989663cfca80891b18a6f3f89479d4e6d2ed9e885081dae3867',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/Deletion/Actions/DeleteProjectFiles.php' => 
@@ -4769,22 +4496,24 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php' => 
   array (
-    'fileHash' => '887c40bd3bc7e66d2893f434f099c2d8b9082ae6f6cd5ee1af4459ac39ec11fe',
+    'fileHash' => '09eebf267bd23abb0d306685fd8ca62db528c6b3b0caabb24f2ab0859e770aed',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php' => 
   array (
-    'fileHash' => '0146bc66f3e47b5b62b3502d9c2700a92e317153f1ecb27f49de36d98e2977af',
+    'fileHash' => '44ac34e682694c5564aa1b7316117e6a711d713f26bc4ad253f93b184bd0e147',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php' => 
   array (
-    'fileHash' => 'dea1dc742bb150d121c52f0f801b2b2a5da6ea2fb0b57eed3080500b37903e4d',
+    'fileHash' => 'dc121a07189f97b3ca7fe118299b4373cd592ca460faaead8a53f8655cb16ece',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php',
@@ -4793,74 +4522,80 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/HorizonService.php' => 
   array (
-    'fileHash' => '255cd9971fcc69b6f9a80db3b725d63e6ce0141b16b52f9971f4cac07d51ce19',
+    'fileHash' => '06bd07e7c9d0d09d639ea0eb49fa241caa89f3bced28845e8977a021563a6cb6',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php' => 
   array (
-    'fileHash' => '08cb00bd5b1c8ea5751a9d632e8070b844a5d3721875cf4a8142a08bcd8ffde5',
+    'fileHash' => '880f5096fb88a939c0203d540d5d093927b030f4af3304057520a6e42f479e0a',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => 
   array (
-    'fileHash' => '929a433c23b5ce972c8cab147924c1fad4071f4b9e55732dd0b7ddbe000d7eb4',
+    'fileHash' => '58108b1f1ef678c35153a571038a2c950bf7416b33c2d96c3bce807ff8d1425a',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php' => 
   array (
-    'fileHash' => '469d4502ff2460d17f44d6c6f6d19bb118bba64867886d9d5a786337a8f2a047',
+    'fileHash' => '698a44fa06c3b96f49c24b788bb5bf1d8d8442645324506dda92d888c9f30059',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Jobs/CreateProjectJob.php',
-      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
-      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php' => 
   array (
-    'fileHash' => '8707eebb7d48fc5eb44813e824b97c35c8081a389f1e10a6bf4bf506ba29eab5',
+    'fileHash' => '577459870742024280b11f6136baa2ba73e2b4b693f52163f42d99b21687ab1c',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php' => 
   array (
-    'fileHash' => '1d7b5011f08960d01ee6291820fea5b3fe552af5697b672d7d1025b148e31238',
+    'fileHash' => '182012a936ca1d0c241aeeacc68964263741819424d17fbb95a3009f4b9e3be2',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php' => 
   array (
-    'fileHash' => '0bd8bce81386cdb7d2c78f89bb8fd5ac033f60f906e622e464d4d96b848819fc',
+    'fileHash' => '45a72c20373d8749191c581e7743563a619558d4d790b99b64d57b3f86d31cec',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => 
   array (
-    'fileHash' => '8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
+    'fileHash' => '6a6e66884933e7d05c1a395771bb697e5a14e1801a09dd658639900ab4663a5d',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
-      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
-      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
-      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
-      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
-      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
+      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
+      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
+      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
+      7 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php' => 
   array (
-    'fileHash' => '8f76dde5f972beaa0afb6f6b7adb1492aedc817f077ffcba7b3b3f1599eb878c',
+    'fileHash' => '1bc4eeac7f75dd8a01778d672fd91553fdd2b3c8cde444c45cd9f37d2a51b9b4',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
@@ -4874,37 +4609,40 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php' => 
   array (
-    'fileHash' => '7f81d1db1172b1391f49c46ac50d3baa6fa31503ad7fae761035f2bced42b4bb',
+    'fileHash' => 'fef3a240f6d83bd48b58fb68773bd816af21eca53cb1fb1e986c3b375a1be62e',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
-      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => 
   array (
-    'fileHash' => 'a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
+    'fileHash' => 'b82db913f7fc844f6b6063e3bcb497d4ebd52e9777e75c6286808f5208999d09',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php' => 
   array (
-    'fileHash' => '8cd10e680018d9d1561a428c0e31641ca5bda9212a703dd416a8efd03a414483',
+    'fileHash' => '3b84b0dbb718deb5b5d73190b2a1c5cc09ffdf7cd88307d1d038a00ae041bf4a',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => 
   array (
-    'fileHash' => '4d96f5afd799809795c4430bc989019fc55d4c63e735ac4239544068b82507c9',
+    'fileHash' => '1d19961eb579399afbcf2722b694aba1f6f7307a6a8b9e5fd11862311b641b3b',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php' => 
   array (
-    'fileHash' => '02bba2d164fbb71fde96fc63a9d9316dc20126ada7c26a3cb7d514aa43400784',
+    'fileHash' => 'bf2e49a1681030b9477bb2e053cc1d10c9a361b3afd5bcebdc6846dde2da0988',
     'dependentFiles' => 
     array (
     ),
@@ -5049,24 +4787,25 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php' => 
   array (
-    'fileHash' => 'c141f19fc3e6ff672e1187d36358a976d71a8dae2534e21227de665ae0921822',
+    'fileHash' => '4e3e8441b591b07bc6ffe32c57912b54469b4761c023da8ed2f1370f74ce371f',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/SshService.php' => 
   array (
-    'fileHash' => '214a4fd39a38953a278f70d0610980532c284075139bef8976f452c514bf648f',
+    'fileHash' => '9f9fbfb46d7a87009c0653f368a5b9c4f2f71aef65aecf3d272681ae9a26e8fa',
     'dependentFiles' => 
     array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
-      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
-      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
-      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
-      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php',
-      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
-      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
-      7 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
+      0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php',
+      4 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php',
+      5 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php',
+      6 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php',
+      7 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php',
+      8 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/TemplateAnalyzer/Analyzers/LaravelTemplateAnalyzer.php' => 
@@ -5110,7 +4849,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php' => 
   array (
-    'fileHash' => 'f84f5bd1f0156e234a5cca86e8dfe9e95ceac332ebfb1b872c941db93ba989e7',
+    'fileHash' => '969bb6728c585497136dc7d0354858048197c770a160e5a7dfa6bf8501bbb9ee',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php',
@@ -12223,7 +11962,6 @@ return [
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'constUses' => 
         array (
@@ -12578,7 +12316,6 @@ return [
             array (
               'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
               'model' => 'Illuminate\\Database\\Eloquent\\Model',
-              'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
             ),
              'constUses' => 
             array (
@@ -12612,7 +12349,6 @@ return [
             array (
               'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
               'model' => 'Illuminate\\Database\\Eloquent\\Model',
-              'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
             ),
              'constUses' => 
             array (
@@ -12646,7 +12382,6 @@ return [
             array (
               'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
               'model' => 'Illuminate\\Database\\Eloquent\\Model',
-              'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
             ),
              'constUses' => 
             array (
@@ -12679,7 +12414,6 @@ return [
             array (
               'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
               'model' => 'Illuminate\\Database\\Eloquent\\Model',
-              'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
             ),
              'constUses' => 
             array (
@@ -12736,7 +12470,6 @@ return [
         array (
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
           'belongsto' => 'Illuminate\\Database\\Eloquent\\Relations\\BelongsTo',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'constUses' => 
         array (
@@ -14142,7 +13875,7 @@ return [
  * @property \\Carbon\\Carbon $updated_at
  * @property-read Environment $environment
  * @property-read int $project_count
- * @property-read bool $has_workspace_file
+ *
  * @method static \\Illuminate\\Database\\Eloquent\\Builder<static> where(string $column, mixed $operator = null, mixed $value = null, string $boolean = \'and\')
  * @method static static create(array $attributes = [])
  */',
@@ -14275,11 +14008,15 @@ return [
         )),
         4 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getHasWorkspaceFileAttribute',
+           'name' => 'hasWorkspaceFile',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Check if workspace has a .code-workspace file.
+     *
+     * NOTE: This is an explicit method (not an accessor) because it performs
+     * filesystem I/O. Call only when needed to avoid N file_exists() calls
+     * when iterating over collections.
      */',
              'namespace' => 'HardImpact\\Orbit\\Core\\Models',
              'uses' => 
@@ -14573,7 +14310,20 @@ return [
              'uses' => 
             array (
               'orbitinit' => 'HardImpact\\Orbit\\Core\\Console\\Commands\\OrbitInit',
+              'cliupdateservice' => 'HardImpact\\Orbit\\Core\\Services\\CliUpdateService',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
               'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'commandservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\Shared\\CommandService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'serviceprovider' => 'Illuminate\\Support\\ServiceProvider',
             ),
              'constUses' => 
@@ -23670,7 +23420,69 @@ return [
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
        'name' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
-       'phpDoc' => NULL,
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * @deprecated Use specialized services instead:
+ * - StatusService for environment status
+ * - ServiceControlService for Docker service management
+ * - ConfigurationService for configuration
+ * - ProjectCliService for projects
+ * - WorkspaceService for workspaces
+ * - WorktreeService for worktrees
+ * - PackageService for package linking
+ *
+ * This facade class is no longer used by the app package and will be removed
+ * in a future version. All consumers should inject the specialized services directly.
+ */',
+         'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+         'uses' => 
+        array (
+          'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+          'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+          'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+          'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+          'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+          'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+          'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+          'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+          'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+          'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+          'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+          'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+          'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+          'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+          'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+          'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+          'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+          'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+          'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+          'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+          'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+          'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+          'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+          'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+          'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+          'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+          'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+          'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+          'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+          'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+          'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+          'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+          'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+          'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+          'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+          'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'http' => 'Illuminate\\Support\\Facades\\Http',
+          'process' => 'Illuminate\\Support\\Facades\\Process',
+          'request' => 'Saloon\\Http\\Request',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
        'abstract' => false,
        'final' => false,
        'extends' => NULL,

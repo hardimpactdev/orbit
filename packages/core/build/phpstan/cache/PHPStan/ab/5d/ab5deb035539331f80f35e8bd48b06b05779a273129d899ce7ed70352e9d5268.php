@@ -154,7 +154,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php' => '02bba2d164fbb71fde96fc63a9d9316dc20126ada7c26a3cb7d514aa43400784',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php' => 'bf2e49a1681030b9477bb2e053cc1d10c9a361b3afd5bcebdc6846dde2da0988',
     ),
   ),
 ));

@@ -226,7 +226,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => 'b6503ea5a4bcaa450abfdaa31908a16a360c5e6b5d2142ae63ed40f8db10b46f',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => '1dcc4f8a1a88e989663cfca80891b18a6f3f89479d4e6d2ed9e885081dae3867',
     ),
   ),
 ));

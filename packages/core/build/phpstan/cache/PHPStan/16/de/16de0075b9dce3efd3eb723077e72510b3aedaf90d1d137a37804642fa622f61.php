@@ -217,7 +217,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php' => '08cb00bd5b1c8ea5751a9d632e8070b844a5d3721875cf4a8142a08bcd8ffde5',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php' => '880f5096fb88a939c0203d540d5d093927b030f4af3304057520a6e42f479e0a',
     ),
   ),
 ));

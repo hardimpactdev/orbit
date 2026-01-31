@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Models\Workspace
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-7135caac901af09f436b345a9c94ba052557805ed8be05efc2fa3a8d497c25ae',
    'data' => 
   array (
     'locatedSource' => 
@@ -32,15 +32,15 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * @property \\Carbon\\Carbon $updated_at
  * @property-read Environment $environment
  * @property-read int $project_count
- * @property-read bool $has_workspace_file
+ *
  * @method static \\Illuminate\\Database\\Eloquent\\Builder<static> where(string $column, mixed $operator = null, mixed $value = null, string $boolean = \'and\')
  * @method static static create(array $attributes = [])
  */',
     'attributes' => 
     array (
     ),
-    'startLine' => 24,
-    'endLine' => 105,
+    'startLine' => 25,
+    'endLine' => 111,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => 'Illuminate\\Database\\Eloquent\\Model',
@@ -68,20 +68,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '[\'environment_id\', \'name\', \'path\', \'projects\']',
           'attributes' => 
           array (
-            'startLine' => 28,
-            'endLine' => 33,
-            'startTokenPos' => 52,
-            'startFilePos' => 870,
-            'endTokenPos' => 66,
-            'endFilePos' => 954,
+            'startLine' => 29,
+            'endLine' => 34,
+            'startTokenPos' => 53,
+            'startFilePos' => 831,
+            'endTokenPos' => 67,
+            'endFilePos' => 915,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 28,
-        'endLine' => 33,
+        'startLine' => 29,
+        'endLine' => 34,
         'startColumn' => 5,
         'endColumn' => 6,
         'isPromoted' => false,
@@ -103,20 +103,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '[\'projects\' => \'array\']',
           'attributes' => 
           array (
-            'startLine' => 35,
-            'endLine' => 37,
-            'startTokenPos' => 75,
-            'startFilePos' => 981,
-            'endTokenPos' => 84,
-            'endFilePos' => 1018,
+            'startLine' => 36,
+            'endLine' => 38,
+            'startTokenPos' => 76,
+            'startFilePos' => 942,
+            'endTokenPos' => 85,
+            'endFilePos' => 979,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 35,
-        'endLine' => 37,
+        'startLine' => 36,
+        'endLine' => 38,
         'startColumn' => 5,
         'endColumn' => 6,
         'isPromoted' => false,
@@ -149,8 +149,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 39,
-        'endLine' => 42,
+        'startLine' => 40,
+        'endLine' => 43,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -186,8 +186,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the number of projects in this workspace.
  */',
-        'startLine' => 47,
-        'endLine' => 50,
+        'startLine' => 48,
+        'endLine' => 51,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -201,9 +201,9 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'currentClassName' => 'HardImpact\\Orbit\\Core\\Models\\Workspace',
         'aliasName' => NULL,
       ),
-      'getHasWorkspaceFileAttribute' => 
+      'hasWorkspaceFile' => 
       array (
-        'name' => 'getHasWorkspaceFileAttribute',
+        'name' => 'hasWorkspaceFile',
         'parameters' => 
         array (
         ),
@@ -222,9 +222,13 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         ),
         'docComment' => '/**
  * Check if workspace has a .code-workspace file.
+ *
+ * NOTE: This is an explicit method (not an accessor) because it performs
+ * filesystem I/O. Call only when needed to avoid N file_exists() calls
+ * when iterating over collections.
  */',
-        'startLine' => 55,
-        'endLine' => 63,
+        'startLine' => 60,
+        'endLine' => 69,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -262,8 +266,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 68,
-            'endLine' => 68,
+            'startLine' => 74,
+            'endLine' => 74,
             'startColumn' => 32,
             'endColumn' => 50,
             'parameterIndex' => 0,
@@ -286,8 +290,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Add a project to this workspace.
  */',
-        'startLine' => 68,
-        'endLine' => 76,
+        'startLine' => 74,
+        'endLine' => 82,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -325,8 +329,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 81,
-            'endLine' => 81,
+            'startLine' => 87,
+            'endLine' => 87,
             'startColumn' => 35,
             'endColumn' => 53,
             'parameterIndex' => 0,
@@ -349,8 +353,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Remove a project from this workspace.
  */',
-        'startLine' => 81,
-        'endLine' => 86,
+        'startLine' => 87,
+        'endLine' => 92,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -386,8 +390,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Convert to array format expected by frontend.
  */',
-        'startLine' => 91,
-        'endLine' => 104,
+        'startLine' => 97,
+        'endLine' => 110,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

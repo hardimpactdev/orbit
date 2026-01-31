@@ -371,7 +371,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/AddWorkspaceProjectRequest.php' => '7a504e55bd2f3ce39b8cb30577db3410d624b0fce32f20c8c46c67e1f4367187',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/AddWorkspaceProjectRequest.php' => 'd9614fde65d5741b77469fe96ba2c6c0188682bdb8a04e7e5db5e612abbf5c33',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../saloonphp/saloon/src/Traits/Body/HasJsonBody.php' => 'fbff140df761a1dce36382cf60d2cf0ce4f15dc5167331e5166eec135b497940',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../saloonphp/saloon/src/Traits/Body/ChecksForHasBody.php' => '73e28c114cbecee74fde3543e2530c2e84e7364b40dd629dd0264ed2d63465a7',
     ),

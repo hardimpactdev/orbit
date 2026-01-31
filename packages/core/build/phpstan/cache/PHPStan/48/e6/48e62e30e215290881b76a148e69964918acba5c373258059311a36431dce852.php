@@ -14,7 +14,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => NULL,
@@ -325,7 +324,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'hasCliCache',
@@ -339,7 +337,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -374,7 +371,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'updateCliCache',
@@ -388,7 +384,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -423,7 +418,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'isProvisioning',
@@ -437,7 +431,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -472,7 +465,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'isActive',
@@ -486,7 +478,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -521,7 +512,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'hasError',
@@ -535,7 +525,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -570,7 +559,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getSshConnectionString',
@@ -584,7 +572,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -619,7 +606,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getDefault',
@@ -633,7 +619,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -668,7 +653,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getLocal',
@@ -682,7 +666,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -717,7 +700,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getActive',
@@ -731,7 +713,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -766,7 +747,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'setAsActive',
@@ -780,7 +760,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -815,7 +794,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getEditor',
@@ -829,7 +807,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -864,7 +841,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
           'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
           'model' => 'Illuminate\\Database\\Eloquent\\Model',
-          'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
         ),
          'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
          'functionName' => 'getEditorOptions',
@@ -878,7 +854,6 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           array (
             'hasfactory' => 'Illuminate\\Database\\Eloquent\\Factories\\HasFactory',
             'model' => 'Illuminate\\Database\\Eloquent\\Model',
-            'hasmany' => 'Illuminate\\Database\\Eloquent\\Relations\\HasMany',
           ),
            'className' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
            'functionName' => NULL,
@@ -909,7 +884,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 'ca4c4f77740d7a7a0e0f27b3c35532aac60f5a2cbf8dcffe7fa7dd885287fcab',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 'b0bdd508f5deae2ee22a295f53c84f78014234e122e1cf1ef7b3958fbb5217f1',
       '/home/nckrtl/projects/orbit-dev/packages/core/vendor/composer/../laravel/framework/src/Illuminate/Database/Eloquent/Factories/HasFactory.php' => 'b6cb2b164e90168e80963a5549541f5f3188a3ec8cfd368bf3611bd94fbd46a7',
     ),
   ),

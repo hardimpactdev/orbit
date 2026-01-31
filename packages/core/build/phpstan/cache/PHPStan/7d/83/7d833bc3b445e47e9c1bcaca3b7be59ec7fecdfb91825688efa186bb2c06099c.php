@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\OrbitCli\WorktreeService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-8cd10e680018d9d1561a428c0e31641ca5bda9212a703dd416a8efd03a414483',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-3b84b0dbb718deb5b5d73190b2a1c5cc09ffdf7cd88307d1d038a00ae041bf4a',
    'data' => 
   array (
     'locatedSource' => 
@@ -28,8 +28,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 16,
-    'endLine' => 65,
+    'startLine' => 17,
+    'endLine' => 66,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -64,8 +64,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 19,
-        'endLine' => 19,
+        'startLine' => 20,
+        'endLine' => 20,
         'startColumn' => 9,
         'endColumn' => 45,
         'isPromoted' => true,
@@ -95,8 +95,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 20,
-        'endLine' => 20,
+        'startLine' => 21,
+        'endLine' => 21,
         'startColumn' => 9,
         'endColumn' => 41,
         'isPromoted' => true,
@@ -133,8 +133,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 19,
-            'endLine' => 19,
+            'startLine' => 20,
+            'endLine' => 20,
             'startColumn' => 9,
             'endColumn' => 45,
             'parameterIndex' => 0,
@@ -159,8 +159,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 20,
-            'endLine' => 20,
+            'startLine' => 21,
+            'endLine' => 21,
             'startColumn' => 9,
             'endColumn' => 41,
             'parameterIndex' => 1,
@@ -173,8 +173,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 18,
-        'endLine' => 21,
+        'startLine' => 19,
+        'endLine' => 22,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -212,8 +212,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 26,
-            'endLine' => 26,
+            'startLine' => 27,
+            'endLine' => 27,
             'startColumn' => 31,
             'endColumn' => 54,
             'parameterIndex' => 0,
@@ -227,12 +227,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => 'null',
               'attributes' => 
               array (
-                'startLine' => 26,
-                'endLine' => 26,
-                'startTokenPos' => 97,
-                'startFilePos' => 877,
-                'endTokenPos' => 97,
-                'endFilePos' => 880,
+                'startLine' => 27,
+                'endLine' => 27,
+                'startTokenPos' => 98,
+                'startFilePos' => 878,
+                'endTokenPos' => 98,
+                'endFilePos' => 881,
               ),
             ),
             'type' => 
@@ -269,8 +269,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 26,
-            'endLine' => 26,
+            'startLine' => 27,
+            'endLine' => 27,
             'startColumn' => 57,
             'endColumn' => 76,
             'parameterIndex' => 1,
@@ -293,8 +293,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get all worktrees for a server (optionally filtered by project).
  */',
-        'startLine' => 26,
-        'endLine' => 37,
+        'startLine' => 27,
+        'endLine' => 38,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -332,8 +332,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 42,
-            'endLine' => 42,
+            'startLine' => 43,
+            'endLine' => 43,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -358,8 +358,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 42,
-            'endLine' => 42,
+            'startLine' => 43,
+            'endLine' => 43,
             'startColumn' => 62,
             'endColumn' => 73,
             'parameterIndex' => 1,
@@ -384,8 +384,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 42,
-            'endLine' => 42,
+            'startLine' => 43,
+            'endLine' => 43,
             'startColumn' => 76,
             'endColumn' => 95,
             'parameterIndex' => 2,
@@ -408,8 +408,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Unlink a worktree from a project.
  */',
-        'startLine' => 42,
-        'endLine' => 52,
+        'startLine' => 43,
+        'endLine' => 53,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -447,8 +447,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 57,
-            'endLine' => 57,
+            'startLine' => 58,
+            'endLine' => 58,
             'startColumn' => 38,
             'endColumn' => 61,
             'parameterIndex' => 0,
@@ -471,8 +471,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Refresh worktree detection (re-scan and auto-link new worktrees).
  */',
-        'startLine' => 57,
-        'endLine' => 64,
+        'startLine' => 58,
+        'endLine' => 65,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

@@ -1,88 +1,10 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:create\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Console/Commands/OrbitInit.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Console/Commands/OrbitInit.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:findOrFail\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Jobs/CreateProjectJob.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:findOrFail\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Jobs/CreateProjectJob.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:findOrFail\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Jobs/DeleteProjectJob.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 2
-			path: src/Models/Environment.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting\:\:find\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Models/Setting.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Setting\:\:updateOrCreate\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Models/Setting.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey\:\:first\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Models/SshKey.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\SshKey\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 2
-			path: src/Models/SshKey.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\TemplateFavorite\:\:orderByDesc\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 2
-			path: src/Models/TemplateFavorite.php
-
-		-
 			message: '#^Strict comparison using \!\=\= between mixed and null will always evaluate to true\.$#'
 			identifier: notIdentical.alwaysTrue
 			count: 1
 			path: src/Models/TemplateFavorite.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference\:\:updateOrCreate\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Models/UserPreference.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\UserPreference\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 2
-			path: src/Models/UserPreference.php
 
 		-
 			message: '#^If condition is always true\.$#'
@@ -115,40 +37,10 @@ parameters:
 			path: src/Services/DnsResolverService.php
 
 		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:findOrFail\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/EnvironmentManager.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:first\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/EnvironmentManager.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Environment\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 3
-			path: src/Services/EnvironmentManager.php
-
-		-
 			message: '#^Left side of \|\| is always false\.$#'
 			identifier: booleanOr.leftAlwaysFalse
 			count: 1
 			path: src/Services/MacPhpFpmConfigService.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:create\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/OrbitCli/ProjectCliService.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 2
-			path: src/Services/OrbitCli/ProjectCliService.php
 
 		-
 			message: '#^Expression on left side of \?\? is not nullable\.$#'
@@ -163,28 +55,10 @@ parameters:
 			path: src/Services/OrbitService.php
 
 		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:create\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/ProjectService.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:where\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/ProjectService.php
-
-		-
 			message: '#^Method HardImpact\\Orbit\\Core\\Services\\Provision\\Actions\\BuildAssets\:\:buildWithBun\(\) should return Illuminate\\Process\\ProcessResult but returns Illuminate\\Contracts\\Process\\ProcessResult\.$#'
 			identifier: return.type
 			count: 1
 			path: src/Services/Provision/Actions/BuildAssets.php
-
-		-
-			message: '#^Call to an undefined static method HardImpact\\Orbit\\Core\\Models\\Project\:\:find\(\)\.$#'
-			identifier: staticMethod.notFound
-			count: 1
-			path: src/Services/Provision/Actions/SetPhpVersion.php
 
 		-
 			message: '#^Left side of \|\| is always false\.$#'

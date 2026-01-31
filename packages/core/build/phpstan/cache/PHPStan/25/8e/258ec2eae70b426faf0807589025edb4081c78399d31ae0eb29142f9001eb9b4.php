@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\WorkspaceDbService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-f84f5bd1f0156e234a5cca86e8dfe9e95ceac332ebfb1b872c941db93ba989e7',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-969bb6728c585497136dc7d0354858048197c770a160e5a7dfa6bf8501bbb9ee',
    'data' => 
   array (
     'locatedSource' => 
@@ -29,8 +29,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 13,
-    'endLine' => 208,
+    'startLine' => 14,
+    'endLine' => 210,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -72,8 +72,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 18,
-            'endLine' => 18,
+            'startLine' => 19,
+            'endLine' => 19,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -96,8 +96,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * List all workspaces for an environment.
  */',
-        'startLine' => 18,
-        'endLine' => 28,
+        'startLine' => 19,
+        'endLine' => 29,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -135,8 +135,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 33,
-            'endLine' => 33,
+            'startLine' => 34,
+            'endLine' => 34,
             'startColumn' => 37,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -161,8 +161,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 33,
-            'endLine' => 33,
+            'startLine' => 34,
+            'endLine' => 34,
             'startColumn' => 63,
             'endColumn' => 74,
             'parameterIndex' => 1,
@@ -185,8 +185,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Create a new workspace.
  */',
-        'startLine' => 33,
-        'endLine' => 70,
+        'startLine' => 34,
+        'endLine' => 71,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -224,8 +224,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 75,
-            'endLine' => 75,
+            'startLine' => 76,
+            'endLine' => 76,
             'startColumn' => 37,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -250,8 +250,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 75,
-            'endLine' => 75,
+            'startLine' => 76,
+            'endLine' => 76,
             'startColumn' => 63,
             'endColumn' => 74,
             'parameterIndex' => 1,
@@ -274,8 +274,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Delete a workspace.
  */',
-        'startLine' => 75,
-        'endLine' => 94,
+        'startLine' => 76,
+        'endLine' => 95,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -313,8 +313,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 99,
-            'endLine' => 99,
+            'startLine' => 100,
+            'endLine' => 100,
             'startColumn' => 41,
             'endColumn' => 64,
             'parameterIndex' => 0,
@@ -339,8 +339,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 99,
-            'endLine' => 99,
+            'startLine' => 100,
+            'endLine' => 100,
             'startColumn' => 67,
             'endColumn' => 87,
             'parameterIndex' => 1,
@@ -365,8 +365,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 99,
-            'endLine' => 99,
+            'startLine' => 100,
+            'endLine' => 100,
             'startColumn' => 90,
             'endColumn' => 108,
             'parameterIndex' => 2,
@@ -389,8 +389,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Add a project to a workspace.
  */',
-        'startLine' => 99,
-        'endLine' => 125,
+        'startLine' => 100,
+        'endLine' => 126,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -428,8 +428,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 130,
-            'endLine' => 130,
+            'startLine' => 131,
+            'endLine' => 131,
             'startColumn' => 44,
             'endColumn' => 67,
             'parameterIndex' => 0,
@@ -454,8 +454,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 130,
-            'endLine' => 130,
+            'startLine' => 131,
+            'endLine' => 131,
             'startColumn' => 70,
             'endColumn' => 90,
             'parameterIndex' => 1,
@@ -480,8 +480,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 130,
-            'endLine' => 130,
+            'startLine' => 131,
+            'endLine' => 131,
             'startColumn' => 93,
             'endColumn' => 111,
             'parameterIndex' => 2,
@@ -504,8 +504,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Remove a project from a workspace.
  */',
-        'startLine' => 130,
-        'endLine' => 156,
+        'startLine' => 131,
+        'endLine' => 157,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -541,8 +541,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the default workspaces path for local environments.
  */',
-        'startLine' => 161,
-        'endLine' => 168,
+        'startLine' => 162,
+        'endLine' => 170,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -580,8 +580,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 173,
-            'endLine' => 173,
+            'startLine' => 175,
+            'endLine' => 175,
             'startColumn' => 49,
             'endColumn' => 68,
             'parameterIndex' => 0,
@@ -604,8 +604,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Create the workspace directory and initial files.
  */',
-        'startLine' => 173,
-        'endLine' => 186,
+        'startLine' => 175,
+        'endLine' => 188,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -643,8 +643,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 191,
-            'endLine' => 191,
+            'startLine' => 193,
+            'endLine' => 193,
             'startColumn' => 44,
             'endColumn' => 63,
             'parameterIndex' => 0,
@@ -667,8 +667,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Update the .code-workspace file with current projects.
  */',
-        'startLine' => 191,
-        'endLine' => 207,
+        'startLine' => 193,
+        'endLine' => 209,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

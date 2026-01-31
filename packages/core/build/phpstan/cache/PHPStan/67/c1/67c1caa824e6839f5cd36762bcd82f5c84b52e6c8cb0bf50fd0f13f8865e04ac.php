@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\DnsResolverService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-887c40bd3bc7e66d2893f434f099c2d8b9082ae6f6cd5ee1af4459ac39ec11fe',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-09eebf267bd23abb0d306685fd8ca62db528c6b3b0caabb24f2ab0859e770aed',
    'data' => 
   array (
     'locatedSource' => 
@@ -26,8 +26,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 10,
-    'endLine' => 221,
+    'startLine' => 11,
+    'endLine' => 222,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -62,20 +62,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '\'/etc/resolver\'',
           'attributes' => 
           array (
-            'startLine' => 12,
-            'endLine' => 12,
-            'startTokenPos' => 43,
-            'startFilePos' => 261,
-            'endTokenPos' => 43,
-            'endFilePos' => 275,
+            'startLine' => 13,
+            'endLine' => 13,
+            'startTokenPos' => 44,
+            'startFilePos' => 262,
+            'endTokenPos' => 44,
+            'endFilePos' => 276,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 12,
-        'endLine' => 12,
+        'startLine' => 13,
+        'endLine' => 13,
         'startColumn' => 5,
         'endColumn' => 52,
         'isPromoted' => false,
@@ -112,8 +112,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 18,
-            'endLine' => 18,
+            'startLine' => 19,
+            'endLine' => 19,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -138,8 +138,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 18,
-            'endLine' => 18,
+            'startLine' => 19,
+            'endLine' => 19,
             'startColumn' => 62,
             'endColumn' => 72,
             'parameterIndex' => 1,
@@ -163,8 +163,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Update the DNS resolver configuration for an environment\'s TLD.
  * Creates/updates /etc/resolver/{tld} to point to the correct DNS server.
  */',
-        'startLine' => 18,
-        'endLine' => 87,
+        'startLine' => 19,
+        'endLine' => 88,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -202,8 +202,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 92,
-            'endLine' => 92,
+            'startLine' => 93,
+            'endLine' => 93,
             'startColumn' => 36,
             'endColumn' => 46,
             'parameterIndex' => 0,
@@ -226,8 +226,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Remove a DNS resolver file for a TLD.
  */',
-        'startLine' => 92,
-        'endLine' => 148,
+        'startLine' => 93,
+        'endLine' => 149,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -265,8 +265,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 154,
-            'endLine' => 154,
+            'startLine' => 155,
+            'endLine' => 155,
             'startColumn' => 37,
             'endColumn' => 60,
             'parameterIndex' => 0,
@@ -290,8 +290,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Get the DNS server address for an environment.
  * Local environments use 127.0.0.1, remote environments use their host IP.
  */',
-        'startLine' => 154,
-        'endLine' => 177,
+        'startLine' => 155,
+        'endLine' => 178,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -327,8 +327,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get all currently configured resolvers managed by Orbit.
  */',
-        'startLine' => 182,
-        'endLine' => 201,
+        'startLine' => 183,
+        'endLine' => 202,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -366,8 +366,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 206,
-            'endLine' => 206,
+            'startLine' => 207,
+            'endLine' => 207,
             'startColumn' => 38,
             'endColumn' => 95,
             'parameterIndex' => 0,
@@ -390,8 +390,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Sync all resolver files with current environment configurations.
  */',
-        'startLine' => 206,
-        'endLine' => 220,
+        'startLine' => 207,
+        'endLine' => 221,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

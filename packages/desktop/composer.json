@@ -26,6 +26,13 @@
     "development"
   ],
   "license": "MIT",
+  "authors": [
+    {
+      "name": "Nick Retel",
+      "email": "nick@hardimpact.dev",
+      "role": "Developer"
+    }
+  ],
   "require": {
     "php": "^8.4",
     "hardimpactdev/orbit-app": "^0.1",
@@ -42,7 +49,7 @@
     "fakerphp/faker": "^1.23",
     "larastan/larastan": "^3.0",
     "laravel/pail": "^1.2.2",
-    "laravel/pint": "^1.24",
+    "laravel/pint": "^1.25",
     "laravel/sail": "^1.41",
     "mockery/mockery": "^1.6",
     "nckrtl/laravel-toolbar": "^0.1.1",
@@ -103,7 +110,9 @@
     "native:dev": [
       "Composer\\Config::disableProcessTimeout",
       "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:serve --no-interaction\" \"php artisan queue:listen --tries=1\" --names=app,queue"
-    ]
+    ],
+    "analyse": "vendor/bin/phpstan analyse",
+    "format": "vendor/bin/pint"
   },
   "extra": {
     "laravel": {

@@ -82,7 +82,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServiceRequest.php' => 'ca987e40497e602438aac351058a771e147933eee91af017dac6ca38e6dee02c',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServiceRequest.php' => '86893c1299eeca140f1e635181190f0fca09dbc427d36cd8f29b2038f0a8ba99',
     ),
   ),
 ));

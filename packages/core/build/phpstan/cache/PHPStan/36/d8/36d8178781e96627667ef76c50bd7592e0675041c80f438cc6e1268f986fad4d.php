@@ -58,7 +58,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpVersionsRequest.php' => '88120746153aff74a534e8cb2bbe6752f8672f60297869ba4c09654d5e7b697e',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpVersionsRequest.php' => '5cc31e9c02a151954be50e3fccf8dcad36f7b7550cfd2ce0f085178e343d0d1d',
     ),
   ),
 ));

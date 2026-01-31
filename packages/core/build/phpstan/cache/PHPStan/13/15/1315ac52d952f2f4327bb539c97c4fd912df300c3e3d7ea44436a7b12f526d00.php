@@ -79,7 +79,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php' => 'dea1dc742bb150d121c52f0f801b2b2a5da6ea2fb0b57eed3080500b37903e4d',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php' => 'dc121a07189f97b3ca7fe118299b4373cd592ca460faaead8a53f8655cb16ece',
     ),
   ),
 ));

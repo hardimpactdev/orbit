@@ -120,7 +120,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -182,7 +243,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -244,7 +366,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -306,7 +489,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -368,7 +612,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -430,7 +735,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -492,7 +858,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -554,7 +981,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -616,7 +1104,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -678,7 +1227,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -740,7 +1350,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -802,7 +1473,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -864,7 +1596,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -926,7 +1719,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -988,7 +1842,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1050,7 +1965,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1112,7 +2088,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1174,7 +2211,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1236,7 +2334,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1298,7 +2457,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1360,7 +2580,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1422,7 +2703,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1484,7 +2826,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1546,7 +2949,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1608,7 +3072,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1670,7 +3195,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1732,7 +3318,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1794,7 +3441,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1856,7 +3564,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1918,7 +3687,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -1980,7 +3810,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2042,7 +3933,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2104,7 +4056,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2166,7 +4179,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2228,7 +4302,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2290,7 +4425,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2352,7 +4548,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2414,7 +4671,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2476,7 +4794,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2538,7 +4917,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2600,7 +5040,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2662,7 +5163,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2724,7 +5286,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2786,7 +5409,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2848,7 +5532,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2910,7 +5655,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -2972,7 +5778,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3034,7 +5901,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3096,7 +6024,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3158,7 +6147,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3220,7 +6270,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3282,7 +6393,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3344,7 +6516,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3406,7 +6639,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3468,7 +6762,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3530,7 +6885,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3592,7 +7008,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3654,7 +7131,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3716,7 +7254,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3778,7 +7377,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3840,7 +7500,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3902,7 +7623,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -3964,7 +7746,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4026,7 +7869,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4088,7 +7992,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4150,7 +8115,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4212,7 +8238,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4274,7 +8361,68 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
          'templatePhpDocNodes' => 
         array (
         ),
-         'parent' => NULL,
+         'parent' => 
+        \PHPStan\Analyser\IntermediaryNameScope::__set_state(array(
+           'namespace' => 'HardImpact\\Orbit\\Core\\Services',
+           'uses' => 
+          array (
+            'orbitconnector' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\OrbitConnector',
+            'addworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\AddWorkspaceProjectRequest',
+            'configureservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ConfigureServiceRequest',
+            'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
+            'createworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateWorkspaceRequest',
+            'deleteprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteProjectRequest',
+            'deleteworkspacerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DeleteWorkspaceRequest',
+            'disableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\DisableServiceRequest',
+            'enableservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\EnableServiceRequest',
+            'getconfigrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetConfigRequest',
+            'getlinkedpackagesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetLinkedPackagesRequest',
+            'getphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpRequest',
+            'getphpversionsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetPhpVersionsRequest',
+            'getprojectsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProjectsRequest',
+            'getprovisionstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetProvisionStatusRequest',
+            'getserviceinforequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceInfoRequest',
+            'getservicelogsrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetServiceLogsRequest',
+            'getstatusrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetStatusRequest',
+            'getworkspacesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorkspacesRequest',
+            'getworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\GetWorktreesRequest',
+            'linkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\LinkPackageRequest',
+            'listavailableservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListAvailableServicesRequest',
+            'listservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ListServicesRequest',
+            'rebuildprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RebuildProjectRequest',
+            'refreshworktreesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RefreshWorktreesRequest',
+            'removeworkspaceprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RemoveWorkspaceProjectRequest',
+            'resetphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\ResetPhpRequest',
+            'restartservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServiceRequest',
+            'restartservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\RestartServicesRequest',
+            'setphprequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\SetPhpRequest',
+            'startservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServiceRequest',
+            'startservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StartServicesRequest',
+            'stopservicerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServiceRequest',
+            'stopservicesrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\StopServicesRequest',
+            'unlinkpackagerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkPackageRequest',
+            'unlinkworktreerequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\UnlinkWorktreeRequest',
+            'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            'http' => 'Illuminate\\Support\\Facades\\Http',
+            'process' => 'Illuminate\\Support\\Facades\\Process',
+            'request' => 'Saloon\\Http\\Request',
+          ),
+           'className' => 'HardImpact\\Orbit\\Core\\Services\\OrbitService',
+           'functionName' => NULL,
+           'templatePhpDocNodes' => 
+          array (
+          ),
+           'parent' => NULL,
+           'typeAliasesMap' => 
+          array (
+          ),
+           'bypassTypeAliases' => false,
+           'constUses' => 
+          array (
+          ),
+           'typeAliasClassName' => NULL,
+           'traitData' => NULL,
+        )),
          'typeAliasesMap' => 
         array (
         ),
@@ -4288,7 +8436,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => '4d96f5afd799809795c4430bc989019fc55d4c63e735ac4239544068b82507c9',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => '1d19961eb579399afbcf2722b694aba1f6f7307a6a8b9e5fd11862311b641b3b',
     ),
   ),
 ));

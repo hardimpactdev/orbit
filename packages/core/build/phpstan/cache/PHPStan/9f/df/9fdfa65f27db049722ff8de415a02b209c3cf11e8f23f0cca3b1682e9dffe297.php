@@ -258,7 +258,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php' => '8cd10e680018d9d1561a428c0e31641ca5bda9212a703dd416a8efd03a414483',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php' => '3b84b0dbb718deb5b5d73190b2a1c5cc09ffdf7cd88307d1d038a00ae041bf4a',
     ),
   ),
 ));

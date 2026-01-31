@@ -160,6 +160,30 @@ jobs:
           composer install --no-dev --optimize-autoloader
           npm install
 
+      - name: Build CLI phar with correct version
+        run: |
+          # Build CLI with proper version
+          cd packages/cli
+          
+          # Replace path repos with packagist for release build
+          jq 'del(.repositories)' composer.json > composer.tmp && mv composer.tmp composer.json
+          rm -f composer.lock
+          composer install --no-dev --no-scripts --optimize-autoloader --prefer-dist
+          
+          # Set version in config
+          VERSION="${{ needs.release.outputs.new_tag }}"
+          sed -i.bak "s/'version' => '[^']*'/'version' => '$VERSION'/g" config/app.php
+          
+          # Download box and compile
+          wget -q https://github.com/box-project/box/releases/download/4.6.2/box.phar
+          chmod +x box.phar
+          php box.phar compile
+          
+          # Verify and copy to desktop
+          php builds/orbit.phar --version
+          cp builds/orbit.phar ../desktop/bin/orbit.phar
+          echo "✓ CLI phar built and copied with version $VERSION"
+
       - name: Create .env for build
         working-directory: packages/desktop
         run: |

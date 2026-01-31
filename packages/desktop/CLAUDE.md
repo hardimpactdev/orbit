@@ -20,7 +20,7 @@ A NativePHP/Electron desktop application for managing local and remote orbit CLI
 
 - Projects: `~/projects/`
 - **Orbit CLI source code**: `~/projects/orbit-cli/` - THIS IS WHERE TO MAKE CLI CHANGES
-- Launchpad config: `~/.config/orbit/`
+- Orbit config: `~/.config/orbit/`
 - Caddy config: `~/.config/orbit/caddy/Caddyfile`
 - PHP-FPM sockets: `~/.config/orbit/php/php{version}.sock` (e.g., `php85.sock`, `php84.sock`)
 - PHP-FPM pool configs: `~/.config/orbit/php/php{version}-fpm.conf`
@@ -149,18 +149,18 @@ Vue → fetch('https://orbit.ccc/api/status') → Direct to remote server
 
 ### Key Services
 
-- **SshService** (`app/Services/SshService.php`): Handles SSH connections with ControlMaster pooling. Control sockets stored in `/tmp/orbit-ssh/` to avoid macOS path length limits.
+- **SshService** (`packages/core/src/Services/SshService.php`): Handles SSH connections with ControlMaster pooling. Control sockets stored in `/tmp/orbit-ssh/` to avoid macOS path length limits.
 
-- **LaunchpadService** (`app/Services/LaunchpadService.php`): Wraps orbit CLI commands. Searches multiple paths for the binary (`$HOME/projects/orbit/orbit`, `$HOME/.local/bin/orbit`, etc.).
+- **OrbitService** (`packages/core/src/Services/OrbitService.php`): Orchestrates orbit CLI commands via shared command services.
 
-- **CliUpdateService** (`app/Services/CliUpdateService.php`): Manages the local CLI installation at `~/.local/bin/orbit`.
+- **CliInstallService** (`app/Services/CliInstallService.php`): Manages the local CLI installation at `/usr/local/bin/orbit`.
 
-- **DnsResolverService** (`app/Services/DnsResolverService.php`): Manages macOS DNS resolver files in `/etc/resolver/`. Uses `expect` to spawn sudo with a PTY, enabling Touch ID authentication via `pam_tid.so`. Key methods:
+- **DnsResolverService** (`packages/core/src/Services/DnsResolverService.php`): Manages macOS DNS resolver files in `/etc/resolver/`. Uses `expect` to spawn sudo with a PTY, enabling Touch ID authentication via `pam_tid.so`. Key methods:
     - `updateResolver(Environment, tld)`: Creates/updates `/etc/resolver/{tld}` pointing to the environment's DNS
     - `removeResolver(tld)`: Removes a resolver file when no longer needed
-    - `getManagedResolvers()`: Lists all resolver files managed by Launchpad
+    - `getManagedResolvers()`: Lists all resolver files managed by Orbit
 
-- **ProvisioningService** (`app/Services/ProvisioningService.php`): Provisions new environments with the complete Orbit stack. Handles these steps:
+- **ProvisioningService** (`packages/core/src/Services/ProvisioningService.php`): Provisions new environments with the complete Orbit stack. Handles these steps:
     1. Clear old SSH host keys (prevents conflicts when environment is reset)
     2. Test root SSH connection
     3. Create `orbit` user
@@ -339,7 +339,7 @@ Then run: `php artisan migrate --database=nativephp_dev`
 
 ### Adding a new orbit CLI command
 
-1. Add method to `LaunchpadService` that calls `executeCommand($environment, 'command --json')`
+1. Add method to `OrbitService` that calls `executeCommand($environment, 'command --json')`
 2. Add controller method in `EnvironmentController`
 3. Add route in `routes/web.php` under the environments prefix group
 4. Add frontend component in Vue
@@ -364,8 +364,8 @@ Then run: `php artisan migrate --database=nativephp_dev`
 When a TLD is changed in environment settings, three things happen automatically:
 
 1. **Mac DNS Resolver**: `DnsResolverService` creates/updates `/etc/resolver/{tld}` pointing to the environment's DNS (127.0.0.1 for local, host IP for remote)
-2. **Remote DNS Container**: `LaunchpadService::rebuildDns()` rebuilds the dnsmasq container with correct TLD and HOST_IP environment variables
-3. **Caddy Config Regeneration**: Launchpad is restarted to regenerate Caddy configuration with new domain names
+2. **Remote DNS Container**: `OrbitService::rebuildDns()` rebuilds the dnsmasq container with correct TLD and HOST_IP environment variables
+3. **Caddy Config Regeneration**: Orbit is restarted to regenerate Caddy configuration with new domain names
 
 When an environment is deleted, the resolver file is cleaned up (if no other environments use that TLD).
 
@@ -702,7 +702,7 @@ For remote environments, the desktop app primarily uses **direct API calls** to 
 
 For operations that require SSH (provisioning, config changes with TLD), the NativePHP backend uses:
 
-- `LaunchpadService::executeCommand()` which runs CLI commands over SSH
+- `CommandService::executeCommand()` which runs CLI commands over SSH
 - Commands are executed as `orbit <command> --json`
 
 **If you change CLI behavior**, you must:

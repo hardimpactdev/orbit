@@ -89,7 +89,7 @@ return [
         'page_paths' => [
 
             resource_path('js/Pages'),
-            base_path('vendor/hardimpactdev/orbit-core/resources/js/pages'),
+            base_path('vendor/hardimpactdev/orbit-app/resources/js/pages'),
 
         ],
 

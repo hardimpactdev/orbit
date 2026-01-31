@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('path')->nullable();
             $table->json('projects')->nullable(); // Array of project names in workspace
             $table->timestamps();
-            
+
             $table->unique(['environment_id', 'name']);
         });
     }

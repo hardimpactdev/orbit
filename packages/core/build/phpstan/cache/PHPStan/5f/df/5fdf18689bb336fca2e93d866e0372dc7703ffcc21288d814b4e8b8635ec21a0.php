@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\OrbitCli\StatusService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-7f81d1db1172b1391f49c46ac50d3baa6fa31503ad7fae761035f2bced42b4bb',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-fef3a240f6d83bd48b58fb68773bd816af21eca53cb1fb1e986c3b375a1be62e',
    'data' => 
   array (
     'locatedSource' => 
@@ -28,8 +28,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 17,
-    'endLine' => 168,
+    'startLine' => 18,
+    'endLine' => 169,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -64,8 +64,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 20,
-        'endLine' => 20,
+        'startLine' => 21,
+        'endLine' => 21,
         'startColumn' => 9,
         'endColumn' => 45,
         'isPromoted' => true,
@@ -95,8 +95,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 21,
-        'endLine' => 21,
+        'startLine' => 22,
+        'endLine' => 22,
         'startColumn' => 9,
         'endColumn' => 41,
         'isPromoted' => true,
@@ -126,8 +126,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 22,
-        'endLine' => 22,
+        'startLine' => 23,
+        'endLine' => 23,
         'startColumn' => 9,
         'endColumn' => 33,
         'isPromoted' => true,
@@ -164,8 +164,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 20,
-            'endLine' => 20,
+            'startLine' => 21,
+            'endLine' => 21,
             'startColumn' => 9,
             'endColumn' => 45,
             'parameterIndex' => 0,
@@ -190,8 +190,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 21,
-            'endLine' => 21,
+            'startLine' => 22,
+            'endLine' => 22,
             'startColumn' => 9,
             'endColumn' => 41,
             'parameterIndex' => 1,
@@ -216,8 +216,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 22,
-            'endLine' => 22,
+            'startLine' => 23,
+            'endLine' => 23,
             'startColumn' => 9,
             'endColumn' => 33,
             'parameterIndex' => 2,
@@ -230,8 +230,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 19,
-        'endLine' => 23,
+        'startLine' => 20,
+        'endLine' => 24,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -269,8 +269,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 28,
-            'endLine' => 28,
+            'startLine' => 29,
+            'endLine' => 29,
             'startColumn' => 28,
             'endColumn' => 51,
             'parameterIndex' => 0,
@@ -293,8 +293,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get orbit status for an environment.
  */',
-        'startLine' => 28,
-        'endLine' => 31,
+        'startLine' => 29,
+        'endLine' => 32,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -332,8 +332,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 36,
-            'endLine' => 36,
+            'startLine' => 37,
+            'endLine' => 37,
             'startColumn' => 42,
             'endColumn' => 65,
             'parameterIndex' => 0,
@@ -347,12 +347,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '30',
               'attributes' => 
               array (
-                'startLine' => 36,
-                'endLine' => 36,
-                'startTokenPos' => 138,
-                'startFilePos' => 1103,
-                'endTokenPos' => 138,
-                'endFilePos' => 1104,
+                'startLine' => 37,
+                'endLine' => 37,
+                'startTokenPos' => 139,
+                'startFilePos' => 1104,
+                'endTokenPos' => 139,
+                'endFilePos' => 1105,
               ),
             ),
             'type' => 
@@ -370,8 +370,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 36,
-            'endLine' => 36,
+            'startLine' => 37,
+            'endLine' => 37,
             'startColumn' => 68,
             'endColumn' => 84,
             'parameterIndex' => 1,
@@ -394,8 +394,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get orbit status with configurable timeout.
  */',
-        'startLine' => 36,
-        'endLine' => 53,
+        'startLine' => 37,
+        'endLine' => 54,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -433,8 +433,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 58,
-            'endLine' => 58,
+            'startLine' => 59,
+            'endLine' => 59,
             'startColumn' => 30,
             'endColumn' => 53,
             'parameterIndex' => 0,
@@ -457,8 +457,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get all projects for an environment.
  */',
-        'startLine' => 58,
-        'endLine' => 65,
+        'startLine' => 59,
+        'endLine' => 66,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -496,8 +496,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 70,
-            'endLine' => 70,
+            'startLine' => 71,
+            'endLine' => 71,
             'startColumn' => 39,
             'endColumn' => 62,
             'parameterIndex' => 0,
@@ -520,8 +520,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check if orbit CLI is installed on the environment.
  */',
-        'startLine' => 70,
-        'endLine' => 88,
+        'startLine' => 71,
+        'endLine' => 89,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -557,8 +557,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check local CLI installation status.
  */',
-        'startLine' => 93,
-        'endLine' => 111,
+        'startLine' => 94,
+        'endLine' => 112,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -596,8 +596,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 117,
-            'endLine' => 117,
+            'startLine' => 118,
+            'endLine' => 118,
             'startColumn' => 54,
             'endColumn' => 77,
             'parameterIndex' => 0,
@@ -621,8 +621,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Check remote installation via HTTP API (fast, uses status endpoint).
  * Falls back to SSH if API fails.
  */',
-        'startLine' => 117,
-        'endLine' => 139,
+        'startLine' => 118,
+        'endLine' => 140,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -660,8 +660,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 144,
-            'endLine' => 144,
+            'startLine' => 145,
+            'endLine' => 145,
             'startColumn' => 54,
             'endColumn' => 77,
             'parameterIndex' => 0,
@@ -684,8 +684,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check remote installation via SSH (slow, used as fallback).
  */',
-        'startLine' => 144,
-        'endLine' => 167,
+        'startLine' => 145,
+        'endLine' => 168,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

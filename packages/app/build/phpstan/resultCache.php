@@ -1,7 +1,7 @@
 <?php declare(strict_types = 1);
 
 return [
-	'lastFullAnalysisTime' => 1769783502,
+	'lastFullAnalysisTime' => 1769842990,
 	'meta' => array (
   'cacheVersion' => 'v12-linesToIgnore',
   'phpstanVersion' => '2.1.37',
@@ -10,7 +10,7 @@ return [
   array (
   ),
   'phpVersion' => 80502,
-  'projectConfig' => '{parameters: {level: 5, paths: [/home/nckrtl/projects/orbit-dev/packages/app/src, /home/nckrtl/projects/orbit-dev/packages/app/config, /home/nckrtl/projects/orbit-dev/packages/app/database], tmpDir: /home/nckrtl/projects/orbit-dev/packages/app/build/phpstan, checkOctaneCompatibility: true, checkModelProperties: true}}',
+  'projectConfig' => '{parameters: {level: 5, paths: [/home/nckrtl/projects/orbit-dev/packages/app/src, /home/nckrtl/projects/orbit-dev/packages/app/config, /home/nckrtl/projects/orbit-dev/packages/app/database], scanFiles: [../core/src/Models/Environment.php, ../core/src/Models/Project.php, ../core/src/Models/SshKey.php, ../core/src/Models/TrackedJob.php, ../core/src/Models/Workspace.php, ../core/src/Models/Setting.php], tmpDir: /home/nckrtl/projects/orbit-dev/packages/app/build/phpstan, checkOctaneCompatibility: true, checkModelProperties: false}}',
   'analysedPaths' => 
   array (
     0 => '/home/nckrtl/projects/orbit-dev/packages/app/src',
@@ -19,6 +19,12 @@ return [
   ),
   'scannedFiles' => 
   array (
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 'b0bdd508f5deae2ee22a295f53c84f78014234e122e1cf1ef7b3958fbb5217f1',
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 'eeef06d046c3cfa96c04beca350ed50a33fc1a14686626e415836bf27c410802',
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Setting.php' => '1561c6994b783d2e997153b9e7180dfc0cddc304edb33536ca208d0de2fa4e16',
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/SshKey.php' => 'e9b96c250982f0611e95bc37133011ec59f2b4fae7e8fb54ce84f99b117ad99a',
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/TrackedJob.php' => '99df92a9384025c64abbdbfbe4259c8c4829a5a5142743e801e7cca70b20922c',
+    '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => '7135caac901af09f436b345a9c94ba052557805ed8be05efc2fa3a8d497c25ae',
   ),
   'composerLocks' => 
   array (
@@ -2364,650 +2370,6 @@ return [
 	'projectExtensionFiles' => array (
 ),
 	'errorsCallback' => static function (): array { return array (
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 57,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 57,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$tld.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 57,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 57,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 129,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 129,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    3 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 185,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 185,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    4 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 193,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 193,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    5 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 198,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 198,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    6 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 254,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 254,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    7 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 260,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 260,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    8 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 289,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 289,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    9 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 354,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 354,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    10 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Expression on left side of ?? is not nullable.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 761,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 761,
-       'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
-       'identifier' => 'nullCoalesce.expr',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    11 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Offset \'exists\' on array{exists: bool, error?: string} on left side of ?? always exists and is not nullable.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1084,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 1084,
-       'nodeType' => 'PhpParser\\Node\\Expr\\BinaryOp\\Coalesce',
-       'identifier' => 'nullCoalesce.offset',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    12 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1605,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1605,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    13 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1618,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1618,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    14 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1806,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1806,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    15 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$tld.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1807,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1807,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    16 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$cli_version.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1808,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1808,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    17 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1837,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1837,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    18 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$tld.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1838,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1838,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    19 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$cli_version.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'line' => 1839,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 1839,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\TrackedJob::$status.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php',
-       'line' => 19,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 19,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 66,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 66,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$host.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 73,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 73,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$is_local.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 137,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 137,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    3 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$status.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 137,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 137,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    4 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$status.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 143,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 143,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    5 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$provisioning_step.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 144,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 144,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    6 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$provisioning_total_steps.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 145,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 145,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    7 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$provisioning_log.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 146,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 146,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    8 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\Environment::$provisioning_error.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 147,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 147,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    9 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Call to static method checkExistingSetup() on an unknown class App\\Services\\ProvisioningService.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'line' => 237,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more at https://phpstan.org/user-guide/discovering-symbols',
-       'nodeLine' => 237,
-       'nodeType' => 'PhpParser\\Node\\Expr\\StaticCall',
-       'identifier' => 'class.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'line' => 31,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 31,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    1 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'line' => 51,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 51,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    2 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'line' => 56,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 56,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    3 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey::$is_default.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'line' => 57,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 57,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-    4 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Access to an undefined property HardImpact\\Orbit\\Core\\Models\\SshKey::$name.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'line' => 76,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
-       'traitFilePath' => NULL,
-       'tip' => 'Learn more: <fg=cyan>https://phpstan.org/blog/solving-phpstan-access-to-undefined-property</>',
-       'nodeLine' => 76,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.notFound',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/HandleInertiaRequests.php' => 
-  array (
-    0 => 
-    \PHPStan\Analyser\Error::__set_state(array(
-       'message' => 'Cannot access property $id on object|string.',
-       'file' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/HandleInertiaRequests.php',
-       'line' => 151,
-       'canBeIgnored' => true,
-       'filePath' => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/HandleInertiaRequests.php',
-       'traitFilePath' => NULL,
-       'tip' => NULL,
-       'nodeLine' => 151,
-       'nodeType' => 'PhpParser\\Node\\Expr\\PropertyFetch',
-       'identifier' => 'property.nonObject',
-       'metadata' => 
-      array (
-      ),
-       'fixedErrorDiff' => NULL,
-    )),
-  ),
 ); },
 	'locallyIgnoredErrorsCallback' => static function (): array { return array (
 ); },
@@ -3016,15 +2378,25 @@ return [
 	'unmatchedLineIgnores' => array (
 ),
 	'collectedDataCallback' => static function (): array { return array (
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Facades/Ui.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/HandlesGitHubIntegration.php' => 
   array (
-    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
+    'PHPStan\\Rules\\Traits\\TraitDeclarationCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Facades\\Ui',
-        1 => 'getFacadeAccessor',
-        2 => 'HardImpact\\Orbit\\Ui\\Facades\\Ui',
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+        1 => 10,
+      ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/ProvidesRemoteApiUrl.php' => 
+  array (
+    'PHPStan\\Rules\\Traits\\TraitDeclarationCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+        1 => 9,
       ),
     ),
   ),
@@ -3032,15 +2404,30 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\DnsController',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\DnsController',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\DnsController',
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\DnsController',
         1 => 'isValidIp',
-        2 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\DnsController',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\DnsController',
+      ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentConfigController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentConfigController',
+    ),
+    'PHPStan\\Rules\\DeadCode\\PossiblyPureFuncCallCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'usort',
+        1 => 169,
       ),
     ),
   ),
@@ -3048,34 +2435,38 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentController',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentController',
         1 => 'getRemoteApiUrl',
-        2 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
-      ),
-      1 => 
-      array (
-        0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
-        1 => 'normalizeWorkspaceData',
-        2 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentController',
       ),
     ),
-    'PHPStan\\Rules\\DeadCode\\PossiblyPureFuncCallCollector' => 
+    'PHPStan\\Rules\\Traits\\TraitUseCollector' => 
     array (
       0 => 
       array (
-        0 => 'usort',
-        1 => 804,
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
       ),
-      1 => 
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentProjectController',
+    ),
+    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
+    array (
+      0 => 
       array (
-        0 => 'usort',
-        1 => 1645,
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentProjectController',
+        1 => 'getRemoteApiUrl',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentProjectController',
       ),
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -3084,7 +2475,70 @@ return [
       array (
         0 => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
         1 => 'dispatch',
-        2 => 984,
+        2 => 191,
+      ),
+    ),
+    'PHPStan\\Rules\\Traits\\TraitUseCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+      ),
+      1 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentServiceController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentServiceController',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentStatusController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentStatusController',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PackageController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PackageController',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PhpConfigController',
+    ),
+    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PhpConfigController',
+        1 => 'getRemoteApiUrl',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PhpConfigController',
+      ),
+    ),
+    'PHPStan\\Rules\\DeadCode\\PossiblyPureFuncCallCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'usort',
+        1 => 114,
+      ),
+    ),
+    'PHPStan\\Rules\\Traits\\TraitUseCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
       ),
     ),
   ),
@@ -3092,14 +2546,14 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\ProjectController',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\ProjectController',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\ProvisioningController',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\ProvisioningController',
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
     array (
@@ -3107,7 +2561,7 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Process',
         1 => 'run',
-        2 => 73,
+        2 => 74,
       ),
     ),
   ),
@@ -3115,7 +2569,7 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\SettingsController',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\SettingsController',
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
     array (
@@ -3123,21 +2577,57 @@ return [
       array (
         0 => 'Illuminate\\Database\\Eloquent\\Builder',
         1 => 'create',
-        2 => 101,
+        2 => 102,
       ),
       1 => 
       array (
         0 => 'HardImpact\\Orbit\\Core\\Models\\UserPreference',
         1 => 'setValue',
-        2 => 155,
+        2 => 156,
       ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+    ),
+    'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+        1 => 'getRemoteApiUrl',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+      ),
+      1 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+        1 => 'normalizeWorkspaceData',
+        2 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+      ),
+    ),
+    'PHPStan\\Rules\\Traits\\TraitUseCollector' => 
+    array (
+      0 => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorktreeController.php' => 
+  array (
+    'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
+    array (
+      0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorktreeController',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/ImplicitEnvironment.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Http\\Middleware\\ImplicitEnvironment',
+      0 => 'HardImpact\\Orbit\\App\\Http\\Middleware\\ImplicitEnvironment',
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureFuncCallCollector' => 
     array (
@@ -3152,27 +2642,27 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
         1 => 'name',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
       ),
       1 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
         1 => 'title',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
       ),
       2 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
         1 => 'description',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
       ),
     ),
   ),
@@ -3180,45 +2670,45 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'name',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
       1 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'title',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
       2 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'description',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
       3 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'getDatabaseTemplate',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
       4 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'getRedisTemplate',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
       5 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
         1 => 'getMailTemplate',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
       ),
     ),
   ),
@@ -3226,33 +2716,33 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
         1 => 'name',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
       ),
       1 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
         1 => 'title',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
       ),
       2 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
         1 => 'description',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
       ),
       3 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
         1 => 'getContainerPorts',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
       ),
     ),
   ),
@@ -3260,27 +2750,27 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
         1 => 'name',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
       ),
       1 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
         1 => 'title',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
       ),
       2 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
         1 => 'description',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
       ),
     ),
   ),
@@ -3288,43 +2778,43 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\LogsTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\LogsTool',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/PhpTool.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\PhpTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\PhpTool',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectCreateTool.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectCreateTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectCreateTool',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectDeleteTool.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectDeleteTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectDeleteTool',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectsTool.php' => 
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectsTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectsTool',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectsTool',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectsTool',
         1 => 'schema',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectsTool',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectsTool',
       ),
     ),
   ),
@@ -3332,15 +2822,15 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\RestartTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\RestartTool',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\RestartTool',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\RestartTool',
         1 => 'schema',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\RestartTool',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\RestartTool',
       ),
     ),
   ),
@@ -3348,15 +2838,15 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StartTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StartTool',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StartTool',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StartTool',
         1 => 'schema',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StartTool',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StartTool',
       ),
     ),
   ),
@@ -3364,15 +2854,15 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StatusTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StatusTool',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StatusTool',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StatusTool',
         1 => 'schema',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StatusTool',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StatusTool',
       ),
     ),
   ),
@@ -3380,15 +2870,15 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StopTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StopTool',
     ),
     'PHPStan\\Rules\\DeadCode\\MethodWithoutImpurePointsCollector' => 
     array (
       0 => 
       array (
-        0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StopTool',
+        0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StopTool',
         1 => 'schema',
-        2 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StopTool',
+        2 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StopTool',
       ),
     ),
   ),
@@ -3396,7 +2886,7 @@ return [
   array (
     'PHPStan\\Rules\\DeadCode\\ConstructorWithoutImpurePointsCollector' => 
     array (
-      0 => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\WorktreesTool',
+      0 => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\WorktreesTool',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
@@ -3406,7 +2896,7 @@ return [
       0 => 
       array (
         0 => 'config',
-        1 => 76,
+        1 => 77,
       ),
     ),
     'PHPStan\\Rules\\DeadCode\\PossiblyPureStaticCallCollector' => 
@@ -3415,13 +2905,13 @@ return [
       array (
         0 => 'Illuminate\\Support\\Facades\\Vite',
         1 => 'useHotFile',
-        2 => 69,
+        2 => 70,
       ),
       1 => 
       array (
         0 => 'Illuminate\\Support\\Facades\\Vite',
         1 => 'useBuildDirectory',
-        2 => 70,
+        2 => 71,
       ),
     ),
   ),
@@ -3429,106 +2919,193 @@ return [
 	'dependencies' => array (
   '/home/nckrtl/projects/orbit-dev/packages/app/config/orbit-ui.php' => 
   array (
-    'fileHash' => '0ac7bd3361c4030ec79e1cf94970e5ee1a9cd0897942453646243c2d72d3db64',
+    'fileHash' => '1a3b1e4c3537dfa430e4b079580699b007241c471bdfd6a1b43a28c13d87501a',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/database/factories/ModelFactory.php' => 
   array (
-    'fileHash' => 'd1344b2e82eb2869fdfb7d0e84e26fb3861c1a73da5ab4cbd76a8e9fbdf311b4',
+    'fileHash' => '85b708d4235b8211b9649a85a0a157a960f2ae73e574e365ca69ca963fb967eb',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Commands/UiCommand.php' => 
   array (
-    'fileHash' => 'b64732b90c2b35480a9f3dae6c6f41a875a88b110f45c57794b1455c257a8896',
+    'fileHash' => '0e0799db42659ca7db664bf5ab8344cab39a71ba773e818a10f113485e4afc00',
     'dependentFiles' => 
     array (
     ),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Facades/Ui.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/HandlesGitHubIntegration.php' => 
   array (
-    'fileHash' => 'c140b245aa97607f463781635eef2c4d15581d527f2d2b4843277cfbd5ef48bd',
+    'fileHash' => '43273fb21a406d5a6b126b06b249fcd0ced189180e3410d09035cb73d7fbf8bc',
     'dependentFiles' => 
     array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php',
+    ),
+    'usedTraitDependentFiles' => 
+    array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php',
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/ProvidesRemoteApiUrl.php' => 
+  array (
+    'fileHash' => 'b0ef93a5e699583fb779df6d3034af2e79611fa2c895a0f1b3a12f8c117a7f05',
+    'dependentFiles' => 
+    array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php',
+    ),
+    'usedTraitDependentFiles' => 
+    array (
+      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
+      1 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Controller.php' => 
   array (
-    'fileHash' => 'd287276724f0b4a76e452d64b143657e45b83ead60e5376e0cd3e2892852df00',
+    'fileHash' => '8226e0a02ce4391f99cd980040cf47ccfd94a2e7504ae8d7cceda8a9d7e31d8a',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/DashboardController.php',
       1 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/DnsController.php',
-      2 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
-      3 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php',
-      4 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProjectController.php',
-      5 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
-      6 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SettingsController.php',
-      7 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
+      2 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentConfigController.php',
+      3 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php',
+      4 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php',
+      5 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentServiceController.php',
+      6 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentStatusController.php',
+      7 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php',
+      8 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PackageController.php',
+      9 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php',
+      10 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProjectController.php',
+      11 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php',
+      12 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SettingsController.php',
+      13 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php',
+      14 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php',
+      15 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorktreeController.php',
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/DashboardController.php' => 
   array (
-    'fileHash' => '9028700d3564dc7e1c0d504002e446f63a74f063c1b4d8951b0ac4eec9f08de4',
+    'fileHash' => 'fb41a6004548899764e207e1cdf7577c73e6a72c82be60a2f392227197271ec4',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/DnsController.php' => 
   array (
-    'fileHash' => 'fa1324324b9dfa9f6bcc0e9aa003d3bae812252cc71d6dceacdc7bb1c6ba91d2',
+    'fileHash' => 'f588fd1bff19315f5de408fb791a311d383858fa023008276c8c04e76b7bcde4',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentConfigController.php' => 
+  array (
+    'fileHash' => 'f31a5b3aed344a5befe7ec3a12a6391c5dcf011b0e8ec93754d8aae78e213afb',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
   array (
-    'fileHash' => '5e0315dbc56041207daca0c88a2693632e55c6bd3f84644203dfa4e179428e52',
+    'fileHash' => '58e4aa7c2a84978ea666de65d52411359f98abe0c70b3b850219fb98b677f7a3',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php' => 
+  array (
+    'fileHash' => '88e5fb4d7d46dc5ffa2ea92f8fecc3301fd2d9f594ed46535fcbf82c8d65db9d',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentServiceController.php' => 
+  array (
+    'fileHash' => '2e44ce20c5d0ccaa3e0dd46dfa78f73be00507a85e83f4c674278e1ba54cf993',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentStatusController.php' => 
+  array (
+    'fileHash' => '4ef882bffa138e84a33fecf097ac77668bbcbfd721e8af95a487317e1709b89f',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php' => 
   array (
-    'fileHash' => '073fef6797bb966cf99ab548120b81a65481b2daf11f2ec9d66b626aa5700283',
+    'fileHash' => '65f11d825cfdf80bbfc3a0fd1c7f1230180c4b071ba818b73d9ce7ef4d1753e7',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PackageController.php' => 
+  array (
+    'fileHash' => 'adda89b8920e603fa47c04242fccba4b017fa9d9f021cecfcce56f6d3cba001a',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php' => 
+  array (
+    'fileHash' => '2e5319ec46e4a0e1b5f06bfcfb5dc08c122b4670bd027db26f25bfc08aa977da',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProjectController.php' => 
   array (
-    'fileHash' => 'fcf28a2fd33d4b61eab5cae061da1a3b556f97528fe2905d5214fc4f02fa9dea',
+    'fileHash' => '39e4222100cafcf36e3759bc1c910389d5c88e126174bcbc1b122e2bc0958d8e',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/ProvisioningController.php' => 
   array (
-    'fileHash' => '5a62fc3823fc6f82ad55d2ecad16b7ea75a98a0bb995b1cb31faa59b2fcbf5bd',
+    'fileHash' => '0a603e8d6dd5f968eaff49f597e18a19e4733002e39b634ed0eddf7b6305cf9f',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SettingsController.php' => 
   array (
-    'fileHash' => '73d663a336855e895804b349d52fc878a819df41c4ce782344363fdb58a24773',
+    'fileHash' => 'ffcd29d28a23157fa1aaac9ba9e01485e78ffbe1e63ffc051c4c2e1510238e7f',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/SshKeyController.php' => 
   array (
-    'fileHash' => '686f4887e8987f4fc8e0ed71e1a18a830e180a2a9b248960723948134a7c7464',
+    'fileHash' => '65e165d475d9f9edf4fcb017e38ceb9c1cdc1bb1f99b6675a38df842f6760644',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php' => 
+  array (
+    'fileHash' => 'f0cede421322cfed57f2a5b27a9df6f238f7aa3887ee53955afb3af893196928',
+    'dependentFiles' => 
+    array (
+    ),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorktreeController.php' => 
+  array (
+    'fileHash' => 'b304ef7b141ad62c8402f7cdbcd90d8bc4b54537554c561a72930db3c6ad6ed5',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/HandleInertiaRequests.php' => 
   array (
-    'fileHash' => '7aa1c810feca7ef58ef96d529807233a29dfe8a3d0787b1d9187482c6debc8f8',
+    'fileHash' => '3f0de13707b0d4d6ad5382d5f0bf85a5040e5c0227823190f6a0d42219ab2922',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php',
@@ -3536,7 +3113,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/ImplicitEnvironment.php' => 
   array (
-    'fileHash' => 'ca6c6b659ad447f4c4eca744abbdc5a4b3dcf3e59eb07121d7567cd4724a98d3',
+    'fileHash' => 'db6bed78de026ec517de3b05e0b30389e2e4f2a174887779a925b04ff2fe881d',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php',
@@ -3544,14 +3121,14 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php' => 
   array (
-    'fileHash' => '6c91be111d8bf493b4fee91f376a2d3cf0d20b04e88dc68fad4ca5271c49c47d',
+    'fileHash' => 'd2cbf1cae8be32b960fc2c800606dde33af8be492976f7081f9882c8ad73dde9',
     'dependentFiles' => 
     array (
     ),
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Prompts/ConfigureLaravelEnvPrompt.php' => 
   array (
-    'fileHash' => '3c904217378bddbe36692eaf8e11cb111de14caac692355aa379c8c2ab5d87bb',
+    'fileHash' => '5c1b9aa6d64edad06549f00889d789daa2ad7762530e81b4f4bfaed2e2186587',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3559,7 +3136,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Prompts/SetupHorizonPrompt.php' => 
   array (
-    'fileHash' => '5d2a64655626443b6c5b8293803f566baf0aee731ae7fffd9e9a30f16fd0cfbc',
+    'fileHash' => 'cc2779c1fa91c1205240afb2698d9d715924a7f78fb05f381fe5d5d679a07ac3',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3567,7 +3144,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Resources/ConfigResource.php' => 
   array (
-    'fileHash' => '4e6fff40724d3cfb99cbe8957144e15ca935b9894c3b4ece84587814a6f34eef',
+    'fileHash' => 'f15427945d977cfd647bc7d1671f165c9c4d93075b913a3fe410522f92b4dd5a',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3575,7 +3152,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Resources/EnvTemplateResource.php' => 
   array (
-    'fileHash' => '8ce3ad58f8de598d9d98dc5cf64380a6107c191e615b09fcefe6f886fde72e7c',
+    'fileHash' => '96bd2d2ce38d93688f1e51c3c95fa3c29c6e9453e4696a556d7219774d797b7c',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3583,7 +3160,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Resources/InfrastructureResource.php' => 
   array (
-    'fileHash' => '52c5d79b4933831bc473d44f361708b58a19c84240ed526213b4da07df194857',
+    'fileHash' => '864495e59e8561bc245551bcd597764fdd8a963bbd7d0dd0c81137dbb8e16c43',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3591,7 +3168,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Resources/ProjectsResource.php' => 
   array (
-    'fileHash' => 'a733ba5cbf44a6d2926487b5dc9f4571daf4b67721347ebbec4ab886bdb13ab9',
+    'fileHash' => '5abff60fe70041913a1611a84d553aedda5cdb36c891cd6f9f50a38dd6197ca5',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3599,7 +3176,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/LogsTool.php' => 
   array (
-    'fileHash' => '5b9a5e2527a26aa45f1fb2eee40fb37b0d637bf9a4589361c5ca1ffa9d32f70a',
+    'fileHash' => '8bcb240bc766585acc6e35453a1218674c0693fa52f4a8f350b9a7d86317e624',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3607,7 +3184,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/PhpTool.php' => 
   array (
-    'fileHash' => 'bb7fbe27afc359760fbb01fa23840f944b382606bb1fa31f46a343d5c7cae299',
+    'fileHash' => '735ebe59e6dcba10e2dac98742ba2fc0bc9ad39a031c2469e74a1740300aa7df',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3615,7 +3192,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectCreateTool.php' => 
   array (
-    'fileHash' => '9bc1901183e178c6b30af5d9ea006972bdb6a313ce1738b6e18e349fd1a2768c',
+    'fileHash' => 'd30826008bfbbb23340c72890a60391f5e7bc866451a3699c6cfe4041591a584',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3623,7 +3200,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectDeleteTool.php' => 
   array (
-    'fileHash' => '80a9987e0e77f5a0fb65059aecd249068d423c6f80d6c1edb0ee90aadd16bfcc',
+    'fileHash' => 'b86d0e236a5efd37b05a13ac6c1efafaee79a1f5bfc3dfa6646a26488e31bdfe',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3631,7 +3208,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/ProjectsTool.php' => 
   array (
-    'fileHash' => '8bfec8acba3d449701d6353d4d8fe5d3f6ec7492e2cf8e8acfdc873bf9db52ab',
+    'fileHash' => '9d8078bed5c630cc840d0d5cdadce9bb18860c373384630d22eb23eff3ca9306',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3639,7 +3216,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/RestartTool.php' => 
   array (
-    'fileHash' => 'd27f264df20983efc8ad3b8862aeede2f29b661156dc4a5adc44fcf7fd7ae8b7',
+    'fileHash' => '4372431077471f2b0787770afce4da8033629a9b4dcc1153af313b55cd1e4c11',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3647,7 +3224,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/StartTool.php' => 
   array (
-    'fileHash' => '1ecdde22388c95fb38508e873af7d00205446c753c45dbf1320395ef8a54c99c',
+    'fileHash' => '78f4cb810356416bbb38fe76598b134a2f6923bb7da733abd6a81771fed8078d',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3655,7 +3232,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/StatusTool.php' => 
   array (
-    'fileHash' => '92381b77be813d0643a9d88cbab6fd7d6e38484037d9e85e811af575695ef3a4',
+    'fileHash' => '08ec1e05f2e0ca41ac3f09240996a4d62ec77d216e7bfd110314ac8e933fa109',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3663,7 +3240,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/StopTool.php' => 
   array (
-    'fileHash' => '686b948d275ba960eb664b4e7538eaa05a95eb79b6daaa2478aed9a956c1db72',
+    'fileHash' => '9a09ed1ca78980948a4a6074c40af57da42a2601ed3c1de20c8ba5cbea26f37f',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3671,7 +3248,7 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/Tools/WorktreesTool.php' => 
   array (
-    'fileHash' => 'd99b6b6c6258b3728dcbdeb2bda331c9fb98719193ece4e55523d74ffebf5052',
+    'fileHash' => '3d53c9c3abb0dab6118f86600c0c18a85d07bf468d92f5c6504388780cd56a6c',
     'dependentFiles' => 
     array (
       0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Mcp/OrbitServer.php',
@@ -3679,17 +3256,9 @@ return [
   ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/OrbitAppServiceProvider.php' => 
   array (
-    'fileHash' => 'c60af00cb088d47b1193ee08b4abbf69c79f8872ace53744c3a040ca71dd587d',
+    'fileHash' => '1db4039f9571e61e21c6b404e640e773f4f0f88973320f913a4b2daea91ff865',
     'dependentFiles' => 
     array (
-    ),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Ui.php' => 
-  array (
-    'fileHash' => '25d0dc07a4614da863d517929d62b740e5b0d5166f2212f535d6397126d23a26',
-    'dependentFiles' => 
-    array (
-      0 => '/home/nckrtl/projects/orbit-dev/packages/app/src/Facades/Ui.php',
     ),
   ),
 ),
@@ -3698,7 +3267,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Commands\\UiCommand',
+       'name' => 'HardImpact\\Orbit\\App\\Commands\\UiCommand',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -3788,31 +3357,12 @@ return [
       ),
     )),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Facades/Ui.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/HandlesGitHubIntegration.php' => 
   array (
     0 => 
-    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Facades\\Ui',
-       'phpDoc' => 
-      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-         'phpDocString' => '/**
- * @see \\HardImpact\\Orbit\\Ui\\Ui
- */',
-         'namespace' => 'HardImpact\\Orbit\\Ui\\Facades',
-         'uses' => 
-        array (
-          'facade' => 'Illuminate\\Support\\Facades\\Facade',
-        ),
-         'constUses' => 
-        array (
-        ),
-      )),
-       'abstract' => false,
-       'final' => false,
-       'extends' => 'Illuminate\\Support\\Facades\\Facade',
-       'implements' => 
-      array (
-      ),
+    \PHPStan\Dependency\ExportedNode\ExportedTraitNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+       'phpDoc' => NULL,
        'usedTraits' => 
       array (
       ),
@@ -3823,17 +3373,440 @@ return [
       array (
         0 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getFacadeAccessor',
-           'phpDoc' => NULL,
+           'name' => 'getRepoInfoViaGh',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get repository info from GitHub via gh CLI over SSH.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
            'byRef' => false,
            'public' => false,
            'private' => false,
            'abstract' => false,
            'final' => false,
-           'static' => true,
+           'static' => false,
+           'returnType' => '?array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'repo',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'fetchFileViaGh',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Fetch a file from GitHub via gh CLI over SSH.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'repo',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'path',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'extractRepoFromTemplate',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Extract owner/repo from template string.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'template',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'extractTemplateName',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Extract a display name from a template URL or repo string.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
            'returnType' => 'string',
            'parameters' => 
           array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'template',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'normalizeDriver',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Normalize a driver value (lowercase, trim).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'value',
+               'type' => '?string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'extractMinPhpVersion',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Extract minimum PHP version from composer.json constraint (for display).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'constraint',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getRecommendedPhpVersion',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the recommended (highest compatible) PHP version for a constraint.
+     * Always prefers the latest PHP version unless explicitly excluded.
+     *
+     * Examples:
+     * - ^8.3 → 8.5 (allows 8.3+)
+     * - ^8.4 → 8.5 (allows 8.4+)
+     * - ~8.3.0 → 8.3 (only allows 8.3.x)
+     * - 8.4.* → 8.4 (only allows 8.4.x)
+     * - <8.5 → 8.4 (excludes 8.5)
+     * - >=8.3 <8.5 → 8.4 (range excludes 8.5)
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'constraint',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        7 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getSshService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the SSH service instance.
+     * Classes using this trait must implement this method.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => true,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/Concerns/ProvidesRemoteApiUrl.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedTraitNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+       'phpDoc' => NULL,
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getRemoteApiUrl',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the remote API URL for an environment.
+     * For remote environments with a known TLD, returns https://orbit.{tld}/api
+     * This allows the frontend to bypass the single-threaded NativePHP server.
+     * For local environments, returns null so frontend uses local API routes.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => '?string',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
           ),
            'attributes' => 
           array (
@@ -3849,7 +3822,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'phpDoc' => NULL,
        'abstract' => true,
        'final' => false,
@@ -3875,11 +3848,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\DashboardController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\DashboardController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -3930,11 +3903,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\DnsController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\DnsController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -4005,7 +3978,7 @@ return [
              'phpDocString' => '/**
      * Get DNS mappings for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -4052,7 +4025,7 @@ return [
              'phpDocString' => '/**
      * Update DNS mappings for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -4110,7 +4083,7 @@ return [
              'phpDocString' => '/**
      * Validate if a string is a valid IP address.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -4157,7 +4130,7 @@ return [
              'phpDocString' => '/**
      * Validate if a DNS server is reachable.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -4213,15 +4186,15 @@ return [
       ),
     )),
   ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentConfigController.php' => 
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\EnvironmentController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentConfigController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -4248,8 +4221,8 @@ return [
           array (
             0 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'ssh',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+               'name' => 'config',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -4259,8 +4232,8 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'status',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+               'name' => 'dnsResolver',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -4279,138 +4252,6 @@ return [
               array (
               ),
             )),
-            3 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'config',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            4 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'project',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            5 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'worktree',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            6 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            7 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'package',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            8 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'dnsResolver',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            9 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'doctor',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            10 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'macPhpFpm',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            11 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environments',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            12 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'horizon',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            13 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'notificationService',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            14 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'envParser',
-               'type' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
           ),
            'attributes' => 
           array (
@@ -4418,51 +4259,33 @@ return [
         )),
         1 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getRemoteApiUrl',
+           'name' => 'getConfig',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Get the remote API URL for an environment.
-     * For remote environments with a known TLD, returns https://orbit.{tld}/api
-     * This allows the frontend to bypass the single-threaded NativePHP server.
-     * For local environments, returns null so frontend uses local API routes.
+     * Get the orbit configuration for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
               'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
             ),
              'constUses' => 
             array (
             ),
           )),
            'byRef' => false,
-           'public' => false,
+           'public' => true,
            'private' => false,
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => '?string',
+           'returnType' => NULL,
            'parameters' => 
           array (
             0 => 
@@ -4483,44 +4306,26 @@ return [
         )),
         2 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'index',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response|Illuminate\\Http\\RedirectResponse',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        3 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'create',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        4 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'store',
-           'phpDoc' => NULL,
+           'name' => 'saveConfig',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Save the orbit configuration for an environment.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -4534,6 +4339,122 @@ return [
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
                'name' => 'request',
                'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'browseDirectories',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Browse directories for the directory picker.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getReverbConfig',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get Reverb WebSocket configuration for real-time updates.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -4548,2153 +4469,6 @@ return [
         )),
         5 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'show',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        6 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'edit',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        7 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'update',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        8 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'destroy',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        9 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'setDefault',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        10 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'switchEnvironment',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        11 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'testConnection',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        12 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'status',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        13 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'projects',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        14 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'projectsPage',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Projects page (Inertia view).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        15 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'servicesPage',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Services page (Inertia view).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        16 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'projectsApi',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Projects API (JSON).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        17 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'projectsSyncApi',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Sync projects from CLI to database.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        18 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'settings',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Environment settings page.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        19 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'updateSettings',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Update environment settings.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        20 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'updateExternalAccess',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Update external access settings.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        21 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'start',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        22 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'stop',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        23 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'restart',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        24 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'startService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Start a single service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        25 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'startHostService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Start a single host service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        26 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'stopService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Stop a single service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        27 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'stopHostService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Stop a single host service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        28 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'restartService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Restart a single service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        29 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'restartHostService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Restart a single host service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        30 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'serviceLogs',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get logs for a single service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        31 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'hostServiceLogs',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get logs for a host service (Caddy, PHP-FPM, Horizon).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        32 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'availableServices',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Show available services.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        33 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'enableService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Enable a service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        34 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'disableService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Disable a service.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        35 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'configureService',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Update service config.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        36 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'serviceInfo',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get service details.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'service',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        37 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'changePhp',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'project',
-               'type' => '?string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => true,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        38 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'resetPhp',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'project',
-               'type' => '?string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => true,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        39 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getConfig',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        40 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getReverbConfig',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get Reverb WebSocket configuration for real-time updates.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        41 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'saveConfig',
-           'phpDoc' => NULL,
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        42 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'browseDirectories',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Browse directories for the directory picker.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        43 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'getAllTlds',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
@@ -6702,30 +4476,15 @@ return [
      * Get all TLDs for all environments (for conflict detection).
      * Uses cached TLD from database instead of API calls.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
               'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
             ),
              'constUses' => 
             array (
@@ -6745,7 +4504,7 @@ return [
           array (
           ),
         )),
-        44 => 
+        6 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'countEnvironmentsWithTld',
            'phpDoc' => 
@@ -6754,30 +4513,15 @@ return [
      * Count how many environments (excluding the given one) use a specific TLD.
      * Uses cached TLD from database instead of API calls.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
               'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
+              'log' => 'Illuminate\\Support\\Facades\\Log',
             ),
              'constUses' => 
             array (
@@ -6819,43 +4563,69 @@ return [
           array (
           ),
         )),
-        45 => 
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentController',
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * Controller for environment CRUD operations and core environment features.
+ *
+ * Most environment-related functionality has been extracted to specialized controllers:
+ * - EnvironmentStatusController: Health checks, doctor
+ * - EnvironmentConfigController: Config save/get, TLD/DNS
+ * - EnvironmentProjectController: Project CRUD, GitHub integration
+ * - EnvironmentServiceController: Service start/stop/restart
+ * - PhpConfigController: PHP version management
+ * - WorkspaceController: Workspace management
+ * - WorktreeController: Git worktree management
+ * - PackageController: Composer package linking
+ */',
+         'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+         'uses' => 
+        array (
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+          'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+          'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+          'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+          'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+          'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+          'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+          'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+          'request' => 'Illuminate\\Http\\Request',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'worktrees',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get all worktrees for an environment.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
+           'name' => '__construct',
+           'phpDoc' => NULL,
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -6863,6 +4633,155 @@ return [
            'final' => false,
            'static' => false,
            'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'status',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'config',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'dnsResolver',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            3 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'macPhpFpm',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            4 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environments',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            5 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'notificationService',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'index',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response|Illuminate\\Http\\RedirectResponse',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'create',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'store',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'show',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
            'parameters' => 
           array (
             0 => 
@@ -6881,43 +4800,39 @@ return [
           array (
           ),
         )),
-        46 => 
+        5 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'unlinkWorktree',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Unlink a worktree from a project.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
+           'name' => 'edit',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'update',
+           'phpDoc' => NULL,
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -6954,43 +4869,10 @@ return [
           array (
           ),
         )),
-        47 => 
+        7 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'refreshWorktrees',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Refresh worktree detection.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
+           'name' => 'destroy',
+           'phpDoc' => NULL,
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -7016,37 +4898,124 @@ return [
           array (
           ),
         )),
-        48 => 
+        8 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'createProject',
+           'name' => 'setDefault',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        9 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'switchEnvironment',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        10 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'testConnection',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        11 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'servicesPage',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Show the create project form.
+     * Services page (Inertia view).
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
               'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
               'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
               'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
               'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7078,37 +5047,662 @@ return [
           array (
           ),
         )),
-        49 => 
+        12 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'storeProject',
+           'name' => 'settings',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Environment settings page.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        13 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'updateSettings',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Update environment settings.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        14 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'updateExternalAccess',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Update external access settings.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        15 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'instanceInfo',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get instance info for the local environment.
+     * Used by desktop app to fetch the canonical display name.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        16 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'updateInstanceInfo',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Update instance info for the local environment.
+     * Used by desktop app to rename the environment remotely.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
+              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentProjectController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentProjectController',
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * Controller for project operations within a specific environment.
+ *
+ * Routes are prefixed with /environments/{environment}/ and the environment
+ * is explicitly passed as a route parameter.
+ *
+ * @see ProjectController for operations using the "active environment" pattern
+ */',
+         'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+         'uses' => 
+        array (
+          'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+          'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+          'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+          'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+          'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+          'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+          'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+          'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+          'request' => 'Illuminate\\Http\\Request',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+        1 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => '__construct',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'project',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'config',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'ssh',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            3 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'envParser',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getSshService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get the SSH service instance (required by HandlesGitHubIntegration).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+           'parameters' => 
+          array (
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'index',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Projects page (Inertia view).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'indexApi',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Projects API (JSON).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'syncApi',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Sync projects from CLI to database.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'create',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Show the create project form.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
+              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
+              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
+              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'store',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Store a newly created project.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7151,37 +5745,27 @@ return [
           array (
           ),
         )),
-        50 => 
+        7 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'destroyProject',
+           'name' => 'destroy',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Delete a project from the environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7235,37 +5819,27 @@ return [
           array (
           ),
         )),
-        51 => 
+        8 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'rebuildProject',
+           'name' => 'rebuild',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Rebuild a project (re-run composer install, npm install, build, migrations).
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7319,7 +5893,7 @@ return [
           array (
           ),
         )),
-        52 => 
+        9 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'provisionStatus',
            'phpDoc' => 
@@ -7327,29 +5901,19 @@ return [
              'phpDocString' => '/**
      * Get the provisioning status of a project.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7392,7 +5956,7 @@ return [
           array (
           ),
         )),
-        53 => 
+        10 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'githubUser',
            'phpDoc' => 
@@ -7400,29 +5964,19 @@ return [
              'phpDocString' => '/**
      * Get the GitHub user for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7454,7 +6008,7 @@ return [
           array (
           ),
         )),
-        54 => 
+        11 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'githubOrgs',
            'phpDoc' => 
@@ -7462,29 +6016,19 @@ return [
              'phpDocString' => '/**
      * Get GitHub organizations for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7516,7 +6060,7 @@ return [
           array (
           ),
         )),
-        55 => 
+        12 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'githubRepoExists',
            'phpDoc' => 
@@ -7525,29 +6069,19 @@ return [
      * Check if a GitHub repository already exists.
      * Used for real-time validation while user types project name.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7590,69 +6124,7 @@ return [
           array (
           ),
         )),
-        56 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'extractTemplateName',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Extract a display name from a template URL or repo string.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'template',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        57 => 
+        13 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'templateDefaults',
            'phpDoc' => 
@@ -7662,29 +6134,19 @@ return [
      *
      * Uses gh CLI on the environment to access both public and private repos.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
               'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
               'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
               'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
               'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'handlesgithubintegration' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\HandlesGitHubIntegration',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -7727,519 +6189,55 @@ return [
           array (
           ),
         )),
-        58 => 
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentServiceController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentServiceController',
+       'phpDoc' => 
+      \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+         'phpDocString' => '/**
+ * Handles service control operations for environments.
+ *
+ * This includes starting, stopping, restarting services,
+ * viewing logs, and managing service configuration.
+ */',
+         'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+         'uses' => 
+        array (
+          'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+          'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+          'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+          'request' => 'Illuminate\\Http\\Request',
+        ),
+         'constUses' => 
+        array (
+        ),
+      )),
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getRecommendedPhpVersion',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get the recommended (highest compatible) PHP version for a constraint.
-     * Always prefers the latest PHP version unless explicitly excluded.
-     *
-     * Examples:
-     * - ^8.3 → 8.5 (allows 8.3+)
-     * - ^8.4 → 8.5 (allows 8.4+)
-     * - ~8.3.0 → 8.3 (only allows 8.3.x)
-     * - 8.4.* → 8.4 (only allows 8.4.x)
-     * - <8.5 → 8.4 (excludes 8.5)
-     * - >=8.3 <8.5 → 8.4 (range excludes 8.5)
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'constraint',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        59 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'extractMinPhpVersion',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Extract minimum PHP version from composer.json constraint (for display).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => '?string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'constraint',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        60 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getRepoInfoViaGh',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get repository info from GitHub via gh CLI over SSH.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => '?array',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'repo',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        61 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'fetchFileViaGh',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Fetch a file from GitHub via gh CLI over SSH.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => '?string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'repo',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'path',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        62 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'extractRepoFromTemplate',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Extract owner/repo from template string.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => '?string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'template',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        63 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'normalizeDriver',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Normalize a driver value (lowercase, trim).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => '?string',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'value',
-               'type' => '?string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        64 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspaces',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * List all workspaces for an environment.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        65 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspacesApi',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * API endpoint for workspaces list.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
+           'name' => '__construct',
+           'phpDoc' => NULL,
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -8251,8 +6249,8 @@ return [
           array (
             0 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'name' => 'serviceControl',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -8265,37 +6263,20 @@ return [
           array (
           ),
         )),
-        66 => 
+        1 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'createWorkspace',
+           'name' => 'start',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Show the create workspace form.
+     * Start all services for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8308,69 +6289,7 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => 'Inertia\\Response',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        67 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'storeWorkspace',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Store a new workspace.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
            'parameters' => 
           array (
             0 => 
@@ -8400,37 +6319,20 @@ return [
           array (
           ),
         )),
-        68 => 
+        2 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'showWorkspace',
+           'name' => 'stop',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Show a single workspace.
+     * Stop all services for an environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8443,7 +6345,119 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => 'Inertia\\Response',
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'restart',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Restart all services for an environment.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'startService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Start a single Docker service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
            'parameters' => 
           array (
             0 => 
@@ -8459,7 +6473,7 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
+               'name' => 'service',
                'type' => 'string',
                'byRef' => false,
                'variadic' => false,
@@ -8473,37 +6487,20 @@ return [
           array (
           ),
         )),
-        69 => 
+        5 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'workspaceApi',
+           'name' => 'startHostService',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * API endpoint for single workspace.
+     * Start a single host service.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8516,7 +6513,7 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => NULL,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
            'parameters' => 
           array (
             0 => 
@@ -8532,7 +6529,7 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
+               'name' => 'service',
                'type' => 'string',
                'byRef' => false,
                'variadic' => false,
@@ -8546,37 +6543,20 @@ return [
           array (
           ),
         )),
-        70 => 
+        6 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'destroyWorkspace',
+           'name' => 'stopService',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Delete a workspace.
+     * Stop a single Docker service.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8589,7 +6569,7 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => NULL,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
            'parameters' => 
           array (
             0 => 
@@ -8605,7 +6585,7 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
+               'name' => 'service',
                'type' => 'string',
                'byRef' => false,
                'variadic' => false,
@@ -8619,37 +6599,20 @@ return [
           array (
           ),
         )),
-        71 => 
+        7 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'addWorkspaceProject',
+           'name' => 'stopHostService',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Add a project to a workspace.
+     * Stop a single host service.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
               'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8662,7 +6625,175 @@ return [
            'abstract' => false,
            'final' => false,
            'static' => false,
-           'returnType' => NULL,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        8 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'restartService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Restart a single Docker service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        9 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'restartHostService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Restart a single host service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        10 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'serviceLogs',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get logs for a single Docker service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
            'parameters' => 
           array (
             0 => 
@@ -8689,7 +6820,7 @@ return [
             )),
             2 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
+               'name' => 'service',
                'type' => 'string',
                'byRef' => false,
                'variadic' => false,
@@ -8703,38 +6834,652 @@ return [
           array (
           ),
         )),
-        72 => 
+        11 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'removeWorkspaceProject',
+           'name' => 'hostServiceLogs',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
-     * Remove a project from a workspace.
+     * Get logs for a host service (Caddy, PHP-FPM, Horizon).
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        12 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'availableServices',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Show available services.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        13 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'enableService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Enable a service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        14 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'disableService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Disable a service.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        15 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'configureService',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Update service config.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        16 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'serviceInfo',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get service details.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'service',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/EnvironmentStatusController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\EnvironmentStatusController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => '__construct',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'status',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'doctor',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'macPhpFpm',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            3 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'horizon',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'status',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get environment status (services, PHP versions, etc.).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
               'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
               'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
               'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'projects',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get projects status.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
+              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'runDoctor',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Run health checks on the environment (doctor).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
+              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'quickCheck',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Run quick connectivity check on the environment.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
+              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'fixIssue',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Attempt to fix a specific doctor issue.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
+              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
             ),
              'constUses' => 
             array (
@@ -8762,18 +7507,7 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
-               'type' => 'string',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            2 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'project',
+               'name' => 'check',
                'type' => 'string',
                'byRef' => false,
                'variadic' => false,
@@ -8787,37 +7521,143 @@ return [
           array (
           ),
         )),
-        73 => 
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\JobController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'linkedPackages',
+           'name' => 'show',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Show the status of a tracked job.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'trackedjob' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Illuminate\\Http\\JsonResponse',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'trackedJob',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PackageController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PackageController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => '__construct',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'package',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'index',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Get linked packages for a project.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
               'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8860,37 +7700,19 @@ return [
           array (
           ),
         )),
-        74 => 
+        2 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'linkPackage',
+           'name' => 'link',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Link a package to a project.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
               'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -8944,37 +7766,19 @@ return [
           array (
           ),
         )),
-        75 => 
+        3 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'unlinkPackage',
+           'name' => 'unlink',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Unlink a package from a project.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
               'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9028,43 +7832,37 @@ return [
           array (
           ),
         )),
-        76 => 
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/PhpConfigController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\PhpConfigController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'runDoctor',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Run health checks on the environment (doctor).
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
+           'name' => '__construct',
+           'phpDoc' => NULL,
            'byRef' => false,
            'public' => true,
            'private' => false,
@@ -9076,132 +7874,8 @@ return [
           array (
             0 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        77 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'quickCheck',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Run quick connectivity check on the environment.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        78 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'fixDoctorIssue',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Attempt to fix a specific doctor issue.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'name' => 'config',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -9211,8 +7885,8 @@ return [
             )),
             1 => 
             \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'check',
-               'type' => 'string',
+               'name' => 'macPhpFpm',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
                'byRef' => false,
                'variadic' => false,
                'hasDefault' => false,
@@ -9225,37 +7899,157 @@ return [
           array (
           ),
         )),
-        79 => 
+        1 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getPhpConfig',
+           'name' => 'changePhp',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Change PHP version for a project.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'project',
+               'type' => '?string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => true,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'resetPhp',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Reset PHP version for a project to default.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
+              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'project',
+               'type' => '?string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => true,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'getConfig',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Get PHP configuration settings.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9298,37 +8092,21 @@ return [
           array (
           ),
         )),
-        80 => 
+        4 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'setPhpConfig',
+           'name' => 'setConfig',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Set PHP configuration settings.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9382,37 +8160,21 @@ return [
           array (
           ),
         )),
-        81 => 
+        5 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'getLocalPhpConfig',
+           'name' => 'getLocalConfig',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Get local PHP configuration (macOS).
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9444,37 +8206,21 @@ return [
           array (
           ),
         )),
-        82 => 
+        6 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'setLocalPhpConfig',
+           'name' => 'setLocalConfig',
            'phpDoc' => 
           \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
              'phpDocString' => '/**
      * Set local PHP configuration (macOS).
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9517,7 +8263,7 @@ return [
           array (
           ),
         )),
-        83 => 
+        7 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'getIniValue',
            'phpDoc' => 
@@ -9525,29 +8271,13 @@ return [
              'phpDocString' => '/**
      * Get a value from an INI file.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9601,7 +8331,7 @@ return [
           array (
           ),
         )),
-        84 => 
+        8 => 
         \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
            'name' => 'proxyToRemoteApi',
            'phpDoc' => 
@@ -9609,29 +8339,13 @@ return [
              'phpDocString' => '/**
      * Proxy a request to the remote API.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
               'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
               'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
               'request' => 'Illuminate\\Http\\Request',
             ),
              'constUses' => 
@@ -9696,275 +8410,6 @@ return [
           array (
           ),
         )),
-        85 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'instanceInfo',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Get instance info for the local environment.
-     * Used by desktop app to fetch the canonical display name.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        86 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'updateInstanceInfo',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Update instance info for the local environment.
-     * Used by desktop app to rename the environment remotely.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => NULL,
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'request',
-               'type' => 'Illuminate\\Http\\Request',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-            1 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'environment',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-        87 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'normalizeWorkspaceData',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Normalize workspace data from CLI for frontend consistency.
-     * CLI already returns \'projects\' and \'project_count\', so we just pass through.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'createprojectjob' => 'HardImpact\\Orbit\\Core\\Jobs\\CreateProjectJob',
-              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
-              'project' => 'HardImpact\\Orbit\\Core\\Models\\Project',
-              'setting' => 'HardImpact\\Orbit\\Core\\Models\\Setting',
-              'templatefavorite' => 'HardImpact\\Orbit\\Core\\Models\\TemplateFavorite',
-              'dnsresolverservice' => 'HardImpact\\Orbit\\Core\\Services\\DnsResolverService',
-              'doctorservice' => 'HardImpact\\Orbit\\Core\\Services\\DoctorService',
-              'environmentmanager' => 'HardImpact\\Orbit\\Core\\Services\\EnvironmentManager',
-              'horizonservice' => 'HardImpact\\Orbit\\Core\\Services\\HorizonService',
-              'macphpfpmconfigservice' => 'HardImpact\\Orbit\\Core\\Services\\MacPhpFpmConfigService',
-              'configurationservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ConfigurationService',
-              'packageservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\PackageService',
-              'projectcliservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ProjectCliService',
-              'servicecontrolservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\ServiceControlService',
-              'statusservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\StatusService',
-              'notificationservice' => 'HardImpact\\Orbit\\Core\\Services\\NotificationService',
-              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
-              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
-              'sshservice' => 'HardImpact\\Orbit\\Core\\Services\\SshService',
-              'envparser' => 'HardImpact\\Orbit\\Core\\Services\\TemplateAnalyzer\\EnvParser',
-              'request' => 'Illuminate\\Http\\Request',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => false,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'array',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'workspace',
-               'type' => 'array',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
-      ),
-       'attributes' => 
-      array (
-      ),
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/JobController.php' => 
-  array (
-    0 => 
-    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\JobController',
-       'phpDoc' => NULL,
-       'abstract' => false,
-       'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
-       'implements' => 
-      array (
-      ),
-       'usedTraits' => 
-      array (
-      ),
-       'traitUseAdaptations' => 
-      array (
-      ),
-       'statements' => 
-      array (
-        0 => 
-        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
-           'name' => 'show',
-           'phpDoc' => 
-          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
-             'phpDocString' => '/**
-     * Show the status of a tracked job.
-     */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
-             'uses' => 
-            array (
-              'trackedjob' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
-              'jsonresponse' => 'Illuminate\\Http\\JsonResponse',
-            ),
-             'constUses' => 
-            array (
-            ),
-          )),
-           'byRef' => false,
-           'public' => true,
-           'private' => false,
-           'abstract' => false,
-           'final' => false,
-           'static' => false,
-           'returnType' => 'Illuminate\\Http\\JsonResponse',
-           'parameters' => 
-          array (
-            0 => 
-            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
-               'name' => 'trackedJob',
-               'type' => 'HardImpact\\Orbit\\Core\\Models\\TrackedJob',
-               'byRef' => false,
-               'variadic' => false,
-               'hasDefault' => false,
-               'attributes' => 
-              array (
-              ),
-            )),
-          ),
-           'attributes' => 
-          array (
-          ),
-        )),
       ),
        'attributes' => 
       array (
@@ -9975,11 +8420,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\ProjectController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\ProjectController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -10051,7 +8496,7 @@ return [
      * Create a new project in the active environment.
      * Always uses the Saloon API connector for consistency.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
@@ -10099,7 +8544,7 @@ return [
      * Delete a project from the active environment.
      * Always uses the Saloon API connector for consistency.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
@@ -10157,7 +8602,7 @@ return [
              'phpDocString' => '/**
      * Set the PHP version for a project in the active environment.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
@@ -10215,7 +8660,7 @@ return [
              'phpDocString' => '/**
      * Reset the PHP version for a project to the environment default.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
              'uses' => 
             array (
               'createprojectrequest' => 'HardImpact\\Orbit\\Core\\Http\\Integrations\\Orbit\\Requests\\CreateProjectRequest',
@@ -10264,11 +8709,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\ProvisioningController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\ProvisioningController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -10522,11 +8967,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\SettingsController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\SettingsController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -10874,11 +9319,11 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\SshKeyController',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\SshKeyController',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
-       'extends' => 'HardImpact\\Orbit\\Ui\\Http\\Controllers\\Controller',
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
        'implements' => 
       array (
       ),
@@ -11041,11 +9486,804 @@ return [
       ),
     )),
   ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorkspaceController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorkspaceController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+        0 => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => '__construct',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'index',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * List all workspaces for an environment (Inertia page).
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'indexApi',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * API endpoint for workspaces list.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'create',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Show the create workspace form.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        4 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'store',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Store a new workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        5 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'show',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Show a single workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'Inertia\\Response',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        6 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'showApi',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * API endpoint for single workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        7 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'destroy',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Delete a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        8 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'addProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Add a project to a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        9 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'removeProject',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Remove a project from a workspace.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            2 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'project',
+               'type' => 'string',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        10 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'normalizeWorkspaceData',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Normalize workspace data from CLI for frontend consistency.
+     * CLI already returns \'projects\' and \'project_count\', so we just pass through.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'workspaceservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorkspaceService',
+              'providesremoteapiurl' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Concerns\\ProvidesRemoteApiUrl',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => false,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => 'array',
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'workspace',
+               'type' => 'array',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
+  '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Controllers/WorktreeController.php' => 
+  array (
+    0 => 
+    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\WorktreeController',
+       'phpDoc' => NULL,
+       'abstract' => false,
+       'final' => false,
+       'extends' => 'HardImpact\\Orbit\\App\\Http\\Controllers\\Controller',
+       'implements' => 
+      array (
+      ),
+       'usedTraits' => 
+      array (
+      ),
+       'traitUseAdaptations' => 
+      array (
+      ),
+       'statements' => 
+      array (
+        0 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => '__construct',
+           'phpDoc' => NULL,
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'worktree',
+               'type' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        1 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'index',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Get all worktrees for an environment.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        2 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'unlink',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Unlink a worktree from a project.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'request',
+               'type' => 'Illuminate\\Http\\Request',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+            1 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+        3 => 
+        \PHPStan\Dependency\ExportedNode\ExportedMethodNode::__set_state(array(
+           'name' => 'refresh',
+           'phpDoc' => 
+          \PHPStan\Dependency\ExportedNode\ExportedPhpDocNode::__set_state(array(
+             'phpDocString' => '/**
+     * Refresh worktree detection.
+     */',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Controllers',
+             'uses' => 
+            array (
+              'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+              'worktreeservice' => 'HardImpact\\Orbit\\Core\\Services\\OrbitCli\\WorktreeService',
+              'request' => 'Illuminate\\Http\\Request',
+            ),
+             'constUses' => 
+            array (
+            ),
+          )),
+           'byRef' => false,
+           'public' => true,
+           'private' => false,
+           'abstract' => false,
+           'final' => false,
+           'static' => false,
+           'returnType' => NULL,
+           'parameters' => 
+          array (
+            0 => 
+            \PHPStan\Dependency\ExportedNode\ExportedParameterNode::__set_state(array(
+               'name' => 'environment',
+               'type' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
+               'byRef' => false,
+               'variadic' => false,
+               'hasDefault' => false,
+               'attributes' => 
+              array (
+              ),
+            )),
+          ),
+           'attributes' => 
+          array (
+          ),
+        )),
+      ),
+       'attributes' => 
+      array (
+      ),
+    )),
+  ),
   '/home/nckrtl/projects/orbit-dev/packages/app/src/Http/Middleware/HandleInertiaRequests.php' => 
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware\\HandleInertiaRequests',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Middleware\\HandleInertiaRequests',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -11076,7 +10314,7 @@ return [
      *
      * @var string
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Middleware',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -11132,7 +10370,7 @@ return [
      * Get the client-side Reverb host based on APP_URL\'s TLD.
      * Server connects directly to 127.0.0.1:8080, but browsers need reverb.<tld> via Caddy.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Middleware',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -11167,7 +10405,7 @@ return [
      *
      * @see https://inertiajs.com/asset-versioning
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Middleware',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -11211,7 +10449,7 @@ return [
              'phpDocString' => '/**
      * Get the orbit-core version from git tags or commit hash.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Middleware',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -11248,7 +10486,7 @@ return [
      *
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware',
+             'namespace' => 'HardImpact\\Orbit\\App\\Http\\Middleware',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -11294,7 +10532,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Http\\Middleware\\ImplicitEnvironment',
+       'name' => 'HardImpact\\Orbit\\App\\Http\\Middleware\\ImplicitEnvironment',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -11389,7 +10627,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\OrbitServer',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\OrbitServer',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -11565,7 +10803,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts\\ConfigureLaravelEnvPrompt',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts\\ConfigureLaravelEnvPrompt',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -11614,7 +10852,7 @@ return [
              'phpDocString' => '/**
      * @return array<int, Argument>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts',
              'uses' => 
             array (
               'response' => 'Laravel\\Mcp\\Response',
@@ -11648,7 +10886,7 @@ return [
      * @param  array{project_slug: string}  $arguments
      * @return array<int, Response>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts',
              'uses' => 
             array (
               'response' => 'Laravel\\Mcp\\Response',
@@ -11694,7 +10932,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts\\SetupHorizonPrompt',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts\\SetupHorizonPrompt',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -11743,7 +10981,7 @@ return [
              'phpDocString' => '/**
      * @return array<int, Argument>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts',
              'uses' => 
             array (
               'response' => 'Laravel\\Mcp\\Response',
@@ -11777,7 +11015,7 @@ return [
      * @param  array{project_slug: string}  $arguments
      * @return array<int, Response>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Prompts',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Prompts',
              'uses' => 
             array (
               'response' => 'Laravel\\Mcp\\Response',
@@ -11823,7 +11061,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ConfigResource',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ConfigResource',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -12011,7 +11249,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\EnvTemplateResource',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\EnvTemplateResource',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -12301,7 +11539,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\InfrastructureResource',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\InfrastructureResource',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -12518,7 +11756,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Resources\\ProjectsResource',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Resources\\ProjectsResource',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -12717,7 +11955,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\LogsTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\LogsTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -12820,7 +12058,7 @@ return [
              'phpDocString' => '/**
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Tools',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -12907,7 +12145,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\PhpTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\PhpTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -13010,7 +12248,7 @@ return [
              'phpDocString' => '/**
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Tools',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -13220,7 +12458,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectCreateTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectCreateTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -13323,7 +12561,7 @@ return [
              'phpDocString' => '/**
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Tools',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -13402,7 +12640,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectDeleteTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectDeleteTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -13505,7 +12743,7 @@ return [
              'phpDocString' => '/**
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Tools',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -13584,7 +12822,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\ProjectsTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\ProjectsTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -13765,7 +13003,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\RestartTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\RestartTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -13928,7 +13166,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StartTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StartTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -14091,7 +13329,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StatusTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StatusTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -14261,7 +13499,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\StopTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\StopTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => true,
@@ -14424,7 +13662,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools\\WorktreesTool',
+       'name' => 'HardImpact\\Orbit\\App\\Mcp\\Tools\\WorktreesTool',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -14527,7 +13765,7 @@ return [
              'phpDocString' => '/**
      * @return array<string, mixed>
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui\\Mcp\\Tools',
+             'namespace' => 'HardImpact\\Orbit\\App\\Mcp\\Tools',
              'uses' => 
             array (
               'environment' => 'HardImpact\\Orbit\\Core\\Models\\Environment',
@@ -14614,7 +13852,7 @@ return [
   array (
     0 => 
     \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\OrbitAppServiceProvider',
+       'name' => 'HardImpact\\Orbit\\App\\OrbitAppServiceProvider',
        'phpDoc' => NULL,
        'abstract' => false,
        'final' => false,
@@ -14747,7 +13985,7 @@ return [
      * Register the package\'s routes.
      * Called by consuming apps in their RouteServiceProvider or bootstrap.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui',
+             'namespace' => 'HardImpact\\Orbit\\App',
              'uses' => 
             array (
               'route' => 'Illuminate\\Support\\Facades\\Route',
@@ -14798,7 +14036,7 @@ return [
              'phpDocString' => '/**
      * Register MCP routes for AI tool integration.
      */',
-             'namespace' => 'HardImpact\\Orbit\\Ui',
+             'namespace' => 'HardImpact\\Orbit\\App',
              'uses' => 
             array (
               'route' => 'Illuminate\\Support\\Facades\\Route',
@@ -14823,32 +14061,6 @@ return [
           array (
           ),
         )),
-      ),
-       'attributes' => 
-      array (
-      ),
-    )),
-  ),
-  '/home/nckrtl/projects/orbit-dev/packages/app/src/Ui.php' => 
-  array (
-    0 => 
-    \PHPStan\Dependency\ExportedNode\ExportedClassNode::__set_state(array(
-       'name' => 'HardImpact\\Orbit\\Ui\\Ui',
-       'phpDoc' => NULL,
-       'abstract' => false,
-       'final' => false,
-       'extends' => NULL,
-       'implements' => 
-      array (
-      ),
-       'usedTraits' => 
-      array (
-      ),
-       'traitUseAdaptations' => 
-      array (
-      ),
-       'statements' => 
-      array (
       ),
        'attributes' => 
       array (

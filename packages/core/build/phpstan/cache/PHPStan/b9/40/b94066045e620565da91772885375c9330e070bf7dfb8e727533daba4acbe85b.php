@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/EnableServiceRequest.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Http\Integrations\Orbit\Requests\EnableServiceRequest
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-dc41afa9104a0b4b4d113e0250a82981563b0e47d2243e7d4562901f6f3444fd',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-3178bf4f660114638baba5ffb1073cbf2b47f268a5f47f0b7d5fe21483ee2b27',
    'data' => 
   array (
     'locatedSource' => 
@@ -26,8 +26,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 11,
-    'endLine' => 31,
+    'startLine' => 12,
+    'endLine' => 32,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => 'Saloon\\Http\\Request',
@@ -64,20 +64,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '\\Saloon\\Enums\\Method::POST',
           'attributes' => 
           array (
-            'startLine' => 15,
-            'endLine' => 15,
-            'startTokenPos' => 61,
-            'startFilePos' => 338,
-            'endTokenPos' => 63,
-            'endFilePos' => 349,
+            'startLine' => 16,
+            'endLine' => 16,
+            'startTokenPos' => 62,
+            'startFilePos' => 339,
+            'endTokenPos' => 64,
+            'endFilePos' => 350,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 15,
-        'endLine' => 15,
+        'startLine' => 16,
+        'endLine' => 16,
         'startColumn' => 5,
         'endColumn' => 44,
         'isPromoted' => false,
@@ -107,8 +107,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 18,
-        'endLine' => 18,
+        'startLine' => 19,
+        'endLine' => 19,
         'startColumn' => 9,
         'endColumn' => 33,
         'isPromoted' => true,
@@ -138,8 +138,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 19,
-        'endLine' => 19,
+        'startLine' => 20,
+        'endLine' => 20,
         'startColumn' => 9,
         'endColumn' => 37,
         'isPromoted' => true,
@@ -176,8 +176,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 18,
-            'endLine' => 18,
+            'startLine' => 19,
+            'endLine' => 19,
             'startColumn' => 9,
             'endColumn' => 33,
             'parameterIndex' => 0,
@@ -191,12 +191,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '[]',
               'attributes' => 
               array (
-                'startLine' => 19,
-                'endLine' => 19,
-                'startTokenPos' => 88,
-                'startFilePos' => 456,
-                'endTokenPos' => 89,
-                'endFilePos' => 457,
+                'startLine' => 20,
+                'endLine' => 20,
+                'startTokenPos' => 89,
+                'startFilePos' => 457,
+                'endTokenPos' => 90,
+                'endFilePos' => 458,
               ),
             ),
             'type' => 
@@ -214,8 +214,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 19,
-            'endLine' => 19,
+            'startLine' => 20,
+            'endLine' => 20,
             'startColumn' => 9,
             'endColumn' => 37,
             'parameterIndex' => 1,
@@ -228,8 +228,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 17,
-        'endLine' => 20,
+        'startLine' => 18,
+        'endLine' => 21,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -263,8 +263,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 22,
-        'endLine' => 25,
+        'startLine' => 23,
+        'endLine' => 26,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -298,8 +298,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 27,
-        'endLine' => 30,
+        'startLine' => 28,
+        'endLine' => 31,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

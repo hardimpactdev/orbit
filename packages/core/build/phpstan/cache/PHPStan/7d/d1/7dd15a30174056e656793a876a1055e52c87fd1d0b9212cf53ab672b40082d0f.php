@@ -22,7 +22,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_30_100000_create_workspaces_table.php' => 
     array (
-      0 => '37cb0724c0cfb01497bda544616629d21ccabd3c2f2bc8e422c453ecc5252cf0',
+      0 => '9daf8fb3d6d90a0dfddcc12a65d45abf0ca08102704f6fbc187d6d8cf0441d06',
       1 => 
       array (
       ),
@@ -216,6 +216,21 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         2 => 'hardimpact\\orbit\\core\\database\\factories\\default',
         3 => 'hardimpact\\orbit\\core\\database\\factories\\provisioning',
         4 => 'hardimpact\\orbit\\core\\database\\factories\\witherror',
+      ),
+      3 => 
+      array (
+      ),
+    ),
+    '/home/nckrtl/projects/orbit-dev/packages/core/database/migrations/2026_01_31_000001_add_indexes_to_projects_table.php' => 
+    array (
+      0 => 'c2fd09c585414d81709f167e060668a1ac917430f68158467aed29e40b81ad55',
+      1 => 
+      array (
+      ),
+      2 => 
+      array (
+        0 => 'up',
+        1 => 'down',
       ),
       3 => 
       array (

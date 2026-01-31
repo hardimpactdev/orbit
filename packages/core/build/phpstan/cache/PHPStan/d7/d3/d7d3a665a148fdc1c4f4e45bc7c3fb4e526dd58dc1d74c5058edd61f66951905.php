@@ -108,7 +108,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Workspace.php' => 
     array (
-      0 => '2abcc8901476b538b88acc6c52973fbb4043af5325f1a7faaf3de1cda1258ed2',
+      0 => '7135caac901af09f436b345a9c94ba052557805ed8be05efc2fa3a8d497c25ae',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\models\\workspace',
@@ -117,7 +117,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
       array (
         0 => 'hardimpact\\orbit\\core\\models\\environment',
         1 => 'hardimpact\\orbit\\core\\models\\getprojectcountattribute',
-        2 => 'hardimpact\\orbit\\core\\models\\gethasworkspacefileattribute',
+        2 => 'hardimpact\\orbit\\core\\models\\hasworkspacefile',
         3 => 'hardimpact\\orbit\\core\\models\\addproject',
         4 => 'hardimpact\\orbit\\core\\models\\removeproject',
         5 => 'hardimpact\\orbit\\core\\models\\tofrontendarray',
@@ -128,7 +128,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Project.php' => 
     array (
-      0 => '8b6cdf804fdaf156038f94a4ca215b8a18e833b1b5bab20bef46af39cdf3d270',
+      0 => 'eeef06d046c3cfa96c04beca350ed50a33fc1a14686626e415836bf27c410802',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\models\\project',
@@ -163,7 +163,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Models/Environment.php' => 
     array (
-      0 => 'ca4c4f77740d7a7a0e0f27b3c35532aac60f5a2cbf8dcffe7fa7dd885287fcab',
+      0 => 'b0bdd508f5deae2ee22a295f53c84f78014234e122e1cf1ef7b3958fbb5217f1',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\models\\environment',
@@ -287,7 +287,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RebuildProjectRequest.php' => 
     array (
-      0 => 'f8e608e3e3bfd13287ece3761187ac2e79c5072a3aae27082b6ee0b6fa951969',
+      0 => '7069364196ad3bbfaba0f8d5ac607166896316cafb15d6bea7eed267dedce60f',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\rebuildprojectrequest',
@@ -304,7 +304,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServicesRequest.php' => 
     array (
-      0 => '54c2079a14af2eeadb300b71897bc33dfc0bac9df9cbb764bab8fe9230e90123',
+      0 => '9afe384f34512ef3a24d5a6bfef49055f942220b0a18835c0cc820da85f28fd1',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\stopservicesrequest',
@@ -320,7 +320,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetStatusRequest.php' => 
     array (
-      0 => 'd6ed2a45b9a743a6ee0ae4e70f3ac5a3934118eb8fd4fd02d16c603d52ca2f58',
+      0 => 'c9d193209263f080725c4b1b959148dad3c6335af306117352fc79a55cbb3a43',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getstatusrequest',
@@ -335,7 +335,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RemoveWorkspaceProjectRequest.php' => 
     array (
-      0 => '4fedd7ea10f6e5a315202f61beeea53ba90adca6c3e49a972aea363883a7c2e3',
+      0 => '06a366bb50dadd5ed1fc3e02bbc0e2e66e78ec88848d3f3b9ad62bdab7076cb9',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\removeworkspaceprojectrequest',
@@ -351,7 +351,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpRequest.php' => 
     array (
-      0 => 'e06b92c20e7506452aa9a2757ad664273a227f327e18d83bf03c4395d9ad623c',
+      0 => '9c15aae3ef65778ee8faf4ee7cce0c82396818b08b71c41941fd217b99b780ba',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getphprequest',
@@ -367,7 +367,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetServiceInfoRequest.php' => 
     array (
-      0 => '0a3e6094ba5199eb06fa5520cd001cd254ffe67dfa3e90693c2499b8fa9b96c5',
+      0 => '595e145629daf082400621827ef4a408060ae695de686ef0d37fedfa75a91f5b',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getserviceinforequest',
@@ -383,7 +383,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ListServicesRequest.php' => 
     array (
-      0 => '26094f3e7262fc68a75bf37ebf6c201d60150e54a70f58c69572ca7ebdbae764',
+      0 => 'c854074b2dbe2c9ee9df7913d466130974503258ae8bf52530d0e7e730a7fe74',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\listservicesrequest',
@@ -398,7 +398,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorktreesRequest.php' => 
     array (
-      0 => '3262e4e0230737e415e68942f7558ac5a087f515e709a4a8565266c5d99736e4',
+      0 => 'b2c6cdce3b5d265bdeb92a19b49f3787063e84ef97f7efc1556822657c28eaf8',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getworktreesrequest',
@@ -414,7 +414,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DisableServiceRequest.php' => 
     array (
-      0 => '7f89cb9d66c61ac7bcc5cf048c9fff80ac8f15bbfc174c714ecdbbef59a40c62',
+      0 => 'c9203bd4bdcd8f5c151606a9a95250dc187ebfa136a6c02ea0fbf4c8a16ef8d9',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\disableservicerequest',
@@ -430,7 +430,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/UnlinkPackageRequest.php' => 
     array (
-      0 => 'db1198f09032afd9d2de02ced63ee3cfabf47539396da5fea85cdfdc3f185fa4',
+      0 => '7d7a4c4aba709885b0ee4813188c26e022ec37e8d2279b587c2d0ec78c226020',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\unlinkpackagerequest',
@@ -446,7 +446,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServicesRequest.php' => 
     array (
-      0 => 'c98bc9a917781fd65b999d219122a531c2b49f296610192351a84c2307629cd7',
+      0 => '3ed0418bc4321244718c4ee9221bcbbb329c232c75fd2c4bde42994b4bc1feb3',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\restartservicesrequest',
@@ -462,7 +462,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ConfigureServiceRequest.php' => 
     array (
-      0 => '6e866218735f10ee0aa5b93ee665a2ad0fa7c483b49d4a756c8b976bc17c6c7d',
+      0 => '6a37143b5a9785b6de7cd46c56fbe864702f7ef88949481dbfe1244724e97778',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\configureservicerequest',
@@ -479,7 +479,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/CreateProjectRequest.php' => 
     array (
-      0 => '4dcf7119fc77b2fa45104e89683ed76225783a101e620e88b83f4da5b0dc1a99',
+      0 => 'a3edf43ff5d7eaed92eb1efb4389f6eca7788385963d4e9df97a2e512dcd119e',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\createprojectrequest',
@@ -496,7 +496,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RefreshWorktreesRequest.php' => 
     array (
-      0 => 'a262f767bbe6858aa0e805798e192d140c722f5104989564716e5ddb47b56918',
+      0 => '3e930277059cafd8349446f8b3e2bf7608644e45ad79d63c14e9a3e37900481d',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\refreshworktreesrequest',
@@ -511,7 +511,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/UnlinkWorktreeRequest.php' => 
     array (
-      0 => '825e05b4f4d0eb5f9ef9fc3bdb7b63475a5ad7ec5b62e3e56f342128ceb6e375',
+      0 => '46f771a7c88c009b1ba18ad06935ce566cba833ee49d9eea21261f9ee10b16fd',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\unlinkworktreerequest',
@@ -527,7 +527,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetProvisionStatusRequest.php' => 
     array (
-      0 => '989401c5742869b39fcf38a2ddf64c52e51066538dc40001f94207dd32af8226',
+      0 => 'c696be4820f2c82527c050542ee6a16873e20ddb55505a185143c58ef20cdea5',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getprovisionstatusrequest',
@@ -543,7 +543,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/AddWorkspaceProjectRequest.php' => 
     array (
-      0 => '7a504e55bd2f3ce39b8cb30577db3410d624b0fce32f20c8c46c67e1f4367187',
+      0 => 'd9614fde65d5741b77469fe96ba2c6c0188682bdb8a04e7e5db5e612abbf5c33',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\addworkspaceprojectrequest',
@@ -560,7 +560,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetPhpVersionsRequest.php' => 
     array (
-      0 => '88120746153aff74a534e8cb2bbe6752f8672f60297869ba4c09654d5e7b697e',
+      0 => '5cc31e9c02a151954be50e3fccf8dcad36f7b7550cfd2ce0f085178e343d0d1d',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getphpversionsrequest',
@@ -575,7 +575,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetServiceLogsRequest.php' => 
     array (
-      0 => '315f0c7633ac4353d86970ac0ab4e2945a35d0798d3f2604ea0a2f8b0f5113d6',
+      0 => 'ff7fa923f4a808312854c6eb821d9834470bee65f8461c72ff610f8b225fb8b6',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getservicelogsrequest',
@@ -592,7 +592,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/LinkPackageRequest.php' => 
     array (
-      0 => 'd0fbe04976ca997789a296f206d9b6d711a8a13a9beb0c6696b07b40c432142f',
+      0 => 'b98b53dffa96912f7d1c0f763b2d3406d2baeeb06194147ffe921021f549ac54',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\linkpackagerequest',
@@ -609,7 +609,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StartServicesRequest.php' => 
     array (
-      0 => '9aff59ddb5f67d515f5d497b7a3ca19132a9ee4fbf7d90ad19ccc898d7d1fee4',
+      0 => 'b85d2dfb5a4d83bee056936bd1522812fcf9160c3a4e3227cd6ed91cb89330fe',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\startservicesrequest',
@@ -625,7 +625,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ListAvailableServicesRequest.php' => 
     array (
-      0 => '54e9de7273c743475e621c5449e83b5e58f45809d4dca54d2028f49c2284f15a',
+      0 => 'ab8e3aa65bcedd169e6f3c0d27b0a576944d11d0e80d9e05a0779bb111b86e49',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\listavailableservicesrequest',
@@ -640,7 +640,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetLinkedPackagesRequest.php' => 
     array (
-      0 => '14d7b8fbf295a0188c55204c722686376198e007625465cb17b65100cddc025f',
+      0 => '91314911a8e357a5e5190bfc16ec43d7c980e6abed4fba7d41ce62c9ba30ae7c',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getlinkedpackagesrequest',
@@ -656,7 +656,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/CreateWorkspaceRequest.php' => 
     array (
-      0 => '5b1328bf5907c9ed5c68556a512c2870145b3e141af355fdcdf563591ca758cd',
+      0 => '1db5aeaaf71b91ab2d99f582d6c584dadbce6ba89c9accf1118fbb8a4578b26c',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\createworkspacerequest',
@@ -673,7 +673,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StopServiceRequest.php' => 
     array (
-      0 => 'ca987e40497e602438aac351058a771e147933eee91af017dac6ca38e6dee02c',
+      0 => '86893c1299eeca140f1e635181190f0fca09dbc427d36cd8f29b2038f0a8ba99',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\stopservicerequest',
@@ -689,7 +689,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetProjectsRequest.php' => 
     array (
-      0 => 'adae3ae964fd993cdf938f5e4bfe7f6e41a89d80cf42d270c0562b2f9e703990',
+      0 => '28923531d53ab21ed0d3213cb456fd576e49eddaec69b26afbe2991cf21bbf93',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getprojectsrequest',
@@ -704,7 +704,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteWorkspaceRequest.php' => 
     array (
-      0 => '2fae52fc1d65c1a33f1e80e33b06c0e422488ef99d349370f71a84fdd4721ce2',
+      0 => '5f2bf0953a74df7c0a4d213a951cb60c937b2964f8c1d1624ce10f9969afca99',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\deleteworkspacerequest',
@@ -720,7 +720,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteProjectRequest.php' => 
     array (
-      0 => 'ac1355fc5309e979b4e819ef2ed54eb8bb1d8fabaf785c3b8c35ec74135d7a23',
+      0 => '7ac08ee8e15549494147d7344dc1f94af9c80ebcd4cdbf2504ac52598529ef44',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\deleteprojectrequest',
@@ -737,7 +737,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/RestartServiceRequest.php' => 
     array (
-      0 => '77e6fe1a45b87f0376fc9d14497b9b72e5783410bfa04beebfd2f44088ea178a',
+      0 => 'ec2f73759f642013b5dd8e6b5ff144b938e92366c533bffe33191d5a64f75195',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\restartservicerequest',
@@ -754,7 +754,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/ResetPhpRequest.php' => 
     array (
-      0 => 'cbdb040bef2d731788875546192ff90b20c02a46f9a6a5908391798b59c46fde',
+      0 => 'b1062fd6da700b5158e79ffc2b4c42cdbf720feb15941b74e2e48c4db64a0104',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\resetphprequest',
@@ -770,7 +770,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/StartServiceRequest.php' => 
     array (
-      0 => 'e74e1177e7b8f623f93670d667dc82070759be24fd39fde85646c9747b00363f',
+      0 => '51a341ff6486644cd53b7edd9ae933f07b6b5466bac273869ca6bc6c978b2549',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\startservicerequest',
@@ -786,7 +786,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetConfigRequest.php' => 
     array (
-      0 => 'f7a20a5983b9fa00177f9b25dc7c8997158593dd6569d87584b95f7b9b834066',
+      0 => '55f13579b3d80664ddb3e4763ebe32d78cccb464f44b495fa346cdd529a686e9',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getconfigrequest',
@@ -801,7 +801,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/EnableServiceRequest.php' => 
     array (
-      0 => 'dc41afa9104a0b4b4d113e0250a82981563b0e47d2243e7d4562901f6f3444fd',
+      0 => '3178bf4f660114638baba5ffb1073cbf2b47f268a5f47f0b7d5fe21483ee2b27',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\enableservicerequest',
@@ -818,7 +818,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/GetWorkspacesRequest.php' => 
     array (
-      0 => 'd0151f8e2fb93b8464fbb2494ba3573d4c0db15690b56e47964c47a14ff3e1ae',
+      0 => '9b3989694583b3536b827e450e009755c4cc977cd4a6d86e43dd00c368bff4c5',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\getworkspacesrequest',
@@ -833,7 +833,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/SetPhpRequest.php' => 
     array (
-      0 => '147da5d80d3711c486cee21e87efb1d22104a75c14a76e01bf64ae718d07bb40',
+      0 => '0b9e7d41e703f69ce468686b689fdafac9ad850171a5d6a016644e3c67045a28',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\http\\integrations\\orbit\\requests\\setphprequest',
@@ -922,7 +922,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/OrbitCoreServiceProvider.php' => 
     array (
-      0 => 'b147b5d297202c0468ee8948e59d1dc25dfa5b4b983c3c57751ffacc61a015e0',
+      0 => '1941cb4c4e5dd4d439cfb3df2ef5135cf0f6f64be98cfcab7046d5bfd21e432c',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\orbitcoreserviceprovider',
@@ -960,7 +960,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/SshService.php' => 
     array (
-      0 => '214a4fd39a38953a278f70d0610980532c284075139bef8976f452c514bf648f',
+      0 => '9f9fbfb46d7a87009c0653f368a5b9c4f2f71aef65aecf3d272681ae9a26e8fa',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\sshservice',
@@ -981,7 +981,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/MacPhpFpmConfigService.php' => 
     array (
-      0 => '08cb00bd5b1c8ea5751a9d632e8070b844a5d3721875cf4a8142a08bcd8ffde5',
+      0 => '880f5096fb88a939c0203d540d5d093927b030f4af3304057520a6e42f479e0a',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\macphpfpmconfigservice',
@@ -1003,7 +1003,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php' => 
     array (
-      0 => '0146bc66f3e47b5b62b3502d9c2700a92e317153f1ecb27f49de36d98e2977af',
+      0 => '44ac34e682694c5564aa1b7316117e6a711d713f26bc4ad253f93b184bd0e147',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\doctorservice',
@@ -1030,7 +1030,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/WorkspaceDbService.php' => 
     array (
-      0 => 'f84f5bd1f0156e234a5cca86e8dfe9e95ceac332ebfb1b872c941db93ba989e7',
+      0 => '969bb6728c585497136dc7d0354858048197c770a160e5a7dfa6bf8501bbb9ee',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\workspacedbservice',
@@ -1052,7 +1052,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/StatusService.php' => 
     array (
-      0 => '7f81d1db1172b1391f49c46ac50d3baa6fa31503ad7fae761035f2bced42b4bb',
+      0 => 'fef3a240f6d83bd48b58fb68773bd816af21eca53cb1fb1e986c3b375a1be62e',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\statusservice',
@@ -1074,7 +1074,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ProjectCliService.php' => 
     array (
-      0 => '1d7b5011f08960d01ee6291820fea5b3fe552af5697b672d7d1025b148e31238',
+      0 => '182012a936ca1d0c241aeeacc68964263741819424d17fbb95a3009f4b9e3be2',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\projectcliservice',
@@ -1104,7 +1104,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorkspaceService.php' => 
     array (
-      0 => 'a7a072405e24a4ef5653b75cde8eed1ce5975557cc9afe4199cf8b735109d511',
+      0 => 'b82db913f7fc844f6b6063e3bcb497d4ebd52e9777e75c6286808f5208999d09',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\workspaceservice',
@@ -1125,7 +1125,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/WorktreeService.php' => 
     array (
-      0 => '8cd10e680018d9d1561a428c0e31641ca5bda9212a703dd416a8efd03a414483',
+      0 => '3b84b0dbb718deb5b5d73190b2a1c5cc09ffdf7cd88307d1d038a00ae041bf4a',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\worktreeservice',
@@ -1143,7 +1143,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/ConnectorService.php' => 
     array (
-      0 => '8f76dde5f972beaa0afb6f6b7adb1492aedc817f077ffcba7b3b3f1599eb878c',
+      0 => '1bc4eeac7f75dd8a01778d672fd91553fdd2b3c8cde444c45cd9f37d2a51b9b4',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\connectorservice',
@@ -1163,7 +1163,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php' => 
     array (
-      0 => '8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
+      0 => '6a6e66884933e7d05c1a395771bb697e5a14e1801a09dd658639900ab4663a5d',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\shared\\commandservice',
@@ -1187,7 +1187,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/PackageService.php' => 
     array (
-      0 => '8707eebb7d48fc5eb44813e824b97c35c8081a389f1e10a6bf4bf506ba29eab5',
+      0 => '577459870742024280b11f6136baa2ba73e2b4b693f52163f42d99b21687ab1c',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\packageservice',
@@ -1205,7 +1205,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ServiceControlService.php' => 
     array (
-      0 => '0bd8bce81386cdb7d2c78f89bb8fd5ac033f60f906e622e464d4d96b848819fc',
+      0 => '45a72c20373d8749191c581e7743563a619558d4d790b99b64d57b3f86d31cec',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\servicecontrolservice',
@@ -1243,7 +1243,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/ConfigurationService.php' => 
     array (
-      0 => '469d4502ff2460d17f44d6c6f6d19bb118bba64867886d9d5a786337a8f2a047',
+      0 => '698a44fa06c3b96f49c24b788bb5bf1d8d8442645324506dda92d888c9f30059',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitcli\\configurationservice',
@@ -1272,7 +1272,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/EnvironmentManager.php' => 
     array (
-      0 => 'dea1dc742bb150d121c52f0f801b2b2a5da6ea2fb0b57eed3080500b37903e4d',
+      0 => 'dc121a07189f97b3ca7fe118299b4373cd592ca460faaead8a53f8655cb16ece',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\environmentmanager',
@@ -1288,7 +1288,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/HorizonService.php' => 
     array (
-      0 => '255cd9971fcc69b6f9a80db3b725d63e6ce0141b16b52f9971f4cac07d51ce19',
+      0 => '06bd07e7c9d0d09d639ea0eb49fa241caa89f3bced28845e8977a021563a6cb6',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\horizonservice',
@@ -1311,7 +1311,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProvisioningService.php' => 
     array (
-      0 => 'c141f19fc3e6ff672e1187d36358a976d71a8dae2534e21227de665ae0921822',
+      0 => '4e3e8441b591b07bc6ffe32c57912b54469b4761c023da8ed2f1370f74ce371f',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\provisioningservice',
@@ -1459,7 +1459,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitService.php' => 
     array (
-      0 => '4d96f5afd799809795c4430bc989019fc55d4c63e735ac4239544068b82507c9',
+      0 => '1d19961eb579399afbcf2722b694aba1f6f7307a6a8b9e5fd11862311b641b3b',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\orbitservice',
@@ -1541,7 +1541,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/ProjectService.php' => 
     array (
-      0 => '02bba2d164fbb71fde96fc63a9d9316dc20126ada7c26a3cb7d514aa43400784',
+      0 => 'bf2e49a1681030b9477bb2e053cc1d10c9a361b3afd5bcebdc6846dde2da0988',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\projectservice',
@@ -1560,7 +1560,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php' => 
     array (
-      0 => '887c40bd3bc7e66d2893f434f099c2d8b9082ae6f6cd5ee1af4459ac39ec11fe',
+      0 => '09eebf267bd23abb0d306685fd8ca62db528c6b3b0caabb24f2ab0859e770aed',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\dnsresolverservice',
@@ -1663,7 +1663,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/CliUpdateService.php' => 
     array (
-      0 => 'b6503ea5a4bcaa450abfdaa31908a16a360c5e6b5d2142ae63ed40f8db10b46f',
+      0 => '1dcc4f8a1a88e989663cfca80891b18a6f3f89479d4e6d2ed9e885081dae3867',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\cliupdateservice',
@@ -1969,7 +1969,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => 
     array (
-      0 => '929a433c23b5ce972c8cab147924c1fad4071f4b9e55732dd0b7ddbe000d7eb4',
+      0 => '58108b1f1ef678c35153a571038a2c950bf7416b33c2d96c3bce807ff8d1425a',
       1 => 
       array (
         0 => 'hardimpact\\orbit\\core\\services\\notificationservice',

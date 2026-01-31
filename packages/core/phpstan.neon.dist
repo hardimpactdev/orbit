@@ -1,4 +1,5 @@
 includes:
+    - vendor/larastan/larastan/extension.neon
     - phpstan-baseline.neon
 
 parameters:
@@ -8,3 +9,10 @@ parameters:
         - config
         - database
     tmpDir: build/phpstan
+    checkOctaneCompatibility: true
+    checkModelProperties: true
+    ignoreErrors:
+        # env() calls in config files are correct Laravel pattern
+        # Larastan false positive for package config files
+        - message: "#Called 'env' outside of the config directory#"
+          path: config/orbit.php

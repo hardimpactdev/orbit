@@ -217,7 +217,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => '929a433c23b5ce972c8cab147924c1fad4071f4b9e55732dd0b7ddbe000d7eb4',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/NotificationService.php' => '58108b1f1ef678c35153a571038a2c950bf7416b33c2d96c3bce807ff8d1425a',
     ),
   ),
 ));

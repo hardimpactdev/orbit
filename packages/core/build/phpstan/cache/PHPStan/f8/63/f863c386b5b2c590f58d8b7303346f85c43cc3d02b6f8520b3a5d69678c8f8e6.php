@@ -160,7 +160,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php' => '887c40bd3bc7e66d2893f434f099c2d8b9082ae6f6cd5ee1af4459ac39ec11fe',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DnsResolverService.php' => '09eebf267bd23abb0d306685fd8ca62db528c6b3b0caabb24f2ab0859e770aed',
     ),
   ),
 ));

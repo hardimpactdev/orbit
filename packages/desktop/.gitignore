@@ -1,0 +1,59 @@
+# Laravel
+/vendor
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+.env.backup
+.env.production
+.phpunit.result.cache
+
+# Storage
+/storage/*.key
+/storage/pail
+/storage/logs/*.log
+/storage/framework/cache/data/
+/storage/framework/sessions/
+/storage/framework/testing/
+/storage/framework/views/
+
+# Bootstrap
+/bootstrap/cache/*.php
+/bootstrap/ssr
+
+# Build artifacts
+/public/build
+/public/hot
+/public/storage
+
+# NativePHP
+/native
+/dist
+
+# IDE
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+/coverage
+.phpunit.cache
+
+# Composer
+composer.lock
+auth.json
+
+# Misc
+*.swp
+*.swo
+*~

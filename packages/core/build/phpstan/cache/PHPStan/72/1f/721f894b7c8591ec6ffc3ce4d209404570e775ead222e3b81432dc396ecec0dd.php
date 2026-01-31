@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/HorizonService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\HorizonService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-255cd9971fcc69b6f9a80db3b725d63e6ce0141b16b52f9971f4cac07d51ce19',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-06bd07e7c9d0d09d639ea0eb49fa241caa89f3bced28845e8977a021563a6cb6',
    'data' => 
   array (
     'locatedSource' => 
@@ -29,8 +29,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 12,
-    'endLine' => 168,
+    'startLine' => 13,
+    'endLine' => 169,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -70,8 +70,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Determine which horizon instance to use based on the app context.
  */',
-        'startLine' => 17,
-        'endLine' => 20,
+        'startLine' => 18,
+        'endLine' => 21,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -107,8 +107,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the systemd service name for the current context.
  */',
-        'startLine' => 25,
-        'endLine' => 28,
+        'startLine' => 26,
+        'endLine' => 29,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -144,8 +144,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the service key used in the UI.
  */',
-        'startLine' => 33,
-        'endLine' => 36,
+        'startLine' => 34,
+        'endLine' => 37,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -181,8 +181,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check if horizon is running.
  */',
-        'startLine' => 41,
-        'endLine' => 59,
+        'startLine' => 42,
+        'endLine' => 60,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -218,8 +218,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Start horizon service.
  */',
-        'startLine' => 64,
-        'endLine' => 81,
+        'startLine' => 65,
+        'endLine' => 82,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -255,8 +255,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Stop horizon service.
  */',
-        'startLine' => 86,
-        'endLine' => 103,
+        'startLine' => 87,
+        'endLine' => 104,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -292,8 +292,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Restart horizon service.
  */',
-        'startLine' => 108,
-        'endLine' => 124,
+        'startLine' => 109,
+        'endLine' => 125,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -320,12 +320,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '100',
               'attributes' => 
               array (
-                'startLine' => 129,
-                'endLine' => 129,
-                'startTokenPos' => 642,
-                'startFilePos' => 3312,
-                'endTokenPos' => 642,
-                'endFilePos' => 3314,
+                'startLine' => 130,
+                'endLine' => 130,
+                'startTokenPos' => 643,
+                'startFilePos' => 3313,
+                'endTokenPos' => 643,
+                'endFilePos' => 3315,
               ),
             ),
             'type' => 
@@ -343,8 +343,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 129,
-            'endLine' => 129,
+            'startLine' => 130,
+            'endLine' => 130,
             'startColumn' => 29,
             'endColumn' => 44,
             'parameterIndex' => 0,
@@ -367,8 +367,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get horizon logs.
  */',
-        'startLine' => 129,
-        'endLine' => 152,
+        'startLine' => 130,
+        'endLine' => 153,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -404,8 +404,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get status info for the services list.
  */',
-        'startLine' => 157,
-        'endLine' => 167,
+        'startLine' => 158,
+        'endLine' => 168,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

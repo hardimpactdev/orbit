@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/DoctorService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\DoctorService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-0146bc66f3e47b5b62b3502d9c2700a92e317153f1ecb27f49de36d98e2977af',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-44ac34e682694c5564aa1b7316117e6a711d713f26bc4ad253f93b184bd0e147',
    'data' => 
   array (
     'locatedSource' => 
@@ -26,8 +26,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 10,
-    'endLine' => 555,
+    'startLine' => 11,
+    'endLine' => 556,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -62,8 +62,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 13,
-        'endLine' => 13,
+        'startLine' => 14,
+        'endLine' => 14,
         'startColumn' => 9,
         'endColumn' => 33,
         'isPromoted' => true,
@@ -93,8 +93,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 14,
-        'endLine' => 14,
+        'startLine' => 15,
+        'endLine' => 15,
         'startColumn' => 9,
         'endColumn' => 39,
         'isPromoted' => true,
@@ -124,8 +124,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 15,
-        'endLine' => 15,
+        'startLine' => 16,
+        'endLine' => 16,
         'startColumn' => 9,
         'endColumn' => 46,
         'isPromoted' => true,
@@ -155,8 +155,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 16,
-        'endLine' => 16,
+        'startLine' => 17,
+        'endLine' => 17,
         'startColumn' => 9,
         'endColumn' => 49,
         'isPromoted' => true,
@@ -193,8 +193,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 13,
-            'endLine' => 13,
+            'startLine' => 14,
+            'endLine' => 14,
             'startColumn' => 9,
             'endColumn' => 33,
             'parameterIndex' => 0,
@@ -219,8 +219,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 14,
-            'endLine' => 14,
+            'startLine' => 15,
+            'endLine' => 15,
             'startColumn' => 9,
             'endColumn' => 39,
             'parameterIndex' => 1,
@@ -245,8 +245,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 15,
-            'endLine' => 15,
+            'startLine' => 16,
+            'endLine' => 16,
             'startColumn' => 9,
             'endColumn' => 46,
             'parameterIndex' => 2,
@@ -271,8 +271,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 16,
-            'endLine' => 16,
+            'startLine' => 17,
+            'endLine' => 17,
             'startColumn' => 9,
             'endColumn' => 49,
             'parameterIndex' => 3,
@@ -285,8 +285,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 12,
-        'endLine' => 17,
+        'startLine' => 13,
+        'endLine' => 18,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -324,8 +324,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 22,
-            'endLine' => 22,
+            'startLine' => 23,
+            'endLine' => 23,
             'startColumn' => 31,
             'endColumn' => 54,
             'parameterIndex' => 0,
@@ -348,8 +348,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Run all health checks for an environment.
  */',
-        'startLine' => 22,
-        'endLine' => 57,
+        'startLine' => 23,
+        'endLine' => 58,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -387,8 +387,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 62,
-            'endLine' => 62,
+            'startLine' => 63,
+            'endLine' => 63,
             'startColumn' => 45,
             'endColumn' => 68,
             'parameterIndex' => 0,
@@ -411,8 +411,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check SSH connectivity to the environment.
  */',
-        'startLine' => 62,
-        'endLine' => 89,
+        'startLine' => 63,
+        'endLine' => 90,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -450,8 +450,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 94,
-            'endLine' => 94,
+            'startLine' => 95,
+            'endLine' => 95,
             'startColumn' => 45,
             'endColumn' => 68,
             'parameterIndex' => 0,
@@ -474,8 +474,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check if the orbit CLI is installed and get its version.
  */',
-        'startLine' => 94,
-        'endLine' => 116,
+        'startLine' => 95,
+        'endLine' => 117,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -513,8 +513,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 121,
-            'endLine' => 121,
+            'startLine' => 122,
+            'endLine' => 122,
             'startColumn' => 44,
             'endColumn' => 67,
             'parameterIndex' => 0,
@@ -537,8 +537,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check Docker services status.
  */',
-        'startLine' => 121,
-        'endLine' => 179,
+        'startLine' => 122,
+        'endLine' => 180,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -576,8 +576,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 184,
-            'endLine' => 184,
+            'startLine' => 185,
+            'endLine' => 185,
             'startColumn' => 45,
             'endColumn' => 68,
             'parameterIndex' => 0,
@@ -600,8 +600,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check API connectivity (orbit web app).
  */',
-        'startLine' => 184,
-        'endLine' => 219,
+        'startLine' => 185,
+        'endLine' => 220,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -639,8 +639,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 225,
-            'endLine' => 225,
+            'startLine' => 226,
+            'endLine' => 226,
             'startColumn' => 44,
             'endColumn' => 67,
             'parameterIndex' => 0,
@@ -664,8 +664,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Check DNS resolution on the environment\'s server.
  * Verifies that dnsmasq is working on the environment.
  */',
-        'startLine' => 225,
-        'endLine' => 319,
+        'startLine' => 226,
+        'endLine' => 320,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -703,8 +703,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 325,
-            'endLine' => 325,
+            'startLine' => 326,
+            'endLine' => 326,
             'startColumn' => 38,
             'endColumn' => 61,
             'parameterIndex' => 0,
@@ -728,8 +728,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Check DNS resolution from the machine running the desktop app.
  * Verifies that .{tld} domains can be resolved via the environment\'s DNS server.
  */',
-        'startLine' => 325,
-        'endLine' => 402,
+        'startLine' => 326,
+        'endLine' => 403,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -767,8 +767,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 407,
-            'endLine' => 407,
+            'startLine' => 408,
+            'endLine' => 408,
             'startColumn' => 40,
             'endColumn' => 63,
             'parameterIndex' => 0,
@@ -791,8 +791,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check if config file exists and is valid.
  */',
-        'startLine' => 407,
-        'endLine' => 438,
+        'startLine' => 408,
+        'endLine' => 439,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -830,8 +830,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 443,
-            'endLine' => 443,
+            'startLine' => 444,
+            'endLine' => 444,
             'startColumn' => 40,
             'endColumn' => 52,
             'parameterIndex' => 0,
@@ -854,8 +854,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Generate a human-readable summary of the checks.
  */',
-        'startLine' => 443,
-        'endLine' => 476,
+        'startLine' => 444,
+        'endLine' => 477,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -893,8 +893,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 481,
-            'endLine' => 481,
+            'startLine' => 482,
+            'endLine' => 482,
             'startColumn' => 32,
             'endColumn' => 55,
             'parameterIndex' => 0,
@@ -917,8 +917,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Run a quick connectivity check (SSH + API only).
  */',
-        'startLine' => 481,
-        'endLine' => 494,
+        'startLine' => 482,
+        'endLine' => 495,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -956,8 +956,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 501,
-            'endLine' => 501,
+            'startLine' => 502,
+            'endLine' => 502,
             'startColumn' => 30,
             'endColumn' => 53,
             'parameterIndex' => 0,
@@ -982,8 +982,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 501,
-            'endLine' => 501,
+            'startLine' => 502,
+            'endLine' => 502,
             'startColumn' => 56,
             'endColumn' => 72,
             'parameterIndex' => 1,
@@ -1008,8 +1008,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  *
  * @return array{success: bool, message: string}
  */',
-        'startLine' => 501,
-        'endLine' => 507,
+        'startLine' => 502,
+        'endLine' => 508,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -1047,8 +1047,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 512,
-            'endLine' => 512,
+            'startLine' => 513,
+            'endLine' => 513,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -1071,8 +1071,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Fix local DNS resolver - now guides to use orbit-dns container.
  */',
-        'startLine' => 512,
-        'endLine' => 554,
+        'startLine' => 513,
+        'endLine' => 555,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

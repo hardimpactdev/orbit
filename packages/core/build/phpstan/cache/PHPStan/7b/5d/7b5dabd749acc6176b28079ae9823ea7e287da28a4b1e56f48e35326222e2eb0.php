@@ -2,7 +2,7 @@
 
 // odsl-/home/nckrtl/projects/orbit-dev/packages/core/src/Services/OrbitCli/Shared/CommandService.php-PHPStan\BetterReflection\Reflection\ReflectionClass-HardImpact\Orbit\Core\Services\OrbitCli\Shared\CommandService
 return \PHPStan\Cache\CacheItem::__set_state(array(
-   'variableKey' => 'v2-6.65.0.9-8.5.2-8fb1c52f65d39979c43c4eb96579f020ac53858c274fc2f91f524e4490a0ec51',
+   'variableKey' => 'v2-6.65.0.9-8.5.2-6a6e66884933e7d05c1a395771bb697e5a14e1801a09dd658639900ab4663a5d',
    'data' => 
   array (
     'locatedSource' => 
@@ -29,8 +29,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     'attributes' => 
     array (
     ),
-    'startLine' => 14,
-    'endLine' => 285,
+    'startLine' => 15,
+    'endLine' => 286,
     'startColumn' => 1,
     'endColumn' => 1,
     'parentClassName' => NULL,
@@ -62,20 +62,20 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
           'code' => '[\'$HOME/.local/bin/orbit\', \'/usr/local/bin/orbit\', \'$HOME/projects/orbit-cli/orbit\', \'$HOME/projects/orbit/orbit\', \'$HOME/.composer/vendor/bin/orbit\']',
           'attributes' => 
           array (
-            'startLine' => 18,
-            'endLine' => 24,
-            'startTokenPos' => 51,
-            'startFilePos' => 542,
-            'endTokenPos' => 68,
-            'endFilePos' => 738,
+            'startLine' => 19,
+            'endLine' => 25,
+            'startTokenPos' => 52,
+            'startFilePos' => 543,
+            'endTokenPos' => 69,
+            'endFilePos' => 739,
           ),
         ),
         'docComment' => NULL,
         'attributes' => 
         array (
         ),
-        'startLine' => 18,
-        'endLine' => 24,
+        'startLine' => 19,
+        'endLine' => 25,
         'startColumn' => 5,
         'endColumn' => 6,
       ),
@@ -102,8 +102,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'attributes' => 
         array (
         ),
-        'startLine' => 27,
-        'endLine' => 27,
+        'startLine' => 28,
+        'endLine' => 28,
         'startColumn' => 9,
         'endColumn' => 33,
         'isPromoted' => true,
@@ -140,8 +140,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 27,
-            'endLine' => 27,
+            'startLine' => 28,
+            'endLine' => 28,
             'startColumn' => 9,
             'endColumn' => 33,
             'parameterIndex' => 0,
@@ -154,8 +154,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         array (
         ),
         'docComment' => NULL,
-        'startLine' => 26,
-        'endLine' => 28,
+        'startLine' => 27,
+        'endLine' => 29,
         'startColumn' => 5,
         'endColumn' => 8,
         'couldThrow' => false,
@@ -193,8 +193,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 36,
-            'endLine' => 36,
+            'startLine' => 37,
+            'endLine' => 37,
             'startColumn' => 36,
             'endColumn' => 59,
             'parameterIndex' => 0,
@@ -219,8 +219,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 36,
-            'endLine' => 36,
+            'startLine' => 37,
+            'endLine' => 37,
             'startColumn' => 62,
             'endColumn' => 76,
             'parameterIndex' => 1,
@@ -234,12 +234,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '60',
               'attributes' => 
               array (
-                'startLine' => 36,
-                'endLine' => 36,
-                'startTokenPos' => 113,
-                'startFilePos' => 1148,
-                'endTokenPos' => 113,
-                'endFilePos' => 1149,
+                'startLine' => 37,
+                'endLine' => 37,
+                'startTokenPos' => 114,
+                'startFilePos' => 1149,
+                'endTokenPos' => 114,
+                'endFilePos' => 1150,
               ),
             ),
             'type' => 
@@ -257,8 +257,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 36,
-            'endLine' => 36,
+            'startLine' => 37,
+            'endLine' => 37,
             'startColumn' => 79,
             'endColumn' => 95,
             'parameterIndex' => 2,
@@ -284,8 +284,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  *
  * @param  int  $timeout  Timeout in seconds (default 60, use 600 for provisioning)
  */',
-        'startLine' => 36,
-        'endLine' => 45,
+        'startLine' => 37,
+        'endLine' => 46,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -323,8 +323,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 52,
-            'endLine' => 52,
+            'startLine' => 53,
+            'endLine' => 53,
             'startColumn' => 41,
             'endColumn' => 55,
             'parameterIndex' => 0,
@@ -338,12 +338,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '60',
               'attributes' => 
               array (
-                'startLine' => 52,
-                'endLine' => 52,
-                'startTokenPos' => 184,
-                'startFilePos' => 1685,
-                'endTokenPos' => 184,
-                'endFilePos' => 1686,
+                'startLine' => 53,
+                'endLine' => 53,
+                'startTokenPos' => 185,
+                'startFilePos' => 1686,
+                'endTokenPos' => 185,
+                'endFilePos' => 1687,
               ),
             ),
             'type' => 
@@ -361,8 +361,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 52,
-            'endLine' => 52,
+            'startLine' => 53,
+            'endLine' => 53,
             'startColumn' => 58,
             'endColumn' => 74,
             'parameterIndex' => 1,
@@ -387,8 +387,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  *
  * @param  int  $timeout  Timeout in seconds (default 60, use 600 for provisioning)
  */',
-        'startLine' => 52,
-        'endLine' => 103,
+        'startLine' => 53,
+        'endLine' => 104,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -426,8 +426,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 108,
-            'endLine' => 108,
+            'startLine' => 109,
+            'endLine' => 109,
             'startColumn' => 42,
             'endColumn' => 65,
             'parameterIndex' => 0,
@@ -452,8 +452,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 108,
-            'endLine' => 108,
+            'startLine' => 109,
+            'endLine' => 109,
             'startColumn' => 68,
             'endColumn' => 82,
             'parameterIndex' => 1,
@@ -476,8 +476,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Execute a command on a remote environment via SSH.
  */',
-        'startLine' => 108,
-        'endLine' => 126,
+        'startLine' => 109,
+        'endLine' => 127,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -515,8 +515,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 131,
-            'endLine' => 131,
+            'startLine' => 132,
+            'endLine' => 132,
             'startColumn' => 32,
             'endColumn' => 55,
             'parameterIndex' => 0,
@@ -558,8 +558,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Find the orbit binary on a remote environment.
  */',
-        'startLine' => 131,
-        'endLine' => 148,
+        'startLine' => 132,
+        'endLine' => 149,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -595,8 +595,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Check if CLI is installed locally.
  */',
-        'startLine' => 153,
-        'endLine' => 158,
+        'startLine' => 154,
+        'endLine' => 159,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -651,8 +651,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the local CLI path.
  */',
-        'startLine' => 163,
-        'endLine' => 166,
+        'startLine' => 164,
+        'endLine' => 167,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -690,8 +690,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 172,
-            'endLine' => 172,
+            'startLine' => 173,
+            'endLine' => 173,
             'startColumn' => 39,
             'endColumn' => 62,
             'parameterIndex' => 0,
@@ -716,8 +716,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 172,
-            'endLine' => 172,
+            'startLine' => 173,
+            'endLine' => 173,
             'startColumn' => 65,
             'endColumn' => 79,
             'parameterIndex' => 1,
@@ -731,12 +731,12 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
               'code' => '120',
               'attributes' => 
               array (
-                'startLine' => 172,
-                'endLine' => 172,
-                'startTokenPos' => 889,
-                'startFilePos' => 5574,
-                'endTokenPos' => 889,
-                'endFilePos' => 5576,
+                'startLine' => 173,
+                'endLine' => 173,
+                'startTokenPos' => 890,
+                'startFilePos' => 5575,
+                'endTokenPos' => 890,
+                'endFilePos' => 5577,
               ),
             ),
             'type' => 
@@ -754,8 +754,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
             'attributes' => 
             array (
             ),
-            'startLine' => 172,
-            'endLine' => 172,
+            'startLine' => 173,
+            'endLine' => 173,
             'startColumn' => 82,
             'endColumn' => 99,
             'parameterIndex' => 2,
@@ -779,8 +779,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Execute a command without expecting JSON output.
  * Used for operations where we just need success/failure.
  */',
-        'startLine' => 172,
-        'endLine' => 203,
+        'startLine' => 173,
+        'endLine' => 204,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -835,8 +835,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
         'docComment' => '/**
  * Get the CLI executable path from config or auto-detect.
  */',
-        'startLine' => 208,
-        'endLine' => 247,
+        'startLine' => 209,
+        'endLine' => 248,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,
@@ -892,8 +892,8 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
  * Get the user\'s home directory reliably.
  * Works in both CLI and HTTP context.
  */',
-        'startLine' => 253,
-        'endLine' => 284,
+        'startLine' => 254,
+        'endLine' => 285,
         'startColumn' => 5,
         'endColumn' => 5,
         'couldThrow' => false,

@@ -1,1 +1,32 @@
-var/
+# Laravel Zero
+/var
+
+# Composer
+/vendor
+composer.lock
+
+# Build artifacts
+/build
+.phpunit.result.cache
+.phpunit.cache
+
+# IDE
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+/coverage
+
+# Logs
+*.log
+
+# Misc
+*.swp
+*.swo
+*~

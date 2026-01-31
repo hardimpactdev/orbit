@@ -82,7 +82,7 @@ return \PHPStan\Cache\CacheItem::__set_state(array(
     ),
     1 => 
     array (
-      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteWorkspaceRequest.php' => '2fae52fc1d65c1a33f1e80e33b06c0e422488ef99d349370f71a84fdd4721ce2',
+      '/home/nckrtl/projects/orbit-dev/packages/core/src/Http/Integrations/Orbit/Requests/DeleteWorkspaceRequest.php' => '5f2bf0953a74df7c0a4d213a951cb60c937b2964f8c1d1624ce10f9969afca99',
     ),
   ),
 ));
