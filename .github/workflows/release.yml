@@ -61,7 +61,7 @@ jobs:
     outputs:
       new_tag: ${{ steps.bump.outputs.new_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.SPLIT_TOKEN }}
@@ -135,7 +135,7 @@ jobs:
     needs: release
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.release.outputs.new_tag }}
 
