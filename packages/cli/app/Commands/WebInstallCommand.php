@@ -118,7 +118,7 @@ final class WebInstallCommand extends Command
         // Use curl with progress bar
         $result = Process::timeout(300)->run(
             "curl -L --progress-bar -o {$cachedBundle} '".self::BUNDLE_DOWNLOAD_URL."' 2>&1",
-            function (string $type, string $output) {
+            function (string $type, string $output): void {
                 $this->output->write($output);
             }
         );
