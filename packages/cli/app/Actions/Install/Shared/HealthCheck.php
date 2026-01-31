@@ -180,7 +180,7 @@ final readonly class HealthCheck
             if ($this->dockerManager->isRunning($containerName)) {
                 $health = $this->dockerManager->getHealthStatus($containerName);
                 if ($health === 'healthy' || $health === null) {
-                    $logger->info("Docker service {$service} is running" . ($health ? " ({$health})" : ''));
+                    $logger->info("Docker service {$service} is running".($health ? " ({$health})" : ''));
                 } elseif ($health === 'starting') {
                     $logger->info("Docker service {$service} is starting");
                 } else {

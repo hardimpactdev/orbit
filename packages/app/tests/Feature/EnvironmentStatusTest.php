@@ -8,10 +8,25 @@ use HardImpact\Orbit\Core\Services\MacPhpFpmConfigService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ConfigurationService;
 use HardImpact\Orbit\Core\Services\OrbitCli\ProjectCliService;
 use HardImpact\Orbit\Core\Services\OrbitCli\StatusService;
+use HardImpact\Orbit\Core\Services\SetupService;
 
 beforeEach(function () {
     // Clean database before each test
     Environment::query()->delete();
+
+    // Mock SetupService to skip setup redirect in tests
+    $this->mock(SetupService::class, function ($mock) {
+        $mock->shouldReceive('needsSetup')->andReturn(false);
+        $mock->shouldReceive('getStatus')->andReturn([
+            'needs_setup' => false,
+            'cli_installed' => true,
+            'cli_version' => '1.0.0',
+            'has_local_environment' => true,
+            'has_services' => true,
+            'has_tld' => true,
+            'steps' => [],
+        ]);
+    });
 
     $this->mock(MacPhpFpmConfigService::class, function ($mock) {
         $mock->shouldReceive('ensureConfigured')->andReturn(true);

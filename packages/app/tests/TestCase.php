@@ -3,6 +3,7 @@
 namespace HardImpact\Orbit\App\Tests;
 
 use HardImpact\Orbit\App\OrbitAppServiceProvider;
+use HardImpact\Orbit\Core\OrbitCoreServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Inertia\ServiceProvider as InertiaServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -28,6 +29,7 @@ class TestCase extends Orchestra
     protected function getPackageProviders($app)
     {
         return [
+            OrbitCoreServiceProvider::class,
             OrbitAppServiceProvider::class,
             InertiaServiceProvider::class,
         ];
