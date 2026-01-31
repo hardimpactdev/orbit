@@ -230,6 +230,49 @@ php artisan migrate  # If new migrations
 
 ## Known Gotchas
 
+### NativePHP CI Build Requires .env
+
+NativePHP's `native:build` command requires a `.env` file to exist. In CI, the workflow must create one before building:
+
+```yaml
+- name: Create .env for build
+  working-directory: packages/desktop
+  run: |
+    cat > .env << 'EOF'
+    APP_NAME=OrbitDesktop
+    APP_ENV=production
+    APP_DEBUG=false
+    APP_URL=http://localhost
+    DB_CONNECTION=sqlite
+    NATIVEPHP_APP_ID=com.orbit.desktop
+    EOF
+    php artisan key:generate
+    echo "NATIVEPHP_APP_VERSION=${{ needs.release.outputs.new_tag }}" >> .env
+```
+
+**Why:** NativePHP's `CleansEnvFile` trait reads the `.env` during build. Without it, the build fails with "No such file or directory".
+
+### Shared Database Path
+
+All Orbit apps (CLI, Desktop, bundled Web) share the same SQLite database:
+
+```
+~/.config/orbit/database.sqlite
+```
+
+This is configured in each package's `config/database.php`:
+
+```php
+$home = $_SERVER['HOME'] ?? getenv('HOME') ?: '/tmp';
+$defaultDbPath = "{$home}/.config/orbit/database.sqlite";
+
+'sqlite' => [
+    'database' => env('DB_DATABASE', $defaultDbPath),
+],
+```
+
+**Why:** Users expect the same environments/projects in CLI, Desktop, and Web UI.
+
 ### NativePHP Uses npm (Not Bun)
 
 NativePHP doesn't support bun. Always use npm for this project:
