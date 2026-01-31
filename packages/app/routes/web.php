@@ -1,10 +1,10 @@
 <?php
 
-use HardImpact\Orbit\Ui\Http\Controllers\DashboardController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentController;
-use HardImpact\Orbit\Ui\Http\Controllers\ProvisioningController;
-use HardImpact\Orbit\Ui\Http\Controllers\SettingsController;
-use HardImpact\Orbit\Ui\Http\Controllers\SshKeyController;
+use HardImpact\Orbit\App\Http\Controllers\DashboardController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentController;
+use HardImpact\Orbit\App\Http\Controllers\ProvisioningController;
+use HardImpact\Orbit\App\Http\Controllers\SettingsController;
+use HardImpact\Orbit\App\Http\Controllers\SshKeyController;
 use Illuminate\Support\Facades\Route;
 
 if (config('orbit.multi_environment')) {
@@ -61,10 +61,10 @@ if (config('orbit.multi_environment')) {
 // SHARED ROUTES (Outside conditional)
 
 // Project routes - forwards to active environment's API
-Route::post('projects', [\HardImpact\Orbit\Ui\Http\Controllers\ProjectController::class, 'store'])->name('projects.store');
-Route::delete('projects/{slug}', [\HardImpact\Orbit\Ui\Http\Controllers\ProjectController::class, 'destroy'])->name('projects.destroy');
-Route::post('projects/{project}/php', [\HardImpact\Orbit\Ui\Http\Controllers\ProjectController::class, 'setPhpVersion'])->name('projects.php.set');
-Route::post('projects/{project}/php/reset', [\HardImpact\Orbit\Ui\Http\Controllers\ProjectController::class, 'resetPhpVersion'])->name('projects.php.reset');
+Route::post('projects', [\HardImpact\Orbit\App\Http\Controllers\ProjectController::class, 'store'])->name('projects.store');
+Route::delete('projects/{slug}', [\HardImpact\Orbit\App\Http\Controllers\ProjectController::class, 'destroy'])->name('projects.destroy');
+Route::post('projects/{project}/php', [\HardImpact\Orbit\App\Http\Controllers\ProjectController::class, 'setPhpVersion'])->name('projects.php.set');
+Route::post('projects/{project}/php/reset', [\HardImpact\Orbit\App\Http\Controllers\ProjectController::class, 'resetPhpVersion'])->name('projects.php.reset');
 
 // API routes for environment data
 Route::prefix('api/environments')->group(function (): void {

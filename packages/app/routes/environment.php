@@ -1,15 +1,15 @@
 <?php
 
-use HardImpact\Orbit\Ui\Http\Controllers\DnsController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentConfigController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentProjectController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentServiceController;
-use HardImpact\Orbit\Ui\Http\Controllers\EnvironmentStatusController;
-use HardImpact\Orbit\Ui\Http\Controllers\PackageController;
-use HardImpact\Orbit\Ui\Http\Controllers\PhpConfigController;
-use HardImpact\Orbit\Ui\Http\Controllers\WorkspaceController;
-use HardImpact\Orbit\Ui\Http\Controllers\WorktreeController;
+use HardImpact\Orbit\App\Http\Controllers\DnsController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentConfigController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentProjectController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentServiceController;
+use HardImpact\Orbit\App\Http\Controllers\EnvironmentStatusController;
+use HardImpact\Orbit\App\Http\Controllers\PackageController;
+use HardImpact\Orbit\App\Http\Controllers\PhpConfigController;
+use HardImpact\Orbit\App\Http\Controllers\WorkspaceController;
+use HardImpact\Orbit\App\Http\Controllers\WorktreeController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('set-default', [EnvironmentController::class, 'setDefault'])->name('environments.set-default');

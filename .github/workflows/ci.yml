@@ -81,13 +81,27 @@ jobs:
         working-directory: packages/app
         run: |
           # Use local core package instead of Packagist
-          composer config repositories.orbit-core path ../core
-          composer update hardimpactdev/orbit-core --no-progress
+          composer config repositories.orbit-core path ../core --no-plugins
+          # Remove any stale lock file to ensure fresh resolution
+          rm -f composer.lock
+          # Install with fresh resolution
           composer install --prefer-dist --no-progress
+          # Verify correct package is used
+          composer show hardimpactdev/orbit-core --path
 
       - name: Run PHPStan
         working-directory: packages/app
         run: ./vendor/bin/phpstan analyse --memory-limit=512M
+
+      - name: Debug route registration
+        working-directory: packages/app
+        run: |
+          # Show the route files being used
+          head -20 routes/web.php
+          head -20 routes/environment.php
+          # Verify controller class exists
+          php -r "require 'vendor/autoload.php'; echo class_exists('HardImpact\Orbit\App\Http\Controllers\EnvironmentServiceController') ? 'Controller exists' : 'Controller missing';"
+          echo ""
 
       - name: Run tests
         working-directory: packages/app
