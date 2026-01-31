@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// config for HardImpact\Orbit\Ui
+// config for HardImpact\Orbit\App
 return [
     /*
     |--------------------------------------------------------------------------
