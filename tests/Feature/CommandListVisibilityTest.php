@@ -12,6 +12,7 @@ it('shows orbit commands and hides framework commands from the command list', fu
 
     expect($output)->toContain('node:list')
         ->and($output)->toContain('node:register')
+        ->and($output)->toContain('node:show')
         ->and($output)->toContain('update:all')
         ->and($output)->not->toContain('migrate ')
         ->and($output)->not->toContain('boost:install')
