@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+GATEWAY_SSH="${ORBIT_E2E_GATEWAY_SSH:-gateway}"
+GATEWAY_PATH="${ORBIT_E2E_GATEWAY_PATH:-~/orbit}"
+
+case "${1:---local}" in
+    --local)
+        php artisan test --compact
+        ;;
+    --real)
+        php artisan test --compact
+        ssh "$GATEWAY_SSH" "cd $GATEWAY_PATH && php artisan update:all && php artisan test --compact && php artisan node:list"
+        ;;
+    -h|--help)
+        cat <<'HELP'
+usage: bin/e2e [--local | --real]
+
+Modes:
+  --local  Run the local test suite.
+  --real   Run local tests, then ask the gateway to run registry-backed update:all
+           and gateway-side tests.
+
+Environment:
+  ORBIT_E2E_GATEWAY_SSH   SSH target for the gateway. Defaults to "gateway".
+  ORBIT_E2E_GATEWAY_PATH  Orbit checkout path on the gateway. Defaults to "~/orbit".
+HELP
+        ;;
+    *)
+        echo "error: unknown mode '$1'" >&2
+        echo "usage: bin/e2e [--local | --real]" >&2
+        exit 2
+        ;;
+esac
