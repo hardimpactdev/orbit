@@ -20,10 +20,18 @@ preserved at `../orbit-old-may` and is reference material only.
 
 ## Reference Material
 
-Use `../orbit-old-may` for historical implementation and documentation context.
-Do not copy old behavior blindly. When current code and old docs disagree, treat
-the old repo as evidence, then make an explicit product decision before bringing
-the behavior forward.
+Orbit's current product contract lives in this repo:
+
+- `docs/BLUEPRINT.md`
+- `docs/MISSION.md`
+- `docs/CONCEPTS.md`
+- `docs/BUILDING-BLOCKS.md`
+- `docs/commands/**`
+
+Use `../orbit-old-may` for historical implementation and pre-clean-rebuild
+context. Do not copy old behavior blindly. When current code and old repo
+evidence disagree, treat the old repo as evidence, then make an explicit
+product decision before bringing the behavior forward.
 
 Before implementing Orbit-specific behavior, always consult `../orbit-old-may`
 for the previous solution. Prefer porting the old approach with the smallest
@@ -34,11 +42,11 @@ committing to that direction.
 
 Useful old-reference locations:
 
-- `../orbit-old-may/docs/BLUEPRINT.md`
-- `../orbit-old-may/docs/MISSION.md`
-- `../orbit-old-may/docs/CONCEPTS.md`
-- `../orbit-old-may/docs/BUILDING-BLOCKS.md`
-- `../orbit-old-may/docs/commands/**`
+- `../orbit-old-may/app/**`
+- `../orbit-old-may/config/**`
+- `../orbit-old-may/database/**`
+- `../orbit-old-may/tests/**`
+- `../orbit-old-may/docs/superpowers/**`
 - `../orbit-old-may/TESTING.md`
 
 ## Development Rules
@@ -49,6 +57,8 @@ Useful old-reference locations:
 - Keep the command surface contract-first. Use `.agents/skills/command-designer`
   when designing or changing command behavior.
 - Current code is implementation evidence, not permanent product authority.
+  Current `docs/` contracts are the product authority for broad command and
+  domain behavior.
 - Do not reintroduce broad legacy abstractions until the clean codebase has a
   concrete need for them.
 - Do not use destructive git commands unless explicitly asked.

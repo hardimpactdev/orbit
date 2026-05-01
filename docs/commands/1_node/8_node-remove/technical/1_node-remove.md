@@ -1,0 +1,224 @@
+# Technical Contract: `orbit node:remove [name]`
+
+[Back to public `node:remove` documentation.](../node-remove.md)
+
+**Owner:** `node`.
+
+**Effects:** `destructive`, `write`.
+
+**Prerequisites:**
+- The local caller role can be resolved according to the foundation
+  `general.local_node_role` contract.
+- The caller role is not `app`.
+- Gateway callers can read and write gateway-owned node intent.
+- Control callers have configured gateway access as defined in
+  [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md).
+
+**Post-input path eligibility:**
+- Destructive consent is resolved by interactive confirmation or `--force`.
+- The target node name resolves to an existing active node record.
+- The resolved node record's role is not `gateway`. No gateway node is
+  removable by `node:remove`, regardless of gateway count.
+- The target node may be the current control caller's own node record.
+
+## Signature
+
+```bash
+orbit node:remove [name] [--force] [--json]
+```
+
+## Input Contract
+
+This command follows the shared
+[Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
+| `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
+| `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
+
+## Caller Role Behavior
+
+`node:remove` resolves the caller role before command inputs are read. App-node
+callers are denied before prompts, forwarding, local writes, SSH, WireGuard
+changes, or other side effects. Configured control callers resolve input locally
+and forward the removal request to the gateway over HTTPS through WireGuard.
+
+| Caller role | Behavior |
+| --- | --- |
+| `control` | With configured gateway access, forward to the gateway over HTTPS through WireGuard. Without configured gateway access, fail before prompts or side effects. See [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md). |
+| `gateway` | Executes locally on the gateway. See [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md). |
+| `app` | Not allowed. Fail before prompts or side effects with `This command may only be run from a control or gateway node.` See [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md). |
+
+Role-specific behavior is defined in these companion contracts:
+
+- [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md):
+  control caller gateway-forwarding behavior.
+- [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md):
+  gateway-local execution behavior.
+- [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md): app caller
+  behavior.
+
+## Input Resolution
+
+1. Resolve caller role.
+   - If `general.local_node_role` is `app`, apply
+     [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md) and fail
+     before reading command arguments, rendering prompts, forwarding, local
+     writes, SSH, WireGuard changes, or other side effects.
+   - If `general.local_node_role` is unreadable or unsupported, fail before
+     prompts or side effects.
+2. Resolve execution context.
+   - If the caller role is `gateway`, execute locally on the gateway.
+   - If the caller role is `control`, require configured gateway access and
+     prepare a typed gateway request.
+3. Resolve `node_remove.name` from `[name]` or the selected input mode.
+   - In interactive mode, prompt when `[name]` is missing.
+   - In non-interactive mode, fail before side effects when `[name]` is absent.
+4. Validate `node_remove.name` immediately.
+   - Must match an existing active node record.
+   - Must not be any gateway node.
+   - If the caller is a control node and the target node record matches the
+     authenticated caller identity, set `node_remove.removed_self=true`.
+5. Resolve `node_remove.force` from `--force`. Default `false`.
+6. Apply destructive consent.
+   - If `--force` is present, destructive consent is resolved and no
+     confirmation prompt is rendered.
+   - In interactive mode without `--force`, render a confirmation prompt after
+     the target node is valid. If the operator cancels, fail before side
+     effects.
+   - In non-interactive mode without `--force`, fail before side effects.
+7. If running from a control node, forward the typed request to the gateway over
+   HTTPS through WireGuard. The gateway authenticates the control node identity
+   and authorizes the request through gateway-owned access policy before
+   gateway-owned side effects begin.
+
+## Input Mode Contracts
+
+- [Interactive input mode](5.1_node-remove_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_node-remove_input-mode_non-interactive.md)
+
+## Behavior Contract
+
+### Removal Target Rules
+
+- Find the node record by name. If not found, fail before side effects.
+- Already-absent removal is not an idempotent success.
+  - Rationale: the node record is the primary fleet identity. A missing node
+    record can indicate a typo, wrong gateway/network, or concurrent removal,
+    so the command reports `node.not_found` instead of treating absence as the
+    desired end state.
+- If the resolved node's role is `gateway`, fail before side effects. Gateway
+  retirement is outside `node:remove` and requires a future explicit gateway
+  migration/removal flow.
+- Apply the destructive consent rules from the selected input mode.
+
+### Gateway Intent Cleanup Rules
+
+- Delete all `node_access` records where the node is the consumer or the
+  serving node.
+- When the removed node is a development app node with a stored TLD, remove the
+  gateway-owned development DNS mapping for `*.nodes.tld`.
+- Delete the node record from the gateway registry.
+
+### WireGuard Detach Rules
+
+- Attempt to remove the node's gateway-managed WireGuard peer identity.
+- If the peer is already absent, continue without failure.
+- If peer removal fails for any other reason, capture the warning as remaining
+  node-family drift and continue.
+
+### Removal Result Rules
+
+- Return the removed node name, action, whether the removed node was the current
+  caller, grant count, peer removal status, and any structured warnings.
+
+### Scope Boundaries
+
+`node:remove` must not:
+- SSH into the target node.
+- Clean apps, workspaces, tools, processes, schedules, firewall rules, user
+  proxy routes, or deploy artifacts on the server.
+- Block removal because downstream family state exists.
+- Remove local caller settings or local WireGuard configuration when the removed
+  node is the local machine.
+
+Operators should remove or migrate apps through app-family commands such as
+[`app:remove`](../../../4_app/6_app-remove/app-remove.md) before removing the app
+node that owns them. This is operational guidance, not a blocking precondition:
+`node:remove` remains scoped to node identity, grants, and WireGuard peer
+detach.
+
+When a control caller removes its own node record, the command removes the
+gateway-owned node record, access grants, and WireGuard peer like any other
+control-node removal. The command does not require an extra flag beyond the
+shared destructive consent model. After success, future Orbit commands from
+that machine may fail until the machine is enrolled again or cleaned up through
+a future local cleanup command.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_node-remove_output-render_human.md)
+- [JSON renderer](6.2_node-remove_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Node not found | No active node record matches `name`. Already-absent removal is not idempotent. | Failure |
+| Gateway node removal | The target node has role `gateway`, regardless of gateway count. | Failure |
+| Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
+| Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
+| Caller role not allowed | The caller role is `app`. | Failure |
+| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
+| Authorization failed | A forwarded control caller is not authorized to operate on the gateway node. | Failure |
+| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
+
+Partial WireGuard detach during removal is reported as success with a structured
+warning, not as a command failure. The node record is removed; the stale peer is
+node-family drift. JSON output reports this under `success.meta.warnings` with
+`code=node.wireguard_peer_extra` and
+`next_command=doctor --family=node --fix`.
+
+The absent-target rule is intentionally different from `node:revoke`.
+`node:revoke` validates both endpoint node identities and then makes the
+relationship edge absent; an already-absent grant is safe to report as
+idempotent success. `node:remove` targets the endpoint identity itself, so an
+already-absent node remains a validation failure.
+
+## Doctor Relationship
+
+- Removed nodes disappear from the normal `doctor --family=node` scope.
+- A stale WireGuard peer for a removed node is reported as `extra` node identity
+  reality by the node-family probe. See
+  [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
+- `doctor --family=node --fix` may clean stale WireGuard peers.
+- Orphaned downstream family state on a removed node is not reported by the
+  node family. Each downstream family owns its own drift detection.
+
+## Test Mapping
+
+Primary test owners:
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/NodeRemoveCommandTest.php` | Command contract: removal of a node, grant cleanup, WireGuard peer teardown, structured warning reporting when WireGuard teardown fails, warning payload shape for partial WireGuard detach, DNS mapping cleanup, control-caller gateway forwarding, self-removal of the current control caller, app-node caller denial before prompts or side effects, node-not-found validation failure rather than idempotent success, any-gateway-node refusal, interactive confirmation, non-interactive missing-`--force` failure, `--force` success, and downstream state non-blocking. |
+| `tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when the WireGuard peer is already absent; any-gateway-node rejection. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before prompts or side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_node-remove_input-mode_interactive.md`](5.1_node-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_node-remove_input-mode_non-interactive.md`](5.2_node-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_node-remove_output-render_human.md`](6.1_node-remove_output-render_human.md#test-mapping)
+- [`6.2_node-remove_output-render_json.md`](6.2_node-remove_output-render_json.md#test-mapping)
+
+Role-specific test mapping lives in:
+
+- [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md#test-mapping)
+- [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md#test-mapping)
+- [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md#test-mapping)

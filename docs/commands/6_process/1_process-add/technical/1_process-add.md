@@ -1,0 +1,113 @@
+# Technical Contract: `orbit process:add [name] [command]`
+
+[Back to public `process:add` documentation.](../process-add.md)
+
+**Owner:** `process`.
+
+**Effects:** `write` (gateway process intent and derived node-runtime artifacts).
+
+**Prerequisites:**
+- The CLI caller can reach the Orbit gateway.
+- The caller role is `control` or `gateway`; `app` and `unknown` callers are
+  denied before prompts or side effects.
+- The current node identity is authorized to manage process intent for the
+  target app.
+- Runtime artifact rendering requires gateway SSH reachability to the owning app
+  node.
+
+## Signature
+
+```bash
+orbit process:add [name] [command] [--app=<app>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--start] [--json]
+```
+
+## Input Contract
+
+This command follows the shared
+[Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the owning app. |
+| `command` | `[command]` | Always. | Never. | None. | Non-empty command string. Stored as process intent without shell rewriting by the input adapter. |
+| `app` | `--app` or app context | Always. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may manage. |
+| `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
+| `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
+| `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after enactment when true. |
+| `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+
+`command` is positional here because it is required to create a process
+definition. The sibling `process:edit` command uses `--command=<command>` because
+command is one optional editable field and omission preserves the current value.
+
+## Caller Role Behavior
+
+`process:add` follows the
+[Process Caller Role Rule](../../README.md#process-caller-role-rule). It mutates
+app-owned process intent, so only `control` and `gateway` callers are valid.
+
+| Role | Validity | Consequence |
+| --- | --- | --- |
+| `control` | `valid` | Forward the command to the gateway API when authorized. |
+| `gateway` | `valid` | Execute against gateway-owned process intent and enact runtime artifacts through `RemoteShell`. |
+| `app` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
+| `unknown` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
+
+## Input Mode Contracts
+
+- [Interactive input mode](5.1_process-add_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_process-add_input-mode_non-interactive.md)
+
+## Behavior Contract
+
+### Process Definition Creation Rules
+
+1. Resolve caller role. Deny `app` and `unknown` callers before prompts or side
+   effects.
+2. Resolve caller authorization and target app.
+3. Validate process name uniqueness within the app.
+4. Create gateway-owned process intent with command, restart policy, and crash
+   notification policy.
+5. Derive runtime-unit identities for the main app instance and all active
+   workspaces.
+6. Render the derived runtime units on the owning app node.
+7. When `--start` is present, start the rendered runtime units and record
+   `started` events for units that start successfully.
+8. Render the selected output.
+
+If process intent is written but runtime-unit enactment or optional start fails,
+the command returns success with repairable process-family warnings because the
+requested durable intent exists.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_process-add_output-render_human.md)
+- [JSON renderer](6.2_process-add_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Caller role not allowed | The caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
+| Validation failed | Missing or invalid `name`, `command`, `app`, `restart_policy`, or `crash_notification`. | Failure (`error.code=validation_failed`). |
+| Authorization failed | The caller cannot manage process intent for the target app. | Failure (`error.code=authorization_failed`). |
+| Duplicate process | The owning app already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
+| Gateway unavailable | The CLI cannot reach the gateway API before intent is written. | Failure (`error.code=gateway_unavailable`). |
+
+## Doctor Relationship
+
+`process:add` writes process intent and attempts initial runtime-unit
+enactment. [`process-doctor.md`](../../process-doctor.md) owns later detection
+and repair of missing or divergent runtime units and lifecycle event notifier
+material.
+
+## Test Mapping
+
+Primary test owners:
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Command contract for process creation, caller-role denial before prompts or side effects, app resolution, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings after post-intent enactment failure, and no intent write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
+
+Renderer and input-mode test mapping lives in the split companion files.

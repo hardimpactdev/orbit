@@ -1,0 +1,111 @@
+# `orbit node:update [name]`
+
+[Back to Nodes commands.](../README.md)
+
+Update node registry metadata and role-owned settings.
+
+Modifies existing gateway-tracked node attributes such as host, environment, or
+operator-supplied public IP metadata without updating system packages or
+re-provisioning the host. Public IPv4/IPv6 metadata is never detected or
+refreshed automatically.
+
+## Usage
+
+```bash
+orbit node:update [name] [--host=<host>] [--environment=<development|production>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+```
+
+Run without arguments from a control or gateway node in a TTY to let the
+interactive input mode prompt for the node name and which field to change.
+App-node callers are rejected before prompts.
+
+In non-interactive input mode, at least one field flag must be provided;
+otherwise the command fails before side effects.
+
+## Examples
+
+```bash
+orbit node:update app-1 --host=app-1.ssh.example.com
+orbit node:update app-1 --environment=production
+orbit node:update gateway-1 --public-ipv4=203.0.113.2
+orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
+```
+
+## Arguments And Options
+
+- `name`: node name to update. Must exist in gateway node intent.
+- `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and `app`
+  nodes. Forbidden on `control` nodes. Updating this does not change the
+  gateway endpoint used in WireGuard peer configs. `node:new --role=gateway
+  --host=<host>` seeds that endpoint only during first-gateway bootstrap before
+  peer configs have been issued; `node:update --host` is later node metadata.
+- `--environment=<development|production>`: app-node environment. Only valid
+  for `app` nodes.
+- `--public-ipv4=<address>`: operator-supplied public IPv4 metadata. Valid for
+  `gateway` and `app` nodes. Forbidden on `control` nodes.
+- `--public-ipv6=<address>`: operator-supplied public IPv6 metadata. Valid for
+  `gateway` and `app` nodes. Forbidden on `control` nodes.
+- `--json`: Output JSON.
+
+Each field flag may be supplied at most once per invocation. Supplying the
+same field flag more than once is rejected as a validation failure rather
+than silently last-wins.
+
+## What Happens
+
+`node:update` updates gateway intent for supported node metadata. It does not
+update operating system packages, Orbit installations, tools, or general system
+services on the node; any node-side work is limited to Orbit-owned artifacts
+directly affected by the changed metadata.
+
+- Records public IPv4/IPv6 metadata only when explicit options are provided.
+  Orbit does not infer public IP metadata from `--host`, the gateway endpoint,
+  SSH reachability, or egress checks.
+- Treats public IPv4/IPv6 values as operator-supplied metadata only. Updating
+  them does not change the gateway endpoint used in WireGuard peer configs.
+- Re-enacts node-owned host artifacts when a changed setting has node-side
+  effects. Re-applying unchanged configuration is owned by
+  [`doctor --family=node --fix`](../node-doctor.md), not `node:update`.
+- Does not change a development app node's TLD after creation. Doctor may
+  repair drift back to the TLD already stored in gateway node intent, but
+  intentional TLD migration requires a future explicit command contract.
+- Does not change node role after creation. Role change is an identity
+  migration outside `node:update` scope; a future explicit role-migration
+  contract will own that flow.
+- Does not update app runtime policy, tool state, firewall policy, proxy
+  routes, processes, schedules, or deployment pipelines.
+
+No-op updates where the supplied value equals the current stored value are
+reported as successful with an empty `changed` array.
+
+When node-side artifact re-enactment fails after the gateway intent was
+written, the command still returns success and reports the remaining
+node-family drift as a warning that points at
+[`doctor --family=node --fix`](../node-doctor.md).
+
+## Output
+
+Human output summarizes changed fields and any enacted artifacts.
+
+JSON output returns the updated node record, the `changed` array, and any
+enactment warnings. See the [JSON renderer contract](technical/6.2_node-update_output-render_json.md)
+for the envelope shape.
+
+## Requirements
+
+- Must run on the gateway host or from a configured control node.
+- Control callers must be authorized to operate on the gateway node.
+- App-node callers are rejected before prompts or side effects.
+- The target node must exist in gateway intent.
+- At least one supported field must be provided in non-interactive input mode.
+
+## Related Commands
+
+- [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
+- [`node:show`](../4_node-show/node-show.md) — show node details
+- [`node:remove`](../8_node-remove/node-remove.md) — remove a node from the fleet
+- [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
+
+## Technical Contract
+
+See [`node:update` technical contract](technical/1_node-update.md).
