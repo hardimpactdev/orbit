@@ -24,3 +24,12 @@ it('keeps hidden framework commands directly invocable', function (): void {
 
     expect($process->isSuccessful())->toBeTrue();
 });
+
+it('uses the Orbit CLI name independent of local environment drift', function (): void {
+    $process = new Process([PHP_BINARY, 'artisan', '--version'], base_path(), [
+        'APP_NAME' => 'Laravel',
+    ]);
+    $process->mustRun();
+
+    expect(trim($process->getOutput()))->toBe('Orbit 0.1.0');
+});
