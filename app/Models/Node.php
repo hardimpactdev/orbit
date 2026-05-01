@@ -18,6 +18,7 @@ class Node extends Model
         'is_local',
     ];
 
+    #[\Override]
     protected function casts(): array
     {
         return [

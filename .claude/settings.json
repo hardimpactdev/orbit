@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh gateway *)",
+      "Bash(ssh mini *)",
+      "Bash(ssh beast *)",
+      "Bash(bin/e2e *)",
+      "Bash(php artisan *)",
+      "Bash(composer *)"
+    ]
+  }
+}

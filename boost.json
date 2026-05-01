@@ -1,0 +1,18 @@
+{
+    "agents": [
+        "claude_code",
+        "codex"
+    ],
+    "guidelines": true,
+    "packages": [
+        "spatie/guidelines-skills"
+    ],
+    "skills": [
+        "laravel-best-practices",
+        "pest-testing",
+        "spatie-javascript",
+        "spatie-laravel-php",
+        "spatie-security",
+        "spatie-version-control"
+    ]
+}
