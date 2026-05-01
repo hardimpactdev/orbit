@@ -33,7 +33,7 @@ composer analyse
 composer rector
 composer format
 composer test
-bin/e2e --real
+composer test:live
 ```
 
 ## Legacy Reference

@@ -71,11 +71,13 @@ composer format
 composer test
 ```
 
-For real-node smoke verification, run:
+For standing live-node smoke verification, run:
 
 ```bash
-bin/e2e --real
+composer test:live
 ```
 
-See `TESTING.md` for the current node topology notes.
+Standing live-node smoke must stay read-only or idempotent. Destructive,
+provisioning, host-mutation, or repair/adoption flows require ephemeral E2E.
 
+See `TESTING.md` for the current node topology notes.

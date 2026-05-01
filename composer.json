@@ -55,6 +55,7 @@
             "@php artisan test"
         ],
         "test:e2e": "./bin/e2e",
+        "test:live": "./bin/live-smoke",
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
