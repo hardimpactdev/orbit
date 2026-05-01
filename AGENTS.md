@@ -25,6 +25,13 @@ Do not copy old behavior blindly. When current code and old docs disagree, treat
 the old repo as evidence, then make an explicit product decision before bringing
 the behavior forward.
 
+Before implementing Orbit-specific behavior, always consult `../orbit-old-may`
+for the previous solution. Prefer porting the old approach with the smallest
+clean-repo and Laravel 13 adjustments unless a new implementation is clearly
+simpler, safer, or better aligned with the rebuilt architecture. If you choose a
+new implementation for behavior the old repo already solved, document why before
+committing to that direction.
+
 Useful old-reference locations:
 
 - `../orbit-old-may/docs/BLUEPRINT.md`
@@ -37,6 +44,8 @@ Useful old-reference locations:
 ## Development Rules
 
 - Prefer small, working vertical slices over porting large legacy areas.
+- Do not re-solve Orbit-specific problems from scratch before checking how
+  `../orbit-old-may` solved them.
 - Keep the command surface contract-first. Use `.agents/skills/command-designer`
   when designing or changing command behavior.
 - Current code is implementation evidence, not permanent product authority.
