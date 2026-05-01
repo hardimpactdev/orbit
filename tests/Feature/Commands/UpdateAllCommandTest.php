@@ -56,7 +56,11 @@ it('updates the local checkout and every active remote node from the registry', 
 
     Process::assertRanTimes(fn (): bool => true, 3);
     Process::assertRan(fn ($process): bool => $process->path === base_path()
-        && $process->command === 'git pull --ff-only && composer install --no-interaction && php artisan migrate --force');
-    Process::assertRan('ssh nckrtl@mini \'cd /Users/nckrtl/orbit && git pull --ff-only && composer install --no-interaction && php artisan migrate --force\'');
-    Process::assertRan('ssh nckrtl@beast \'cd /home/nckrtl/orbit && git pull --ff-only && composer install --no-interaction && php artisan migrate --force\'');
+        && str_contains($process->command, 'COMPOSER_BIN="$(command -v composer || true)"')
+        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction')
+        && str_contains($process->command, 'php artisan migrate --force'));
+    Process::assertRan(fn ($process): bool => str_starts_with($process->command, "ssh nckrtl@mini 'cd /Users/nckrtl/orbit && ")
+        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction'));
+    Process::assertRan(fn ($process): bool => str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit && ")
+        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction'));
 });

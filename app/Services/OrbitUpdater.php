@@ -28,6 +28,9 @@ class OrbitUpdater
 
     public function updateCommand(): string
     {
-        return 'git pull --ff-only && composer install --no-interaction && php artisan migrate --force';
+        return 'COMPOSER_BIN="$(command -v composer || true)"; '
+            .'if [ -z "$COMPOSER_BIN" ] && [ -x "$HOME/.local/bin/composer" ]; then COMPOSER_BIN="$HOME/.local/bin/composer"; fi; '
+            .'if [ -z "$COMPOSER_BIN" ]; then echo "composer not found" >&2; exit 127; fi; '
+            .'git pull --ff-only && "$COMPOSER_BIN" install --no-interaction && php artisan migrate --force';
     }
 }

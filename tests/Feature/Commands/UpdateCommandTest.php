@@ -13,5 +13,7 @@ it('updates the local orbit checkout', function (): void {
         ->assertSuccessful();
 
     Process::assertRan(fn ($process): bool => $process->path === base_path()
-        && $process->command === 'git pull --ff-only && composer install --no-interaction && php artisan migrate --force');
+        && str_contains($process->command, 'COMPOSER_BIN="$(command -v composer || true)"')
+        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction')
+        && str_contains($process->command, 'php artisan migrate --force'));
 });
