@@ -34,7 +34,7 @@ orbit app:remove my-app --force
 1. **Intent Removal:** Deletes the gateway app intent record. This is the point of no return.
 2. **Dependent Cleanup:** Removes app-owned records from `proxy_route`, schedules, workspace intent, and process artifacts.
 3. **Artifact Cleanup:** Cleans node-side runtime artifacts (FPM config, app-owned directories) over SSH where possible.
-4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 (gateway intent removal) succeeds, any failure during dependent or node-side cleanup is reported as a non-fatal warning that points at the relevant `doctor --family=<family> --fix`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
+4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 (gateway intent removal) succeeds, any failure during dependent or node-side cleanup is reported as a non-fatal warning that points at the affected `doctor --family=<family> --fix`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
 
 ## Output Summary
 

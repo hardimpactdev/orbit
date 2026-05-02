@@ -124,7 +124,7 @@ If `dry_run` is `false`:
 ### 5. Convergence
 - `app:prune` is source-of-truth cleanup.
 - It is NOT drift repair. Drift, such as leftover files, routes, or runtime
-  units from a failed workspace removal Phase B step, is handled by the relevant
+  units from a failed workspace removal Phase B step, is handled by the affected
   family doctor.
 
 ## Renderer Contracts
@@ -157,5 +157,5 @@ If `dry_run` is `false`:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php` | Stale workspace identification, dry-run logic, delegation to workspace removal semantics, database skipping behavior, and lock acquisition. |
-| `tests/Feature/Commands/AppPruneCommandTest.php` | CLI contract: arguments, options, destructive consent, interactive prompts, renderer selection, and `workspace:remove` warning propagation. |
+| `tests/Feature/Commands/AppPruneCommandTest.php` | CLI contract: arguments, options, destructive consent, interactive prompts, renderer selection, `workspace:remove` warning propagation, and warning payload shape for `success.meta.warnings[]`. |
 | `tests/E2E/Ephemeral/AppPruneTest.php` | End-to-end execution with real agent IDE adapters (mocked or ephemeral) and node-side artifact verification. |

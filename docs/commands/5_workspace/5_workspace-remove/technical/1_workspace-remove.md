@@ -146,7 +146,7 @@ runs.
 - Once Phase A succeeds, the workspace disappears from registry-backed
   workspace command output.
 - Remaining Orbit-owned artifacts that failed to clean up are reported as
-  orphaned drift by the relevant family doctor:
+  orphaned drift by the affected family doctor:
   - Orphaned worktree or FPM pool: `workspace.artifact_extra` (handled by
     [`workspace-doctor.md`](../../workspace-doctor.md)).
   - Orphaned proxy routes: `proxy_route.route_extra` (handled by the
@@ -221,7 +221,7 @@ This atomicity boundary matches the resolved
 [`app:remove`](../../../4_app/6_app-remove/technical/1_app-remove.md) and
 [`node:remove`](../../../1_node/8_node-remove/technical/1_node-remove.md)
 exemplars: gateway-owned intent removal is the point of no return, and
-leftover node-side artifacts are convergence drift owned by the relevant
+leftover node-side artifacts are convergence drift owned by the affected
 family doctor — not a removal failure.
 
 ## Doctor Relationship
@@ -230,7 +230,7 @@ family doctor — not a removal failure.
   output.
 - Workspace-owned artifacts remaining after a failed cleanup are detected as
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)
-  and the relevant family doctors:
+  and the affected family doctors:
   - `workspace.artifact_extra` — orphaned worktree or FPM pool
     (`doctor --family=workspace --fix`).
   - `proxy_route.route_extra` — orphaned workspace-owned proxy route
@@ -238,7 +238,7 @@ family doctor — not a removal failure.
   - `process.runtime_unit_extra` — orphaned inherited process unit
     (`doctor --family=process --fix`).
 - `workspace:remove` does not duplicate per-family drift item shapes; it
-  points operators at the relevant `doctor --family=<family> --fix` via the
+  points operators at the affected `doctor --family=<family> --fix` via the
   warning's `next_command`.
 
 ## Test Mapping
@@ -249,4 +249,4 @@ family doctor — not a removal failure.
 | `tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php` | CWD-to-workspace resolution, self-targeting detection, and unresolved-CWD failure. |
 | `tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php` | Teardown step ordering and execution environment. |
 | `tests/Feature/Commands/Workspaces/WorkspaceRemoveCallerRoleTest.php` | Control and gateway caller allowance, app-node denial before prompts or side effects, and unknown-role failure. |
-| `tests/E2E/Ephemeral/WorkspaceRemoveTest.php` | End-to-end `workspace:remove` flow with SSH artifact cleanup, `--keep-files`, `--force`, and JSON envelope validation. |
+| `tests/E2E/Ephemeral/WorkspaceRemoveTest.php` | End-to-end `workspace:remove` flow with SSH artifact cleanup, `--keep-files`, `--force`, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

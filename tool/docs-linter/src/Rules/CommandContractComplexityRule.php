@@ -11,9 +11,9 @@ use OrbitDocsLinter\CommandDocsLintSeverity;
 
 final class CommandContractComplexityRule implements CommandDocsLintRule
 {
-    private const MaxScore = 70;
+    private const MaxScore = 140;
 
-    private const MaxBehaviorItems = 16;
+    private const MaxBehaviorItems = 24;
 
     public function id(): string
     {

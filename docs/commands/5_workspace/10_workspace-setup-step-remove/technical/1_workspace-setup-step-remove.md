@@ -63,7 +63,7 @@ workspace intent. App-node callers are denied before prompts or side effects.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=app`.
    - **Forbidden:** project-file inspection (`composer.json`, `package.json`,
-     `.php-version`, etc.). This matches `BLUEPRINT.md` "Workspaces"
+     `.php-version`, `.env`, lockfiles, or framework manifests). This matches `BLUEPRINT.md` "Workspaces"
      project-file inspection prohibition.
 3. **Resolve `step`.** Required from `--step` or interactive prompt.
    - In interactive mode, prompt when `--step` is missing.
@@ -132,8 +132,8 @@ intent. App nodes are not contacted.
   other artifact produced by previous executions of the removed step on
   app nodes. Past executions remain visible in
   [`workspace:history`](../../6_workspace-history/workspace-history.md).
-- Read project files (`composer.json`, `package.json`, `.php-version`,
-  etc.) during parent-app inference.
+- Read project files (`composer.json`, `package.json`, `.php-version`, `.env`,
+  lockfiles, or framework manifests) during parent-app inference.
 - Remove a step belonging to `phase=teardown`. Teardown steps are owned by
   [`workspace-teardown-step:remove`](../../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md).
 

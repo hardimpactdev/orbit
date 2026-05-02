@@ -2,8 +2,8 @@
 
 The command docs linter checks converted `docs/commands/**` files for structure,
 contract coherence, reference integrity, complexity, and prose ambiguity. The
-default run fails on errors and reports warnings. `--strict` also fails on
-warnings.
+raw CLI default fails on errors and reports warnings. The `composer docs-lint`
+script runs the CLI with `--strict`, so warnings fail project verification.
 
 ## Baseline
 

@@ -138,7 +138,7 @@ register an existing path use
    `workspace` family, primarily `workspace.path_missing`,
    `workspace.fpm_config_missing`, `workspace.fpm_config_mismatch`,
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`,
-   plus relevant `proxy_route` handoffs). The command exits `0` and the
+   plus `proxy_route` handoffs for workspace route drift). The command exits `0` and the
    operator repairs drift via `doctor --family=workspace --fix`. This
    matches the `app:new`/`app:register` pattern: once intent is durable,
    enactment drift is convergence work, not a hard failure.

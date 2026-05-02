@@ -112,7 +112,7 @@ per affected family in `success.meta.warnings[]`. Each warning carries `code`,
 the machine-readable signal.
 
 Gateway-owned intent removal is the point of no return. Leftover dependent or
-node-side artifacts are convergence drift owned by the relevant family doctor,
+node-side artifacts are convergence drift owned by the affected family doctor,
 not a removal failure.
 
 ## Doctor Relationship
@@ -120,9 +120,9 @@ not a removal failure.
 - Removed apps disappear from `app:list` and `app:show`.
 - App-owned artifacts remaining after a failed cleanup are detected as orphaned
   app drift by [`app-doctor.md`](../../app-doctor.md). Related-family artifacts
-  are detected by the relevant family doctors (`proxy_route`, `workspace`,
+  are detected by the affected family doctors (`proxy_route`, `workspace`,
   `process`, `schedule`).
-- `app:remove` does not duplicate per-family drift item shapes; it points operators at the relevant `doctor --family=<family> --fix` via the warning's `next_command`.
+- `app:remove` does not duplicate per-family drift item shapes; it points operators at the affected `doctor --family=<family> --fix` via the warning's `next_command`.
 
 ## Test Mapping
 
@@ -131,4 +131,4 @@ not a removal failure.
 | `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Intent removal, dependent artifact deletion logic, and self-targeting detection. |
 | `tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
 | `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, unknown-role failure, and forwarded control caller authorization failure. |
-| `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, and JSON envelope validation. |
+| `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

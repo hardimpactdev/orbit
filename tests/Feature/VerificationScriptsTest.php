@@ -23,3 +23,9 @@ it('documents the standing live smoke mode', function (): void {
         ->and($contents)->toContain('ORBIT_LIVE_GATEWAY_PATH')
         ->and($contents)->toContain('update:all');
 });
+
+it('fails command docs lint when warnings are present', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($composer['scripts']['docs-lint'])->toContain('--strict');
+});

@@ -195,7 +195,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Intent convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution, `--path` absolute-validation, caller-role allowance for control/gateway/app, interactive prompts, and JSON envelope alignment with the canonical contract. |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution, `--path` absolute-validation, caller-role allowance for control/gateway/app, interactive prompts, JSON envelope alignment with the canonical contract, and warning payload shape for `success.meta.warnings[]`. |
 | `tests/Feature/Commands/Workspaces/WorkspaceSetupCallerRoleTest.php` | App-node forwarding to the gateway as a documented local-workflow exception, control/gateway local orchestration, and unauthorized-app rejection before side effects. |
 | `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
 | `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-enactment refresh including non-rollback retry path. |

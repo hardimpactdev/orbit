@@ -149,7 +149,13 @@ See also:
   `error.meta.existing_app`, `error.meta.node`). Fails before any side
   effects. The remediation is to pick a different path or remove the
   existing app first; there is no interactive re-assign prompt.
-- **Remote Execution Failures**: SSH timeout before intent can be written, permission denied that prevents Orbit from determining whether intent was enacted, or another non-convergent app-node execution failure (`error.code=app.enactment_failed`). Retryable app artifact drift after intent is durable, including PHP-FPM configuration or runtime configuration drift, is reported as `success.meta.warnings[]` with singular `app.*` product codes and `family: "app"`.
+- **Remote Execution Failures**: SSH timeout before intent can be written, permission
+  denied that prevents Orbit from determining whether intent was enacted, or
+  another non-convergent app-node execution failure
+  (`error.code=app.enactment_failed`).
+- **Retryable Artifact Drift**: After intent is durable, PHP-FPM or runtime
+  configuration drift is reported as `success.meta.warnings[]` with singular
+  `app.*` product codes and `family: "app"`.
 - **Activation Failures**:
   - Hard validation errors (malformed domain, registry conflict, internal
     proxy-route registry write failure) fail before side effects with the
@@ -171,7 +177,7 @@ See also:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Intent convergence, adoption logic, path-collision rejection, and enactment dispatch. |
-| `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Input resolution, role-based rejection, interactive prompting, and `result.action` selection across `registered`/`adopted`/`converged` paths. |
+| `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Input resolution, role-based rejection, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
 | `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy-route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-enactment refresh. |
 | `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy_route.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |

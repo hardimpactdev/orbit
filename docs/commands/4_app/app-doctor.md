@@ -16,8 +16,8 @@ The app family owns these facts:
 - app source location: the managed app path exists on the owning app node and
   the configured document root exists inside that path;
 - app runtime artifacts: app PHP-FPM configuration, production app user and
-  ownership policy where applicable, app environment/runtime configuration, and
-  runtime readiness for the configured PHP version;
+  ownership policy for production apps, app environment/runtime configuration,
+  and runtime readiness for the configured PHP version;
 - production app health: production app health checks and deployment health
   facts recorded as app policy;
 - app-owned adoption facts: selected existing app paths that can be tied to an

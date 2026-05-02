@@ -10,7 +10,8 @@
 the destructive-consent prompt or require `--force`, including for production
 apps with active domains. Cross-cutting "production-write confirmation" is not
 an Orbit-wide concept; if it ever becomes one, it must be added to the
-blueprint and propagated across every relevant command at once.
+blueprint and propagated across every app, workspace, proxy, and deployment
+command that writes production runtime state.
 
 **Prerequisites:**
 - The application record must exist in the gateway database.
@@ -179,4 +180,4 @@ runtime configuration drift.
 | --- | --- |
 | `tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-enactment with `changed=false`, intent write with `changed=true`, authorization, and exhaustive error codes. |
 | `tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-enactment artifacts. |
-| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-enactment of PHP-FPM (including pool reload) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.fpm_config_mismatch` in `success.meta.warnings[]`. |
+| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-enactment of PHP-FPM (including pool reload) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.fpm_config_mismatch` warning payload shape in `success.meta.warnings[]`. |
