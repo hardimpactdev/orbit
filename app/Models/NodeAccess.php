@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class NodeAccess extends Model
+{
+    protected $table = 'node_access';
+
+    protected $fillable = [
+        'consumer_node_id',
+        'serving_node_id',
+    ];
+
+    public function consumer(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'consumer_node_id');
+    }
+
+    public function serving(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'serving_node_id');
+    }
+}
