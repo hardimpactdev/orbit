@@ -126,13 +126,11 @@ class NodeShowCommand extends Command
         $consuming = $node['grants']['consuming_nodes'];
         $serving = $node['grants']['serving_nodes'];
 
-        if ($consuming !== [] || $serving !== []) {
-            $this->line('Grants:');
-            $consumingStr = $consuming !== [] ? implode(', ', $consuming) : '(none)';
-            $servingStr = $serving !== [] ? implode(', ', $serving) : '(none)';
-            $this->line("  Consuming: {$consumingStr}");
-            $this->line("  Serving: {$servingStr}");
-        }
+        $this->line('Grants:');
+        $consumingStr = $consuming !== [] ? implode(', ', $consuming) : '(none)';
+        $servingStr = $serving !== [] ? implode(', ', $serving) : '(none)';
+        $this->line("  Consuming: {$consumingStr}");
+        $this->line("  Serving: {$servingStr}");
     }
 
     /**
@@ -159,7 +157,7 @@ class NodeShowCommand extends Command
                 'error' => [
                     'code' => $code,
                     'message' => $message,
-                    'meta' => $meta,
+                    'meta' => empty($meta) ? (object) [] : $meta,
                 ],
             ], JSON_THROW_ON_ERROR));
 
