@@ -17,6 +17,8 @@ class Node extends Model
         'host',
         'wireguard_address',
         'gateway_endpoint',
+        'public_ipv4',
+        'public_ipv6',
         'ssh_user',
         'user',
         'orbit_path',
