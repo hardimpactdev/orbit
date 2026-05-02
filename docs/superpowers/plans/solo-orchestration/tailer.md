@@ -51,6 +51,30 @@ Check in every 5 minutes. On each timer interval:
 8. Record a concise checkpoint on the coordination todo.
 9. Set the next 5-minute timer before going idle.
 
+## Prompt Delivery Watch
+
+Be patient with newly spawned agents. A process that was created seconds ago can
+legitimately show only a startup or welcome screen.
+
+When watching prompt delivery:
+
+1. Use `get_process_status` to inspect `status`, `uptime_seconds`, and
+   `agent_state`.
+2. Use `get_process_output` or `search_output` to look for the role prompt,
+   task title, `ASSIGNED`, `PROMPT_DELIVERED`, `WORKER_STARTED`, or other
+   lifecycle evidence.
+3. If the process is fresh and still starting, set or ask the orchestrator to
+   set an idle-triggered timer instead of declaring a stall.
+4. If the process is idle past the startup window and still has no prompt
+   evidence, post `PROMPT_RECOVERY` or `PROMPT_DELIVERY_STALLED` with the exact
+   observed state.
+5. If a retry is needed, ask the orchestrator to resend the prompt or close and
+   respawn exactly one process. Do not let duplicate workers run on the same
+   todo.
+
+Treat prompt recovery as a measured correction, not an emergency, unless a
+duplicate worker or out-of-scope edit has already started.
+
 ## Interventions
 
 Intervene only for:

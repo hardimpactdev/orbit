@@ -74,10 +74,17 @@ Read:
    `ORCHESTRATOR_AGENT` and `orchestrator.md`.
 6. Check whether a tailer is already active. If not, spawn one using
    `TAILER_AGENT` and `tailer.md`.
-7. Tell the orchestrator to spawn a one-shot pipeline filler using
+7. For each process you spawn, use the startup handshake from
+   `solo-orchestration/README.md`: check `get_process_status`, inspect
+   `get_process_output`, deliver the role prompt with `send_input`, and verify
+   prompt delivery before assuming the role is active.
+8. If a newly spawned orchestrator or tailer is still rendering a startup
+   screen, schedule an idle-triggered Solo timer instead of declaring failure.
+   Retry prompt delivery once before closing and replacing a process.
+9. Tell the orchestrator to spawn a one-shot pipeline filler using
    `PIPELINE_FILLER_AGENT` and `pipeline-filler.md` whenever a timer tick finds
    fewer than `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY` todos.
-8. Record a checkpoint on the coordination todo with:
+10. Record a checkpoint on the coordination todo with:
    - active process ids;
    - resolved configuration;
    - current worker-ready todos;

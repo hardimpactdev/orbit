@@ -38,6 +38,50 @@ Every role should read only the context it needs:
 Current docs are product authority. Current implementation and the old repo are
 evidence only.
 
+## Solo Tooling
+
+Use Solo's process tools as the loop's source of runtime truth:
+
+- `list_processes` to detect active, exited, duplicate, or stale processes.
+- `get_process_status` to check `status`, `pid`, `uptime_seconds`, and
+  `agent_state` before deciding an agent is stalled.
+- `get_process_output` or `search_output` to prove that a prompt landed, a
+  lifecycle label was posted, or a worker is only showing a startup screen.
+- `send_input` with `wait_ms` to deliver prompts and immediately read back the
+  first rendered output.
+- `timer_set` for 5-minute role check-ins.
+- `timer_fire_when_idle_any` or `timer_fire_when_idle_all` to wait for newly
+  spawned agents or active workers to become idle without sleep loops.
+- `close_process` only after recording why a duplicate, stale, or completed
+  terminal/agent process is being removed.
+
+Do not treat `spawn_process` as proof that the agent is ready to receive a
+prompt. A new process can be running while the CLI is still booting, drawing its
+welcome screen, or waiting for the first user input.
+
+## Startup Handshake
+
+Every spawned agent uses this handshake before the loop assumes it is active:
+
+1. Spawn the process and record its process id in the relevant todo or
+   coordination comment.
+2. Allow a normal startup window. Use `get_process_status` and
+   `get_process_output`; do not recover just because the output still shows a
+   welcome screen during the first moments after spawn.
+3. When the process is running and able to receive input, send the role prompt
+   with `send_input`.
+4. Verify prompt delivery by checking rendered output, an `ASSIGNED` comment, a
+   `WORKER_STARTED` comment, or the role-specific lifecycle label.
+5. If prompt delivery is unclear, schedule an idle-triggered timer or one short
+   follow-up check before retrying.
+6. Retry prompt delivery once when the process is alive and input-capable but no
+   prompt evidence appears.
+7. Only after the retry/grace window fails, post `PROMPT_RECOVERY`, close the
+   stale process if needed, and spawn a replacement.
+
+This loop should be calm and self-correcting: observe first, wait when startup
+is still plausible, recover only when evidence shows a real stall.
+
 ## Decision Evidence Stack
 
 When a fork appears, do not let an implementation worker choose between broad
@@ -64,6 +108,10 @@ Use these exact labels in Solo comments so work can resume after compaction:
 
 - `PIPELINE_READY`: todo is unblocked, scoped, and ready for assignment.
 - `ASSIGNED process=<id>`: orchestrator assigned a worker process.
+- `PROMPT_DELIVERED process=<id>`: orchestrator or tailer verified that the
+  process received the role prompt.
+- `PROMPT_DELIVERY_STALLED process=<id>`: tailer observed that startup has had
+  a fair chance and prompt delivery still has no evidence.
 - `WORKER_STARTED`: worker confirmed task scope, dependencies, and gate.
 - `WORKER_DONE status=DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_DIRECTION`:
   worker handoff result.

@@ -51,10 +51,14 @@ exists.
    worker-ready todo at a time, spawns `solo-orchestration/pipeline-filler.md`
    as a one-shot role when the ready queue is low, and uses
    `solo-orchestration/implementer.md` for each worker.
-4. The tailer watches processes, locks, git status, scope drift, focused gate
+4. All spawned agents use the startup handshake in
+   `solo-orchestration/README.md`: process creation is not prompt readiness, so
+   the loop verifies process status, output, prompt delivery, and lifecycle
+   labels before assuming a role is active.
+5. The tailer watches processes, locks, git status, scope drift, focused gate
    evidence, final diffs, and repeated todo-template friction while the
    orchestrator keeps assignment moving.
-5. Fresh reviewers are optional escalation/final sign-off agents that use
+6. Fresh reviewers are optional escalation/final sign-off agents that use
    `solo-orchestration/fresh-reviewer.md` only when the tailer or orchestrator
    asks for one.
 
@@ -96,6 +100,8 @@ Current code is implementation evidence, not the north star. The old repo at
   filler, or reviewer roles.
 - Do not dispatch blocked todos or downstream todos whose prerequisites are not
   closed.
+- Do not treat `spawn_process` as proof that an agent can receive prompts. Use
+  the startup handshake before dispatch, supervision, or recovery decisions.
 - Every implementation worker owns exactly one todo.
 - The tailer is the normal ongoing reviewer for implementer work. Fresh
   reviewers are exceptional: high-risk work, tailer uncertainty, or batch/final

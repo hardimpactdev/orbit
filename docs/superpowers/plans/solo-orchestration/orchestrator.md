@@ -46,7 +46,17 @@ no filler is active:
 
 1. Spawn one `PIPELINE_FILLER_AGENT` with `pipeline-filler.md`.
 2. Record `PIPELINE_FILL_STARTED process=<id>` on the coordination todo.
-3. Wait for `PIPELINE_FILL_DONE` before dispatching from the refreshed queue.
+3. Run the startup handshake from `README.md`: allow startup, check
+   `get_process_status` and `get_process_output`, send the filler prompt with
+   `send_input`, and verify prompt delivery before assuming the filler is
+   active.
+4. If prompt delivery is unclear, use an idle-triggered timer or one short
+   follow-up check before retrying. Do not immediately close a freshly spawned
+   filler just because it is still drawing its startup screen.
+5. Wait for `PIPELINE_FILL_DONE` before dispatching from the refreshed queue.
+6. After `PIPELINE_FILL_DONE`, close the one-shot filler when it is idle or
+   clearly complete, and update the coordination todo so the completed filler is
+   no longer listed as active.
 
 The orchestrator may create an emergency decision/audit todo itself only when an
 implementer is blocked and no filler is active. Normal queue growth belongs to
@@ -80,15 +90,43 @@ For each unblocked `PIPELINE_READY` todo:
 1. Verify no prerequisite todo is still open.
 2. Verify no worker is already assigned.
 3. Spawn one `IMPLEMENTATION_AGENT`.
-4. Prompt it with `implementer.md`, the exact todo id, dependency constraints,
+4. Run the startup handshake from `README.md`; spawning creates a process entry,
+   not an active worker.
+5. Prompt it with `implementer.md`, the exact todo id, dependency constraints,
    product authority docs, legacy evidence, owned files/domains, non-goals, and
    quality gate.
-5. Record `ASSIGNED process=<id>` on the todo.
-6. Notify the tailer.
-7. Set a 5-minute check-in timer.
+6. Record `ASSIGNED process=<id>` on the todo.
+7. Verify prompt delivery with `get_process_output`, `PROMPT_DELIVERED`, or
+   `WORKER_STARTED`. A worker that still shows only a welcome screen during its
+   startup window is not a failure; wait or schedule an idle-triggered check.
+8. Notify the tailer only after there is enough evidence to identify which
+   process owns the todo.
+9. Set a 5-minute check-in timer.
 
 Never dispatch a blocked todo, a todo without `PIPELINE_READY`, or a downstream
 todo whose prerequisite has not reached `ORCHESTRATOR_CLOSED`.
+
+## Prompt Delivery Recovery
+
+Use prompt recovery only after the startup handshake has had a fair chance to
+finish.
+
+For a freshly spawned process:
+
+1. Check `get_process_status` for `Running` and inspect `agent_state`.
+2. Check `get_process_output` for the agent welcome screen, prompt text, or task
+   output.
+3. If the process is still starting, set `timer_fire_when_idle_any` with a short
+   guard timeout and wait.
+4. If the process is idle and still has no task prompt, resend the exact prompt
+   once with `send_input`.
+5. If the process remains unprompted after the retry, post `PROMPT_RECOVERY`
+   with the observed state, close the stale process, and spawn exactly one
+   replacement.
+
+Never spawn a replacement while the original process is still active unless the
+recovery comment says why the original cannot receive prompts. Never leave two
+workers assigned to the same todo.
 
 ## Implementer Recovery
 
@@ -150,7 +188,8 @@ If a worker hits a real product or architecture blocker:
 
 ## Recovery
 
-If prompt delivery stalls, perform or request `PROMPT_RECOVERY`.
+If prompt delivery stalls after the startup handshake and one retry, perform or
+request `PROMPT_RECOVERY`.
 
 If an agent waits without timers, set a timer and record the next expected
 check-in. The loop should not depend on human nudges.
