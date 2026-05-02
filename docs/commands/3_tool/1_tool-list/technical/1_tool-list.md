@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:list [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:list [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-list` documentation.](../tool-list.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:list [--node=<node>] [--app=<app>] [--json]
+orbit tool:list [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

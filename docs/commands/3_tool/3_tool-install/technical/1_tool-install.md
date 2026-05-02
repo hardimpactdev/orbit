@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--node=<node>] [--app=<app>] [--status=<installed|running>] [--json]`
+# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--node=<node>] [--app=<app>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]
 ```
 
 ## Input Contract

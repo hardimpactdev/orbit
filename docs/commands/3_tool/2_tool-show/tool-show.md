@@ -11,7 +11,7 @@ current node reality.
 ## Usage
 
 ```bash
-orbit tool:show <tool> [--node=<node>] [--app=<app>] [--live] [--json]
+orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples

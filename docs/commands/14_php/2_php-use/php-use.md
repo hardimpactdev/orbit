@@ -5,7 +5,7 @@ Change the PHP version used by an app, workspace, or node CLI default.
 ## Usage
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--inherit] [--cli] [--node=<node>] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Examples
@@ -14,7 +14,7 @@ orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--inherit] [--c
 orbit php:use 8.5 --app=docs
 orbit php:use 8.4 --app=docs --workspace=feature-docs
 orbit php:use --app=docs --workspace=feature-docs --inherit
-orbit php:use 8.5 --cli --node=app-1
+orbit php:use 8.5 --node=app-1 --cli
 orbit php:use 8.5 --app=docs --json
 ```
 

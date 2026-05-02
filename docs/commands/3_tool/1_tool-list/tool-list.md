@@ -11,7 +11,7 @@ future command contract adds an explicit live inspection option.
 ## Usage
 
 ```bash
-orbit tool:list [--node=<node>] [--app=<app>] [--json]
+orbit tool:list [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

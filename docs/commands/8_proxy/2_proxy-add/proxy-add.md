@@ -10,7 +10,7 @@ Create or update a custom proxy route.
 
 ```bash
 orbit proxy:add <domain> --upstream=<url> [--node=<node>] [--force] [--json]
-orbit proxy:add <domain> --redirect=<url> [--code=<code>] [--node=<node>] [--force] [--json]
+orbit proxy:add <domain> --redirect=<url> [--node=<node>] [--code=<code>] [--force] [--json]
 ```
 
 ## Description

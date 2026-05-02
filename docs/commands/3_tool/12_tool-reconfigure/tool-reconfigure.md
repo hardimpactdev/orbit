@@ -11,7 +11,7 @@ credential repair, missing config files, or setup reruns.
 ## Usage
 
 ```bash
-orbit tool:reconfigure [tool] [--node=<node>] [--app=<app>] [--password=<password>] [--json]
+orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]
 ```
 
 ## Examples

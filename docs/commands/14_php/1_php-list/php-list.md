@@ -6,7 +6,7 @@ current app, workspace, or node CLI PHP selection.
 ## Usage
 
 ```bash
-orbit php:list [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--live] [--json]
+orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples

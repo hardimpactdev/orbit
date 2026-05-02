@@ -11,7 +11,7 @@ managed.
 ## Usage
 
 ```bash
-orbit tool:stop <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

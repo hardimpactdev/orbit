@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:start <tool> [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-start` documentation.](../tool-start.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:start <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

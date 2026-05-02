@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reload [tool] [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:reload [tool] [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-reload` documentation.](../tool-reload.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:reload [tool] [--node=<node>] [--app=<app>] [--json]
+orbit tool:reload [tool] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

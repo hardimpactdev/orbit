@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:restart <tool> [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-restart` documentation.](../tool-restart.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:restart <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

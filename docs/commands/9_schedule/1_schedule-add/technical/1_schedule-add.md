@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]`
+# Technical Contract: `orbit schedule:add (--command=<command>|--script=<path>) --interval=<expression> [name] [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]`
 
 [Back to public `schedule-add` documentation.](../schedule-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
+orbit schedule:add (--command=<command>|--script=<path>) --interval=<expression> [name] [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
 ```
 
 ## Input Contract

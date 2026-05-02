@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--inherit] [--cli] [--node=<node>] [--json]`
+# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--inherit] [--cli] [--node=<node>] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Input Contract

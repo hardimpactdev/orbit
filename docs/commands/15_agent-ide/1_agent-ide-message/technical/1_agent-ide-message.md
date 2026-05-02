@@ -22,7 +22,7 @@
 ## Signature
 
 ```bash
-orbit agent-ide:message [message] [--stdin] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--stdin] [--json]
 ```
 
 ## Input Contract

@@ -11,7 +11,7 @@ Reverb, or OpenCode Server.
 ## Usage
 
 ```bash
-orbit tool:credentials [tool] [--node=<node>] [--app=<app>] [--json]
+orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

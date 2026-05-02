@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reconfigure [tool] [--node=<node>] [--app=<app>] [--password=<password>] [--json]`
+# Technical Contract: `orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]`
 
 [Back to public `tool-reconfigure` documentation.](../tool-reconfigure.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:reconfigure [tool] [--node=<node>] [--app=<app>] [--password=<password>] [--json]
+orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]
 ```
 
 ## Input Contract

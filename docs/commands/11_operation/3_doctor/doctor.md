@@ -15,7 +15,7 @@ fix/adopt maps.
 ## Usage
 
 ```bash
-orbit doctor [--family=<family>] [--node=<node>|--self] [--app=<app>] [--workspace=<workspace>] [--fix|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--adopt] [--json]
 ```
 
 ## Examples

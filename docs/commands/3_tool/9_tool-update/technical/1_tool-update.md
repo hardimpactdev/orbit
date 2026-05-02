@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--version=<version>] [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--version=<version>] [--node=<node>] [--app=<app>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]
 ```
 
 ## Input Contract

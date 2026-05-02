@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit app:register [name] [--path=] [--node=] [--root=] [--php-version=] [--domain=] [--json]
+orbit app:register [name] [--node=] [--path=] [--root=] [--php-version=] [--domain=] [--json]
 ```
 
 `--repo` is intentionally absent. In the current converted app command surface,

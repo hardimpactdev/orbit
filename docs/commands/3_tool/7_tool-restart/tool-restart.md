@@ -10,7 +10,7 @@ or rerunning the tool's setup flow.
 ## Usage
 
 ```bash
-orbit tool:restart <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

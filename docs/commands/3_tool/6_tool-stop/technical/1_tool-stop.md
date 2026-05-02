@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:stop <tool> [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-stop` documentation.](../tool-stop.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:stop <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

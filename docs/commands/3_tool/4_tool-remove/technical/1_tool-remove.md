@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--node=<node>] [--app=<app>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--node=<node>] [--app=<app>] [--force] [--json]
+orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract

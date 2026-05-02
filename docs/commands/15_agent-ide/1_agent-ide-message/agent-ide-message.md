@@ -15,7 +15,7 @@ the active IDE session to inspect or act on the current app or workspace.
 ## Usage
 
 ```bash
-orbit agent-ide:message [message] [--stdin] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--stdin] [--json]
 ```
 
 ## Examples

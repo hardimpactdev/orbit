@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:list [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--live] [--json]`
+# Technical Contract: `orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]`
 
 [Back to public `php:list` documentation.](../php-list.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit php:list [--node=<node>] [--app=<app>] [--workspace=<workspace>] [--live] [--json]
+orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Input Contract

@@ -9,7 +9,7 @@ List proxy route intent across the Orbit fleet.
 ## Usage
 
 ```bash
-orbit proxy:list [--filter=<filter>] [--node=<node>] [--json]
+orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 ```
 
 ## Description

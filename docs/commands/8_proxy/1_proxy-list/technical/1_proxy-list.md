@@ -1,4 +1,4 @@
-# Technical Contract: `orbit proxy:list [--filter=<filter>] [--node=<node>] [--json]`
+# Technical Contract: `orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]`
 
 [Back to public `proxy:list` documentation.](../proxy-list.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit proxy:list [--filter=<filter>] [--node=<node>] [--json]
+orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 ```
 
 ## Input Contract

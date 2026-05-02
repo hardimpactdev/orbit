@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit workspace:history [name] [--app=<slug>] [--json] [--limit=<int>] [--since=<date>] [--until=<date>]
+orbit workspace:history [name] [--app=<slug>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]
 ```
 
 ## Input Contract

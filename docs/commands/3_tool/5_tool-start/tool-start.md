@@ -10,7 +10,7 @@ starts the node-side service through the gateway.
 ## Usage
 
 ```bash
-orbit tool:start <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

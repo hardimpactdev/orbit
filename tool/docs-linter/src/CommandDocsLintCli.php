@@ -38,6 +38,7 @@ use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
 use OrbitDocsLinter\Rules\RequirementSmellRule;
 use OrbitDocsLinter\Rules\RoleCompanionCoverageRule;
 use OrbitDocsLinter\Rules\SharedFailureVocabularyRule;
+use OrbitDocsLinter\Rules\SignatureArgumentOrderRule;
 use OrbitDocsLinter\Rules\SignatureOptionConsistencyRule;
 use OrbitDocsLinter\Rules\TechnicalSlotSemanticsRule;
 use OrbitDocsLinter\Rules\TechnicalTestMappingRule;
@@ -217,6 +218,7 @@ final class CommandDocsLintCli
                 new JsonRendererExampleRule,
                 new JsonWarningShapeRule,
                 new NextActionContractRule,
+                new SignatureArgumentOrderRule,
                 new SignatureOptionConsistencyRule,
                 new TechnicalTestMappingRule,
                 new TestMappingFormatRule,

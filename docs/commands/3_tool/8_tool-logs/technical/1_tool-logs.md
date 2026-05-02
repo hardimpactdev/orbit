@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:logs <tool> [--node=<node>] [--app=<app>] [--lines=<count>] [--follow] [--json]`
+# Technical Contract: `orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<count>] [--follow] [--json]`
 
 [Back to public `tool-logs` documentation.](../tool-logs.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:logs <tool> [--node=<node>] [--app=<app>] [--lines=<count>] [--follow] [--json]
+orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<count>] [--follow] [--json]
 ```
 
 ## Input Contract
