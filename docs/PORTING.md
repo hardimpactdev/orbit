@@ -146,11 +146,15 @@ yet satisfy the full product contracts.
     installs as a non-`orbit` user because real control machines are expected to
     be user-owned, while gateway and app provisioning must create or prepare the
     node-side `orbit` user when needed.
-- [~] `update`
+- [x] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current docs: `docs/commands/11_operation/1_update`
-  - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
-  - Contract gaps:
+  - Current tests:
+    - `tests/Feature/Commands/UpdateCommandTest.php`
+    - `tests/Feature/Commands/Operations/UpdateCommandTest.php`
+    - `tests/Feature/Commands/Operations/UpdateJsonRendererTest.php`
+    - `tests/Feature/Commands/Operations/UpdateHumanRendererTest.php`
+  - Contract gaps: resolved.
     - JSON renderer implementation.
     - Tree-style human progress output.
     - Split operation contract tests mapped by the current docs.
@@ -364,7 +368,20 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 - [x] Reconcile `node:register` with product command contracts.
   - **Decision:** Retire as public command. `node:register` is an internal
     bootstrap utility only. See tracker entry above for rationale.
-- [ ] Port `node:update`.
+- [~] Port `node:update`.
+  - Current implementation: `app/Console/Commands/NodeUpdateCommand.php`
+  - Current docs: `docs/commands/1_node/7_node-update`
+  - Current tests:
+    - `tests/Feature/Commands/NodeUpdateCommandTest.php` (base contract, safety, duplicate flag)
+    - `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` (command contract)
+    - `tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php` (human renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php` (JSON renderer contract)
+  - Bootstrap slice implemented: gateway-local update with progress tree, field validation, role-incompatibility checks, and split contract tests.
+  - Contract gaps:
+    - control-node forwarding to gateway (requires GatewayClient, GATEWAY-1/202).
+    - interactive input mode (prompting for name and field selection).
+    - artifact re-enactment after intent update.
+    - `NodeUpdateOnControlNodeContractTest.php` (blocked by gateway forwarding).
 - [ ] Port `node:default`.
 - [ ] Port `node:grant`.
 - [ ] Port `node:revoke`.
@@ -545,7 +562,7 @@ A `GatewayClient` service class (or similar) that:
 ### Remaining Workstream Items
 
 - [x] Decide the clean-rebuild transport approach before adding packages.
-- [ ] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
+- [x] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
 - [ ] Port gateway API envelope conventions.
 - [ ] Port request correlation header support.
 - [ ] Port typed gateway request sender.
