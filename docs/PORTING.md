@@ -10,8 +10,9 @@ behavior from `../orbit-old-may`.
 - Old features should be treated as reference material, not a mandate to copy
   their structure. Before porting behavior, verify whether the clean rebuild can
   implement it more simply, safely, or directly against the current contracts.
-- If a feature or command exists only in `../orbit-old-may/docs`, port its
-  documentation into this repo before implementing it.
+- If we decide to keep a feature or command that exists only in
+  `../orbit-old-may/docs`, port its documentation into this repo before
+  implementing it.
 - Legacy command docs must be converted into the current command-doc format
   before the command is built here.
 - Every migrated implementation slice must cite the current docs it implements
@@ -59,6 +60,9 @@ Default migration order is command-contract and capability driven:
 1. **Foundation and verification harness.**
    - Keep `composer test`, `composer analyse`, `composer docs-lint`, and
      standing live smoke healthy.
+   - Until the gateway-to-mini SSH trust decision is resolved, standing live
+     smoke is a known red gate: it passes local tests, updates beast, then fails
+     when the gateway tries to update mini.
    - Restore ephemeral E2E before provisioning or destructive flows depend on
      it.
    - Convert docs for the next implementation slice before writing code.
@@ -227,6 +231,21 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 - [x] Convert node command docs into current format.
 - [~] Build minimal node registry read commands.
+- [ ] Complete `node:list` contract gaps:
+  - [ ] JSON renderer contract.
+  - [ ] `--role` and `--environment` filters.
+  - [ ] `--doctor` secondary operation.
+  - [ ] caller visibility/access-policy behavior.
+  - [ ] gateway forwarding.
+  - [ ] doctor handoff behavior.
+- [ ] Complete `node:show` contract gaps:
+  - [ ] caller-role resolution.
+  - [ ] access-policy authorization.
+  - [ ] gateway forwarding.
+  - [ ] interactive prompting.
+  - [ ] default development app-node resolution.
+  - [ ] real grant metadata.
+  - [ ] modeled `environment`, `platform`, and node agent IDE metadata.
 - [ ] Reconcile `node:register` with product command contracts or replace it
   with documented `node:new` / `gateway:add` flows.
 - [ ] Port `node:update`.
@@ -323,8 +342,10 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 - [x] Clean unit/feature test baseline.
 - [x] Standing live smoke script exists.
-- [!] Standing live smoke currently cannot update mini from gateway because
-  gateway is not authorized for `nckrtl@10.6.0.8`.
+- [!] Standing live smoke is a known red gate until the mini update path is
+  fixed or removed from the live-smoke contract.
+  - Current behavior: local tests pass, beast updates, then gateway cannot
+    update mini because it is not authorized for `nckrtl@10.6.0.8`.
 - [ ] Restore ephemeral E2E.
 - [ ] Add E2E topology for gateway + control + app node.
 - [ ] Add safe read-only standing-node smoke coverage for registry reads.
