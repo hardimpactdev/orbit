@@ -11,12 +11,16 @@ Use these variables for this run:
 ```env
 IMPLEMENTATION_PLAN=`2026-04-30-node-command-contract-contraction`
 TASK_PREFIX=NC
+PIPELINE_READY_TARGET=2
 
+ORCHESTRATOR_AGENT=claude
+TAILER_AGENT=codex-gpt-5.5-xhigh
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
 WORKER_REVIEWER_AGENT=gemini-3.1-pro-preview
 REVIEWER_AGENT=codex-gpt-5.5-xhigh
 RUBBER_DUCK1=gemini-3.1-pro-preview
 RUBBER_DUCK2=claude
+E2E_AGENT=claude
 ```
 
 Agent variable format:
