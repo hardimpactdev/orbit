@@ -359,6 +359,19 @@ feature-detail audit, semantic tightening, and implementation-gap tracking.
         `container:*` and legacy `tool:*` aliases, `tool:version` PHP ownership,
         and backend `ToolSettings`/service-template settings as product
         concepts.
+- [x] Firewall family feature details
+  - [x] Command docs preserve same-rule idempotence, name collision semantics,
+        post-intent enactment failure handoff, cleanup-before-intent-removal,
+        and explicit cleanup-failure JSON recovery data.
+  - [x] Doctor docs preserve baseline exclusion, unknown/unrepresentable backend
+        rule safety, and the rule that unmanaged backend policy is not ordinary
+        fix drift.
+  - [x] Conflicting legacy behavior was flagged but not imported: plural
+        `firewall_rules` doctor key, UFW/backend-shaped product naming, deleting
+        unmanaged extra backend rules during `--fix`, removing gateway intent
+        before backend cleanup succeeds, public SSH baseline for app nodes,
+        `ufw_rules` migration concerns, and legacy `firewall_extra_rules`
+        settings as product concepts.
 
 ### Todo Pipeline Hints
 
@@ -571,9 +584,8 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
    gateway, development app, and production app VMs.
 3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-4. Run legacy feature-detail audits for freshly converted docs before treating
-   their families as product-complete, starting with `profile` and Agent IDE,
-   then app/proxy/workspace cross-family behavior.
+4. Run legacy feature-detail audits for remaining converted docs before treating
+   their families as product-complete, especially schedule and deploy.
 5. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
 6. Complete the documented `update` and `update:all` implementation gaps once

@@ -17,10 +17,16 @@ model.
   not firewall-rule targets.
 - Rules are expressed in Orbit terms: name, node, direction, action, source,
   destination, protocol, port, and reason.
+- Rule names are unique on the target node. Reapplying the same named rule with
+  the same policy shape is idempotent; reusing the name for a different policy
+  fails before mutation.
 - Firewall commands resolve input locally, then the gateway writes intent and
   enacts host policy through the current firewall backend.
 - Role bootstrap policy remains part of the node domain and is not edited
   through firewall commands.
+- Bootstrap policy includes Orbit/WireGuard management access and role-specific
+  public ingress decisions. Firewall commands do not create public SSH policy
+  exceptions for app nodes.
 - Firewall reads use gateway intent by default. Live firewall reality belongs
   to `doctor --family=firewall_rule`.
 - Node reality import is not part of the firewall command surface. Adoption of
