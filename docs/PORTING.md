@@ -248,8 +248,8 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [x] `update:all`
   - [x] `activity:list`
   - [x] `activity:show`
-  - [ ] DNS/TLD resolution commands
-  - [ ] DNS list commands
+  - [x] `dns:resolve-tld`
+  - [x] `dns:list`
 - [ ] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
   - [ ] `cf:zones`
   - [ ] `cf:dns-list`
