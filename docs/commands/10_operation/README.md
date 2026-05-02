@@ -33,6 +33,8 @@ drift keys remain the product family keys defined by the blueprint, such as
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
+4. [`orbit activity:list`](4_activity-list/activity-list.md)
+5. [`orbit activity:show [id]`](5_activity-show/activity-show.md)
 
 ## Not Yet Converted
 
@@ -41,7 +43,5 @@ The legacy operation commands below are tracked in
 until their current contracts are added here:
 
 - `profile`
-- `activity:list`
-- `activity:show`
 - DNS/TLD resolution commands
 - DNS list commands

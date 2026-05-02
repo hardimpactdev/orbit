@@ -246,8 +246,8 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
     after node identity and minimal app resolution are available.
   - [x] `update`
   - [x] `update:all`
-  - [ ] `activity:list`
-  - [ ] `activity:show`
+  - [x] `activity:list`
+  - [x] `activity:show`
   - [ ] DNS/TLD resolution commands
   - [ ] DNS list commands
 - [ ] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
