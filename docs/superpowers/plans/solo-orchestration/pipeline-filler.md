@@ -67,8 +67,8 @@ Every todo you create must include:
 - reporting requirements.
 
 Use scratchpad `131` as the todo template. If the template is missing a field
-that would have prevented repeated worker friction, update scratchpad `131` and
-record `TEMPLATE_FRICTION`.
+that would have prevented repeated worker friction, record `TEMPLATE_FRICTION`
+for the tailer. The tailer owns scratchpad `131`.
 
 ## Decision/Audit Todos
 
@@ -98,3 +98,6 @@ with `NEEDS_DIRECTION`.
 - Do not edit `docs/PORTING.md` unless the todo pipeline is impossible to
   derive because the tracker contradicts itself; in that case, prefer creating a
   decision/audit todo and report `NEEDS_DIRECTION`.
+- Do not edit scratchpad `131`; worker-template changes belong to the tailer.
+- Do not edit scratchpad `132` or role prompts; loop-level prompt changes
+  belong to the loop improver.

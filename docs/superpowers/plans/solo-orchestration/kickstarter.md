@@ -12,11 +12,12 @@ IMPLEMENTATION_PLAN=`2026-04-30-node-command-contract-contraction`
 TASK_PREFIX=NC
 PIPELINE_READY_TARGET=2
 
-ORCHESTRATOR_AGENT=claude
+ORCHESTRATOR_AGENT=codex-gpt-5.4-mini-low
 PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
+LOOP_IMPROVER_AGENT=claude
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
-REVIEWER_AGENT=gemini-3.1-pro-preview
+REVIEWER_AGENT=codex-gpt-5.5-xhigh
 RUBBER_DUCK1=gemini-3.1-pro-preview
 RUBBER_DUCK2=claude
 E2E_AGENT=claude
@@ -36,9 +37,9 @@ Examples:
 - `claude-opus-4.7`
 
 Resolve the variables once at startup and pass the resolved configuration
-verbatim to every spawned orchestrator, pipeline filler, tailer, implementer,
-fresh reviewer, rubber-duck, and E2E tester. Do not hard-code task prefixes or
-agent/model choices when a variable exists.
+verbatim to every spawned orchestrator, pipeline filler, tailer, loop improver,
+implementer, fresh reviewer, rubber-duck, and E2E tester. Do not hard-code task
+prefixes or agent/model choices when a variable exists.
 
 If a configured agent is not available in Solo, stop with `NEEDS_DIRECTION`
 instead of silently substituting a different model.
@@ -59,6 +60,7 @@ Read:
 - `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - Solo scratchpad `131`
+- Solo scratchpad `132`
 - Solo agent-tool list, so configured agents can be matched before spawning
 - current Solo todos, comments, locks, timers, and process list
 - `git status --short --branch`
@@ -74,17 +76,19 @@ Read:
    `ORCHESTRATOR_AGENT` and `orchestrator.md`.
 6. Check whether a tailer is already active. If not, spawn one using
    `TAILER_AGENT` and `tailer.md`.
-7. For each process you spawn, use the startup handshake from
+7. Check whether a loop improver is already active. If not, spawn one using
+   `LOOP_IMPROVER_AGENT` and `loop-improver.md`.
+8. For each process you spawn, use the startup handshake from
    `solo-orchestration/README.md`: check `get_process_status`, inspect
    `get_process_output`, deliver the role prompt with `send_input`, and verify
    prompt delivery before assuming the role is active.
-8. If a newly spawned orchestrator or tailer is still rendering a startup
-   screen, schedule an idle-triggered Solo timer instead of declaring failure.
-   Retry prompt delivery once before closing and replacing a process.
-9. Tell the orchestrator to spawn a one-shot pipeline filler using
+9. If a newly spawned orchestrator, tailer, or loop improver is still rendering
+   a startup screen, schedule an idle-triggered Solo timer instead of declaring
+   failure. Retry prompt delivery once before closing and replacing a process.
+10. Tell the orchestrator to spawn a one-shot pipeline filler using
    `PIPELINE_FILLER_AGENT` and `pipeline-filler.md` whenever a timer tick finds
    fewer than `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY` todos.
-10. Record a checkpoint on the coordination todo with:
+11. Record a checkpoint on the coordination todo with:
    - active process ids;
    - resolved configuration;
    - current worker-ready todos;
@@ -103,5 +107,6 @@ Read:
 
 ## Handoff
 
-After the orchestrator and tailer are active, stop. The orchestrator owns
-assignment. The tailer owns supervision.
+After the orchestrator, tailer, and loop improver are active, stop. The
+orchestrator owns assignment. The tailer owns supervision and scratchpad `131`.
+The loop improver owns loop-level prompt improvement and scratchpad `132`.

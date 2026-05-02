@@ -16,6 +16,7 @@ PIPELINE_READY_TARGET=2
 ORCHESTRATOR_AGENT=codex-gpt-5.4-mini-low
 PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
+LOOP_IMPROVER_AGENT=claude
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
 REVIEWER_AGENT=codex-gpt-5.5-xhigh
 RUBBER_DUCK1=gemini-3.1-pro-preview
@@ -46,7 +47,8 @@ exists.
    resume the loop.
 2. The kickstarter starts or resumes:
    - one orchestrator using `solo-orchestration/orchestrator.md`;
-   - one tailer using `solo-orchestration/tailer.md`.
+   - one tailer using `solo-orchestration/tailer.md`;
+   - one loop improver using `solo-orchestration/loop-improver.md`.
 3. The orchestrator keeps the todo pipeline filled, dispatches one unblocked
    worker-ready todo at a time, spawns `solo-orchestration/pipeline-filler.md`
    as a one-shot role when the ready queue is low, and uses
@@ -56,9 +58,12 @@ exists.
    the loop verifies process status, output, prompt delivery, and lifecycle
    labels before assuming a role is active.
 5. The tailer watches processes, locks, git status, scope drift, focused gate
-   evidence, final diffs, and repeated todo-template friction while the
-   orchestrator keeps assignment moving.
-6. Fresh reviewers are optional escalation/final sign-off agents that use
+   evidence, final diffs, and worker-todo-template friction while the
+   orchestrator keeps assignment moving. The tailer owns scratchpad `131`.
+6. The loop improver watches the loop across cycles and improves orchestration
+   prompts plus scratchpad `132`. It may flag scratchpad `131` friction for the
+   tailer, but does not edit `131`.
+7. Fresh reviewers are optional escalation/final sign-off agents that use
    `solo-orchestration/fresh-reviewer.md` only when the tailer or orchestrator
    asks for one.
 
@@ -76,6 +81,9 @@ exists.
 - `solo-orchestration/tailer.md`: prompt for the long-running supervisor that
   tails active agents, performs ongoing review, verifies completed worker
   output, and improves the todo template when needed.
+- `solo-orchestration/loop-improver.md`: prompt for the long-running agent that
+  keeps the orchestration loop self-correcting by improving role prompts and
+  scratchpad `132`.
 - `solo-orchestration/implementer.md`: prompt for a single-task implementation
   worker.
 - `solo-orchestration/fresh-reviewer.md`: optional escalation/final sign-off
@@ -96,8 +104,8 @@ Current code is implementation evidence, not the north star. The old repo at
 
 ## Non-Negotiables
 
-- Do not implement code in the kickstarter, orchestrator, tailer, pipeline
-  filler, or reviewer roles.
+- Do not implement code in the kickstarter, orchestrator, tailer, loop
+  improver, pipeline filler, or reviewer roles.
 - Do not dispatch blocked todos or downstream todos whose prerequisites are not
   closed.
 - Do not treat `spawn_process` as proof that an agent can receive prompts. Use
@@ -106,6 +114,9 @@ Current code is implementation evidence, not the north star. The old repo at
 - The tailer is the normal ongoing reviewer for implementer work. Fresh
   reviewers are exceptional: high-risk work, tailer uncertainty, or batch/final
   sign-off.
+- The tailer owns scratchpad `131`. The loop improver owns loop prompt
+  improvements and scratchpad `132`; it must route worker-template changes to
+  the tailer instead of editing `131`.
 - Standing live-node checks must stay read-only or idempotent.
 - Provisioning, destructive, host-mutation, and repair/adoption flows require
   the ephemeral E2E validation described in `TESTING.md`.

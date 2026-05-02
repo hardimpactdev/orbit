@@ -14,9 +14,12 @@ an Orbit plan through Solo.
    todos.
 4. **Tailer** is the ongoing reviewer. It supervises active agents, locks,
    scope, git state, focused gates, final diffs, and template friction on a
-   5-minute check-in cadence.
-5. **Implementer** owns exactly one todo.
-6. **Fresh Reviewer** is optional escalation or final sign-off, not the normal
+   5-minute check-in cadence. It owns scratchpad `131`.
+5. **Loop Improver** is a long-running improvement role. It watches the loop
+   across cycles and keeps orchestration docs plus scratchpad `132`
+   self-correcting.
+6. **Implementer** owns exactly one todo.
+7. **Fresh Reviewer** is optional escalation or final sign-off, not the normal
    per-task review path.
 
 ## Shared Inputs
@@ -34,6 +37,7 @@ Every role should read only the context it needs:
 - `docs/MISSION.md` when scope or capability questions arise
 - `../orbit-old-may` only as legacy implementation evidence
 - Solo scratchpad `131` for the worker todo template
+- Solo scratchpad `132` for the one-shot pipeline filler prompt
 
 Current docs are product authority. Current implementation and the old repo are
 evidence only.
@@ -129,8 +133,28 @@ Use these exact labels in Solo comments so work can resume after compaction:
 - `SCOPE_DRIFT`: worker or reviewer touched/proposed out-of-scope work.
 - `LOCK_STALE`: a Solo lock is stale or externally owned and needs recovery.
 - `TEMPLATE_FRICTION`: repeated todo-shape issue that should improve
-  scratchpad `131`.
+  scratchpad `131`, scratchpad `132`, or the role prompts.
+- `LOOP_IMPROVEMENT`: loop-improver change or recommendation that makes the
+  orchestration loop more self-correcting.
 - `NEEDS_DIRECTION`: product or architecture decision needs human input.
+
+## Improvement Ownership
+
+The loop is self-correcting, but each durable artifact has one owner:
+
+- Tailer owns scratchpad `131`, the worker todo template. It may edit `131`
+  when repeated worker friction shows a todo-shape problem.
+- Loop improver owns scratchpad `132` and repo orchestration prompts in this
+  directory. It may update them when process, pipeline, or role-boundary
+  friction repeats.
+- Pipeline filler may report `TEMPLATE_FRICTION`, but does not edit `131`.
+- Orchestrator may report scheduling or process-recovery friction, but does not
+  edit templates.
+
+When the loop improver finds a worker-template issue that belongs in `131`, it
+records a `TEMPLATE_FRICTION` comment for the tailer instead of editing `131`.
+When the tailer finds pipeline-filler or role-prompt friction, it may record it
+for the loop improver instead of expanding its own scope.
 
 ## Todo Pipeline Rules
 
