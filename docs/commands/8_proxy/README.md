@@ -40,6 +40,44 @@ Caddy is the current proxy backend. It is not the product model.
   of observed backend routes must use explicit
   `doctor --family=proxy --adopt` semantics.
 
+## App And Workspace Ingress Baseline
+
+App and workspace proxy routes are not generic reverse proxies. They provide the
+standard Orbit browser ingress contract for PHP-backed apps and workspaces:
+
+- terminate Orbit-managed TLS for the app or workspace host;
+- route PHP requests to the resolved app/workspace PHP runtime;
+- serve static files from the configured document root;
+- apply baseline browser security headers;
+- block direct requests for sensitive project files and framework internals;
+- emit profiling timing markers used by Orbit profile workflows;
+- cache versioned build assets under `/build/*` with long-lived immutable cache
+  headers.
+
+Document-root policy is part of the route contract. Apps or workspaces that
+serve from a public document root keep project-root files outside the web root
+and still block adjacent sensitive files such as environment files, VCS
+metadata, and local entrypoints. Apps or workspaces that intentionally serve
+from the project root receive the stronger project-root blocking policy for
+framework config, storage, dependencies, source metadata, and local entrypoints.
+
+Custom, redirect, and tool routes are separate route kinds. They may share TLS,
+DNS, and inventory behavior with app/workspace routes, but they do not inherit
+the PHP document-root contract unless their own command docs say so.
+
+## Gateway Internal Ingress
+
+Gateway-owned internal routes are proxy inventory, but their product purpose is
+the gateway API. Internal gateway ingress must bind to the gateway's Orbit
+network address, not become a public application route. It must preserve the
+WireGuard identity model by removing forwarded-client identity headers before
+the request reaches the gateway API.
+
+Long-lived gateway streams, such as progress or log streams, must not consume
+the same execution lane as short command/API requests. The current backend may
+implement that with separate runtime sockets, but the product contract is that
+streaming traffic cannot starve ordinary gateway API execution.
+
 ## Proxy Route JSON Entity
 
 Proxy JSON renderers that return one route entity embed this shape under

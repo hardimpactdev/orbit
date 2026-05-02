@@ -37,7 +37,10 @@ The proxy probe reads gateway proxy route intent and checks these layers:
    intent says it should exist.
 6. **Backend shape:** the observed backend route matches the expected owner,
    route kind, upstream or redirect target, redirect code, TLS behavior, and
-   routing priority.
+   routing priority. For app/workspace routes, this includes the browser
+   ingress baseline: document-root policy, PHP runtime target, security
+   headers, sensitive path blocking, profiling timing markers, and immutable
+   cache headers for versioned build assets.
 7. **TLS material:** expected Orbit-managed TLS material exists and matches the
    route's policy.
 8. **Extra route ownership:** Orbit-owned backend routes without matching

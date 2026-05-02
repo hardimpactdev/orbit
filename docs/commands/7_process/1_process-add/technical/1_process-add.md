@@ -79,6 +79,21 @@ If process intent is written but runtime-unit enactment or optional start fails,
 the command returns success with repairable process-family warnings because the
 requested durable intent exists.
 
+### Development Server Rules
+
+- `process:add` stores the provided command without rewriting it for a specific
+  frontend server.
+- Development-server commands that need browser or HMR access across the Orbit
+  network must bind to a node-reachable interface instead of loopback.
+- For Vite-backed development servers, the expected command shape is
+  `npm run dev -- --host=0.0.0.0`, or an equivalent package-manager/framework
+  adapter command with the same bind behavior.
+- Runtime units generated from the process definition receive Orbit URL and TLS
+  environment fields, including `APP_URL`, `VITE_APP_URL`,
+  `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT`.
+- Runtime units do not receive `VITE_VALET_HOST`; that compatibility field is
+  limited to app/workspace setup paths.
+
 ## Renderer Contracts
 
 - [Human renderer](6.1_process-add_output-render_human.md)

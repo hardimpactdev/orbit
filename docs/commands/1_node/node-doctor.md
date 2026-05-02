@@ -17,11 +17,12 @@ The node family owns these facts:
   gateway-owned SSH reachability for app nodes;
 - node bootstrap artifacts: gateway runtime readiness, app-node minimum Orbit
   runtime, app-node gateway-client endpoint/trust artifacts, node identity
-  artifacts, and gateway-managed WireGuard peers;
+  artifacts, role bootstrap network policy, and gateway-managed WireGuard
+  peers;
 - node-related defaults: development app-node TLDs, gateway development DNS
-  mappings for those TLDs, local `node:default` preferences when `--self`
-  inspects the current control node, and gateway-owned node-level agent IDE
-  defaults.
+  mappings for those TLDs, gateway development DNS resolver safety, local
+  `node:default` preferences when `--self` inspects the current control node,
+  and gateway-owned node-level agent IDE defaults.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -62,13 +63,21 @@ The node probe reads gateway node records and checks these layers:
 9. **App-node bootstrap readiness:** app nodes have the minimum Orbit runtime
    and node identity artifacts needed for the gateway to enact other state
    families over SSH.
-10. **Development TLD readiness:** development app nodes have a `nodes.tld`
+10. **Role bootstrap network policy:** gateway and app nodes have the
+    node-owned baseline network policy for their role and environment. This
+    verifies bootstrap reachability policy only, including that SSH management
+    traffic is not publicly exposed after bootstrap and instead uses the
+    Orbit/WireGuard path. Editable operator firewall rules belong to
+    `firewall_rule`.
+11. **Development TLD readiness:** development app nodes have a `nodes.tld`
    value, the app node's local TLD default matches the node record, and the
-   gateway maps `*.nodes.tld` to the node's WireGuard address. Production app
-   nodes, gateways, and control nodes have no development TLD mapping.
-11. **Node-related defaults:** local `node:default` preferences point at
-    active, authorized development app nodes when `--self` inspects a control
-    node, and node-level agent IDE defaults point at supported adapters.
+   gateway maps `*.nodes.tld` to the node's WireGuard address. The gateway
+   development DNS resolver must be WireGuard-reachable and must not expose a
+   public open resolver. Production app nodes, gateways, and control nodes have
+   no development TLD mapping.
+12. **Node-related defaults:** local `node:default` preferences point at
+   active, authorized development app nodes when `--self` inspects a control
+   node, and node-level agent IDE defaults point at supported adapters.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a provider-specific
@@ -99,9 +108,11 @@ endpoint.
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway runtime. |
 | `node.app_runtime_missing` | An app node lacks the minimum Orbit runtime required for gateway enactment. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
+| `node.bootstrap_network_policy_mismatch` | A gateway or app node's role bootstrap network policy is missing, unsafe, or inconsistent with its role/environment. |
 | `node.development_tld_missing` | A development app-node record has no `nodes.tld` value. |
 | `node.development_tld_mismatch` | The app node's local TLD default differs from the gateway node record. |
 | `node.development_dns_mapping_mismatch` | The gateway development DNS mapping for `*.nodes.tld` is absent or points anywhere other than the app node's WireGuard address. |
+| `node.development_dns_public_exposure` | Gateway-provisioned development DNS is exposed as a public resolver instead of being reachable only through the Orbit network. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-development app node. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
@@ -120,9 +131,11 @@ endpoint.
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway runtime artifacts required by Orbit API readiness. |
 | `node.app_runtime_missing` | Rerun the app-node bootstrap step that installs the minimum Orbit runtime. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
+| `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role/environment with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.development_tld_missing` | Restore the development TLD from gateway node intent when that intent has exactly one value. |
 | `node.development_tld_mismatch` | Rewrite the app node's local TLD default to the value in the gateway node record. |
 | `node.development_dns_mapping_mismatch` | Rewrite the gateway development DNS mapping to the app node's WireGuard address. |
+| `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network. |
 
 `--fix` does not handle `node.record_incomplete`,
 `node.identity_unresolved`, `node.platform_unsupported`,

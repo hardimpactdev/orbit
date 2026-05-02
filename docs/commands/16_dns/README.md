@@ -11,6 +11,12 @@ Gateway-owned development DNS mappings are created by node/app provisioning and
 verified through node-family doctor behavior. The DNS command family only owns
 caller-local resolver overrides.
 
+Gateway development DNS infrastructure is deliberately WireGuard-scoped. It
+exists so Orbit nodes and configured control machines can resolve development
+TLDs inside the Orbit network, not as a public recursive resolver. Public
+resolver exposure is node-family drift and is checked by
+[`doctor --family=node`](../1_node/node-doctor.md).
+
 ## State Ownership
 
 The DNS command domain does not own a state family. DNS commands mutate

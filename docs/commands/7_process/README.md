@@ -82,6 +82,33 @@ workspace setup and teardown step environment. Runtime units do not receive
 | `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 | `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 
+`VITE_VALET_HOST` is intentionally not part of long-running process runtime
+units. It belongs to app/workspace setup compatibility paths, while process
+units receive Orbit-owned URL and certificate fields that are stable across
+frontend toolchains.
+
+## Development Server Runtime
+
+Process commands store the operator-provided command and do not rewrite it for a
+specific frontend server. A development server that must be reachable from a
+control node browser or support HMR across the Orbit network must bind to a
+node-reachable interface instead of loopback. For Vite-backed processes, the
+expected command shape is:
+
+```text
+npm run dev -- --host=0.0.0.0
+```
+
+Equivalent package-manager or framework adapter commands are valid when they
+produce the same non-loopback bind behavior. Orbit supplies `APP_URL`,
+`VITE_APP_URL`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process
+can serve the app/workspace URL over Orbit-managed HTTPS and keep browser HMR
+connected through the network path.
+
+Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by
+their respective families. The process family owns the stored command, runtime
+unit environment, and process lifecycle, not public exposure policy.
+
 ## Commands
 
 1. [`orbit process:add [name] [command]`](1_process-add/process-add.md)

@@ -221,6 +221,15 @@ ported command and family doctor file. Use
 `docs/BUILDING-BLOCKS.md`, and `docs/commands/README.md` as authority. Fix
 semantic issues before marking the command or family ported.
 
+After structural porting, also run a legacy feature-detail audit before
+considering a family complete. Search the old code and tests for
+domain-specific capabilities that were encoded in implementation support rather
+than legacy command prose, then document the product behavior in the new family
+contracts. Examples include Vite/HMR network bind requirements, app/workspace
+proxy ingress safeguards, tool credentials and service endpoints, and TLS trust
+behavior. Do not document backend recipes or old implementation classes;
+document the supported Orbit capability and ownership boundary.
+
 ### Converted Command Docs
 
 - [x] `docs/commands/1_node`

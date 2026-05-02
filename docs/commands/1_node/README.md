@@ -164,6 +164,32 @@ The steady-state paths are therefore:
 1. CLI caller to gateway over HTTPS through WireGuard;
 2. gateway to app node over SSH when node-side work is required.
 
+## Role Bootstrap Network Policy
+
+Node provisioning owns the first network policy that makes a node reachable
+without turning node bootstrap into editable firewall intent. The policy is
+role-aware:
+
+- every managed Ubuntu gateway or app node denies unsolicited inbound traffic
+  by default, allows outbound traffic, and keeps the Orbit WireGuard interface
+  open for in-network traffic;
+- gateway nodes expose only the WireGuard endpoint publicly. Gateway API HTTPS
+  ingress is an Orbit-network service bound to the gateway's WireGuard address;
+- development app nodes do not expose app routes publicly by baseline. Their
+  Orbit-managed HTTPS routes are reachable through the Orbit network;
+- production app nodes expose public HTTP/HTTPS ingress for production domains
+  only. SSH and other node-management access stay on the Orbit network.
+
+Node bootstrap applies this baseline with rollback and reachability checks so a
+failed policy change does not silently strand a node. Operator-managed firewall
+intent after bootstrap belongs to the `firewall_rule` family, but public SSH is
+not part of the steady-state baseline. SSH management traffic must use the
+Orbit/WireGuard path.
+
+Development DNS infrastructure is also node-owned during gateway/app-node
+bootstrap. Gateway-provisioned development DNS must be reachable through the
+Orbit network and must not expose an open public resolver.
+
 ## Domain Boundaries
 
 The node domain owns:
