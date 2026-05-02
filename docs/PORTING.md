@@ -62,8 +62,10 @@ Default migration order is command-contract and capability driven:
    - Until the gateway-to-mini SSH trust decision is resolved, standing live
      smoke is a known red gate: it passes local tests, updates beast, then fails
      when the gateway tries to update mini.
-   - Restore ephemeral E2E before provisioning or destructive flows depend on
-     it.
+   - Expand the Incus-backed ephemeral E2E harness before provisioning or
+     destructive flows depend on it.
+   - Use blank Incus VM snapshots for provisioning coverage and ready Incus VM
+     snapshots for fast command-porting coverage.
    - Convert docs for the next implementation slice before writing code.
 2. **Nodes first.**
    - Finish node registry read and metadata commands before app/workspace
@@ -101,6 +103,15 @@ Default migration order is command-contract and capability driven:
 These items exist in the clean repo today. Some are bootstrap slices and do not
 yet satisfy the full product contracts.
 
+- [~] Incus-backed ephemeral E2E harness
+  - Current script: `bin/e2e`
+  - Current docs: `TESTING.md`
+  - Current test script: `composer test:e2e`
+  - Bootstrap slice implemented: beast preflight, disposable Ubuntu cloud VM
+    launch, ephemeral SSH key injection, SSH readiness check from beast, and VM
+    cleanup.
+  - Contract gap: role provisioning and gateway/control/app topology coverage
+    still need blank and ready Incus snapshot lanes.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
@@ -342,20 +353,28 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   fixed or removed from the live-smoke contract.
   - Current behavior: local tests pass, beast updates, then gateway cannot
     update mini because it is not authorized for `nckrtl@10.6.0.8`.
-- [ ] Restore ephemeral E2E.
+- [~] Restore ephemeral E2E.
+  - [x] Add Incus backend preflight on beast.
+  - [x] Add disposable blank Ubuntu VM lifecycle smoke.
+  - [ ] Create a blank snapshot lane for provisioning tests.
+  - [ ] Create ready control, gateway, and app snapshot lanes for fast
+    command-porting tests.
 - [ ] Add E2E topology for gateway + control + app node.
 - [ ] Add safe read-only standing-node smoke coverage for registry reads.
 - [ ] Add provisioning/destructive coverage only against ephemeral nodes.
 
 ## Next Priorities
 
-1. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
+1. Build the Incus E2E snapshot lanes: blank VM for provisioning tests, then
+   ready control/gateway/app VMs for fast command-porting tests.
+2. Use the blank E2E lane to start node provisioning logic safely before
+   treating `gateway:add`, `node:new`, or provisioning-heavy commands as
+   complete.
+3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-2. Finish node registry and metadata slices first: `node:update`,
+4. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
-3. Convert `profile` docs once its node/app prerequisites are present, then
+5. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-4. Convert operations docs for `update` and `update:all` so existing bootstrap
+6. Convert operations docs for `update` and `update:all` so existing bootstrap
    utilities stop carrying docs debt.
-5. Plan ephemeral E2E restoration before `gateway:add`, `node:new`, or any
-   provisioning-heavy command is treated as complete.

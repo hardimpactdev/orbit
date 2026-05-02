@@ -35,17 +35,34 @@ mutation checks:
 
 ```bash
 composer test:e2e
+bin/e2e --preflight
+bin/e2e --lifecycle
 ```
 
-The ephemeral E2E harness is not restored yet. Until it exists, `composer
-test:e2e` exits with a message instead of touching standing live nodes.
+The first ephemeral E2E harness uses Incus VMs on beast. The default
+`composer test:e2e` path launches one disposable Ubuntu cloud VM, injects an
+ephemeral SSH key, verifies SSH from beast into the VM, and deletes the VM.
+This is a backend lifecycle smoke only; it does not yet provision Orbit roles
+or validate a gateway/control/app topology.
 
 Environment overrides:
 
 ```bash
 ORBIT_LIVE_GATEWAY_SSH=gateway
 ORBIT_LIVE_GATEWAY_PATH=~/orbit
+
+ORBIT_E2E_HOST=beast
+ORBIT_E2E_IMAGE=images:ubuntu/24.04/cloud
+ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
+ORBIT_E2E_TIMEOUT_SECONDS=600
+ORBIT_E2E_KEEP=1
 ```
+
+The next E2E step is to create two Incus lanes:
+
+- blank snapshots for provisioning tests from base Ubuntu plus SSH only.
+- ready snapshots for fast command-porting tests against prepared control,
+  gateway, and app nodes.
 
 ## Standing Live Node Rule
 

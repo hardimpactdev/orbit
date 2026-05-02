@@ -2,11 +2,182 @@
 
 set -euo pipefail
 
-cat >&2 <<'HELP'
-Ephemeral E2E is not restored yet.
+cd "$(dirname "$0")/.."
 
-Use `composer test:live` for the standing gateway/mini/beast smoke path.
+E2E_HOST="${ORBIT_E2E_HOST:-beast}"
+E2E_IMAGE="${ORBIT_E2E_IMAGE:-images:ubuntu/24.04/cloud}"
+E2E_PREFIX="${ORBIT_E2E_INSTANCE_PREFIX:-orbit-e2e}"
+E2E_TIMEOUT_SECONDS="${ORBIT_E2E_TIMEOUT_SECONDS:-600}"
+E2E_CPUS="${ORBIT_E2E_CPUS:-2}"
+E2E_MEMORY="${ORBIT_E2E_MEMORY:-2GiB}"
+E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
+
+usage() {
+    cat <<'HELP'
+usage: bin/e2e [--preflight | --lifecycle]
+
+Modes:
+  --preflight  Check that the ephemeral backend is reachable on the E2E host.
+  --lifecycle  Launch one Incus VM, verify SSH from the host, then destroy it.
+
+Environment:
+  ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
+  ORBIT_E2E_IMAGE            Incus image to launch. Defaults to "images:ubuntu/24.04/cloud".
+  ORBIT_E2E_INSTANCE_PREFIX  Prefix for disposable instances. Defaults to "orbit-e2e".
+  ORBIT_E2E_TIMEOUT_SECONDS  VM boot and SSH timeout. Defaults to "600".
+  ORBIT_E2E_CPUS             VM CPU limit. Defaults to "2".
+  ORBIT_E2E_MEMORY           VM memory limit. Defaults to "2GiB".
+  ORBIT_E2E_KEEP             Set to "1" to leave the VM behind for debugging.
+
 Do not run write/destructive E2E against standing live nodes.
 HELP
+}
 
-exit 2
+preflight() {
+    ssh "$E2E_HOST" "bash -s" -- "$E2E_IMAGE" <<'REMOTE'
+set -euo pipefail
+
+image="$1"
+
+command -v incus >/dev/null
+incus info >/dev/null
+incus network show incusbr0 >/dev/null
+incus profile show default >/dev/null
+
+echo "orbit-e2e preflight passed: incus is available and incusbr0 exists"
+echo "orbit-e2e image: ${image}"
+REMOTE
+}
+
+lifecycle() {
+    ssh "$E2E_HOST" "bash -s" -- \
+        "$E2E_IMAGE" \
+        "$E2E_PREFIX" \
+        "$E2E_TIMEOUT_SECONDS" \
+        "$E2E_CPUS" \
+        "$E2E_MEMORY" \
+        "$E2E_KEEP" <<'REMOTE'
+set -euo pipefail
+
+image="$1"
+prefix="$2"
+timeout_seconds="$3"
+cpus="$4"
+memory="$5"
+keep="$6"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+name="${prefix}-${run_id}-blank"
+run_dir="/tmp/${name}"
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instance ${name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$name" >/dev/null 2>&1
+        rm -rf "$run_dir"
+    fi
+
+    return "$status"
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+command -v ssh-keygen >/dev/null
+command -v ssh >/dev/null
+
+rm -rf "$run_dir"
+mkdir -p "$run_dir"
+
+ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
+public_key="$(cat "$run_dir/id_ed25519.pub")"
+
+cat > "$run_dir/user-data" <<USERDATA
+#cloud-config
+bootcmd:
+  - [ sh, -lc, "rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf" ]
+package_update: true
+packages:
+  - openssh-server
+ssh_pwauth: false
+users:
+  - default
+  - name: orbit
+    groups: sudo
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ${public_key}
+runcmd:
+  - [ sh, -lc, "usermod -p '*' orbit" ]
+  - [ sh, -lc, "systemctl enable --now ssh || systemctl enable --now sshd || true" ]
+USERDATA
+
+echo "orbit-e2e launching ${name} from ${image} on $(hostname)"
+incus launch "$image" "$name" --vm \
+    --config=user.user-data="$(cat "$run_dir/user-data")" \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+deadline=$((SECONDS + timeout_seconds))
+ipv4=""
+
+while [ "$SECONDS" -lt "$deadline" ]; do
+    ipv4="$(incus list "$name" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)"
+
+    if [ -n "$ipv4" ]; then
+        break
+    fi
+
+    sleep 2
+done
+
+if [ -z "$ipv4" ]; then
+    echo "orbit-e2e failed: ${name} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+    incus list "$name" >&2 || true
+    exit 1
+fi
+
+while [ "$SECONDS" -lt "$deadline" ]; do
+    if ssh \
+        -i "$run_dir/id_ed25519" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        "orbit@${ipv4}" \
+        "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" >/dev/null 2>&1; then
+        echo "orbit-e2e lifecycle passed: ${name} is reachable at ${ipv4}"
+        exit 0
+    fi
+
+    sleep 3
+done
+
+echo "orbit-e2e failed: SSH never became ready on ${name} (${ipv4}) within ${timeout_seconds}s" >&2
+incus list "$name" >&2 || true
+exit 1
+REMOTE
+}
+
+case "${1:---lifecycle}" in
+    --preflight)
+        preflight
+        ;;
+    --lifecycle)
+        lifecycle
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        echo "error: unknown mode '$1'" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
