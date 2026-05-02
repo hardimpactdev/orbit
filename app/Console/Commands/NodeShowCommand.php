@@ -70,7 +70,7 @@ class NodeShowCommand extends Command
      *     name: string,
      *     role: string,
      *     status: string,
-     *     environment: null,
+     *     environment: string|null,
      *     platform: string,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: null, source: string},
@@ -83,10 +83,10 @@ class NodeShowCommand extends Command
             'name' => $node->name,
             'role' => $node->role,
             'status' => $node->status,
-            'environment' => null,
-            'platform' => 'unknown',
+            'environment' => $node->role === 'app' ? $node->environment : null,
+            'platform' => $node->platform ?? 'unknown',
             'addresses' => [
-                'wireguard' => $node->host,
+                'wireguard' => $node->wireguard_address ?? $node->host,
             ],
             'agent_ide' => [
                 'adapter' => null,
@@ -104,7 +104,7 @@ class NodeShowCommand extends Command
      *     name: string,
      *     role: string,
      *     status: string,
-     *     environment: null,
+     *     environment: string|null,
      *     platform: string,
      *     addresses: array{wireguard: string},
      *     agent_ide: array{adapter: null, source: string},
@@ -115,12 +115,24 @@ class NodeShowCommand extends Command
     {
         $this->line("Node: {$node['name']}");
         $this->line("Role: {$node['role']}");
-        $this->line('Environment: -');
+
+        if ($node['environment'] !== null) {
+            $this->line("Environment: {$node['environment']}");
+        }
+
         $this->line("Platform: {$node['platform']}");
         $this->line("WireGuard: {$node['addresses']['wireguard']}");
-        $this->line('Grants:');
-        $this->line('  Consuming: (none)');
-        $this->line('  Serving: (none)');
+
+        $consuming = $node['grants']['consuming_nodes'];
+        $serving = $node['grants']['serving_nodes'];
+
+        if ($consuming !== [] || $serving !== []) {
+            $this->line('Grants:');
+            $consumingStr = $consuming !== [] ? implode(', ', $consuming) : '(none)';
+            $servingStr = $serving !== [] ? implode(', ', $serving) : '(none)';
+            $this->line("  Consuming: {$consumingStr}");
+            $this->line("  Serving: {$servingStr}");
+        }
     }
 
     /**
