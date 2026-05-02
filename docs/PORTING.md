@@ -29,6 +29,10 @@ behavior from `../orbit-old-may`.
 - `[!]` Blocked or decision needed
 - `[-]` Intentionally not ported
 
+Use `[x]` only when the current implementation satisfies the current product
+docs for that item and has focused tests for the documented contract. Useful
+bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
+
 ## Porting Workflow
 
 1. Find the old documentation in `../orbit-old-may/docs`.
@@ -51,24 +55,33 @@ behavior from `../orbit-old-may`.
 These items exist in the clean repo today. Some are bootstrap slices and do not
 yet satisfy the full product contracts.
 
-- [x] `update`
+- [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
-- [x] `update:all`
+  - Contract gap: current operation docs still need to be converted into this
+    repo before this can be considered fully ported.
+- [~] `update:all`
   - Current implementation: `app/Console/Commands/UpdateAllCommand.php`
   - Current tests: `tests/Feature/Commands/UpdateAllCommandTest.php`
+  - Contract gap: current operation docs still need to be converted into this
+    repo before this can be considered fully ported.
   - Live smoke note: gateway can update beast; gateway-to-mini SSH currently
     fails with `Permission denied (publickey)`.
-- [x] `node:list`
+- [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
   - Current tests: `tests/Feature/Commands/NodeListCommandTest.php`
-- [x] `node:show`
+  - Contract gaps: JSON renderer, role/environment filters, `--doctor`, caller
+    visibility policy, gateway forwarding, and doctor handoff behavior.
+- [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
   - Current tests: `tests/Feature/Commands/NodeShowCommandTest.php`
-  - Porting note: uses contract-shaped defaults for fields not yet modeled in
-    the clean schema: `environment`, `platform`, grants, and node agent IDE.
+  - Bootstrap slice implemented: active registry lookup, human output, JSON
+    envelope, not-found error, local-node fallback, and read-only behavior.
+  - Contract gaps: caller-role resolution, access-policy authorization, gateway
+    forwarding, interactive prompting, default development app-node resolution,
+    real grant metadata, `environment`, `platform`, and node agent IDE metadata.
 - [~] `node:register`
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
@@ -225,23 +238,26 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 - [ ] Port process log and event stream behavior.
 - [ ] Port process exit hook support if still part of the product contract.
 
-## Saloon And Gateway API Workstream
+## Gateway API Client And Transport Workstream
 
-- [ ] Decide clean-rebuild dependency policy for Saloon before adding packages.
+- [ ] Decide the clean-rebuild transport approach before adding packages.
+  Legacy Saloon code is reference material and a candidate implementation, not
+  required product scope.
 - [ ] Port gateway API envelope conventions.
-- [ ] Port `GatewayConnector` and `NodeConnector`.
+- [ ] Decide whether clean connectors are needed, and if so port or replace
+  `GatewayConnector` and `NodeConnector`.
 - [ ] Port request correlation header support.
 - [ ] Port typed gateway request sender.
 - [ ] Port WireGuard identity middleware.
 - [ ] Port `/api/me`.
-- [ ] Port node API controllers and Saloon requests.
-- [ ] Port app API controllers and Saloon requests.
-- [ ] Port workspace API controllers and Saloon requests.
-- [ ] Port process API controllers and Saloon requests.
-- [ ] Port tool/service API controllers and Saloon requests after tool docs are
-  converted.
-- [ ] Port doctor API controllers and Saloon requests after doctor docs are
-  converted.
+- [ ] Port node API controllers and typed client requests.
+- [ ] Port app API controllers and typed client requests.
+- [ ] Port workspace API controllers and typed client requests.
+- [ ] Port process API controllers and typed client requests.
+- [ ] Port tool/service API controllers and typed client requests after tool
+  docs are converted.
+- [ ] Port doctor API controllers and typed client requests after doctor docs
+  are converted.
 - [ ] Port long-running SSE progress primitives.
 
 ## State Families And Doctor Workstream
@@ -272,8 +288,8 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 ## Next Priorities
 
-1. Fix or explicitly document the gateway-to-mini SSH trust gap for
-   `composer test:live`.
+1. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
+   should exclude updating mini.
 2. Port `node:update` or `node:default` as the next small registry slice.
 3. Begin a docs-first conversion batch for one missing legacy family, likely
    operations/doctor or tools, before any implementation from that family.
