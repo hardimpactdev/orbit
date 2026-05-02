@@ -13,7 +13,8 @@ an Orbit plan through Solo.
    ready queue is low. It reads `docs/PORTING.md` and creates the next small
    todos.
 4. **Tailer** is the ongoing reviewer. It supervises active agents, locks,
-   scope, git state, focused gates, final diffs, and template friction.
+   scope, git state, focused gates, final diffs, and template friction on a
+   5-minute check-in cadence.
 5. **Implementer** owns exactly one todo.
 6. **Fresh Reviewer** is optional escalation or final sign-off, not the normal
    per-task review path.

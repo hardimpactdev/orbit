@@ -28,7 +28,7 @@ Read:
 
 ## Watch Loop
 
-On each timer interval:
+Check in every 5 minutes. On each timer interval:
 
 1. Poll active orchestrator, pipeline filler, implementer, and optional fresh
    reviewer processes.
@@ -49,7 +49,7 @@ On each timer interval:
    - `NEEDS_DIRECTION`
    - `NEEDS_FRESH_REVIEWER`
 8. Record a concise checkpoint on the coordination todo.
-9. Set the next timer.
+9. Set the next 5-minute timer before going idle.
 
 ## Interventions
 
@@ -66,6 +66,8 @@ Intervene only for:
 - implementer stuck idle without `WORKER_DONE`, `BLOCKED`, or
   `NEEDS_DIRECTION`.
 - missing timer that would cause the loop to wait for human nudges.
+- next timer scheduled for anything other than 5 minutes without an explicit
+  reason in the checkpoint.
 
 When intervening, record the label and the exact recovery action.
 
