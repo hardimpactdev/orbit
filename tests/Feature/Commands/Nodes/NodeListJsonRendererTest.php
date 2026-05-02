@@ -1,0 +1,269 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function nodeListJsonRow(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'app-1',
+        'role' => 'app',
+        'host' => '10.6.0.7',
+        'ssh_user' => 'nckrtl',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+        'is_local' => false,
+        'environment' => 'development',
+        'platform' => 'ubuntu_24-04',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ], $overrides);
+}
+
+describe('node:list JSON renderer contract', function (): void {
+    it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {
+        DB::table('nodes')->insert([
+            nodeListJsonRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload)->toHaveKey('success')
+            ->and($payload)->not->toHaveKey('error')
+            ->and($payload['success'])->toBeArray()
+            ->and($payload['success'])->toHaveKey('data');
+    });
+
+    it('returns success.data.nodes as a flat array of node objects', function (): void {
+        DB::table('nodes')->insert([
+            nodeListJsonRow([
+                'name' => 'app-1',
+                'role' => 'app',
+                'environment' => 'development',
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $data = $payload['success']['data'];
+        expect($data)->toBeArray()
+            ->and($data)->toHaveKey('nodes');
+
+        $nodes = $data['nodes'];
+        expect($nodes)->toBeArray();
+    });
+
+    it('returns per-node fields name role environment platform status', function (): void {
+        DB::table('nodes')->insert([
+            nodeListJsonRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'platform' => 'ubuntu_24-04',
+            ]),
+            nodeListJsonRow([
+                'name' => 'app-1',
+                'role' => 'app',
+                'environment' => 'development',
+                'platform' => 'ubuntu_24-04',
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $nodes = $payload['success']['data']['nodes'];
+        $indexed = array_column($nodes, null, 'name');
+
+        expect($indexed['app-1'])->toBe([
+            'name' => 'app-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+        ])
+            ->and($indexed['gateway-1'])->toBe([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+                'platform' => 'ubuntu_24-04',
+                'status' => 'active',
+            ]);
+    });
+
+    it('does not include wg_ip or internal fields in JSON output', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]));
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $nodes = $payload['success']['data']['nodes'];
+
+        foreach ($nodes as $node) {
+            expect($node)->not->toHaveKey('wg_ip')
+                ->and($node)->not->toHaveKey('wireguard_address')
+                ->and($node)->not->toHaveKey('host')
+                ->and($node)->not->toHaveKey('ssh_user')
+                ->and($node)->not->toHaveKey('orbit_path')
+                ->and($node)->not->toHaveKey('is_local');
+        }
+    });
+
+    it('defaults platform to unknown when null', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'platform' => null,
+        ]));
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $nodes = $payload['success']['data']['nodes'];
+
+        expect($nodes[0]['platform'])->toBe('unknown');
+    });
+
+    it('returns empty nodes array when no nodes match filters', function (): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'control']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $nodes = $payload['success']['data']['nodes'];
+
+        expect($nodes)->toBeArray()->and($nodes)->toHaveCount(0);
+    });
+
+    it('environment is null for non-app nodes', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+        ]));
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $nodes = $payload['success']['data']['nodes'];
+        $indexed = array_column($nodes, null, 'name');
+
+        expect($indexed['gateway-1'])->toHaveKey('environment')
+            ->and($indexed['gateway-1']['environment'])->toBeNull();
+    });
+
+    it('platform is never null and uses unknown sentinel when undetected', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'platform' => null,
+        ]));
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $nodes = $payload['success']['data']['nodes'];
+        $indexed = array_column($nodes, null, 'name');
+
+        expect($indexed['gateway-1'])->toHaveKey('platform')
+            ->and($indexed['gateway-1']['platform'])->not->toBeNull();
+    });
+
+    it('uses correct enum values for role and status', function (): void {
+        DB::table('nodes')->insert([
+            nodeListJsonRow([
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'environment' => null,
+            ]),
+            nodeListJsonRow([
+                'name' => 'app-1',
+                'role' => 'app',
+                'environment' => 'development',
+            ]),
+            nodeListJsonRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'environment' => null,
+                'status' => 'provisioning',
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $nodes = $payload['success']['data']['nodes'];
+        $indexed = array_column($nodes, null, 'name');
+
+        expect($indexed['gateway-1']['role'])->toBe('gateway');
+        expect($indexed['app-1']['role'])->toBe('app');
+        expect($indexed['control-1']['role'])->toBe('control');
+
+        expect($indexed['gateway-1']['status'])->toBeIn(['active', 'provisioning']);
+        expect($indexed['app-1']['status'])->toBeIn(['active', 'provisioning']);
+        expect($indexed['control-1']['status'])->toBeIn(['active', 'provisioning']);
+    });
+
+    it('returns nested validation_failed error for invalid --role', function (): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'bogus']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        expect($payload)->toHaveKey('error')
+            ->and($payload)->not->toHaveKey('success');
+
+        $error = $payload['error'];
+        expect($error['code'])->toBe('validation_failed');
+        expect($error['meta'])->toHaveKey('field')
+            ->and($error['meta']['field'])->toBe('role')
+            ->and($error['meta'])->toHaveKey('value')
+            ->and($error['meta'])->toHaveKey('allowed');
+    });
+
+    it('returns nested validation_failed error for invalid --environment', function (): void {
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--environment' => 'bogus']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1);
+
+        expect($payload)->toHaveKey('error')
+            ->and($payload)->not->toHaveKey('success');
+
+        $error = $payload['error'];
+        expect($error['code'])->toBe('validation_failed');
+        expect($error['meta'])->toHaveKey('field')
+            ->and($error['meta']['field'])->toBe('environment');
+    });
+});
