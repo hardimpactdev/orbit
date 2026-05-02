@@ -38,13 +38,12 @@ Examples:
 - `codex-gpt-5.5-xhigh`
 - `claude-opus-4.7`
 
-Resolve the variables once at startup, create or select the coordination todo,
-and seed `solo-orchestration/run-config`. After the loop improver is active,
-the loop improver owns runtime loop-control fields in that key. Every spawned
-orchestrator, pipeline filler, todo scout, reviewer, loop improver,
-implementer, rubber-duck, and E2E tester reads that KV record before acting.
-Do not hard-code coordination todo ids, queue targets, or agent/model choices
-when a variable exists.
+The canonical run-config schema lives in
+`README.md` → "Run Config KV". Resolve the variables once at startup, create
+or select the coordination todo, and seed `solo-orchestration/run-config`
+using that schema. After the loop improver is active, it owns runtime
+loop-control fields in that key. Do not hard-code coordination todo ids,
+queue targets, or agent/model choices when a variable exists.
 
 If a configured agent is not available in Solo, stop with `NEEDS_DIRECTION`
 instead of silently substituting a different model.
@@ -52,38 +51,9 @@ instead of silently substituting a different model.
 ## Run Config Write
 
 After resolving the defaults and user overrides, write exactly one runtime
-configuration record with Solo `kv_set`. Store the value as a JSON object, not
-an encoded JSON string:
-
-```text
-key: solo-orchestration/run-config
-```
-
-Value shape:
-
-```json
-{
-  "owner": "loop-improver",
-  "run_id": "<ISO-8601-slug-or-short-id>",
-  "porting_tracker": "docs/PORTING.md",
-  "coordination_todo": "<fresh todo id for this run>",
-  "pipeline_ready_target": 4,
-  "agents": {
-    "orchestrator": "claude-sonnet",
-    "pipeline_filler": "claude-opus",
-    "todo_scout": "gemini-3.1-pro-preview",
-    "reviewer": "gemini-3.1-pro-preview",
-    "loop_improver": "claude-sonnet",
-    "implementation": "opencode-kimi-k2.6",
-    "rubber_duck_1": "gemini-3.1-pro-preview",
-    "rubber_duck_2": "claude-opus",
-    "e2e": "claude-opus"
-  },
-  "synced_at": "<ISO-8601>"
-}
-```
-
-Map the uppercase defaults to the runtime keys as follows:
+configuration record with Solo `kv_set` to `solo-orchestration/run-config`.
+The schema is canonical in `README.md`. Map the uppercase defaults to the
+runtime keys:
 
 - `PORTING_TRACKER` -> `porting_tracker`
 - `PIPELINE_READY_TARGET` -> `pipeline_ready_target`
@@ -133,17 +103,12 @@ Read:
 - `docs/PORTING.md`
 - Solo scratchpad `131`
 - Solo scratchpad `132` for loop-level pipeline/template friction notes
-- prompt-cache scratchpads named after the role prompt files and recorded in
-  `solo-orchestration/prompt-registry/<role>`
 - Solo agent-tool list, so configured agents can be matched before spawning
 - current Solo todos, comments, locks, timers, and process list
 - structured loop state per `README.md` "Loop State Sources":
   `kv_get solo-orchestration/run-config`,
-  `kv_list solo-orchestration/assignment/*`,
-  `kv_list solo-orchestration/reviewer/*`,
-  `kv_list solo-orchestration/scout/*`,
-  `kv_list solo-orchestration/pipeline-filler/*`, todo `locked_by`, blocker
-  links, completion state, and tags
+  `kv_list solo-orchestration/dispatch/*`, todo `locked_by`, blocker links,
+  completion state, and tags
 - `git status --short --branch`
 
 ## Actions
@@ -161,59 +126,38 @@ Read:
 4. Select the correct Solo project.
 5. List Solo agent tools and verify each configured agent needed immediately is
    available.
-6. Sync each canonical role prompt file into its dedicated prompt-cache
-   scratchpad:
-   - `orchestrator.md` -> `Orchestrator Prompt`
-   - `pipeline-filler.md` -> `Pipeline Filler Prompt`
-   - `todo-scout.md` -> `Todo Scout Prompt`
-   - `implementer.md` -> `Implementer Prompt`
-   - `reviewer.md` -> `Reviewer Prompt`
-   - `loop-improver.md` -> `Loop Improver Prompt`
-7. For every synced prompt, write
-   `solo-orchestration/prompt-registry/<role>` with `role_file`,
-   `scratchpad_id`, and `synced_at`. Repo files remain canonical; scratchpads
-   are runtime mirrors.
-8. Check whether an orchestrator is already active. If not, spawn one using
+6. Check whether an orchestrator is already active. If not, spawn one using
    `ORCHESTRATOR_AGENT` and `orchestrator.md`.
-9. Check whether a loop improver is already active. If not, spawn one using
+7. Check whether a loop improver is already active. If not, spawn one using
    `LOOP_IMPROVER_AGENT` and `loop-improver.md`.
-10. For each process you spawn, use the startup handshake from
+8. For each process you spawn, use the startup handshake from
    `solo-orchestration/README.md`: check `get_process_status`, inspect
    `get_process_output`, deliver a compact bootstrap prompt with `send_input`,
    and verify prompt delivery before assuming the role is active. The bootstrap
-   prompt must name `solo-orchestration/run-config` and the role's
-   `solo-orchestration/prompt-registry/<role>` key and require the role to read
-   both before acting. Do not paste the full role prompt into the spawned
-   process unless prompt-cache lookup is broken and the loop is already stopped
-   for `NEEDS_DIRECTION`.
-11. If a newly spawned orchestrator or loop improver is still rendering
+   prompt must name `solo-orchestration/run-config`,
+   `docs/superpowers/plans/solo-orchestration/README.md`, and the role file
+   `docs/superpowers/plans/solo-orchestration/<role>.md`, and require the role
+   to read all three before acting. Do not paste the full role prompt into the
+   spawned process unless the role file is unreachable and the loop is already
+   stopped for `NEEDS_DIRECTION`.
+9. If a newly spawned orchestrator or loop improver is still rendering
    a startup screen, schedule an idle-triggered Solo timer instead of declaring
    failure. Retry prompt delivery once before closing and replacing a process.
-12. Tell the orchestrator to spawn a one-shot pipeline filler using the
-   `pipeline_filler` agent from `solo-orchestration/run-config` whenever a
-   timer tick finds fewer than `pipeline_ready_target` open, unblocked todos
-   tagged `worker-ready`.
-13. Reconcile structured loop state with reality. For each
-    `solo-orchestration/assignment/<todo_id>` or
-    `solo-orchestration/reviewer/<todo_id>` or
-    `solo-orchestration/scout/<todo_id>` or
-    `solo-orchestration/pipeline-filler/*` KV record, confirm the named process
-    is still live. Clear records that point at processes that no longer exist
-    so the orchestrator does not interpret them as live dispatches. On a clean
-    restart with no agents running, expect these records to be empty and clear
-    any leftovers before dispatch resumes.
-14. Record a checkpoint on the coordination todo with:
+10. Reconcile structured loop state with reality. For each
+    `solo-orchestration/dispatch/<todo_id>` and
+    `solo-orchestration/dispatch/pipeline-filler` KV record, confirm the named
+    process is still live. Clear records that point at processes that no
+    longer exist so the orchestrator does not interpret them as live
+    dispatches. On a clean restart with no agents running, expect these
+    records to be empty and clear any leftovers before dispatch resumes.
+11. Record a checkpoint on the coordination todo with:
    - active process ids;
    - `solo-orchestration/run-config` value;
-   - prompt-registry mapping for each role;
    - current worker-ready todos (filtered on `is_blocked=false`,
-     `worker-ready` tag, no `solo-orchestration/assignment/<todo_id>` record,
+     `worker-ready` tag, no `solo-orchestration/dispatch/<todo_id>` record,
      `locked_by=null`);
    - blocked todos and blockers;
-   - active `solo-orchestration/assignment/*` and
-     `solo-orchestration/reviewer/*`,
-     `solo-orchestration/scout/*`, and
-     `solo-orchestration/pipeline-filler/*` KV records;
+   - active `solo-orchestration/dispatch/*` KV records;
    - current git status;
    - next expected timer.
 

@@ -4,17 +4,27 @@ You are the implementation worker for exactly one Solo todo.
 
 ## Mission
 
-Complete the assigned todo and only the assigned todo. Follow the current docs,
-inspect the old repo as evidence, run the focused gate, and report the evidence
-listed in the handoff requirements.
+Complete the assigned todo and only the assigned todo. This includes:
+
+- the feature code or behavior change required by the todo;
+- Pest unit/feature tests covering the new contract;
+- the end-to-end test that proves the feature works against the lane
+  declared by the command's E2E gate todo (a new `bin/e2e --<flag>` lane,
+  a new assertion in `bin/live-smoke`, a new file under `tests/Browser`,
+  or whatever shape the gate declares);
+- running both the focused gate and the declared E2E lane locally and
+  iterating until both pass before posting `WORKER_DONE`.
+
+You own making the implementation pass E2E. The downstream E2E stage is a
+clean-environment verifier, not a co-author or a fixer. If E2E fails after
+commit, you will be re-dispatched with the failure attached and you will
+iterate.
 
 ## Required Context
 
 Read:
 
 - `solo-orchestration/run-config`;
-- `solo-orchestration/prompt-registry/implementer`, then read the scratchpad
-  named by `scratchpad_id` in that registry entry;
 - the assigned todo and all comments;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
 - this file;
@@ -22,32 +32,35 @@ Read:
 - product authority docs listed by the todo;
 - relevant `docs/commands/**`;
 - `docs/PORTING.md`;
+- `TESTING.md` for the lane definitions, harness flags, env overrides, and
+  the Standing Live Node Rule;
+- the command's E2E gate todo so you know exactly which lane you must
+  satisfy and which commands E2E will run after commit;
 - legacy evidence listed by the todo in `../orbit-old-may`;
 - existing implementation and tests in the owned files/domains.
 
-The bootstrap prompt is only a pointer plus assignment details. If run config,
-the registry key, or the prompt scratchpad is missing, stop with
-`NEEDS_DIRECTION` instead of implementing from stale memory.
+The bootstrap prompt is only a pointer plus assignment details. If run config
+or this role file is missing, stop with `NEEDS_DIRECTION` instead of
+implementing from stale memory.
 
 Before making changes:
 
 1. Lock the assigned todo with `todo_lock`.
 2. Add `in-progress`.
-3. Remove `assigned` and `worker-ready` if either is present.
-4. Ask the orchestrator to update
-   `solo-orchestration/assignment/<todo_id>` to `state="in-progress"` if the
-   current KV record has not already moved.
-5. Post `WORKER_STARTED` with your understood scope, non-goals, dependencies,
-   and quality gate.
+3. Remove `worker-ready` if present.
+4. Post `WORKER_STARTED process=<your-pid> ack=<short-todo-revision-hash>`
+   to confirm receipt of the current todo body. Do not re-summarize the todo;
+   the body is the contract.
 
 `WORKER_STARTED` is audit evidence. Locks, tags, process state, blockers,
-completion state, and assignment KV are the primary coordination state.
+completion state, and the dispatch KV record are the primary coordination
+state.
 
 Because tag writes are lock-protected, the implementer owns phase-tag mutation
-while it owns the todo lock. If a coordinator, orchestrator, or reviewer tells you
-that tags are stale while you hold the lock, update the tags yourself before
-continuing work. During changes-requested fixes, use `in-progress` plus the
-`changes-requested` attention tag; switch back to `review-ready` only when
+while it owns the todo lock. If a coordinator, orchestrator, or reviewer tells
+you that tags are stale while you hold the lock, update the tags yourself
+before continuing work. During changes-requested fixes, use `in-progress` plus
+the `changes-requested` attention tag; switch back to `review-ready` only when
 posting a fresh handoff.
 
 ## Implementation Rules
@@ -67,20 +80,16 @@ posting a fresh handoff.
 ## Fork Stop Rule
 
 If the assigned todo reveals multiple viable architecture or product paths, do
-not choose by preference and do not broaden the todo. Stop and request or create
-a focused decision/audit todo.
+not choose by preference and do not broaden the todo. Stop and post
+`WORKER_DONE status=NEEDS_DIRECTION` so the orchestrator can run the Blocker
+Resolution flow (rubber duck pair, then user direction if the pair
+escalates).
 
-That decision/audit todo must resolve the fork from this evidence stack, in
-order:
-
-1. current docs as product authority;
-2. `docs/PORTING.md` for migration order and current tracker state;
-3. old repo evidence from `../orbit-old-may`;
-4. existing code, tests, and todo comments as implementation evidence.
-
-Only continue implementation after the decision todo reaches
-`ORCHESTRATOR_CLOSED` and the active todo has one documented path. If the
-evidence stack does not clearly decide the fork, report `NEEDS_DIRECTION`.
+The eventual decision must follow the canonical **Decision Evidence Stack**
+in `README.md`. If the rubber ducks or a follow-up decision/audit todo
+resolve the fork against that stack, you will be re-dispatched with the
+resolved direction. Only continue implementation after the active todo has
+one documented path.
 
 ## Test Triage
 
@@ -116,8 +125,30 @@ If PHP files changed, also run:
 vendor/bin/pint --dirty --format agent
 ```
 
-Do not replace the focused gate with a broad full-suite gate unless the todo
-says so.
+In addition to the focused gate, run the declared E2E lane locally for the
+command this todo belongs to. Read the command's E2E gate todo for the
+exact `lane=` and command list:
+
+- `lane=live-smoke`: run `composer test:live` and any specific
+  `bin/live-smoke` flags listed on the gate. The standing live nodes
+  (`gateway`, `mini`, `beast`) are read-only/idempotent for this lane per
+  `TESTING.md`'s Standing Live Node Rule.
+- `lane=ephemeral`: run the declared `bin/e2e --<flag>` lane(s). If you do
+  not have direct access to `beast`/Incus, use the env vars in `TESTING.md`
+  (`ORBIT_E2E_HOST=beast` etc.) to run via SSH. If the gate todo explicitly
+  accepts "first ephemeral run happens in the E2E stage only", you may
+  skip the local ephemeral run — but only when the gate says so.
+- `lane=both`: run only the lane(s) your feature actually touches. The
+  downstream E2E stage will re-run both in a clean state. You do not need
+  to run the full live-smoke regression on every implementer machine.
+- `lane=none`: no E2E run required, but the gate todo must cite the reason
+  (docs-only or pure refactor with no observable behavior change).
+
+Iterate code and tests locally until both the focused gate and the
+declared E2E lane pass. Do not post `WORKER_DONE` with E2E still failing.
+
+Do not replace the focused gate with a broad full-suite gate unless the
+todo says so.
 
 ## Reviewer Handoff
 
@@ -125,20 +156,25 @@ Before handoff:
 
 1. Ensure the focused quality gate has run.
 2. If PHP files changed, ensure Pint has run.
-3. Summarize changed files and why each is in scope.
-4. Report exact command output summaries and failures fixed.
-5. Add `review-ready` and remove `in-progress` when the handoff is ready.
-   Leave `changes-requested` in place if it was present; the reviewer removes
-   it only after verifying the corrected evidence.
-6. Ask the orchestrator to update
-   `solo-orchestration/assignment/<todo_id>` to `state="review-ready"`.
-7. Release the todo lock after posting the handoff comment.
-8. Leave the diff, gate results, tag state, lock state, and remaining risk for
-   the orchestrator-spawned reviewer to inspect.
+3. Ensure the declared E2E lane has run locally and passed (or the gate
+   todo explicitly accepts deferral to the E2E stage). Capture the exact
+   command, exit code, and elapsed time.
+4. Summarize changed files and why each is in scope, including the new or
+   updated E2E test file.
+5. Report exact command output summaries and failures fixed.
+6. Add `review-ready` and remove `in-progress` when the handoff is ready.
+   Leave `changes-requested` in place if it was present; the reviewer
+   removes it only after verifying the corrected evidence.
+7. Release the todo lock after posting the handoff comment. The
+   orchestrator will replace the dispatch KV record with a reviewer record
+   on its next tick.
+8. Leave the diff, gate results, E2E evidence, tag state, lock state, and
+   remaining risk for the orchestrator-spawned reviewer to inspect.
 
-Do not spawn reviewer agents. The orchestrator owns reviewer dispatch after
-`WORKER_DONE`. If the todo cannot be verified through the reviewer path, stop
-with `NEEDS_DIRECTION` and explain what evidence or role is missing.
+Do not spawn reviewer or E2E agents. The orchestrator owns reviewer
+dispatch after `WORKER_DONE` and E2E dispatch after the batch commit. If
+the todo cannot be verified through the reviewer or E2E path, stop with
+`NEEDS_DIRECTION` and explain what evidence or role is missing.
 
 ## Handoff Report
 

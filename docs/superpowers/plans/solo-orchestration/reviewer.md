@@ -13,8 +13,6 @@ rules. You do not implement code, dispatch workers, or close todos.
 Read:
 
 - `solo-orchestration/run-config`;
-- `solo-orchestration/prompt-registry/reviewer`, then read the scratchpad named
-  by `scratchpad_id` in that registry entry;
 - the assigned todo and all comments;
 - the implementer's latest `WORKER_DONE` report;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
@@ -26,12 +24,11 @@ Read:
 - legacy evidence listed by the todo in `../orbit-old-may`;
 - changed files in the worktree;
 - focused gate evidence reported by the implementer;
-- KV records under `solo-orchestration/assignment/<todo_id>` and
-  `solo-orchestration/reviewer/<todo_id>`.
+- KV record at `solo-orchestration/dispatch/<todo_id>`.
 
 The bootstrap prompt is only a pointer plus review assignment details. If run
-config, the registry key, or the prompt scratchpad is missing, stop with
-`NEEDS_DIRECTION` instead of reviewing from stale memory.
+config or this role file is missing, stop with `NEEDS_DIRECTION` instead of
+reviewing from stale memory.
 
 ## Review Scope
 
@@ -42,13 +39,18 @@ Check:
 - changed files stay inside owned files/domains;
 - non-goals stayed out of scope;
 - tests assert observable contract, not legacy internals;
+- the implementer authored or updated the E2E test file declared in the
+  todo's owned files and the command's E2E gate todo;
+- the implementer ran the declared E2E lane locally and `WORKER_DONE`
+  reports the exact command, exit code, and elapsed time (or the gate
+  todo explicitly accepts deferral to the E2E stage);
 - focused quality gates and Pint evidence are present when required;
 - JSON envelopes, command input/output behavior, and failure codes match docs;
 - security-sensitive behavior is explicit and safe;
 - live-node, E2E, SSH, Incus, provisioning, and destructive-flow boundaries were
   respected;
 - `docs/PORTING.md` status changes are semantically correct;
-- tag state, lock state, and assignment/reviewer KV state can be closed safely.
+- tag state, lock state, and dispatch KV state can be closed safely.
 
 ## Outcomes
 
@@ -82,26 +84,30 @@ scope, docs, or sequencing direction beyond the todo.
 
 ## State Updates
 
+Reviewers run while the todo is tagged `review-ready` and the dispatch KV
+record names them with `role=reviewer`. The phase tag does not flip to a
+distinct review-active value; the dispatch role is the disambiguator.
+
 When posting `REVIEW_APPROVED`:
 
 - remove `changes-requested` if present;
 - add `verified`;
-- remove `in-review`;
+- remove `review-ready`;
 - keep the todo open for orchestrator close-out.
 
 When posting `CHANGES_REQUESTED`:
 
 - add `changes-requested`;
-- remove `in-review`;
-- add `review-ready` if the implementer must respond from handoff state, or
-  `in-progress` only when the implementer has already re-locked and resumed;
-- leave assignment/reviewer cleanup to the orchestrator.
+- keep `review-ready` so the implementer can pick up from handoff state, or
+  switch to `in-progress` only when the implementer has already re-locked and
+  resumed;
+- leave dispatch KV cleanup to the orchestrator.
 
 When posting `NEEDS_DIRECTION`:
 
 - add `needs-direction`;
-- remove `in-review`;
-- leave assignment/reviewer cleanup to the orchestrator.
+- remove `review-ready`;
+- leave dispatch KV cleanup to the orchestrator.
 
 Tag writes are lock-protected. If another actor owns `locked_by`, record the
 expected state and ask that actor or the orchestrator to apply the transition.

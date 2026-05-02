@@ -382,7 +382,20 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
     - interactive input mode (prompting for name and field selection).
     - artifact re-enactment after intent update.
     - `NodeUpdateOnControlNodeContractTest.php` (blocked by gateway forwarding).
-- [ ] Port `node:default`.
+- [~] Port `node:default`.
+  - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`
+  - Current docs: `docs/commands/1_node/9_node-default`
+  - Current tests:
+    - `tests/Feature/Commands/NodeDefaultCommandTest.php` (flat base contract)
+    - `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` (split command contract)
+    - `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` (human renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` (JSON renderer contract)
+  - Bootstrap slice implemented: local read/show/set/clear sub-actions, human progress tree, JSON envelope shape, caller role rejection, split contract tests.
+  - Contract gaps:
+    - Gateway forwarding for set/choose (requires GatewayClient and gateway API; currently queries local DB only).
+    - Real authorization check against gateway-visible nodes (`authorization_failed` is a stub bootstrap gap).
+    - Interactive choose path requires real gateway node list (`gateway_unavailable` is a stub bootstrap gap).
+    - `NodeDefaultOnControlNodeContractTest.php` blocked by gateway forwarding.
 - [ ] Port `node:grant`.
 - [ ] Port `node:revoke`.
 - [ ] Port `node:remove`.
