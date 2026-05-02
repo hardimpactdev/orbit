@@ -396,7 +396,18 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
     - Real authorization check against gateway-visible nodes (`authorization_failed` is a stub bootstrap gap).
     - Interactive choose path requires real gateway node list (`gateway_unavailable` is a stub bootstrap gap).
     - `NodeDefaultOnControlNodeContractTest.php` blocked by gateway forwarding.
-- [ ] Port `node:grant`.
+- [~] Port `node:grant`.
+  - Current implementation: `app/Console/Commands/NodeGrantCommand.php`
+  - Current docs: `docs/commands/1_node/5_node-grant`
+  - Current tests:
+    - `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` (command contract)
+    - `tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php` (human renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php` (JSON renderer contract)
+  - Bootstrap slice implemented: gateway-local grant creation, idempotence, node-not-found validation, self-grant policy enforcement, caller role rejection, human and JSON renderer contracts, split contract tests.
+  - Contract gaps:
+    - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
+    - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
+    - `NodeGrantOnControlNodeContractTest.php` blocked by gateway forwarding.
 - [ ] Port `node:revoke`.
 - [ ] Port `node:remove`.
 - [ ] Port `node:agent-ide`.
@@ -577,7 +588,7 @@ A `GatewayClient` service class (or similar) that:
 - [x] Decide the clean-rebuild transport approach before adding packages.
 - [x] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
 - [ ] Port gateway API envelope conventions.
-- [ ] Port request correlation header support.
+- [x] Port request correlation header support.
 - [ ] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
