@@ -13,6 +13,7 @@ TASK_PREFIX=NC
 PIPELINE_READY_TARGET=2
 
 ORCHESTRATOR_AGENT=claude
+PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
 WORKER_REVIEWER_AGENT=gemini-3.1-pro-preview
@@ -36,9 +37,9 @@ Examples:
 - `claude-opus-4.7`
 
 Resolve the variables once at startup and pass the resolved configuration
-verbatim to every spawned orchestrator, tailer, implementer, reviewer,
-rubber-duck, and E2E tester. Do not hard-code task prefixes or agent/model
-choices when a variable exists.
+verbatim to every spawned orchestrator, pipeline filler, tailer, implementer,
+reviewer, rubber-duck, and E2E tester. Do not hard-code task prefixes or
+agent/model choices when a variable exists.
 
 If a configured agent is not available in Solo, stop with `NEEDS_DIRECTION`
 instead of silently substituting a different model.
@@ -74,8 +75,9 @@ Read:
    `ORCHESTRATOR_AGENT` and `orchestrator.md`.
 6. Check whether a tailer is already active. If not, spawn one using
    `TAILER_AGENT` and `tailer.md`.
-7. Ask the orchestrator to fill the pipeline only when fewer than
-   `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY` todos exist.
+7. Tell the orchestrator to spawn a one-shot pipeline filler using
+   `PIPELINE_FILLER_AGENT` and `pipeline-filler.md` whenever a timer tick finds
+   fewer than `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY` todos.
 8. Record a checkpoint on the coordination todo with:
    - active process ids;
    - resolved configuration;

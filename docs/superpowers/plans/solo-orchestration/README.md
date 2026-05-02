@@ -8,10 +8,13 @@ an Orbit plan through Solo.
 1. **Kickstarter** starts or resumes the loop.
 2. **Orchestrator** fills the todo pipeline, dispatches workers, manages
    blockers, and closes batches.
-3. **Tailer** supervises active agents, locks, scope, git state, and template
+3. **Pipeline Filler** is a one-shot role spawned by the orchestrator when the
+   ready queue is low. It reads `docs/PORTING.md` and creates the next small
+   todos.
+4. **Tailer** supervises active agents, locks, scope, git state, and template
    friction.
-4. **Implementer** owns exactly one todo.
-5. **Implementer Reviewer** reviews exactly one implementer's work.
+5. **Implementer** owns exactly one todo.
+6. **Implementer Reviewer** reviews exactly one implementer's work.
 
 ## Shared Inputs
 
@@ -66,6 +69,9 @@ Use these exact labels in Solo comments so work can resume after compaction:
 - `TAILER_VERIFIED`: tailer verified lifecycle, gate evidence, scope, and locks.
 - `ORCHESTRATOR_CLOSED`: orchestrator closed the todo lifecycle.
 - `PROMPT_RECOVERY`: prompt delivery or stalled-process recovery was performed.
+- `PIPELINE_FILL_STARTED process=<id>`: one-shot pipeline filler was spawned.
+- `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`: pipeline filler
+  finished queue work.
 - `SCOPE_DRIFT`: worker or reviewer touched/proposed out-of-scope work.
 - `LOCK_STALE`: a Solo lock is stale or externally owned and needs recovery.
 - `TEMPLATE_FRICTION`: repeated todo-shape issue that should improve
@@ -75,6 +81,11 @@ Use these exact labels in Solo comments so work can resume after compaction:
 ## Todo Pipeline Rules
 
 - Keep a small queue of unblocked `PIPELINE_READY` todos.
+- The orchestrator should spawn a one-shot pipeline filler on timer ticks when
+  the queue has fewer than `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY`
+  todos.
+- The pipeline filler reads `docs/PORTING.md` first, then checks relevant
+  command docs, current todos, blockers, and completed work.
 - Prefer docs-first and decision/audit todos when docs or architecture are
   ambiguous.
 - Do not create todos for phases or command-group headings. Command groups are

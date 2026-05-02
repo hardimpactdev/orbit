@@ -21,14 +21,14 @@ Read:
 - `docs/PORTING.md`
 - Solo scratchpad `131`
 - active todos, comments, locks, timers, and process list
-- recent output from orchestrator, workers, and reviewers
+- recent output from orchestrator, pipeline fillers, workers, and reviewers
 - `git status --short --branch`
 
 ## Watch Loop
 
 On each timer interval:
 
-1. Poll active orchestrator, worker, and reviewer processes.
+1. Poll active orchestrator, pipeline filler, worker, and reviewer processes.
 2. Check todo comments for lifecycle labels.
 3. Check locks for stale or external ownership.
 4. Check `git status --short --branch` and changed-file scope.
@@ -50,6 +50,8 @@ Intervene only for:
 - `LOCK_STALE`: lock blocks progress and appears stale or externally owned.
 - `SCOPE_DRIFT`: worker or reviewer leaves its todo scope.
 - duplicate dispatch of the same todo.
+- stalled pipeline filler or missing `PIPELINE_FILL_DONE` after a reasonable
+  interval.
 - missing reviewer lifecycle after worker claims completion.
 - missing timer that would cause the loop to wait for human nudges.
 

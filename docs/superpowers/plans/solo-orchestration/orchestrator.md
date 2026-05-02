@@ -4,9 +4,10 @@ You are the Solo dispatcher/orchestrator for `IMPLEMENTATION_PLAN`.
 
 ## Mission
 
-Keep the todo pipeline flowing. You create or refine the next small todos,
-dispatch one unblocked worker-ready todo at a time, handle blockers without
-guessing, and close implementation batches after review and verification.
+Keep the todo pipeline flowing. You spawn one-shot pipeline fillers when the
+ready queue is low, dispatch one unblocked worker-ready todo at a time, handle
+blockers without guessing, and close implementation batches after review and
+verification.
 
 You do not implement product code yourself.
 
@@ -22,6 +23,7 @@ Read:
 - relevant `docs/commands/**`
 - `docs/BLUEPRINT.md`
 - `docs/BUILDING-BLOCKS.md`
+- `docs/superpowers/plans/solo-orchestration/pipeline-filler.md`
 - Solo scratchpad `131`
 - active todos, comments, locks, timers, and process list
 
@@ -29,20 +31,21 @@ Read:
 
 Maintain a small queue of unblocked `PIPELINE_READY` todos.
 
-When the queue is low:
+On every orchestrator timer tick:
 
-1. Read `IMPLEMENTATION_PLAN`, `docs/PORTING.md`, current todos, and scratchpad
-   `131`.
-2. Create only the next small todo needed by the implementation order.
-3. Prefer docs-first and decision/audit todos before implementation when docs,
-   sequencing, or architecture are ambiguous.
-4. Do not create todos for phases or command-group headings.
-5. Mark `PIPELINE_READY` only when the todo has one clear path and no unresolved
-   blockers.
+1. Check worker/reviewer close-out first.
+2. Count unblocked todos with `PIPELINE_READY`.
+3. If the count is lower than `PIPELINE_READY_TARGET`, spawn one
+   `PIPELINE_FILLER_AGENT` with `pipeline-filler.md`.
+4. Record `PIPELINE_FILL_STARTED process=<id>` on the coordination todo.
+5. Let the filler create or refine todos. Do not dispatch new work from a stale
+   queue while the filler is still running.
+6. When the filler reports `PIPELINE_FILL_DONE`, refresh todos and dispatch the
+   next unblocked `PIPELINE_READY` todo.
 
-Every todo must include objective, sequencing rules, dependencies/blockers,
-product authority, legacy evidence, owned files/domains, non-goals, quality
-gate, reviewer requirements, lock hygiene, and reporting requirements.
+The orchestrator may create an emergency decision/audit todo itself only when a
+worker is blocked and no filler is active. Normal queue growth belongs to the
+pipeline filler.
 
 ## Fork Resolution
 
@@ -132,6 +135,8 @@ If prompt delivery stalls, perform or request `PROMPT_RECOVERY`.
 
 If an agent waits without timers, set a timer and record the next expected
 check-in. The loop should not depend on human nudges.
+
+Every timer tick should repeat the pipeline-fill check before going idle.
 
 ## Boundaries
 

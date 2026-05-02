@@ -14,6 +14,7 @@ TASK_PREFIX=NC
 PIPELINE_READY_TARGET=2
 
 ORCHESTRATOR_AGENT=claude
+PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
 WORKER_REVIEWER_AGENT=gemini-3.1-pro-preview
@@ -48,8 +49,9 @@ exists.
    - one orchestrator using `solo-orchestration/orchestrator.md`;
    - one tailer using `solo-orchestration/tailer.md`.
 3. The orchestrator keeps the todo pipeline filled, dispatches one unblocked
-   worker-ready todo at a time, and uses `solo-orchestration/implementer.md`
-   for each worker.
+   worker-ready todo at a time, spawns `solo-orchestration/pipeline-filler.md`
+   as a one-shot role when the ready queue is low, and uses
+   `solo-orchestration/implementer.md` for each worker.
 4. Every implementer spawns its own reviewer with
    `solo-orchestration/implementer-reviewer.md` before handing back work.
 5. The tailer watches processes, locks, git status, scope drift, and repeated
@@ -64,6 +66,8 @@ exists.
 - `solo-orchestration/orchestrator.md`: prompt for the agent that fills the
   todo pipeline, dispatches workers, handles blockers, and manages batch
   close-out.
+- `solo-orchestration/pipeline-filler.md`: prompt for the one-shot agent that
+  reads `docs/PORTING.md` and creates the next small worker-ready todos.
 - `solo-orchestration/tailer.md`: prompt for the long-running supervisor that
   tails active agents and improves the todo template when needed.
 - `solo-orchestration/implementer.md`: prompt for a single-task implementation
