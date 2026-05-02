@@ -389,10 +389,9 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
 - [~] Gateway root CA service.
   - [x] `OrbitCaService` generates, reads, and issues from a local gateway-root CA.
-  - [x] Focused tests cover root CA generation, idempotence, partial-state detection, and leaf issuance.
-  - [ ] Truthful CA generation hook in `node:new --role=gateway` first-gateway bootstrap.
-    - Blocked: current first-gateway bootstrap runs from control node; `isLocalNodeGateway()` requires local gateway node.
-    - Unblocks when bootstrap architecture supports gateway-local CA generation or remote enactment.
+  - [~] Truthful CA generation hook in `node:new --role=gateway` first-gateway bootstrap.
+    - Decision (todo 196): Remote enactment over SSH. A gateway-local internal command initializes the gateway's database identity (`is_local=true`, `role=gateway`, `status=active`) and calls `OrbitCaService::ensureRootCa()`. The control node invokes this command after remote Orbit installation and captures the root CA cert for local trust.
+    - Implementation: todo 195 (GATEWAY-CA-HOOK).
 
 ## DNS Workstream
 
