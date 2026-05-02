@@ -386,6 +386,10 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 ## Gateway Workstream
 
 - [x] Convert gateway command docs into current format.
+- [~] Port gateway trust/settings foundation (GATEWAY-2 bootstrap slice).
+  - [x] `LocalGatewaySettings` single-row Eloquent model with `current()` accessor.
+  - [x] `TrustStoreInstaller` interface with macOS/Linux implementations.
+  - [x] `FetchGatewayRootCa` bootstrap-safe CA fetch service.
 - [ ] Port `gateway:add`.
 - [ ] Port `gateway:trust`.
 
