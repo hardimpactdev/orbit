@@ -50,7 +50,7 @@ instead of silently substituting a different model.
 
 Start or resume the Solo implementation loop without implementing code yourself.
 The job is to make sure the right long-running roles exist, know their prompts,
-and have enough context to keep moving on timers.
+and have the context listed in this file to keep moving on timers.
 
 ## Inputs
 

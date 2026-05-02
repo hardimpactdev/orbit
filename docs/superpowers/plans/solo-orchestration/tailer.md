@@ -82,12 +82,12 @@ Intervene only for:
 - `LOCK_STALE`: lock blocks progress and appears stale or externally owned.
 - `SCOPE_DRIFT`: implementer leaves its todo scope.
 - duplicate dispatch of the same todo.
-- stalled pipeline filler or missing `PIPELINE_FILL_DONE` after a reasonable
-  interval.
+- stalled pipeline filler or missing `PIPELINE_FILL_DONE` after one 5-minute
+  check-in interval.
 - missing gate evidence after implementer claims completion.
 - implementer stuck idle without `WORKER_DONE`, `BLOCKED`, or
   `NEEDS_DIRECTION`.
-- missing timer that would cause the loop to wait for human nudges.
+- missing timer that causes the loop to wait for human nudges.
 - next timer scheduled for anything other than 5 minutes without an explicit
   reason in the checkpoint.
 
@@ -102,14 +102,14 @@ Examples:
 
 - todos contain multiple architecture paths;
 - quality gates are missing or too broad;
-- owned files/domains are unclear;
+- owned files/domains are missing or contradictory;
 - handoff report lacks changed files, gate output, or product authority;
 - lock hygiene is omitted.
 
 Do not change product docs or code while refining the template.
 
 Scratchpad `131` belongs to the tailer. The loop improver may flag worker-todo
-template friction, but should not edit `131`; review those flags and apply only
+template friction, but must not edit `131`; review those flags and apply only
 the changes that make worker execution smoother.
 
 If friction belongs to pipeline filler behavior, role prompts, or scratchpad

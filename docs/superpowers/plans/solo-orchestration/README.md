@@ -4,7 +4,7 @@ This directory is the complete source for the Solo orchestration loop used to
 drive Orbit porting work.
 
 Do not use `../00-plan-implementation-prompt-solo.md` as an input for this
-loop. That file is deprecated and should only point back here.
+loop. That file is deprecated and exists only to point back here.
 
 ## Role Map
 
@@ -15,8 +15,8 @@ loop. That file is deprecated and should only point back here.
    one-shot fillers, spawns or restarts one implementer, asks the tailer for
    verification, and closes todos.
 3. **Pipeline Filler** is a one-shot role spawned by the orchestrator when the
-   ready queue is low. It reads `docs/PORTING.md` and creates the next small
-   todos.
+   ready queue is below target. It reads `docs/PORTING.md` and creates the next
+   single-worker todos.
 4. **Tailer** is the ongoing reviewer. It supervises active agents, locks,
    scope, git state, focused gates, final diffs, and template friction on a
    5-minute check-in cadence. It owns scratchpad `131`.
@@ -27,7 +27,7 @@ loop. That file is deprecated and should only point back here.
 
 ## Shared Inputs
 
-Every role should read only the context it needs:
+Every role reads only the context it needs:
 
 - this `README.md`
 - `kickstarter.md` for the resolved run configuration when agent/model choices
@@ -99,15 +99,16 @@ Every spawned agent uses this handshake before the loop assumes it is active:
    with `send_input`.
 4. Verify prompt delivery by checking rendered output, an `ASSIGNED` comment, a
    `WORKER_STARTED` comment, or the role-specific lifecycle label.
-5. If prompt delivery is unclear, schedule an idle-triggered timer or one short
-   follow-up check before retrying.
+5. If prompt-delivery evidence is absent, schedule an idle-triggered timer or
+   one short follow-up check before retrying.
 6. Retry prompt delivery once when the process is alive and input-capable but no
    prompt evidence appears.
 7. Only after the retry/grace window fails, post `PROMPT_RECOVERY`, close the
-   stale process if needed, and spawn a replacement.
+   stale process when replacement is required, and spawn one replacement.
 
-This loop should be calm and self-correcting: observe first, wait when startup
-is still plausible, recover only when evidence shows a real stall.
+Keep the loop calm and self-correcting: observe first, wait while
+status/output still show startup, recover only when evidence shows a real
+stall.
 
 ## Decision Evidence Stack
 
@@ -152,7 +153,7 @@ Use these exact labels in Solo comments so work can resume after compaction:
 - `SCOPE_DRIFT`: worker or supervising agent touched/proposed out-of-scope
   work.
 - `LOCK_STALE`: a Solo lock is stale or externally owned and needs recovery.
-- `TEMPLATE_FRICTION`: repeated todo-shape issue that should improve
+- `TEMPLATE_FRICTION`: repeated todo-shape issue requiring improvement to
   scratchpad `131`, scratchpad `132`, or the role prompts.
 - `LOOP_IMPROVEMENT`: loop-improver change or recommendation that makes the
   orchestration loop more self-correcting.
@@ -178,14 +179,14 @@ for the loop improver instead of expanding its own scope.
 
 ## Todo Pipeline Rules
 
-- Keep a small queue of unblocked `PIPELINE_READY` todos.
-- The orchestrator should spawn a one-shot pipeline filler on timer ticks when
+- Keep a bounded queue of unblocked `PIPELINE_READY` todos.
+- The orchestrator must spawn a one-shot pipeline filler on timer ticks when
   the queue has fewer than `PIPELINE_READY_TARGET` unblocked `PIPELINE_READY`
   todos.
 - The pipeline filler reads `docs/PORTING.md` first, then checks relevant
   command docs, current todos, blockers, and completed work.
-- Prefer docs-first and decision/audit todos when docs or architecture are
-  ambiguous.
+- Prefer docs-first and decision/audit todos when docs or architecture contain
+  multiple unresolved paths.
 - Do not create todos for phases or command-group headings. Command groups are
   sequencing context, not assignable work.
 - Every todo must state objective, sequencing rules, dependencies, product
@@ -229,7 +230,7 @@ the todo says so.
   VMs described in `TESTING.md`.
 - Agents must not use `git stash`, `git reset --hard`, `git checkout --`, broad
   `git restore`, or hidden reverts.
-- Baseline evidence should use read-only commands such as `git log`,
+- Baseline evidence must use read-only commands such as `git log`,
   `git show <ref>:<path>`, or `git diff <ref>..HEAD -- <path>`.
 
 ## Blocker Handling

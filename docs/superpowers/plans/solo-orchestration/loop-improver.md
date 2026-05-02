@@ -39,7 +39,7 @@ Check in every 5 minutes. On each timer interval:
    inside their role boundaries.
 4. Check whether scratchpad `132` or role prompts are causing stale queue
    generation, prompt-delivery confusion, duplicate workers, missing timers, or
-   unclear recovery actions.
+   conflicting recovery actions.
 5. Check whether scratchpad `131` friction was reported. If so, record a
    precise recommendation for the tailer instead of editing `131`.
 6. Apply narrow improvements only to artifacts you own.
@@ -83,7 +83,7 @@ Improve the loop when you see repeated or high-impact friction such as:
 - missing or stale timers that require human nudges;
 - filler-created todos missing blockers, owned files, gates, or stop
   conditions;
-- unclear distinction between tailer verification and human direction;
+- role-boundary conflict between tailer verification and human direction;
 - role prompts encouraging agents to edit artifacts they do not own;
 - close-out comments missing commit, gate, lock, or changed-file evidence;
 - scratchpad `132` causing stale or broad queue generation.
@@ -123,7 +123,7 @@ Use concise lifecycle comments:
 - `TEMPLATE_FRICTION`: repeated template issue that needs the artifact owner.
 - `NEEDS_DIRECTION`: role boundary or workflow policy needs human direction.
 
-Each report should include:
+Each report must include:
 
 - what repeated friction was observed;
 - which artifact owns the fix;
