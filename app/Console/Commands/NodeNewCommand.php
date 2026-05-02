@@ -23,6 +23,8 @@ use Illuminate\Support\Facades\DB;
 #[Description('Create or provision a node in the Orbit fleet')]
 class NodeNewCommand extends Command
 {
+    private const string DEFAULT_RUNTIME_USER = 'orbit';
+
     public function handle(OrbitHostInstaller $installer): int
     {
         $callerRole = $this->callerRole();
@@ -105,10 +107,11 @@ class NodeNewCommand extends Command
         }
 
         $sshUser = $this->stringOption('ssh-user') ?? 'root';
+        $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $gatewayAddress = '10.6.0.2';
         $controlAddress = $this->nextWireguardAddress(excluding: [$gatewayAddress]);
 
-        $installation = $installer->install($host, $sshUser, 'gateway');
+        $installation = $installer->install($host, $sshUser, 'gateway', $runtimeUser);
 
         if (! $installation->successful) {
             return $this->failCommand(
@@ -122,7 +125,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        DB::transaction(function () use ($name, $host, $sshUser, $controlName, $gatewayAddress, $controlAddress): void {
+        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
             Node::query()->updateOrCreate(
@@ -136,7 +139,8 @@ class NodeNewCommand extends Command
                     'wireguard_address' => $gatewayAddress,
                     'gateway_endpoint' => $host,
                     'ssh_user' => $sshUser,
-                    'orbit_path' => $sshUser === 'root' ? '/root/orbit' : "/home/{$sshUser}/orbit",
+                    'user' => $runtimeUser,
+                    'orbit_path' => "/home/{$runtimeUser}/orbit",
                     'status' => 'active',
                     'is_local' => false,
                 ],

@@ -40,6 +40,7 @@ bin/e2e --prepare-blank
 bin/e2e --prepare-control
 bin/e2e --lifecycle
 bin/e2e --control
+bin/e2e --node-new-gateway
 ```
 
 The first ephemeral E2E harness uses Incus VMs on beast. Run
@@ -57,6 +58,18 @@ Orbit source and `bin/install-orbit` into a disposable VM, installs the control
 node prerequisites and CLI as the non-`orbit` control user, verifies
 `orbit --version`, then publishes the ready image. Run `bin/e2e --control` to
 launch from that image and verify the ready control node over SSH.
+
+Run `bin/e2e --node-new-gateway` to exercise the first-gateway bootstrap path.
+This lane launches one disposable VM from the ready control image and one from
+the blank image, injects an ephemeral SSH key into both, runs
+`orbit node:new gateway-1 --role=gateway --host=<gateway-ip> --ssh-user=<bootstrap-user> --control-name=control-1 --json`
+from the control VM, and verifies that the control registry contains both nodes,
+that the gateway has Orbit installed under the steady-state `orbit` user (not the
+bootstrap user), and that `orbit --version` works on the gateway as the `orbit`
+user. Verification uses `incus exec` to run `orbit --version` as the `orbit`
+user; SSH access from the control VM to the gateway as `orbit` is not yet
+verified because runtime-user SSH key distribution is not yet implemented.
+The VMs are destroyed at the end unless `ORBIT_E2E_KEEP=1`.
 
 These are backend and single-role smokes only; they do not yet validate a full
 gateway/control/development-app/production-app topology.

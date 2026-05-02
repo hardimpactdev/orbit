@@ -18,7 +18,7 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --lifecycle | --control]
+usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --lifecycle | --control | --node-new-gateway]
 
 Modes:
   --preflight        Check that the ephemeral backend is reachable on the E2E host.
@@ -26,6 +26,9 @@ Modes:
   --prepare-control  Build or replace the reusable Orbit-ready control image.
   --lifecycle        Launch one VM from the blank image, verify SSH, then destroy it.
   --control          Launch one VM from the control image, verify Orbit, then destroy it.
+  --node-new-gateway Launch a control VM and a blank gateway VM, then run orbit node:new
+                     from the control VM to provision the gateway. Verifies registry
+                     rows, gateway installation, and runtime user creation.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
@@ -204,6 +207,7 @@ bootcmd:
 package_update: true
 packages:
   - openssh-server
+  - openssh-client
 ssh_pwauth: false
 users:
   - default
@@ -228,7 +232,7 @@ incus launch "$source_image" "$name" --vm \
 ipv4="$(wait_for_ipv4 "$name")"
 wait_for_ssh "$ipv4" "$run_dir/id_ed25519" "$bootstrap_user"
 
-incus exec "$name" -- sh -lc "rm -f /home/${bootstrap_user}/.ssh/authorized_keys && touch /home/${bootstrap_user}/.ssh/authorized_keys && chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && cloud-init clean --logs || true" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "rm -f /home/${bootstrap_user}/.ssh/authorized_keys && touch /home/${bootstrap_user}/.ssh/authorized_keys && chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && grep -q '^Subsystem sftp' /etc/ssh/sshd_config || echo 'Subsystem sftp /usr/lib/openssh/sftp-server' >> /etc/ssh/sshd_config && systemctl restart sshd || systemctl restart ssh || true && rm -f /etc/machine-id && touch /etc/machine-id && cloud-init clean --logs --seed || true" </dev/null >/dev/null
 incus stop "$name" --timeout 120 </dev/null >/dev/null
 incus publish "$name" --force --reuse --alias "$blank_image" </dev/null >/dev/null
 
@@ -371,7 +375,7 @@ incus file push "$installer" "$name/tmp/install-orbit" </dev/null >/dev/null
 incus exec "$name" -- sh -lc "chmod +x /tmp/install-orbit && chown ${control_user}:${control_user} /tmp/orbit-source.tar.gz /tmp/install-orbit" </dev/null >/dev/null
 incus exec "$name" -- sudo -iu "$control_user" bash -lc "/tmp/install-orbit --role=control --path=/home/${control_user}/orbit --source-archive=/tmp/orbit-source.tar.gz --bin=/usr/local/bin/orbit" </dev/null
 incus exec "$name" -- sudo -iu "$control_user" bash -lc "orbit --version | grep -F 'Orbit 0.1.0'" </dev/null >/dev/null
-incus exec "$name" -- sh -lc "rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit /home/${control_user}/.ssh/authorized_keys /home/${bootstrap_user}/.ssh/authorized_keys && install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh && touch /home/${control_user}/.ssh/authorized_keys && chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh && touch /home/${bootstrap_user}/.ssh/authorized_keys && chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && cloud-init clean --logs || true" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit /home/${control_user}/.ssh/authorized_keys /home/${bootstrap_user}/.ssh/authorized_keys && install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh && touch /home/${control_user}/.ssh/authorized_keys && chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh && touch /home/${bootstrap_user}/.ssh/authorized_keys && chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && rm -f /etc/machine-id && touch /etc/machine-id && cloud-init clean --logs --seed || true" </dev/null >/dev/null
 incus stop "$name" --timeout 120 </dev/null >/dev/null
 incus publish "$name" --force --reuse --alias "$control_image" </dev/null >/dev/null
 
@@ -671,6 +675,261 @@ echo "orbit-e2e control smoke passed: ${name} has Orbit for ${control_user} at $
 REMOTE
 }
 
+node_new_gateway() {
+    ssh "$E2E_HOST" "bash -s" -- \
+        "$E2E_CONTROL_IMAGE" \
+        "$E2E_BLANK_IMAGE" \
+        "$E2E_BOOTSTRAP_USER" \
+        "$E2E_CONTROL_USER" \
+        "$E2E_PREFIX" \
+        "$E2E_TIMEOUT_SECONDS" \
+        "$E2E_CPUS" \
+        "$E2E_MEMORY" \
+        "$E2E_KEEP" <<'REMOTE'
+set -euo pipefail
+
+control_image="$1"
+blank_image="$2"
+bootstrap_user="$3"
+control_user="$4"
+prefix="$5"
+timeout_seconds="$6"
+cpus="$7"
+memory="$8"
+keep="$9"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+control_name="${prefix}-${run_id}-control"
+gateway_name="${prefix}-${run_id}-gateway"
+run_dir="/tmp/${prefix}-${run_id}-node-new-gateway"
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instances ${control_name} and ${gateway_name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$control_name" >/dev/null 2>&1
+        incus delete --force "$gateway_name" >/dev/null 2>&1
+        rm -rf "$run_dir"
+    fi
+
+    return "$status"
+}
+
+extract_ipv4() {
+    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
+}
+
+wait_for_agent() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ipv4() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(extract_ipv4 "$instance")"
+
+        if [ -n "$ipv4" ]; then
+            echo "$ipv4"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ssh() {
+    ipv4="$1"
+    key="$2"
+    ssh_user="$3"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ssh \
+            -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${ssh_user}@${ipv4}" \
+            "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "orbit-e2e failed: SSH never became ready on ${ipv4} within ${timeout_seconds}s" >&2
+    return 1
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+command -v ssh-keygen >/dev/null
+command -v ssh >/dev/null
+
+if ! incus image info "$control_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing control image: ${control_image}; run bin/e2e --prepare-control first" >&2
+    exit 2
+fi
+
+if ! incus image info "$blank_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing blank image: ${blank_image}; run bin/e2e --prepare-blank first" >&2
+    exit 2
+fi
+
+rm -rf "$run_dir"
+mkdir -p "$run_dir"
+
+ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
+
+echo "orbit-e2e launching ${control_name} from ${control_image} and ${gateway_name} from ${blank_image} on $(hostname)"
+
+incus launch "$control_image" "$control_name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+sleep 3
+
+incus launch "$blank_image" "$gateway_name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+wait_for_agent "$control_name"
+wait_for_agent "$gateway_name"
+
+# Set up SSH access on control VM
+incus exec "$control_name" -- sh -lc "install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$control_name/home/${control_user}/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$control_name" -- sh -lc "chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+# Set up SSH access on gateway VM for bootstrap user
+incus exec "$gateway_name" -- sh -lc "install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$gateway_name/home/${bootstrap_user}/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$gateway_name" -- sh -lc "chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+# Copy private key to control VM so it can SSH to gateway
+incus file push "$run_dir/id_ed25519" "$control_name/home/${control_user}/.ssh/id_ed25519" </dev/null >/dev/null
+incus exec "$control_name" -- sh -lc "chown ${control_user}:${control_user} /home/${control_user}/.ssh/id_ed25519 && chmod 600 /home/${control_user}/.ssh/id_ed25519" </dev/null >/dev/null
+
+control_ipv4="$(wait_for_ipv4 "$control_name")"
+gateway_ipv4="$(wait_for_ipv4 "$gateway_name")"
+
+# Ensure VMs have distinct IPs; retry briefly if they collide
+ip_check_deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$ip_check_deadline" ] && [ "$control_ipv4" = "$gateway_ipv4" ]; do
+    sleep 2
+    control_ipv4="$(extract_ipv4 "$control_name")"
+    gateway_ipv4="$(extract_ipv4 "$gateway_name")"
+done
+
+if [ "$control_ipv4" = "$gateway_ipv4" ]; then
+    echo "orbit-e2e failed: control and gateway VMs have the same IP (${control_ipv4})" >&2
+    exit 1
+fi
+
+wait_for_ssh "$control_ipv4" "$run_dir/id_ed25519" "$control_user"
+wait_for_ssh "$gateway_ipv4" "$run_dir/id_ed25519" "$bootstrap_user"
+
+echo "orbit-e2e control VM ready at ${control_ipv4}"
+echo "orbit-e2e gateway VM ready at ${gateway_ipv4}"
+
+echo "orbit-e2e running 'orbit node:new gateway-1' from control VM"
+
+set +e
+node_new_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${control_ipv4}" \
+    "cd /home/${control_user}/orbit && orbit node:new gateway-1 --role=gateway --host=${gateway_ipv4} --ssh-user=${bootstrap_user} --control-name=control-1 --json" </dev/null 2>&1)"
+node_new_exit_code=$?
+set -e
+
+if [ "$node_new_exit_code" -ne 0 ]; then
+    echo "orbit-e2e node:new failed with exit code ${node_new_exit_code}" >&2
+    echo "$node_new_output" >&2
+    exit 1
+fi
+
+echo "orbit-e2e node:new output:"
+echo "$node_new_output"
+
+# Verify 2: registry contains gateway and control rows
+set +e
+registry_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${control_ipv4}" \
+    "cd /home/${control_user}/orbit && orbit node:list" </dev/null 2>&1)"
+set -e
+
+if ! echo "$registry_output" | grep -q 'gateway-1'; then
+    echo "orbit-e2e failed: gateway-1 not found in registry" >&2
+    echo "$registry_output" >&2
+    exit 1
+fi
+
+if ! echo "$registry_output" | grep -q 'control-1'; then
+    echo "orbit-e2e failed: control-1 not found in registry" >&2
+    echo "$registry_output" >&2
+    exit 1
+fi
+
+echo "orbit-e2e registry verified: gateway-1 and control-1 present"
+
+# Verify 3: gateway has Orbit installed under orbit user
+if ! incus exec "$gateway_name" -- sh -lc "test -d /home/orbit/orbit && test -f /home/orbit/orbit/artisan" </dev/null >/dev/null 2>&1; then
+    echo "orbit-e2e failed: Orbit not installed under /home/orbit/orbit on gateway" >&2
+    exit 1
+fi
+
+# Verify 4: orbit --version works on gateway as orbit user
+# NOTE: this uses Incus exec (local to the hypervisor) rather than SSH from the
+# control VM because runtime-user SSH trust (authorized_keys for orbit) is not
+# yet established by the first-gateway bootstrap slice. SSH-as-orbit from the
+# control node is a documented remaining gap.
+orbit_version_output="$(incus exec "$gateway_name" -- sudo -iu orbit bash -lc "orbit --version" </dev/null 2>&1 || true)"
+
+if ! echo "$orbit_version_output" | grep -q "Orbit"; then
+    echo "orbit-e2e failed: orbit --version did not work on gateway as orbit user" >&2
+    echo "$orbit_version_output" >&2
+    exit 1
+fi
+
+echo "orbit-e2e gateway Orbit installation verified"
+
+echo "orbit-e2e node:new gateway passed: control=${control_ipv4} gateway=${gateway_ipv4}"
+REMOTE
+}
+
 case "${1:-}" in
     -h|--help)
         usage
@@ -696,6 +955,9 @@ case "${1:---lifecycle}" in
         ;;
     --control)
         control
+        ;;
+    --node-new-gateway)
+        node_new_gateway
         ;;
     *)
         echo "error: unknown mode '$1'" >&2

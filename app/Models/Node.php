@@ -18,6 +18,7 @@ class Node extends Model
         'wireguard_address',
         'gateway_endpoint',
         'ssh_user',
+        'user',
         'orbit_path',
         'status',
         'is_local',

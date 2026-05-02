@@ -89,6 +89,23 @@ it('documents and prepares the reusable ready control e2e image', function (): v
         ->toContain('orbit --version');
 });
 
+it('documents the node:new first-gateway ephemeral e2e lane', function (): void {
+    $script = file_get_contents(base_path('bin/e2e'));
+
+    expect($script)
+        ->toContain('--node-new-gateway')
+        ->toContain('node:new gateway-1')
+        ->toContain('--role=gateway')
+        ->toContain('--ssh-user=${bootstrap_user}')
+        ->toContain('--control-name=control-1')
+        ->toContain('gateway-1 not found in registry')
+        ->toContain('control-1 not found in registry')
+        ->toContain('Orbit not installed under /home/orbit/orbit on gateway')
+        ->toContain('orbit --version did not work on gateway as orbit user')
+        ->toContain('orbit node:list')
+        ->toContain('node:new gateway passed');
+});
+
 it('rejects orbit as an ephemeral e2e bootstrap or control user', function (): void {
     $script = escapeshellarg(base_path('bin/e2e'));
 

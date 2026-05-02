@@ -46,7 +46,7 @@ describe('node:new', function (): void {
             ->and($result->errorOutput())->toContain('--role must be one of: control, gateway, app');
     });
 
-    it('bootstraps the first gateway from an unconfigured control node', function (): void {
+    it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
         Process::fake(['*' => Process::result(output: "Orbit 0.1.0\n")]);
         Process::preventStrayProcesses();
 
@@ -54,7 +54,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'orbit',
+            '--ssh-user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -97,6 +97,9 @@ describe('node:new', function (): void {
             ->and($gateway->host)->toBe('192.0.2.10')
             ->and($gateway->wireguard_address)->toBe('10.6.0.2')
             ->and($gateway->gateway_endpoint)->toBe('192.0.2.10')
+            ->and($gateway->ssh_user)->toBe('provisioner')
+            ->and($gateway->user)->toBe('orbit')
+            ->and($gateway->orbit_path)->toBe('/home/orbit/orbit')
             ->and((bool) $gateway->is_local)->toBeFalse()
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
@@ -106,9 +109,15 @@ describe('node:new', function (): void {
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'scp ')
             && str_contains($process->command, 'install-orbit'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'useradd')
+            && str_contains($process->command, 'usermod')
+            && str_contains($process->command, 'sudoers.d/99-orbit')
+            && str_contains($process->command, 'orbit'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && str_contains($process->command, '--role=')
             && str_contains($process->command, 'gateway')
-            && str_contains($process->command, '--source-archive='));
+            && str_contains($process->command, '--source-archive=')
+            && str_contains($process->command, 'sudo su -'));
     });
 
     it('fails app-node creation before side effects when no gateway is configured', function (): void {
@@ -147,6 +156,7 @@ describe('node:new', function (): void {
             'role' => 'gateway',
             'host' => '10.6.0.2',
             'ssh_user' => 'orbit',
+            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
             'is_local' => false,

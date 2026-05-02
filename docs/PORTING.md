@@ -120,8 +120,13 @@ yet satisfy the full product contracts.
     reusable `orbit-ready-control` Incus image from the blank image by
     installing Orbit as a non-`orbit` control user, and `bin/e2e --control`
     launches it and verifies `orbit --version` over SSH.
-  - Contract gap: gateway/development-app/production-app role provisioning and
-    full topology coverage still need ready Incus snapshot lanes.
+  - First-gateway provisioning lane implemented: `bin/e2e --node-new-gateway`
+    launches a ready control VM and a blank gateway VM, runs
+    `orbit node:new --role=gateway` from the control VM, and verifies the
+    gateway is provisioned under the steady-state `orbit` user with a working
+    Orbit installation.
+  - Contract gap: development-app/production-app role provisioning and full
+    topology coverage still need ready Incus snapshot lanes.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
@@ -320,6 +325,10 @@ semantic issues before marking the command or family ported.
     SSH and runs the installer there.
   - [~] First-gateway command path records bootstrap gateway and local control
     registry rows.
+  - [x] First-gateway bootstrap creates/verifies a steady-state runtime user
+    (`orbit`) through the bootstrap SSH user and installs Orbit under that user.
+  - [x] First-gateway ephemeral E2E lane (`bin/e2e --node-new-gateway`) verifies
+    end-to-end provisioning against disposable Incus VMs.
   - [ ] Interactive input mode.
   - [ ] Gateway-connected forwarding from configured control nodes.
   - [ ] Gateway-local app and control enrollment paths.
@@ -333,6 +342,8 @@ semantic issues before marking the command or family ported.
   - [ ] Orbit API vhost provisioning
   - [ ] Orbit PHP-FPM pool provisioning
   - [ ] gateway-to-node SSH trust model
+- [ ] Distribute SSH trust to the runtime user so control nodes can SSH as
+  `orbit` after first-gateway provisioning.
 - [!] Restore ephemeral node E2E before treating provisioning and host-mutation
   flows as fully verified.
 
@@ -433,6 +444,9 @@ semantic issues before marking the command or family ported.
   - [x] Create a blank snapshot lane for provisioning tests.
   - [x] Add reusable host installer needed by the ready control snapshot.
   - [x] Create a ready control snapshot lane for fast command-porting tests.
+  - [x] Add first-gateway provisioning E2E lane (`bin/e2e --node-new-gateway`)
+    that exercises `node:new --role=gateway` from a ready control VM against a
+    blank gateway VM.
   - [ ] Create ready gateway, development app, and production app snapshot
     lanes for fast command-porting tests.
 - [ ] Add E2E topology for gateway + control + development app + production
@@ -442,18 +456,16 @@ semantic issues before marking the command or family ported.
 
 ## Next Priorities
 
-1. Use the ready control Incus snapshot to run `node:new --role=gateway`
-   against a blank gateway VM.
-2. Extend `node:new --role=gateway` to finish WireGuard, gateway API, gateway
+1. Extend `node:new --role=gateway` to finish WireGuard, gateway API, gateway
    CA trust, and `/api/me` verification before treating first-gateway bootstrap
    as contract-complete.
-3. Build ready Incus E2E snapshot lanes for fast command-porting tests:
+2. Build ready Incus E2E snapshot lanes for fast command-porting tests:
    gateway, development app, and production app VMs.
-4. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
+3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-5. Finish node registry and metadata slices first: `node:update`,
+4. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
-6. Convert `profile` docs once its node/app prerequisites are present, then
+5. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-7. Complete the documented `update` and `update:all` implementation gaps once
+6. Complete the documented `update` and `update:all` implementation gaps once
    the current node access path is stable enough to enforce them.
