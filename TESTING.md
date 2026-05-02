@@ -65,7 +65,14 @@ ORBIT_E2E_KEEP=1
 The next E2E step is to create the ready Incus lane:
 
 - ready snapshots for fast command-porting tests against prepared control,
-  gateway, and app nodes.
+  gateway, development app, and production app nodes.
+
+Planned ready image aliases:
+
+- `orbit-ready-control`
+- `orbit-ready-gateway`
+- `orbit-ready-app-development`
+- `orbit-ready-app-production`
 
 ## Standing Live Node Rule
 

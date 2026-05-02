@@ -113,8 +113,8 @@ yet satisfy the full product contracts.
   - Blank lane implemented: `bin/e2e --prepare-blank` builds the reusable
     `orbit-blank-ubuntu-24.04` Incus image; `composer test:e2e` launches from
     that image.
-  - Contract gap: role provisioning and gateway/control/app topology coverage
-    still need ready Incus snapshot lanes.
+  - Contract gap: role provisioning and gateway/control/development-app/
+    production-app topology coverage still need ready Incus snapshot lanes.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
@@ -360,16 +360,17 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.
   - [x] Create a blank snapshot lane for provisioning tests.
-  - [ ] Create ready control, gateway, and app snapshot lanes for fast
-    command-porting tests.
-- [ ] Add E2E topology for gateway + control + app node.
+  - [ ] Create ready control, gateway, development app, and production app
+    snapshot lanes for fast command-porting tests.
+- [ ] Add E2E topology for gateway + control + development app + production
+  app nodes.
 - [ ] Add safe read-only standing-node smoke coverage for registry reads.
 - [ ] Add provisioning/destructive coverage only against ephemeral nodes.
 
 ## Next Priorities
 
 1. Build ready Incus E2E snapshot lanes for fast command-porting tests:
-   control, gateway, and app VMs.
+   control, gateway, development app, and production app VMs.
 2. Use the blank E2E lane to start node provisioning logic safely before
    treating `gateway:add`, `node:new`, or provisioning-heavy commands as
    complete.
