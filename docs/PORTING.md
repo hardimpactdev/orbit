@@ -129,14 +129,23 @@ yet satisfy the full product contracts.
     identity or WireGuard material.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
+  - Current docs: `docs/commands/10_operation/1_update`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
-  - Contract gap: current operation docs still need to be converted into this
-    repo before this can be considered fully ported.
+  - Contract gaps:
+    - JSON renderer implementation.
+    - Tree-style human progress output.
+    - Split operation contract tests mapped by the current docs.
 - [~] `update:all`
   - Current implementation: `app/Console/Commands/UpdateAllCommand.php`
+  - Current docs: `docs/commands/10_operation/2_update-all`
   - Current tests: `tests/Feature/Commands/UpdateAllCommandTest.php`
-  - Contract gap: current operation docs still need to be converted into this
-    repo before this can be considered fully ported.
+  - Contract gaps:
+    - caller-role and gateway authorization contract.
+    - JSON renderer implementation.
+    - tree-style per-installation human progress output.
+    - control-node remote update transport metadata and gateway-owned remote
+      execution boundary.
+    - split operation contract tests mapped by the current docs.
   - Live smoke note: gateway can update beast; gateway-to-mini SSH currently
     fails with `Permission denied (publickey)`.
 - [~] `node:list`
@@ -229,13 +238,13 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [ ] `deploy:run`
   - [ ] `deploy:history`
   - [ ] `deploy:log`
-- [ ] Operations: `../orbit-old-may/docs/commands/10-operations`
+- [~] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [ ] `doctor`
   - [ ] CA trust command contract
   - [!] `profile` docs conversion is an early verification-helper candidate
     after node identity and minimal app resolution are available.
-  - [ ] `update`
-  - [ ] `update:all`
+  - [x] `update`
+  - [x] `update:all`
   - [ ] `activity:list`
   - [ ] `activity:show`
   - [ ] DNS/TLD resolution commands
@@ -422,5 +431,5 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
 6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-7. Convert operations docs for `update` and `update:all` so existing bootstrap
-   utilities stop carrying docs debt.
+7. Complete the documented `update` and `update:all` implementation gaps once
+   the current node access path is stable enough to enforce them.

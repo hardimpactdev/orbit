@@ -526,7 +526,7 @@ app-owned runtime behavior build on top of that foundation.
 7. [Proxy Routes](07-proxy-routes/README.md)
 8. [Schedules](08-schedules/README.md)
 9. [Deployments](09-deployments/README.md)
-10. [Operations](10-operations/README.md)
+10. [Operations](10_operation/README.md)
 11. [Cloudflare](11-cloudflare/README.md)
 12. [VPN Administration](12-vpn/README.md)
 13. [PHP Runtime](13-php/README.md)
