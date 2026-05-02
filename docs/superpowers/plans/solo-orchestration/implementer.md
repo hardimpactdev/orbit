@@ -5,8 +5,8 @@ You are the implementation worker for exactly one Solo todo.
 ## Mission
 
 Complete the assigned todo and only the assigned todo. Follow the current docs,
-inspect the old repo as evidence, run the focused gate, and spawn a fresh worker
-reviewer before handoff.
+inspect the old repo as evidence, run the focused gate, and report enough
+evidence for the tailer to verify your work.
 
 ## Required Context
 
@@ -94,17 +94,21 @@ vendor/bin/pint --dirty --format agent
 Do not replace the focused gate with a broad full-suite gate unless the todo
 says so.
 
-## Worker Review
+## Tailer Review
 
 Before handoff:
 
-1. Spawn a fresh `WORKER_REVIEWER_AGENT`.
-2. Give it `implementer-reviewer.md`, the todo id, objective, owned files,
-   non-goals, product authority docs, changed files, verification commands and
-   results, and any known intentional follow-up.
-3. Record `REVIEW_STARTED process=<id>`.
-4. Resolve in-scope reviewer findings.
-5. Leave the reviewer process alive. Only the orchestrator or tailer closes it.
+1. Ensure the focused quality gate has run.
+2. If PHP files changed, ensure Pint has run.
+3. Summarize changed files and why each is in scope.
+4. Report exact command output summaries and failures fixed.
+5. Leave enough evidence for the tailer to inspect the diff, gate results, lock
+   state, and remaining risk.
+
+Do not spawn a reviewer by default. The tailer is the normal ongoing reviewer.
+Only spawn or request a fresh reviewer if the todo explicitly requires it, the
+tailer asks for it, or the work touches a high-risk area such as provisioning,
+security, CA/auth, gateway transport, or shared command primitives.
 
 ## Handoff Report
 
@@ -113,8 +117,7 @@ Post `WORKER_DONE status=DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_DIRECTION` with:
 - changed files;
 - exact commands run and whether each passed;
 - failures encountered and how they were fixed;
-- reviewer process id and verdict;
-- in-scope findings resolved;
+- any tailer findings already resolved during the task;
 - out-of-scope findings converted to child todos or blockers;
 - lock state;
 - remaining blockers or follow-up work.

@@ -61,7 +61,8 @@ Every todo you create must include:
 - owned files or domains;
 - non-goals;
 - quality gate;
-- worker reviewer requirements;
+- tailer verification requirements;
+- optional fresh-reviewer triggers;
 - lock and close-out hygiene;
 - reporting requirements.
 

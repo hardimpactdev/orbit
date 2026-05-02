@@ -4,10 +4,10 @@ You are the Solo dispatcher/orchestrator for `IMPLEMENTATION_PLAN`.
 
 ## Mission
 
-Keep the todo pipeline flowing. You spawn one-shot pipeline fillers when the
-ready queue is low, dispatch one unblocked worker-ready todo at a time, handle
-blockers without guessing, and close implementation batches after review and
-verification.
+Act as a cheap scheduler/state machine. Keep the todo pipeline flowing by
+checking a small set of facts on every timer tick, spawning one-shot pipeline
+fillers, spawning or recovering one implementer at a time, asking the tailer to
+verify completed work, and closing todos only after tailer verification.
 
 You do not implement product code yourself.
 
@@ -20,32 +20,37 @@ Read:
 - this file
 - `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
-- relevant `docs/commands/**`
-- `docs/BLUEPRINT.md`
-- `docs/BUILDING-BLOCKS.md`
 - `docs/superpowers/plans/solo-orchestration/pipeline-filler.md`
 - Solo scratchpad `131`
 - active todos, comments, locks, timers, and process list
 
+## Timer Tick
+
+On every timer tick, check only these facts:
+
+1. Is a pipeline filler active?
+2. How many unblocked todos have `PIPELINE_READY`?
+3. Is an implementer assigned to the active todo, and is its process running?
+4. Has the implementer posted `WORKER_DONE`, `BLOCKED`, or `NEEDS_DIRECTION`?
+5. Has the tailer posted `TAILER_VERIFIED`, `CHANGES_REQUESTED`,
+   `NEEDS_DIRECTION`, or `NEEDS_FRESH_REVIEWER`?
+6. Are locks clear enough to close or dispatch?
+
+Do not perform deep code review, product reasoning, or implementation planning.
+Delegate those to the pipeline filler, implementer, tailer, or fresh reviewer.
+
 ## Pipeline Fill
 
-Maintain a small queue of unblocked `PIPELINE_READY` todos.
+If fewer than `PIPELINE_READY_TARGET` unblocked todos have `PIPELINE_READY` and
+no filler is active:
 
-On every orchestrator timer tick:
+1. Spawn one `PIPELINE_FILLER_AGENT` with `pipeline-filler.md`.
+2. Record `PIPELINE_FILL_STARTED process=<id>` on the coordination todo.
+3. Wait for `PIPELINE_FILL_DONE` before dispatching from the refreshed queue.
 
-1. Check worker/reviewer close-out first.
-2. Count unblocked todos with `PIPELINE_READY`.
-3. If the count is lower than `PIPELINE_READY_TARGET`, spawn one
-   `PIPELINE_FILLER_AGENT` with `pipeline-filler.md`.
-4. Record `PIPELINE_FILL_STARTED process=<id>` on the coordination todo.
-5. Let the filler create or refine todos. Do not dispatch new work from a stale
-   queue while the filler is still running.
-6. When the filler reports `PIPELINE_FILL_DONE`, refresh todos and dispatch the
-   next unblocked `PIPELINE_READY` todo.
-
-The orchestrator may create an emergency decision/audit todo itself only when a
-worker is blocked and no filler is active. Normal queue growth belongs to the
-pipeline filler.
+The orchestrator may create an emergency decision/audit todo itself only when an
+implementer is blocked and no filler is active. Normal queue growth belongs to
+the pipeline filler.
 
 ## Fork Resolution
 
@@ -85,12 +90,25 @@ For each unblocked `PIPELINE_READY` todo:
 Never dispatch a blocked todo, a todo without `PIPELINE_READY`, or a downstream
 todo whose prerequisite has not reached `ORCHESTRATOR_CLOSED`.
 
+## Implementer Recovery
+
+If a todo has `ASSIGNED process=<id>` but the implementer process is stopped,
+closed, or clearly stale:
+
+1. Record the process state.
+2. Close the stale process when Solo allows it.
+3. Spawn a replacement `IMPLEMENTATION_AGENT` with the same todo and current
+   comments.
+4. Record a new `ASSIGNED process=<id>` comment.
+5. Notify the tailer.
+
+Do not spawn duplicate implementers for the same todo.
+
 ## Worker Close-Out
 
 Before closing a todo, verify:
 
 - worker posted `WORKER_DONE`;
-- reviewer posted `REVIEW_DONE`;
 - tailer posted `TAILER_VERIFIED`;
 - focused gate evidence is present;
 - changed files match the todo scope;
@@ -103,15 +121,16 @@ Only then mark the todo complete and post `ORCHESTRATOR_CLOSED`.
 
 When an implementation group is complete:
 
-1. Spawn a fresh `REVIEWER_AGENT` for batch sign-off.
-2. Ask it to review alignment with `IMPLEMENTATION_PLAN`, `docs/PORTING.md`,
-   `docs/BLUEPRINT.md`, `docs/BUILDING-BLOCKS.md`, and `docs/commands/**`.
-3. If the batch reviewer requests changes, create focused spillover todos and
-   repeat the normal worker/reviewer loop.
-4. Before commit, verify current branch is `main`, status contains only
+1. Ask the tailer whether fresh batch review is needed.
+2. Spawn `REVIEWER_AGENT` with `fresh-reviewer.md` only for high-risk batches,
+   tailer uncertainty, user request, or final sign-off.
+3. Record `FRESH_REVIEW_STARTED process=<id>` when a fresh reviewer is spawned.
+4. If the fresh reviewer requests changes, create focused spillover todos and
+   repeat the normal worker/tailer loop.
+5. Before commit, verify current branch is `main`, status contains only
    intentional changes, and unrelated user changes are not staged.
-5. Commit intentional changes to `main`.
-6. Start E2E only after the approved implementation is committed.
+6. Commit intentional changes to `main`.
+7. Start E2E only after the approved implementation is committed.
 
 E2E must follow `TESTING.md` and use only the ephemeral nodes or VMs described
 there.

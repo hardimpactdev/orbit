@@ -13,11 +13,10 @@ IMPLEMENTATION_PLAN=`2026-04-30-node-command-contract-contraction`
 TASK_PREFIX=NC
 PIPELINE_READY_TARGET=2
 
-ORCHESTRATOR_AGENT=claude
+ORCHESTRATOR_AGENT=codex-gpt-5.4-mini-low
 PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
-WORKER_REVIEWER_AGENT=gemini-3.1-pro-preview
 REVIEWER_AGENT=codex-gpt-5.5-xhigh
 RUBBER_DUCK1=gemini-3.1-pro-preview
 RUBBER_DUCK2=claude
@@ -38,7 +37,7 @@ Examples:
 - `claude-opus-4.7`
 
 Use the variables throughout the run. Do not hard-code task prefixes,
-implementation, worker-review, plan-review, or blocker agents when a variable
+implementation, fresh-review, plan-review, or blocker agents when a variable
 exists.
 
 ## Start Here
@@ -52,10 +51,12 @@ exists.
    worker-ready todo at a time, spawns `solo-orchestration/pipeline-filler.md`
    as a one-shot role when the ready queue is low, and uses
    `solo-orchestration/implementer.md` for each worker.
-4. Every implementer spawns its own reviewer with
-   `solo-orchestration/implementer-reviewer.md` before handing back work.
-5. The tailer watches processes, locks, git status, scope drift, and repeated
-   todo-template friction while the orchestrator keeps assignment moving.
+4. The tailer watches processes, locks, git status, scope drift, focused gate
+   evidence, final diffs, and repeated todo-template friction while the
+   orchestrator keeps assignment moving.
+5. Fresh reviewers are optional escalation/final sign-off agents that use
+   `solo-orchestration/fresh-reviewer.md` only when the tailer or orchestrator
+   asks for one.
 
 ## Prompt Directory
 
@@ -69,11 +70,12 @@ exists.
 - `solo-orchestration/pipeline-filler.md`: prompt for the one-shot agent that
   reads `docs/PORTING.md` and creates the next small worker-ready todos.
 - `solo-orchestration/tailer.md`: prompt for the long-running supervisor that
-  tails active agents and improves the todo template when needed.
+  tails active agents, performs ongoing review, verifies completed worker
+  output, and improves the todo template when needed.
 - `solo-orchestration/implementer.md`: prompt for a single-task implementation
   worker.
-- `solo-orchestration/implementer-reviewer.md`: prompt for the reviewer that
-  reviews one implementer's work.
+- `solo-orchestration/fresh-reviewer.md`: optional escalation/final sign-off
+  reviewer prompt.
 
 ## Product Authority
 
@@ -90,13 +92,14 @@ Current code is implementation evidence, not the north star. The old repo at
 
 ## Non-Negotiables
 
-- Do not implement code in the kickstarter, orchestrator, tailer, or reviewer
-  roles.
+- Do not implement code in the kickstarter, orchestrator, tailer, pipeline
+  filler, or reviewer roles.
 - Do not dispatch blocked todos or downstream todos whose prerequisites are not
   closed.
 - Every implementation worker owns exactly one todo.
-- Every implementation worker must spawn a fresh worker reviewer before
-  handoff.
+- The tailer is the normal ongoing reviewer for implementer work. Fresh
+  reviewers are exceptional: high-risk work, tailer uncertainty, or batch/final
+  sign-off.
 - Standing live-node checks must stay read-only or idempotent.
 - Provisioning, destructive, host-mutation, and repair/adoption flows require
   the ephemeral E2E validation described in `TESTING.md`.
