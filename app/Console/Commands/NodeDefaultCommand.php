@@ -59,7 +59,7 @@ class NodeDefaultCommand extends Command
         if ($name !== null && $clear) {
             return $this->failCommand(
                 code: 'validation_failed',
-                message: 'Provide only one node target.',
+                message: 'Cannot provide both a node name and --clear.',
                 meta: ['fields' => ['name', 'clear']],
             );
         }
@@ -88,7 +88,10 @@ class NodeDefaultCommand extends Command
                 action: 'show',
                 defaultNode: null,
                 meta: [],
-                humanRenderer: fn () => $this->line("No default development app node is set.\nRun `orbit node:default <name>` to set one."),
+                humanRenderer: function (): void {
+                    $this->line('No default development app node is set.');
+                    $this->line('Run `orbit node:default <name>` to set one.');
+                },
             );
         }
 
@@ -125,7 +128,7 @@ class NodeDefaultCommand extends Command
                 $this->line('┌ Set Default Node');
                 $this->line('○ Load visible development app nodes');
                 $this->line('○ Store local default');
-                $this->line("└ Default development app node set to {$name}.");
+                $this->line("└ Default development app node set to {$name}");
             },
         );
     }
@@ -198,6 +201,7 @@ class NodeDefaultCommand extends Command
                     'required_role' => 'app',
                     'required_environment' => 'development',
                 ],
+                humanMessage: "Node '{$name}' is not a development app node.\nOnly development app nodes may be set as the local default.",
             );
         }
 
@@ -330,7 +334,7 @@ class NodeDefaultCommand extends Command
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function failCommand(string $code, string $message, array $meta): int
+    private function failCommand(string $code, string $message, array $meta, ?string $humanMessage = null): int
     {
         if ($this->wantsJson()) {
             $this->line(json_encode([
@@ -344,7 +348,8 @@ class NodeDefaultCommand extends Command
             return self::FAILURE;
         }
 
-        $this->error($message);
+        $output = $humanMessage ?? $message;
+        $this->error($output);
 
         return self::FAILURE;
     }
