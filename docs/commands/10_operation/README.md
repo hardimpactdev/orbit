@@ -1,8 +1,8 @@
 # Operation Commands
 
 Operation commands cut across Orbit's command surface. They update Orbit
-installations, verify convergence, inspect operational history, manage local
-trust, and run diagnostic workflows.
+installations, verify convergence, inspect operational history, and run
+diagnostic workflows.
 
 The operation domain does not own a state family. Operation commands may read,
 write, verify, or repair state that belongs to other families, but permanent
@@ -24,8 +24,8 @@ drift keys remain the product family keys defined by the blueprint, such as
   own concrete probes, issue codes, and fix/adopt action maps.
 - Operational history is gateway history. A single operation may produce
   multiple records under one correlation id when history support is available.
-- Local trust and local DNS commands affect only the caller machine. They do not
-  create gateway intent, proxy routes, app domains, or public DNS records.
+- Local DNS commands affect only the caller machine. They do not create gateway
+  intent, proxy routes, app domains, or public DNS records.
 - Profiling reads request/runtime data and must not mutate app intent.
 
 ## Commands
@@ -33,7 +33,6 @@ drift keys remain the product family keys defined by the blueprint, such as
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
-4. [`orbit ca:trust`](4_ca-trust/ca-trust.md)
 
 ## Not Yet Converted
 

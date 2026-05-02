@@ -112,6 +112,9 @@ categories, doctor relationship, and test mapping.
   redirect.
 - Install the fetched CA into local trust storage when local gateway CA trust is
   missing or stale.
+- Use the same local trust-store repair behavior documented by
+  [`gateway:trust`](../../11_gateway-trust/gateway-trust.md), but with the
+  gateway endpoint resolved by the onboarding flow.
 
 ### Identity Verification Rules
 
@@ -139,7 +142,8 @@ categories, doctor relationship, and test mapping.
 - SSH to the gateway or any app node.
 - Provision hosts.
 - Act as a broad repair or reset command. After local onboarding exists,
-  broader node drift belongs to `doctor --family=node --fix`.
+  standalone CA trust repair belongs to `gateway:trust`, and broader node drift
+  belongs to `doctor --family=node --fix`.
 
 ## Renderer Contracts
 
@@ -171,6 +175,8 @@ Already-configured convergence is success, not failure.
   issued control-node identity. `doctor --family=node --fix` owns later safe
   repair of node drift when the caller has enough information and
   authorization.
+- `gateway:trust` owns the standalone repair command for local gateway CA trust
+  after gateway settings already exist.
 
 ## Test Mapping
 

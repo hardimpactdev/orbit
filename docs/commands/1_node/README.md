@@ -266,6 +266,10 @@ identity or access policy. This does not apply to the initiating control node
 after successful first-gateway bootstrap, because that flow already performs the
 local onboarding work.
 
+After onboarding, [`orbit gateway:trust`](11_gateway-trust/gateway-trust.md)
+can repair only local gateway CA trust without re-running identity verification
+or changing gateway settings.
+
 When a gateway or app host is already provisioned and already known to the
 gateway registry, `node:new` adopts or converges that gateway-owned identity
 instead of minting a duplicate node.
@@ -281,20 +285,22 @@ instead of minting a duplicate node.
 1. New gateway, app, or control node:
    [`orbit node:new [name]`](1_node-new/node-new.md)
 2. Existing gateway: [`orbit gateway:add [gateway_ip]`](2_gateway-add/gateway-add.md)
+3. Repair local gateway CA trust:
+   [`orbit gateway:trust`](11_gateway-trust/gateway-trust.md)
 
 ### Inventory
 
-3. [`orbit node:list`](3_node-list/node-list.md)
-4. [`orbit node:show [name]`](4_node-show/node-show.md)
+4. [`orbit node:list`](3_node-list/node-list.md)
+5. [`orbit node:show [name]`](4_node-show/node-show.md)
 
 ### Access Policy
 
-5. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
-6. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
+6. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
+7. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
 
 ### Lifecycle And Verification
 
-7. [`orbit node:update [name]`](7_node-update/node-update.md)
-8. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
-9. [`orbit node:default [name]`](9_node-default/node-default.md)
-10. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
+8. [`orbit node:update [name]`](7_node-update/node-update.md)
+9. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
+10. [`orbit node:default [name]`](9_node-default/node-default.md)
+11. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)

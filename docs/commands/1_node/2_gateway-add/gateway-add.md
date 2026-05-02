@@ -57,6 +57,9 @@ If the gateway is already configured and verified, `gateway:add` exits
 successfully as converged. Broader node drift is handled by
 [`doctor --family=node --fix`](../node-doctor.md).
 
+If local gateway settings already exist and only OS trust for the gateway CA is
+missing or stale, use [`gateway:trust`](../11_gateway-trust/gateway-trust.md).
+
 `gateway:add` does not need SSH access to the gateway or any app node, does not
 provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
@@ -87,6 +90,8 @@ identity, command result action, and local onboarding state.
 
 - [`node:new`](../1_node-new/node-new.md) — create or enroll nodes, including
   first-gateway bootstrap
+- [`gateway:trust`](../11_gateway-trust/gateway-trust.md) — repair local
+  gateway CA trust after onboarding
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`doctor --family=node`](../node-doctor.md) — verify node drift including
