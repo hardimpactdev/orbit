@@ -226,6 +226,7 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/6_workspace`
 - [x] `docs/commands/7_process`
 - [x] `docs/commands/8_proxy`
+- [x] `docs/commands/9_schedule`
 - [x] `docs/commands/16_dns`
 
 ### Legacy Command Docs Still To Port
@@ -237,13 +238,13 @@ semantic issues before marking the command or family ported.
   - [x] Legacy `proxy:redirect-add` folded into `proxy:add --redirect=<url>`.
   - [x] Legacy `proxy:redirect-list` folded into `proxy:list --filter=redirect`.
   - [x] Legacy `proxy:redirect-remove` folded into `proxy:remove`.
-- [ ] Schedules: `../orbit-old-may/docs/commands/08-schedules`
-  - [ ] `schedule:add`
-  - [ ] `schedule:list`
-  - [ ] `schedule:show`
-  - [ ] `schedule:remove`
-  - [ ] `schedule:run`
-  - [ ] `schedule:logs`
+- [x] Schedules: `../orbit-old-may/docs/commands/08-schedules`
+  - [x] `schedule:add`
+  - [x] `schedule:list`
+  - [x] `schedule:show`
+  - [x] `schedule:remove`
+  - [x] `schedule:run`
+  - [x] `schedule:logs`
 - [ ] Deployments: `../orbit-old-may/docs/commands/09-deployments`
   - [ ] `deploy:step-add`
   - [ ] `deploy:step-list`

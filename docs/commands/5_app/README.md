@@ -108,7 +108,7 @@ workspace command contract.
 1. [`orbit app:new [name]`](1_app-new/app-new.md)
 2. [`orbit app:register [name]`](2_app-register/app-register.md)
 3. [`orbit app:list`](3_app-list/app-list.md)
-4. [`orbit app:show [app]`](5_app-show/app-show.md)
+4. [`orbit app:show [app]`](4_app-show/app-show.md)
 5. [`orbit app:root [app] [root]`](5_app-root/app-root.md)
 6. [`orbit app:remove [app]`](6_app-remove/app-remove.md)
 7. [`orbit app:prune [app]`](7_app-prune/app-prune.md)

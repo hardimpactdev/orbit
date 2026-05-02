@@ -29,5 +29,5 @@ orbit process:restart vite --app=docs --json
 ## Related
 
 - [`process:start`](../5_process-start/process-start.md)
-- [`process:stop`](../7_process-stop/process-stop.md)
+- [`process:stop`](../6_process-stop/process-stop.md)
 - [`process-doctor.md`](../process-doctor.md)

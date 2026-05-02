@@ -532,7 +532,7 @@ build on top of that foundation.
 6. [Workspaces](6_workspace/README.md)
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
-9. Schedules (not yet converted)
+9. [Schedules](9_schedule/README.md)
 10. Deployments (not yet converted)
 11. [Operations](11_operation/README.md)
 12. Cloudflare (not yet converted)

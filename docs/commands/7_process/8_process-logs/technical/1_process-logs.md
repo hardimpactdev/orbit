@@ -4,7 +4,7 @@
 
 **Owner:** `process`.
 
-**Effects:** `stream`.
+**Effects:** `read, stream`.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.

@@ -100,7 +100,7 @@ only mode-sensitive surface.
    callers reading either output form see the same steps in the same
    relative order. The list is not reversed relative to setup: `order=1`
    names the first teardown step that runs during
-   [`workspace:remove`](../../6_workspace-remove/workspace-remove.md), not
+   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), not
    a symmetric inverse of any setup ordering.
 3. **Project step record shape.** Every returned record uses the shared
    step shape `{ id, app, phase, order, command, timeout_seconds }` already

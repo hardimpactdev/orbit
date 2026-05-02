@@ -51,7 +51,7 @@ node artifacts. Other destructive commands that act on an explicit named target
 do not inherit `--dry-run` from this command.
 
 When removing a stale workspace, Orbit applies the same removal semantics as
-[`workspace:remove`](../../6_workspace/6_workspace-remove/workspace-remove.md):
+[`workspace:remove`](../../6_workspace/5_workspace-remove/workspace-remove.md):
 gateway workspace intent is removed first, then node-side cleanup runs through
 the normal workspace removal order, including teardown steps.
 
@@ -80,7 +80,7 @@ workspace teardown step.
 ## Related Commands
 
 - [`orbit app:remove`](../6_app-remove/app-remove.md) — Remove the entire app and all its workspaces.
-- [`orbit workspace:remove`](../../6_workspace/6_workspace-remove/workspace-remove.md) — Manually remove a specific workspace.
+- [`orbit workspace:remove`](../../6_workspace/5_workspace-remove/workspace-remove.md) — Manually remove a specific workspace.
 - [`doctor --family=app`](../app-doctor.md) — Diagnose and fix app-level drift.
 
 [View Technical Contract](technical/1_app-prune.md)

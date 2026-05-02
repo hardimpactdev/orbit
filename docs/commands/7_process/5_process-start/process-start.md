@@ -26,6 +26,6 @@ orbit process:start vite --app=docs --json
 
 ## Related
 
-- [`process:stop`](../7_process-stop/process-stop.md)
+- [`process:stop`](../6_process-stop/process-stop.md)
 - [`process:restart`](../7_process-restart/process-restart.md)
 - [`process:logs`](../8_process-logs/process-logs.md)

@@ -92,7 +92,7 @@ If `dry_run` is `false`:
   cleanup pass.
 - For each stale workspace:
   - Apply the normal
-    [`workspace:remove`](../../../6_workspace/6_workspace-remove/technical/1_workspace-remove.md)
+    [`workspace:remove`](../../../6_workspace/5_workspace-remove/technical/1_workspace-remove.md)
     semantics with destructive consent already satisfied by `app:prune`.
   - Phase A deletes workspace-owned `proxy_route` rows and the `workspace`
     row in one gateway transaction.
@@ -148,7 +148,7 @@ If `dry_run` is `false`:
 
 - `app:prune` cross-references [`app-doctor.md`](../../app-doctor.md) for app-level drift.
 - Stale workspace removal delegates to
-  [`workspace:remove`](../../../6_workspace/6_workspace-remove/workspace-remove.md).
+  [`workspace:remove`](../../../6_workspace/5_workspace-remove/workspace-remove.md).
   Any drift created by failed Phase B cleanup is reported by the same family
   doctors and warning handoffs documented there.
 

@@ -25,11 +25,11 @@ return [
     ],
     'schedule' => [
         'singular' => 'schedule',
-        'doctor_doc' => null,
+        'doctor_doc' => 'docs/commands/9_schedule/schedule-doctor.md',
     ],
     'tool' => [
         'singular' => 'tool',
-        'doctor_doc' => null,
+        'doctor_doc' => 'docs/commands/3_tool/tool-doctor.md',
     ],
     'firewall_rule' => [
         'singular' => 'firewall_rule',

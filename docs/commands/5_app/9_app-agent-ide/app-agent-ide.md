@@ -100,7 +100,7 @@ payload shape.
 
 ## Related Commands
 
-- [`app:show`](../5_app-show/app-show.md) — show app details
+- [`app:show`](../4_app-show/app-show.md) — show app details
 - [`app:prune`](../7_app-prune/app-prune.md) — explicit app-level cleanup
 - [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) — set node-level default
 - [`doctor --family=app`](../app-doctor.md) — verify app-owned agent IDE configuration

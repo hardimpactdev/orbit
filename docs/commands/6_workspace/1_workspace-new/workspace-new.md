@@ -56,7 +56,7 @@ orbit workspace:new bugfix-1 --app=my-app --base=production
 
 **Related Commands:**
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md): Re-converge or repair an existing workspace.
-- [`workspace:remove`](../6_workspace-remove/workspace-remove.md): Delete a workspace and its artifacts.
+- [`workspace:remove`](../5_workspace-remove/workspace-remove.md): Delete a workspace and its artifacts.
 - [`doctor --family=workspace`](../workspace-doctor.md): Verify workspace reality.
 
 ---

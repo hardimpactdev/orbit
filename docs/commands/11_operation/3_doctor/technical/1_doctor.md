@@ -203,9 +203,13 @@ Family doctor contracts own:
 Converted family doctor contracts:
 
 - [`node-doctor.md`](../../../1_node/node-doctor.md)
+- [`tool-doctor.md`](../../../3_tool/tool-doctor.md)
+- [`firewall-doctor.md`](../../../4_firewall/firewall-doctor.md)
 - [`app-doctor.md`](../../../5_app/app-doctor.md)
 - [`workspace-doctor.md`](../../../6_workspace/workspace-doctor.md)
 - [`process-doctor.md`](../../../7_process/process-doctor.md)
+- [`proxy-doctor.md`](../../../8_proxy/proxy-doctor.md)
+- [`schedule-doctor.md`](../../../9_schedule/schedule-doctor.md)
 
 ## Test Mapping
 

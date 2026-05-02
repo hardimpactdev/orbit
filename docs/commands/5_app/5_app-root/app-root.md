@@ -67,6 +67,6 @@ already-managed re-run still refreshes node artifacts.
 
 ## Related Commands
 
-- [`orbit app:show [app]`](../5_app-show/app-show.md)
+- [`orbit app:show [app]`](../4_app-show/app-show.md)
 - [`orbit app:register [name]`](../2_app-register/app-register.md)
 - [`doctor --family=app`](../app-doctor.md)

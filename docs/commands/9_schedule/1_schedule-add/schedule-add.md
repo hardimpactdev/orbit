@@ -1,0 +1,78 @@
+# `orbit schedule:add [name]`
+
+[Back to Schedule commands.](../README.md)
+
+Create a recurring Orbit-managed schedule.
+
+Use `schedule:add` when an app or node needs recurring work managed by Orbit.
+The command records schedule intent on the gateway, then enacts the timer and
+service artifacts on the resolved target node through the gateway.
+
+## Usage
+
+```bash
+orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
+orbit schedule:add
+```
+
+## Examples
+
+```bash
+orbit schedule:add laravel-scheduler --app=docs --command="php artisan schedule:run" --interval="every minute"
+orbit schedule:add backups --node=app-1 --script=/opt/orbit/schedules/backup.sh --interval="daily at 02:00" --timezone=Europe/Amsterdam
+```
+
+## Arguments And Options
+
+- `name`: schedule slug, unique within the selected app or node scope.
+- `--app`: app target for an app-scoped schedule.
+- `--node`: node target for a node-scoped schedule.
+- `--command`: inline command to run as the scheduled work.
+- `--script`: managed script path to run as the scheduled work.
+- `--interval`: portable Orbit interval expression, such as
+  `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or
+  `weekly on monday at 09:00`.
+- `--timezone`: timezone used to interpret the interval. Defaults to the target
+  app, node, or gateway timezone.
+- `--json`: Output JSON.
+
+Exactly one target selector is required after defaults are applied: `--app` or
+`--node`. Exactly one execution source is required: `--command` or `--script`.
+
+Orbit-owned maintenance schedules may be created by lifecycle commands, but
+this public command only creates app-scoped or node-scoped schedules.
+
+## What Happens
+
+`schedule:add` validates the target, validates the execution source and
+interval, writes gateway schedule intent, renders the timer/service artifacts,
+and enables the recurring schedule on the target node.
+
+It does not create apps, nodes, app process definitions, proxy routes, firewall
+rules, or backend-only schedules outside gateway intent.
+
+## Output
+
+Human output renders a progress tree while the command validates input, writes
+gateway intent, renders artifacts, and enables the schedule.
+
+JSON output returns the created schedule entity and enactment result.
+
+## Requirements
+
+- The CLI caller can reach the Orbit gateway, or the command runs on the
+  gateway.
+- The caller is authorized to manage schedules for the resolved app or node.
+- The gateway can reach the target node to enact timer and service artifacts.
+- Script sources must resolve to readable script files according to the
+  gateway-owned schedule policy.
+
+## Related
+
+- [`orbit schedule:list`](../2_schedule-list/schedule-list.md)
+- [`orbit schedule:show`](../3_schedule-show/schedule-show.md)
+- [`doctor --family=schedule`](../schedule-doctor.md)
+
+## Technical Contract
+
+See [`schedule:add` technical contract](technical/1_schedule-add.md).

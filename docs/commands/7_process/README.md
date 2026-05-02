@@ -89,7 +89,7 @@ workspace setup and teardown step environment. Runtime units do not receive
 3. [`orbit process:remove [name]`](3_process-remove/process-remove.md)
 4. [`orbit process:list`](4_process-list/process-list.md)
 5. [`orbit process:start [name]`](5_process-start/process-start.md)
-6. [`orbit process:stop [name]`](7_process-stop/process-stop.md)
+6. [`orbit process:stop [name]`](6_process-stop/process-stop.md)
 7. [`orbit process:restart [name]`](7_process-restart/process-restart.md)
 8. [`orbit process:logs [name]`](8_process-logs/process-logs.md)
 

@@ -123,7 +123,7 @@ intent. App nodes are not contacted.
   `app:prune` for the same app. The mutation is gateway-intent only and takes
   effect for future runs. In-flight runs continue executing the ordered step
   list they snapshotted at `phase=teardown_steps` entry. The snapshot
-  obligation is owned by [`workspace:remove`](../../6_workspace-remove/workspace-remove.md)
+  obligation is owned by [`workspace:remove`](../../5_workspace-remove/workspace-remove.md)
   and app pruning, not by this command.
 - Mutate `workspace_runs` or `workspace_step_runs` records.
 - Undo filesystem side effects, database cleanup, or any artifact produced by

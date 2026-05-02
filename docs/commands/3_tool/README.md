@@ -80,4 +80,4 @@ the entity in the command result.
 
 - [`doctor --family=tool`](tool-doctor.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)
-- Firewall rules, once the firewall command family is converted
+- [`orbit firewall:*`](../4_firewall/README.md)

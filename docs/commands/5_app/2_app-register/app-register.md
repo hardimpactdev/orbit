@@ -78,6 +78,6 @@ still succeeds. The result reports which path the run took (`registered`,
 
 - [`orbit app:new`](../1_app-new/app-new.md)
 - [`orbit app:list`](../3_app-list/app-list.md)
-- [`orbit app:show`](../5_app-show/app-show.md)
+- [`orbit app:show`](../4_app-show/app-show.md)
 - [`orbit app:remove`](../6_app-remove/app-remove.md)
 - [Technical Contract](technical/1_app-register.md)

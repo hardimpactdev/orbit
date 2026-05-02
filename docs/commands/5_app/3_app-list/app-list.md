@@ -68,7 +68,7 @@ exact payload shape.
 ## Related Commands
 
 - [`app:new`](../1_app-new/app-new.md) — create or clone an app
-- [`app:show`](../5_app-show/app-show.md) — inspect a single app's details
+- [`app:show`](../4_app-show/app-show.md) — inspect a single app's details
 - [`doctor --family=app`](../app-doctor.md) — verify and repair app drift
 - [`node:list`](../../1_node/3_node-list/node-list.md) — list registered nodes
 

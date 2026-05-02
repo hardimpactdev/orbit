@@ -80,7 +80,7 @@ and agents can see what changed.
 - [`workspace:new`](../1_workspace-new/workspace-new.md) (Companion command;
   runs the same setup behavior exposed by `workspace:setup` after creating
   the workspace path.)
-- [`workspace:remove`](../6_workspace-remove/workspace-remove.md)
+- [`workspace:remove`](../5_workspace-remove/workspace-remove.md)
 - [`doctor --family=workspace`](../workspace-doctor.md)
 
 ***

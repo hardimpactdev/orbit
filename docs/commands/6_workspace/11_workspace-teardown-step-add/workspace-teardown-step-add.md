@@ -12,7 +12,7 @@ orbit workspace-teardown-step:add --command="dropdb my_app_feature" [--app=<app>
 
 The `workspace-teardown-step:add` command registers a shell command that
 runs whenever Orbit removes a workspace for the app
-([`workspace:remove`](../6_workspace-remove/workspace-remove.md)) or prunes
+([`workspace:remove`](../5_workspace-remove/workspace-remove.md)) or prunes
 stale workspaces for the app
 ([`app:prune`](../../5_app/7_app-prune/app-prune.md)). These steps are used
 for app-specific cleanup that needs the workspace path intact, such as
@@ -44,7 +44,7 @@ artifact removal.
 
 - **Deferred Execution**: Adding a step does not execute it immediately.
   Steps run during
-  [`workspace:remove`](../6_workspace-remove/workspace-remove.md) and
+  [`workspace:remove`](../5_workspace-remove/workspace-remove.md) and
   [`app:prune`](../../5_app/7_app-prune/app-prune.md).
 - **Execution Timing**: Teardown steps run **before** destructive workspace
   cleanup (FPM removal and worktree removal). Public traffic to the
@@ -101,7 +101,7 @@ orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --before=
 - [`orbit workspace-teardown-step:list`](../12_workspace-teardown-step-list/workspace-teardown-step-list.md)
 - [`orbit workspace-teardown-step:remove`](../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
 - [`orbit workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md)
-- [`orbit workspace:remove`](../6_workspace-remove/workspace-remove.md)
+- [`orbit workspace:remove`](../5_workspace-remove/workspace-remove.md)
 - [`orbit app:prune`](../../5_app/7_app-prune/app-prune.md)
 - [`orbit doctor --family=workspace`](../workspace-doctor.md)
 

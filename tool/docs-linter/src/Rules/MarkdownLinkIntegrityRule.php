@@ -63,9 +63,7 @@ final class MarkdownLinkIntegrityRule implements CommandDocsLintRule
 
     private function stripCode(string $contents): string
     {
-        $contents = preg_replace('/```.*?```/s', '', $contents) ?? $contents;
-
-        return preg_replace('/`[^`]*`/', '', $contents) ?? $contents;
+        return preg_replace('/```.*?```/s', '', $contents) ?? $contents;
     }
 
     private function linkTarget(string $link): ?string
@@ -74,7 +72,7 @@ final class MarkdownLinkIntegrityRule implements CommandDocsLintRule
         $target = trim($target, '<>');
         $target = preg_replace('/\s+".*"$/', '', $target) ?? $target;
 
-        if ($target === '' || str_starts_with($target, '#')) {
+        if ($target === '' || str_starts_with($target, '#') || str_starts_with($target, '?')) {
             return null;
         }
 

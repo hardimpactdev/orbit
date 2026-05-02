@@ -127,7 +127,7 @@ environment.
 2. [`orbit workspace:setup [name]`](2_workspace-setup/workspace-setup.md)
 3. [`orbit workspace:list`](3_workspace-list/workspace-list.md)
 4. [`orbit workspace:show [name]`](4_workspace-show/workspace-show.md)
-5. [`orbit workspace:remove [name]`](6_workspace-remove/workspace-remove.md)
+5. [`orbit workspace:remove [name]`](5_workspace-remove/workspace-remove.md)
 6. [`orbit workspace:history [name]`](6_workspace-history/workspace-history.md)
 7. [`orbit workspace:log [run]`](7_workspace-log/workspace-log.md)
 8. [`orbit workspace-setup-step:add`](8_workspace-setup-step-add/workspace-setup-step-add.md)

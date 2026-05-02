@@ -77,7 +77,7 @@ the exact payload shape.
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — register a workspace
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — enact workspace artifacts on the app node
 - [`workspace:show`](../4_workspace-show/workspace-show.md) — inspect a single workspace
-- [`workspace:remove`](../6_workspace-remove/workspace-remove.md) — remove a workspace
+- [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — remove a workspace
 - [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift
 - [`app:list`](../../5_app/3_app-list/app-list.md) — list parent apps
 
