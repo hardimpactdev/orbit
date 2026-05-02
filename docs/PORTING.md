@@ -59,7 +59,7 @@ Default migration order is command-contract and capability driven:
 
 1. **Foundation and verification harness.**
    - Keep `composer test`, `composer analyse`, `composer docs-lint`, and
-     standing live smoke healthy.
+     standing live smoke executable, with known red gates tracked here.
    - Until the gateway-to-mini SSH trust decision is resolved, standing live
      smoke is a known red gate: it passes local tests, updates beast, then fails
      when the gateway tries to update mini.
@@ -118,17 +118,14 @@ yet satisfy the full product contracts.
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
   - Current tests: `tests/Feature/Commands/NodeListCommandTest.php`
-  - Contract gaps: JSON renderer, role/environment filters, `--doctor`, caller
-    visibility policy, gateway forwarding, and doctor handoff behavior.
+  - Contract gaps are tracked in the node workstream.
 - [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
   - Current tests: `tests/Feature/Commands/NodeShowCommandTest.php`
   - Bootstrap slice implemented: active registry lookup, human output, JSON
     envelope, not-found error, local-node fallback, and read-only behavior.
-  - Contract gaps: caller-role resolution, access-policy authorization, gateway
-    forwarding, interactive prompting, default development app-node resolution,
-    real grant metadata, `environment`, `platform`, and node agent IDE metadata.
+  - Contract gaps are tracked in the node workstream.
 - [~] `node:register`
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
