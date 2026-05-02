@@ -119,6 +119,12 @@ class NodeUpdateCommand extends Command
             );
         }
 
+        if (! $this->wantsJson()) {
+            $this->line('┌ Update Node');
+            $this->line('○ Validate node');
+            $this->line('○ Update intent');
+        }
+
         $changes = $this->computeChanges($node, $providedFields);
 
         if ($changes === []) {
@@ -338,6 +344,10 @@ class NodeUpdateCommand extends Command
 
             return self::SUCCESS;
         }
+
+        $footer = $changed === [] ? "Node '{$name}' unchanged" : "Node '{$name}' updated";
+        $this->line("└ {$footer}");
+        $this->line('');
 
         if ($changed === []) {
             $this->line("Node '{$name}' unchanged");
