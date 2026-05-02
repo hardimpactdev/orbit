@@ -34,6 +34,12 @@ Caddy is the current proxy backend. It is not the product model.
 - Orbit-managed TLS means gateway-issued route leaf certificate and key
   material on the serving node. Those certificates chain to the gateway root
   CA trusted by `gateway:add` and `gateway:trust`.
+- For DNS hostname routes, Orbit-managed TLS also includes app-node
+  compatibility material that lets common Laravel Vite TLS detection paths find
+  the route certificate. This belongs to proxy convergence because it is
+  derived from route TLS intent. It is not a separate app command.
+- Internal IP-only routes receive gateway-issued leaf certificates for the IP
+  target and do not require hostname compatibility material.
 - Proxy reads use gateway intent by default. Live proxy backend reality belongs
   to `doctor --family=proxy`.
 - Backend discovery/import is not part of the proxy command surface. Adoption
@@ -48,6 +54,8 @@ standard Orbit browser ingress contract for PHP-backed apps and workspaces:
 - terminate Orbit-managed TLS for the app or workspace host;
 - route PHP requests to the resolved app/workspace PHP runtime;
 - serve static files from the configured document root;
+- for workspace routes, apply the parent app document root relative to the
+  workspace path;
 - apply baseline browser security headers;
 - block direct requests for sensitive project files and framework internals;
 - emit profiling timing markers used by Orbit profile workflows;

@@ -12,6 +12,8 @@ The proxy family owns these facts:
   route;
 - managed proxy backend artifacts rendered from those rows;
 - managed TLS material needed by those routes;
+- hostname compatibility material derived from Orbit-managed TLS that app-node
+  tooling can use for Laravel Vite TLS detection;
 - drift between gateway intent and node proxy backend reality;
 - adoption facts for explicitly selected observed routes that can safely become
   custom proxy intent.
@@ -42,7 +44,9 @@ The proxy probe reads gateway proxy route intent and checks these layers:
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets.
 7. **TLS material:** expected Orbit-managed TLS material exists and matches the
-   route's policy.
+   route's policy. For DNS hostname routes, this includes the app-node
+   compatibility material used by Laravel Vite TLS detection. Internal IP-only
+   routes skip hostname compatibility checks.
 8. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway intent are reported as extra route drift.
 9. **Adoption scope:** during `--adopt`, explicitly selected observed backend

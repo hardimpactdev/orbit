@@ -327,6 +327,15 @@ feature-detail audit, semantic tightening, and implementation-gap tracking.
   - [x] Stdin message input preserved under `agent-ide:message`.
   - [x] Adapter-specific active-session lookup constrained to the resolved
         app/workspace scope.
+- [x] App/proxy/workspace cross-family ingress details
+  - [x] App and workspace proxy routes own PHP browser ingress, document-root
+        policy, security headers, profiling markers, immutable build-asset
+        caching, and route-scoped TLS compatibility material.
+  - [x] Vite/HMR support is documented as process runtime environment plus
+        non-loopback dev-server binding; the old Caddy Vite reverse-proxy
+        machinery is not imported as product behavior.
+  - [x] Workspace setup and teardown step commands use lifecycle environment
+        variables rather than command-string templating.
 
 ### Todo Pipeline Hints
 
