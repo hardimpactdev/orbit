@@ -44,6 +44,27 @@ Every todo must include objective, sequencing rules, dependencies/blockers,
 product authority, legacy evidence, owned files/domains, non-goals, quality
 gate, reviewer requirements, lock hygiene, and reporting requirements.
 
+## Fork Resolution
+
+When a todo contains multiple viable architecture or product paths, do not
+dispatch it as implementation work. Create a focused decision/audit todo that
+blocks the implementation todo.
+
+The decision/audit todo must require the worker to resolve the fork from this
+evidence stack, in order:
+
+1. current docs as product authority;
+2. `docs/PORTING.md` for migration order and current tracker state;
+3. old repo evidence from `../orbit-old-may`;
+4. existing code, tests, and todo comments as implementation evidence.
+
+The decision worker may choose a path only when that stack clearly supports one
+option as simpler, safer, and aligned with the clean rebuild. If it does not,
+the worker must stop with `NEEDS_DIRECTION`.
+
+Do not accept a decision that is only an agent preference or a way to keep the
+pipeline moving.
+
 ## Dispatch
 
 For each unblocked `PIPELINE_READY` todo:
@@ -98,6 +119,7 @@ If a worker hits a real product or architecture blocker:
 
 1. Keep the implementation todo open.
 2. Create a focused decision/audit todo that blocks it.
+   Require the decision evidence stack from `README.md`.
 3. Use `RUBBER_DUCK1` and `RUBBER_DUCK2` only when the decision needs
    independent proposals.
 4. Do not steer a code fix yourself.

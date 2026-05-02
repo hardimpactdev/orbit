@@ -39,6 +39,24 @@ quality gate before making changes.
 - Do not use `git stash`, `git reset --hard`, `git checkout --`, broad
   `git restore`, or hidden reverts.
 
+## Fork Stop Rule
+
+If the assigned todo reveals multiple viable architecture or product paths, do
+not choose by preference and do not broaden the todo. Stop and request or create
+a focused decision/audit todo.
+
+That decision/audit todo must resolve the fork from this evidence stack, in
+order:
+
+1. current docs as product authority;
+2. `docs/PORTING.md` for migration order and current tracker state;
+3. old repo evidence from `../orbit-old-may`;
+4. existing code, tests, and todo comments as implementation evidence.
+
+Only continue implementation after the decision todo reaches
+`ORCHESTRATOR_CLOSED` and the active todo has one clear path. If the evidence
+stack does not clearly decide the fork, report `NEEDS_DIRECTION`.
+
 ## Test Triage
 
 When touching existing tests, classify relevant tests before implementation:

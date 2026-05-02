@@ -32,6 +32,26 @@ Every role should read only the context it needs:
 Current docs are product authority. Current implementation and the old repo are
 evidence only.
 
+## Decision Evidence Stack
+
+When a fork appears, do not let an implementation worker choose between broad
+architecture paths mid-stream. Pause the implementation todo and create a
+focused decision/audit todo.
+
+The decision worker must resolve the fork from this evidence stack, in order:
+
+1. current docs as product authority;
+2. `docs/PORTING.md` for migration order and current tracker state;
+3. old repo evidence from `../orbit-old-may`;
+4. existing code, tests, and todo comments as implementation evidence.
+
+The worker may choose a path only when that stack clearly supports one option as
+simpler, safer, and aligned with the clean rebuild. If the stack does not decide
+the fork, the worker must stop with `NEEDS_DIRECTION`.
+
+Agents must not pick the option that sounds best merely to keep the pipeline
+moving.
+
 ## Lifecycle Labels
 
 Use these exact labels in Solo comments so work can resume after compaction:
@@ -109,6 +129,7 @@ When an implementer hits a blocker:
 1. Keep the todo open.
 2. Create a focused decision/audit todo when the blocker is architectural or
    product-level.
+   The decision/audit todo must require the decision evidence stack above.
 3. Use `RUBBER_DUCK1` and `RUBBER_DUCK2` for independent solution proposals
    only when the active todo requires blocker resolution and the product docs do
    not already decide the answer.
