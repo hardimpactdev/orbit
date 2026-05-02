@@ -221,7 +221,7 @@ ported command and family doctor file. Use
 `docs/BUILDING-BLOCKS.md`, and `docs/commands/README.md` as authority. Fix
 semantic issues before marking the command or family ported.
 
-### Already Ported Command Docs
+### Converted Command Docs
 
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
@@ -236,7 +236,10 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/12_cf`
 - [x] `docs/commands/16_dns`
 
-### Legacy Command Docs Still To Port
+Docs marked converted here mean the command contracts exist in the clean repo.
+They do not imply the matching implementation has been ported.
+
+### Converted Legacy Domains
 
 - [x] Proxy routes: `../orbit-old-may/docs/commands/07-proxy-routes`
   - [x] `proxy:list`
@@ -277,6 +280,9 @@ semantic issues before marking the command or family ported.
   - [x] `cf-cache-rule:remove`
   - [x] `cf-ssl:enable`
   - [x] `cf-ssl:disable`
+
+### Legacy Command Docs Still To Port
+
 - [ ] VPN: `../orbit-old-may/docs/commands/12-vpn`
   - [ ] `vpn:client-list`
   - [ ] `vpn:client-new`
@@ -289,6 +295,23 @@ semantic issues before marking the command or family ported.
   - [ ] `php:use`
 - [ ] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
   - [ ] `agent-ide:message`
+
+### Todo Pipeline Hints
+
+These hints are for the Solo pipeline filler. They describe todo sequencing
+only; `docs/PORTING.md` workstream statuses remain the authority for completion.
+
+- Do not start new implementation while an active final-review or push recovery
+  todo is open.
+- After the current `node:new` slice is pushed, fill the next worker-ready queue
+  with safe node registry reads first: `node:list`, then `node:show`.
+- Keep `node:update` and `node:default` blocked until the read-command slices
+  establish stable registry output and helper behavior.
+- Keep gateway-family implementation blocked until the node identity and
+  first-gateway provisioning prerequisites are clear.
+- Do not create app, workspace, process, tool, proxy, Cloudflare, VPN, PHP, or
+  agent IDE implementation todos just because their docs exist. Those families
+  wait for the node/gateway foundations defined in the implementation order.
 
 ## Node Workstream
 
