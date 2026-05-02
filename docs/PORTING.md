@@ -43,12 +43,55 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
    `../orbit-old-may/tests`.
 5. Decide whether the old implementation should be ported directly or replaced
    with a simpler clean-rebuild approach that better fits the current docs.
-6. Implement the smallest useful vertical slice in the clean repo.
-7. Add focused Pest tests that assert the current docs contract, not legacy
+6. Respect the implementation order below unless a verification-helper command
+   unlocks better testing for the next slice.
+7. Implement the smallest useful vertical slice in the clean repo.
+8. Add focused Pest tests that assert the current docs contract, not legacy
    internals.
-8. Run the narrow test, then `composer analyse`, `composer format`, and
+9. Run the narrow test, then `composer analyse`, `composer format`, and
    `composer test`.
-9. Update this tracker in the same commit as the ported slice.
+10. Update this tracker in the same commit as the ported slice.
+
+## Implementation Order
+
+Default migration order is command-contract and capability driven:
+
+1. **Foundation and verification harness.**
+   - Keep `composer test`, `composer analyse`, `composer docs-lint`, and
+     standing live smoke healthy.
+   - Restore ephemeral E2E before provisioning or destructive flows depend on
+     it.
+   - Convert docs for the next implementation slice before writing code.
+2. **Nodes first.**
+   - Finish node registry read and metadata commands before app/workspace
+     commands depend on them.
+   - Complete access-policy and identity foundations: caller role, local node
+     identity, grants, gateway API reachability, and `/api/me`.
+   - Port node provisioning only after ephemeral E2E is ready enough to verify
+     host mutation safely.
+3. **Verification-helper commands may move earlier when they improve testing.**
+   - `profile` is an early candidate once node identity and minimal app
+     resolution exist, because it helps validate app routing, TLS, and runtime
+     behavior while later app/workspace work is being ported.
+   - `doctor` family docs and read-only checks may also move earlier when they
+     expose drift needed to verify node or app slices.
+   - These commands still follow docs-first conversion and must not jump ahead
+     of their prerequisites.
+4. **Apps after nodes.**
+   - Port app schema, API transport, read commands, and app creation/removal
+     once node selection and access semantics are reliable.
+5. **Workspaces after apps.**
+   - Port workspace commands after app ownership, paths, URLs, and runtime
+     routing are available.
+6. **Processes after workspaces.**
+   - Port process commands after the app/workspace execution context is stable.
+7. **State families and doctor integration.**
+   - Port each family when its owning command domain needs intent/reality
+     convergence.
+8. **Tools, schedules, proxy/firewall, deployments, Cloudflare, VPN, PHP, and
+   agent IDE commands.**
+   - Port these after their required node/app/workspace/process foundations
+     exist, unless one command is needed earlier as a verification helper.
 
 ## Current Clean Implementation
 
@@ -149,7 +192,8 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 - [ ] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [ ] `doctor`
   - [ ] CA trust command contract
-  - [ ] `profile`
+  - [!] `profile` docs conversion is an early verification-helper candidate
+    after node identity and minimal app resolution are available.
   - [ ] `update`
   - [ ] `update:all`
   - [ ] `activity:list`
@@ -290,8 +334,11 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 1. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-2. Port `node:update` or `node:default` as the next small registry slice.
-3. Begin a docs-first conversion batch for one missing legacy family, likely
-   operations/doctor or tools, before any implementation from that family.
-4. Plan ephemeral E2E restoration before `gateway:add`, `node:new`, or any
+2. Finish node registry and metadata slices first: `node:update`,
+   `node:default`, and the missing `node:list` / `node:show` contract gaps.
+3. Convert `profile` docs once its node/app prerequisites are present, then
+   port it early as a verification-helper command.
+4. Convert operations docs for `update` and `update:all` so existing bootstrap
+   utilities stop carrying docs debt.
+5. Plan ephemeral E2E restoration before `gateway:add`, `node:new`, or any
    provisioning-heavy command is treated as complete.
