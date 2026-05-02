@@ -217,6 +217,7 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
 - [x] `docs/commands/3_tool`
+- [x] `docs/commands/4_firewall`
 - [x] `docs/commands/5_app`
 - [x] `docs/commands/6_workspace`
 - [x] `docs/commands/7_process`
@@ -224,11 +225,6 @@ semantic issues before marking the command or family ported.
 
 ### Legacy Command Docs Still To Port
 
-- [ ] Firewall rules: `../orbit-old-may/docs/commands/03-firewall-rules`
-  - [ ] `firewall:list`
-  - [ ] `firewall:allow`
-  - [ ] `firewall:deny`
-  - [ ] `firewall:remove`
 - [ ] Proxy routes: `../orbit-old-may/docs/commands/07-proxy-routes`
   - [ ] `proxy:list`
   - [ ] `proxy:add`

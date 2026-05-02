@@ -33,6 +33,6 @@ return [
     ],
     'firewall_rule' => [
         'singular' => 'firewall_rule',
-        'doctor_doc' => null,
+        'doctor_doc' => 'docs/commands/4_firewall/firewall-doctor.md',
     ],
 ];

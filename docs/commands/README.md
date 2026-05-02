@@ -527,7 +527,7 @@ build on top of that foundation.
 1. [Nodes](1_node/README.md)
 2. [Gateway](2_gateway/README.md)
 3. [Tools](3_tool/README.md)
-4. Firewall Rules (not yet converted)
+4. [Firewall](4_firewall/README.md)
 5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)
 7. [Processes](7_process/README.md)

@@ -15,7 +15,7 @@ final class DoctorIssueCodePrefixRule implements CommandDocsLintRule
      */
     private const array FAMILY_KEYS = [
         'app' => 'app',
-        'firewall-rule' => 'firewall_rule',
+        'firewall' => 'firewall_rule',
         'node' => 'node',
         'process' => 'process',
         'proxy-route' => 'proxy_route',
@@ -29,7 +29,7 @@ final class DoctorIssueCodePrefixRule implements CommandDocsLintRule
      */
     private const array STATE_FAMILY_DOCTORS = [
         'app' => 'app-doctor.md',
-        'firewall-rule' => 'firewall-rule-doctor.md',
+        'firewall' => 'firewall-doctor.md',
         'node' => 'node-doctor.md',
         'process' => 'process-doctor.md',
         'proxy-route' => 'proxy-route-doctor.md',

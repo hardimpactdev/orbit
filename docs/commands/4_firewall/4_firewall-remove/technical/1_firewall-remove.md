@@ -1,0 +1,88 @@
+# Technical Contract: `orbit firewall:remove <name> [--node=<node>] [--force] [--json]`
+
+[Back to public `firewall-remove` documentation.](../firewall-remove.md)
+
+**Owner:** `firewall`.
+
+**Effects:** `write, destructive, stream`.
+
+**Prerequisites:**
+- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
+- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
+- The current node identity is authorized to manage firewall policy for the resolved node.
+
+## Signature
+
+```bash
+orbit firewall:remove <name> [--node=<node>] [--force] [--json]
+```
+
+## Input Contract
+
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `argument` | `Always.` | `Never.` | `None.` | `Firewall rule name on the target node.` |
+| `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with role `gateway` or `app`. |
+| `force` | `--force` | `Required in non-interactive input mode.` | `Never.` | `false` | `Explicit destructive consent.` |
+| `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+
+## Caller Role Behavior
+
+All authenticated caller roles use the same gateway-owned access policy.
+App-node callers may manage firewall rules only when their node identity has
+explicit firewall-management authorization for the resolved target. Management
+remains gateway-owned and enacted through gateway-to-node transport.
+
+## Input Mode Contracts
+
+- [Interactive input mode](5.1_firewall-remove_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_firewall-remove_input-mode_non-interactive.md)
+
+## Behavior Contract
+
+### Firewall Intent And Cleanup Rules
+
+- Resolves a firewall-eligible target node.
+- Reads gateway firewall-rule intent for the selected node and name.
+- Requires destructive consent before side effects.
+- Removes the managed backend firewall rule through the gateway when intent exists.
+- Removes gateway firewall-rule intent after backend cleanup succeeds.
+- Succeeds idempotently when the rule is already absent from gateway intent.
+
+### Scope Boundaries
+
+`firewall-remove` must not remove node bootstrap policy, delete unmanaged backend
+rules, infer app/proxy ownership from ports, mutate app/proxy/process/tool state,
+or adopt observed backend rules. Leftover backend drift belongs to the firewall
+doctor.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_firewall-remove_output-render_human.md)
+- [JSON renderer](6.2_firewall-remove_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Validation failed | Required input is missing, invalid, or forbidden with another option. | `error.code=validation_failed` |
+| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
+| Authorization failed | The caller is not authorized to manage firewall policy for the selected target. | `error.code=authorization_failed` |
+| Baseline conflict | The selected rule is node bootstrap policy, not an Orbit-owned firewall rule. | `error.code=firewall_rule.baseline_conflict` |
+| Cleanup failed | Backend firewall cleanup failed before intent could be removed safely. | `error.code=firewall_rule.cleanup_failed` |
+
+## Doctor Relationship
+
+`firewall-remove` changes gateway firewall-rule intent and performs
+command-owned cleanup only. [`firewall-doctor.md`](../../firewall-doctor.md)
+owns the authoritative `firewall_rule` probe, issue codes, fix map, and adopt
+map.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, destructive consent, side-effect boundaries, idempotent absence, failure codes, and doctor handoff behavior. |
+| `tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and firewall-rule entity mapping. |

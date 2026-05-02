@@ -15,7 +15,7 @@ final class DoctorRelationshipReferenceRule implements CommandDocsLintRule
      */
     private const array STATE_FAMILY_DOCTORS = [
         'app' => 'app-doctor.md',
-        'firewall-rule' => 'firewall-rule-doctor.md',
+        'firewall' => 'firewall-doctor.md',
         'node' => 'node-doctor.md',
         'process' => 'process-doctor.md',
         'proxy-route' => 'proxy-route-doctor.md',

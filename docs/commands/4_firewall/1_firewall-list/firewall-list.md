@@ -1,0 +1,64 @@
+# `orbit firewall:list`
+
+[Back to Firewall commands.](../README.md)
+
+List expected firewall rules from gateway intent.
+
+`firewall:list` displays active Orbit firewall policy recorded on the gateway.
+It does not inspect live node firewall state.
+
+## Usage
+
+```bash
+orbit firewall:list [--node=<node>] [--json]
+```
+
+## Examples
+
+```bash
+orbit firewall:list
+orbit firewall:list --node=app-1
+orbit firewall:list --json
+```
+
+## Arguments And Options
+
+- `--node`: Optional target node filter.
+- `--json`: Output JSON.
+
+## What Happens
+
+`firewall:list`:
+
+1. Resolves the caller's gateway connection and visibility.
+2. Applies the optional node filter at the gateway.
+3. Reads visible gateway firewall-rule rows.
+4. Groups rules by node for human output.
+
+The command does not probe node firewall reality and does not mutate intent.
+
+## Output
+
+Human output is a table grouped by node.
+
+JSON output returns firewall rule entities under `success.data.rules` and the
+applied node filter under `success.meta`.
+
+## Requirements
+
+- The CLI caller can reach the Orbit gateway, or the command is running on the
+  gateway.
+- The current node identity is authorized to inspect firewall policy for the
+  selected node scope.
+- Filtered target nodes must be registered active Ubuntu `gateway` or `app`
+  nodes.
+
+## Related Commands
+
+- [`firewall:allow`](../2_firewall-allow/firewall-allow.md) - add an allow rule
+- [`firewall:deny`](../3_firewall-deny/firewall-deny.md) - add a deny rule
+- [`doctor --family=firewall_rule`](../firewall-doctor.md) - verify firewall drift
+
+## Technical Contract
+
+See [`firewall-list` technical contract](technical/1_firewall-list.md).

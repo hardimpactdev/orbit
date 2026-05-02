@@ -22,6 +22,7 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 | `command_docs.family_command_prefix` | error | Non-operation command families only contain commands that start with the family command prefix. | Move the command into the matching family directory or rename the command to use the family prefix. |
 | `command_docs.no_command_ambiguity_files` | error | Converted command directories do not keep `ambiguity.md` files in the docs tree. | Move ambiguity review notes to Solo scratchpads or another non-contract location. |
 | `command_docs.technical_slot_semantics` | error | Technical slot files use the expected numeric slot and command slug semantics. | Rename the slot file or move the content to the correct slot. |
+| `command_docs.human_progress_tree` | error | Human renderer docs include `## Progress Tree` and any progress-tree examples use the status-dot tree shape. | Add a progress-tree section or replace branch-style `[DONE]` examples with `┌`, `○`/`◉`/`●`, optional standalone `│`, and `└` lines. |
 
 ## Contracts
 
