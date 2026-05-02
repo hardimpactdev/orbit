@@ -170,15 +170,24 @@ yet satisfy the full product contracts.
 - [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
-  - Current tests: `tests/Feature/Commands/NodeListCommandTest.php`
-  - Contract gaps are tracked in the node workstream.
+  - Current tests:
+    - `tests/Feature/Commands/NodeListCommandTest.php` (base contract, filters, validation, read-only)
+    - `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` (JSON envelope and field contract)
+    - `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` (human table and prose contract)
+  - Contract gaps: caller role, gateway forwarding, and `--doctor` remain tracked in the node workstream.
 - [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
-  - Current tests: `tests/Feature/Commands/NodeShowCommandTest.php`
+  - Current tests:
+    - `tests/Feature/Commands/NodeShowCommandTest.php` (base contract, lookup, fallback, read-only)
+    - `tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php` (JSON envelope and field contract)
+    - `tests/Feature/Commands/Nodes/NodeShowHumanRendererTest.php` (human output and prose contract)
   - Bootstrap slice implemented: active registry lookup, human output, JSON
     envelope, not-found error, local-node fallback, and read-only behavior.
-  - Contract gaps are tracked in the node workstream.
+  - Renderer contracts aligned with 6.1/6.2: `environment`, `platform`, and node
+    agent IDE metadata are modeled; grants section always renders in human mode
+    with `(none)` sentinel when empty.
+  - Contract gaps tracked in the node workstream below.
 - [~] `node:new`
   - Current implementation: `app/Console/Commands/NodeNewCommand.php`
   - Current docs: `docs/commands/1_node/1_node-new`
@@ -193,11 +202,19 @@ yet satisfy the full product contracts.
   - Contract gaps are tracked in the node workstream; this is not yet complete
     first-gateway onboarding because WireGuard, gateway API, gateway CA trust,
     real platform detection, and `/api/me` verification are still missing.
-- [~] `node:register`
+- [-] `node:register` — **DECIDED: Retire as public command; keep as internal bootstrap utility.**
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
-  - Porting note: bootstrap registry utility for the clean rebuild; not a
-    converted product command contract.
+  - Decision: This command is not a documented product command contract. There
+    is no `node:register` page in `docs/commands/1_node/` and no legacy
+    equivalent in `../orbit-old-may`. It exists only as a clean-rebuild
+    bootstrap helper used internally by `node:new` to persist local registry
+    rows during first-gateway bootstrap. It should not be reconciled as a
+    public command because `node:new` already covers the public node
+    registration contract, and `gateway:add` covers control-node onboarding.
+  - Action: Do not port or convert `node:register` into a public command. Keep
+    the current implementation as an internal utility until `node:new` no
+    longer needs it, then fold it into a service class or retire it entirely.
 - [x] Command docs linter
   - Current implementation: `tool/docs-linter`
   - Current script: `composer docs-lint`
@@ -326,23 +343,27 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
 - [x] Convert node command docs into current format.
 - [~] Build minimal node registry read commands.
-- [ ] Complete `node:list` contract gaps:
-  - [ ] JSON renderer contract.
-  - [ ] `--role` and `--environment` filters.
+- [~] Complete `node:list` contract gaps:
+  - [x] JSON renderer contract.
+  - [x] Human renderer contract.
+  - [x] `--role` and `--environment` filters.
   - [ ] `--doctor` secondary operation.
   - [ ] caller visibility/access-policy behavior.
   - [ ] gateway forwarding.
   - [ ] doctor handoff behavior.
-- [ ] Complete `node:show` contract gaps:
+- [~] Complete `node:show` contract gaps:
+  - [x] modeled `environment`, `platform`, and node agent IDE metadata.
+  - [x] JSON renderer contract (envelope shape, field contract, all error codes and metadata).
+  - [x] Human renderer contract (field order, grants section, failure prose).
   - [ ] caller-role resolution.
   - [ ] access-policy authorization.
   - [ ] gateway forwarding.
   - [ ] interactive prompting.
   - [ ] default development app-node resolution.
   - [ ] real grant metadata.
-  - [ ] modeled `environment`, `platform`, and node agent IDE metadata.
-- [ ] Reconcile `node:register` with product command contracts or replace it
-  with documented `node:new` / `gateway:add` flows.
+- [x] Reconcile `node:register` with product command contracts.
+  - **Decision:** Retire as public command. `node:register` is an internal
+    bootstrap utility only. See tracker entry above for rationale.
 - [ ] Port `node:update`.
 - [ ] Port `node:default`.
 - [ ] Port `node:grant`.
@@ -390,7 +411,15 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
   - [x] `LocalGatewaySettings` single-row Eloquent model with `current()` accessor.
   - [x] `TrustStoreInstaller` interface with macOS/Linux implementations.
   - [x] `FetchGatewayRootCa` bootstrap-safe CA fetch service.
-- [ ] Port `gateway:add`.
+- [~] Port `gateway:add`.
+  - [x] Control-node local onboarding flow: derive/verify gateway IP, fetch CA, install trust, verify `/api/me`, persist settings, idempotent convergence.
+  - [x] Caller role resolution from local node registry (`Node::where('is_local', true)->value('role')`).
+  - [x] Human renderer with progress tree shape per contract.
+  - [x] JSON renderer with envelope shape per contract.
+  - [x] Split contract tests: caller role, input contract, interactive/non-interactive input modes, JSON/human renderers.
+  - [ ] WireGuard IP derivation from active network interfaces (bootstrap gap: currently requires explicit `gateway_ip` argument).
+  - [ ] Local node context flush after persistence (bootstrap gap: `LocalNodeContext` service not yet in clean repo).
+  - [ ] Ephemeral E2E lane for control-node `gateway:add` against real gateway VM.
 - [x] Port `gateway:trust`.
 
 ## Gateway CA Workstream
@@ -448,12 +477,76 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
 ## Gateway API Client And Transport Workstream
 
-- [ ] Decide the clean-rebuild transport approach before adding packages.
-  Legacy Saloon code is reference material and a candidate implementation, not
-  required product scope.
+### GATEWAY-API-0 Decision: Gateway API Client Transport
+
+**Status:** Decided — thin `GatewayClient` wrapper over Laravel `Http` facade.
+
+**Chosen approach:** (b) a dedicated thin `GatewayClient` wrapper/service.
+
+**Rationale:**
+
+1. **Current clean-repo evidence:** `gateway:add` and `FetchGatewayRootCa` already
+   use Laravel's `Http` facade with `withOptions(['verify' => $pemPath])`. The
+   clean repo has no Saloon dependency and no typed request classes. The existing
+   pattern works for the two gateway API calls currently implemented (`/api/ca/root`
+   and `/api/me`).
+
+2. **Legacy Saloon evidence:** The old repo used `saloonphp/saloon` v4 with
+   `GatewayConnector`, `NodeConnector`, ~100 typed request classes under
+   `app/Http/Saloon/Requests/`, and `GatewayRequestSender`/`NodeRequestSender`
+   envelope parsers. This was a large abstraction surface. `NodeRequestSender` was
+   already deprecated in the old repo in favor of `GatewayRequestSender`.
+   `NodeApiClient` in the old repo actually used the Laravel `Http` facade
+   directly (not Saloon) for node-to-gateway calls.
+
+3. **Product authority:** `docs/PORTING.md` explicitly states "Legacy Saloon code
+   is reference material and a candidate implementation, not required product
+   scope." The blueprint treats the typed API as transport only; commands are the
+   stable contract. The clean-rebuild constraint is to avoid reintroducing broad
+   legacy abstractions until the clean codebase has a concrete need for them.
+
+4. **Why not inline `Http::withOptions` per call:** The CA path, base URL,
+   correlation header, and `allow_redirects` config would be repeated in every
+   command. A thin wrapper centralizes this without adding an external package.
+
+5. **Why not Saloon:** Saloon adds an external dependency and a taxonomy of typed
+   request classes that the current clean repo does not need. The old Saloon
+   request classes mapped one-to-one to gateway API endpoints; the clean rebuild
+   can achieve the same endpoint coverage with far less code by using Laravel's
+   built-in HTTP client plus a thin wrapper that pre-configures the gateway
+   connection. If future needs (e.g., advanced mocking, plugin pipelines, or
+   non-Laravel consumers) justify Saloon, it can be adopted later without
+   blocking current work.
+
+6. **Why not a Laravel HTTP macro:** Macros are global and affect all `Http`
+   calls, making testing and isolation harder. A service-class wrapper is
+   explicit and injectable.
+
+**Recommended abstraction:**
+
+A `GatewayClient` service class (or similar) that:
+- Resolves the gateway base URL from `LocalGatewaySettings::current()`.
+- Configures `verify` with the stored CA PEM path.
+- Sets `allow_redirects => false` and `acceptJson()`.
+- Adds the `X-Orbit-Request-Id` correlation header when available.
+- Returns a Laravel `PendingRequest` so callers chain methods naturally
+  (e.g., `GatewayClient::withGateway()->get('/api/me')`).
+- Does NOT yet implement envelope parsing; envelope handling should be added
+  incrementally as typed gateway API calls are ported (see downstream workstream
+  items).
+
+**Downstream impact:**
+- The wrapper should be created before porting the first typed gateway API call
+  (e.g., `node:list` with gateway forwarding or `app:list`).
+- The old `GatewayRequestSender` envelope parser is reference material for how
+  to parse the `success`/`error` discriminated envelope, but should be ported
+  as a focused helper only when the first typed caller needs it.
+
+### Remaining Workstream Items
+
+- [x] Decide the clean-rebuild transport approach before adding packages.
+- [ ] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
 - [ ] Port gateway API envelope conventions.
-- [ ] Decide whether clean connectors are needed, and if so port or replace
-  `GatewayConnector` and `NodeConnector`.
 - [ ] Port request correlation header support.
 - [ ] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
