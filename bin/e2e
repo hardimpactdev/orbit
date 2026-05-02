@@ -5,7 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 E2E_HOST="${ORBIT_E2E_HOST:-beast}"
-E2E_IMAGE="${ORBIT_E2E_IMAGE:-images:ubuntu/24.04/cloud}"
+E2E_SOURCE_IMAGE="${ORBIT_E2E_SOURCE_IMAGE:-${ORBIT_E2E_IMAGE:-images:ubuntu/24.04/cloud}}"
+E2E_BLANK_IMAGE="${ORBIT_E2E_BLANK_IMAGE:-orbit-blank-ubuntu-24.04}"
 E2E_PREFIX="${ORBIT_E2E_INSTANCE_PREFIX:-orbit-e2e}"
 E2E_TIMEOUT_SECONDS="${ORBIT_E2E_TIMEOUT_SECONDS:-600}"
 E2E_CPUS="${ORBIT_E2E_CPUS:-2}"
@@ -14,30 +15,34 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --lifecycle]
+usage: bin/e2e [--preflight | --prepare-blank | --lifecycle]
 
 Modes:
-  --preflight  Check that the ephemeral backend is reachable on the E2E host.
-  --lifecycle  Launch one Incus VM, verify SSH from the host, then destroy it.
+  --preflight      Check that the ephemeral backend is reachable on the E2E host.
+  --prepare-blank  Build or replace the reusable SSH-ready blank Incus image.
+  --lifecycle      Launch one VM from the blank image, verify SSH, then destroy it.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
-  ORBIT_E2E_IMAGE            Incus image to launch. Defaults to "images:ubuntu/24.04/cloud".
+  ORBIT_E2E_SOURCE_IMAGE     Source Incus cloud image for blank image builds.
+                            Defaults to "images:ubuntu/24.04/cloud".
+  ORBIT_E2E_BLANK_IMAGE      Reusable blank image alias. Defaults to "orbit-blank-ubuntu-24.04".
   ORBIT_E2E_INSTANCE_PREFIX  Prefix for disposable instances. Defaults to "orbit-e2e".
   ORBIT_E2E_TIMEOUT_SECONDS  VM boot and SSH timeout. Defaults to "600".
   ORBIT_E2E_CPUS             VM CPU limit. Defaults to "2".
   ORBIT_E2E_MEMORY           VM memory limit. Defaults to "2GiB".
-  ORBIT_E2E_KEEP             Set to "1" to leave the VM behind for debugging.
+  ORBIT_E2E_KEEP             Set to "1" to leave failed VMs behind for debugging.
 
 Do not run write/destructive E2E against standing live nodes.
 HELP
 }
 
 preflight() {
-    ssh "$E2E_HOST" "bash -s" -- "$E2E_IMAGE" <<'REMOTE'
+    ssh "$E2E_HOST" "bash -s" -- "$E2E_SOURCE_IMAGE" "$E2E_BLANK_IMAGE" <<'REMOTE'
 set -euo pipefail
 
-image="$1"
+source_image="$1"
+blank_image="$2"
 
 command -v incus >/dev/null
 incus info >/dev/null
@@ -45,13 +50,20 @@ incus network show incusbr0 >/dev/null
 incus profile show default >/dev/null
 
 echo "orbit-e2e preflight passed: incus is available and incusbr0 exists"
-echo "orbit-e2e image: ${image}"
+echo "orbit-e2e source image: ${source_image}"
+
+if incus image info "$blank_image" >/dev/null 2>&1; then
+    echo "orbit-e2e blank image: ${blank_image}"
+else
+    echo "orbit-e2e blank image missing: ${blank_image} (run bin/e2e --prepare-blank)"
+fi
 REMOTE
 }
 
-lifecycle() {
+prepare_blank() {
     ssh "$E2E_HOST" "bash -s" -- \
-        "$E2E_IMAGE" \
+        "$E2E_SOURCE_IMAGE" \
+        "$E2E_BLANK_IMAGE" \
         "$E2E_PREFIX" \
         "$E2E_TIMEOUT_SECONDS" \
         "$E2E_CPUS" \
@@ -59,22 +71,23 @@ lifecycle() {
         "$E2E_KEEP" <<'REMOTE'
 set -euo pipefail
 
-image="$1"
-prefix="$2"
-timeout_seconds="$3"
-cpus="$4"
-memory="$5"
-keep="$6"
+source_image="$1"
+blank_image="$2"
+prefix="$3"
+timeout_seconds="$4"
+cpus="$5"
+memory="$6"
+keep="$7"
 
 run_id="$(date +%Y%m%d%H%M%S)-$$"
-name="${prefix}-${run_id}-blank"
+name="${prefix}-${run_id}-prepare-blank"
 run_dir="/tmp/${name}"
 
 cleanup() {
     status=$?
     set +e
 
-    if [ "$keep" = "1" ]; then
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
         echo "orbit-e2e keeping instance ${name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
     else
         incus delete --force "$name" >/dev/null 2>&1
@@ -82,6 +95,55 @@ cleanup() {
     fi
 
     return "$status"
+}
+
+extract_ipv4() {
+    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
+}
+
+wait_for_ipv4() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(extract_ipv4 "$instance")"
+
+        if [ -n "$ipv4" ]; then
+            echo "$ipv4"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+            incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ssh() {
+    ipv4="$1"
+    key="$2"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ssh \
+            -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "orbit@${ipv4}" \
+            "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "orbit-e2e failed: SSH never became ready on ${name} (${ipv4}) within ${timeout_seconds}s" >&2
+    incus list "$name" </dev/null >&2 || true
+    return 1
 }
 
 trap cleanup EXIT
@@ -118,56 +180,163 @@ runcmd:
   - [ sh, -lc, "systemctl enable --now ssh || systemctl enable --now sshd || true" ]
 USERDATA
 
-echo "orbit-e2e launching ${name} from ${image} on $(hostname)"
-incus launch "$image" "$name" --vm \
+echo "orbit-e2e preparing ${blank_image} from ${source_image} on $(hostname)"
+incus launch "$source_image" "$name" --vm \
     --config=user.user-data="$(cat "$run_dir/user-data")" \
     --config=limits.cpu="$cpus" \
     --config=limits.memory="$memory" </dev/null >/dev/null
 
-deadline=$((SECONDS + timeout_seconds))
-ipv4=""
+ipv4="$(wait_for_ipv4 "$name")"
+wait_for_ssh "$ipv4" "$run_dir/id_ed25519"
 
-while [ "$SECONDS" -lt "$deadline" ]; do
-    ipv4="$(incus list "$name" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)"
+incus exec "$name" -- sh -lc "rm -f /home/orbit/.ssh/authorized_keys && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && cloud-init clean --logs || true" </dev/null >/dev/null
+incus stop "$name" --timeout 120 </dev/null >/dev/null
+incus publish "$name" --force --reuse --alias "$blank_image" </dev/null >/dev/null
 
-    if [ -n "$ipv4" ]; then
-        break
+echo "orbit-e2e blank image ready: ${blank_image}"
+REMOTE
+}
+
+lifecycle() {
+    ssh "$E2E_HOST" "bash -s" -- \
+        "$E2E_BLANK_IMAGE" \
+        "$E2E_PREFIX" \
+        "$E2E_TIMEOUT_SECONDS" \
+        "$E2E_CPUS" \
+        "$E2E_MEMORY" \
+        "$E2E_KEEP" <<'REMOTE'
+set -euo pipefail
+
+blank_image="$1"
+prefix="$2"
+timeout_seconds="$3"
+cpus="$4"
+memory="$5"
+keep="$6"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+name="${prefix}-${run_id}-blank"
+run_dir="/tmp/${name}"
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instance ${name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$name" >/dev/null 2>&1
+        rm -rf "$run_dir"
     fi
 
-    sleep 2
-done
+    return "$status"
+}
 
-if [ -z "$ipv4" ]; then
-    echo "orbit-e2e failed: ${name} did not receive an IPv4 address within ${timeout_seconds}s" >&2
-    incus list "$name" >&2 || true
-    exit 1
+extract_ipv4() {
+    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
+}
+
+wait_for_agent() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ipv4() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(extract_ipv4 "$instance")"
+
+        if [ -n "$ipv4" ]; then
+            echo "$ipv4"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+            incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ssh() {
+    ipv4="$1"
+    key="$2"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ssh \
+            -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "orbit@${ipv4}" \
+            "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "orbit-e2e failed: SSH never became ready on ${name} (${ipv4}) within ${timeout_seconds}s" >&2
+    incus list "$name" </dev/null >&2 || true
+    return 1
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+command -v ssh-keygen >/dev/null
+command -v ssh >/dev/null
+
+if ! incus image info "$blank_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing blank image: ${blank_image}; run bin/e2e --prepare-blank first" >&2
+    exit 2
 fi
 
-while [ "$SECONDS" -lt "$deadline" ]; do
-    if ssh \
-        -i "$run_dir/id_ed25519" \
-        -o BatchMode=yes \
-        -o ConnectTimeout=5 \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        "orbit@${ipv4}" \
-        "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" >/dev/null 2>&1; then
-        echo "orbit-e2e lifecycle passed: ${name} is reachable at ${ipv4}"
-        exit 0
-    fi
+rm -rf "$run_dir"
+mkdir -p "$run_dir"
 
-    sleep 3
-done
+ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
 
-echo "orbit-e2e failed: SSH never became ready on ${name} (${ipv4}) within ${timeout_seconds}s" >&2
-incus list "$name" >&2 || true
-exit 1
+echo "orbit-e2e launching ${name} from ${blank_image} on $(hostname)"
+incus launch "$blank_image" "$name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+wait_for_agent "$name"
+incus exec "$name" -- sh -lc "install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$name/home/orbit/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+ipv4="$(wait_for_ipv4 "$name")"
+wait_for_ssh "$ipv4" "$run_dir/id_ed25519"
+
+echo "orbit-e2e lifecycle passed: ${name} is reachable at ${ipv4}"
 REMOTE
 }
 
 case "${1:---lifecycle}" in
     --preflight)
         preflight
+        ;;
+    --prepare-blank)
+        prepare_blank
         ;;
     --lifecycle)
         lifecycle

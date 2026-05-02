@@ -53,3 +53,15 @@ it('lets the ephemeral e2e harness own its timeout', function (): void {
         './bin/e2e',
     ]);
 });
+
+it('documents and prepares the reusable blank e2e image', function (): void {
+    $script = file_get_contents(base_path('bin/e2e'));
+
+    expect($script)
+        ->toContain('--prepare-blank')
+        ->toContain('ORBIT_E2E_BLANK_IMAGE')
+        ->toContain('orbit-blank-ubuntu-24.04')
+        ->toContain('incus publish "$name" --force --reuse --alias "$blank_image"')
+        ->toContain('source_image="$1"')
+        ->toContain('blank_image="$2"');
+});

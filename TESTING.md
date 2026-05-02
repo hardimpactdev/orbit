@@ -36,14 +36,17 @@ mutation checks:
 ```bash
 composer test:e2e
 bin/e2e --preflight
+bin/e2e --prepare-blank
 bin/e2e --lifecycle
 ```
 
-The first ephemeral E2E harness uses Incus VMs on beast. The default
-`composer test:e2e` path launches one disposable Ubuntu cloud VM, injects an
-ephemeral SSH key, verifies SSH from beast into the VM, and deletes the VM.
-This is a backend lifecycle smoke only; it does not yet provision Orbit roles
-or validate a gateway/control/app topology.
+The first ephemeral E2E harness uses Incus VMs on beast. Run
+`bin/e2e --prepare-blank` to build or replace the reusable
+`orbit-blank-ubuntu-24.04` image from the Ubuntu cloud image. The default
+`composer test:e2e` path launches one disposable VM from that blank image,
+injects an ephemeral SSH key, verifies SSH from beast into the VM, and deletes
+the VM. This is a backend lifecycle smoke only; it does not yet provision Orbit
+roles or validate a gateway/control/app topology.
 
 Environment overrides:
 
@@ -52,15 +55,15 @@ ORBIT_LIVE_GATEWAY_SSH=gateway
 ORBIT_LIVE_GATEWAY_PATH=~/orbit
 
 ORBIT_E2E_HOST=beast
-ORBIT_E2E_IMAGE=images:ubuntu/24.04/cloud
+ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/24.04/cloud
+ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-24.04
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
 ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1
 ```
 
-The next E2E step is to create two Incus lanes:
+The next E2E step is to create the ready Incus lane:
 
-- blank snapshots for provisioning tests from base Ubuntu plus SSH only.
 - ready snapshots for fast command-porting tests against prepared control,
   gateway, and app nodes.
 
