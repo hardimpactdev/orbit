@@ -32,8 +32,8 @@ then migrate docs until it passes.
 - Commands must state which domain owns the behavior.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
-  `2_gateway` contains `gateway:*` commands, `11_dns` contains `dns:*`
-  commands, and `4_app` contains `app:*` commands. `10_operation` is the
+  `2_gateway` contains `gateway:*` commands, `16_dns` contains `dns:*`
+  commands, and `5_app` contains `app:*` commands. `11_operation` is the
   exception for miscellaneous operational commands such as `doctor`, `update`,
   and `activity:*`.
 - Documentation domains and doctor state families are related but not
@@ -519,21 +519,24 @@ in-memory contract owner listed in each command's test mapping.
 
 ## Domains
 
-Domains are ordered by dependency: nodes define fleet membership; tools and
-firewall rules establish node capabilities and network policy; apps and
-app-owned runtime behavior build on top of that foundation.
+Domains are ordered by dependency: nodes define fleet membership, gateway
+defines control-plane authority and trust, tools and firewall rules establish
+node capabilities and network policy, and apps and app-owned runtime behavior
+build on top of that foundation.
 
 1. [Nodes](1_node/README.md)
-2. [Tools](02-tools/README.md)
-3. [Firewall Rules](03-firewall-rules/README.md)
-4. [Apps](4_app/README.md)
-5. [Workspaces](5_workspace/README.md)
-6. [Processes](6_process/README.md)
-7. [Proxy Routes](07-proxy-routes/README.md)
-8. [Schedules](08-schedules/README.md)
-9. [Deployments](09-deployments/README.md)
-10. [Operations](10_operation/README.md)
-11. [Cloudflare](11-cloudflare/README.md)
-12. [VPN Administration](12-vpn/README.md)
-13. [PHP Runtime](13-php/README.md)
-14. [Agent IDE](14-agent-ide/README.md)
+2. [Gateway](2_gateway/README.md)
+3. Tools (not yet converted)
+4. Firewall Rules (not yet converted)
+5. [Apps](5_app/README.md)
+6. [Workspaces](6_workspace/README.md)
+7. [Processes](7_process/README.md)
+8. Proxy Routes (not yet converted)
+9. Schedules (not yet converted)
+10. Deployments (not yet converted)
+11. [Operations](11_operation/README.md)
+12. Cloudflare (not yet converted)
+13. VPN Administration (not yet converted)
+14. PHP Runtime (not yet converted)
+15. Agent IDE (not yet converted)
+16. [DNS](16_dns/README.md)

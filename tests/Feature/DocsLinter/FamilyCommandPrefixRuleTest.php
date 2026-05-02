@@ -53,9 +53,9 @@ it('flags commands that do not start with the non-operation family prefix', func
 it('allows operation commands with arbitrary prefixes', function (): void {
     $rule = new FamilyCommandPrefixRule;
     $context = familyCommandPrefixContext([
-        '10_operation/1_update',
-        '10_operation/2_dns-list',
-        '10_operation/3_doctor',
+        '11_operation/1_update',
+        '11_operation/2_dns-list',
+        '11_operation/3_doctor',
     ]);
 
     expect($rule->check($context))->toBe([]);

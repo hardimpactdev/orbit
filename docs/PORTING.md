@@ -129,7 +129,7 @@ yet satisfy the full product contracts.
     identity or WireGuard material.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
-  - Current docs: `docs/commands/10_operation/1_update`
+  - Current docs: `docs/commands/11_operation/1_update`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
   - Contract gaps:
     - JSON renderer implementation.
@@ -137,7 +137,7 @@ yet satisfy the full product contracts.
     - Split operation contract tests mapped by the current docs.
 - [~] `update:all`
   - Current implementation: `app/Console/Commands/UpdateAllCommand.php`
-  - Current docs: `docs/commands/10_operation/2_update-all`
+  - Current docs: `docs/commands/11_operation/2_update-all`
   - Current tests: `tests/Feature/Commands/UpdateAllCommandTest.php`
   - Contract gaps:
     - caller-role and gateway authorization contract.
@@ -194,10 +194,10 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
-- [x] `docs/commands/11_dns`
-- [x] `docs/commands/4_app`
-- [x] `docs/commands/5_workspace`
-- [x] `docs/commands/6_process`
+- [x] `docs/commands/5_app`
+- [x] `docs/commands/6_workspace`
+- [x] `docs/commands/7_process`
+- [x] `docs/commands/16_dns`
 
 ### Legacy Command Docs Still To Port
 

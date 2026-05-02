@@ -11,7 +11,7 @@ It does not clean up apps, workspaces, processes, schedules, tools, firewall
 rules, proxy routes, or deploy artifacts on the target server.
 Before removing an app node that still owns apps, remove or migrate those apps
 through app-family commands such as
-[`app:remove`](../../4_app/6_app-remove/app-remove.md). `node:remove` does not
+[`app:remove`](../../5_app/6_app-remove/app-remove.md). `node:remove` does not
 block on downstream family state and does not cascade into app cleanup.
 
 ## Usage
@@ -116,7 +116,7 @@ path under `success.meta.warnings`.
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
-- [`app:remove`](../../4_app/6_app-remove/app-remove.md) — remove apps before
+- [`app:remove`](../../5_app/6_app-remove/app-remove.md) — remove apps before
   decommissioning their owning app node
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 

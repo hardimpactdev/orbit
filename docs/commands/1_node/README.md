@@ -36,7 +36,7 @@ changes over SSH.
 
 App-node CLI availability is not general write permission. The current
 app-node write exception is
-[`workspace:setup`](../5_workspace/2_workspace-setup/workspace-setup.md), as
+[`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
 defined by [BLUEPRINT.md#app-node](../../BLUEPRINT.md#app-node); it remains a
 gateway-mediated local workflow, not local app-node ownership of intent.
 

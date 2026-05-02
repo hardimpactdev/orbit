@@ -9,15 +9,15 @@ return [
     ],
     'app' => [
         'singular' => 'app',
-        'doctor_doc' => 'docs/commands/4_app/app-doctor.md',
+        'doctor_doc' => 'docs/commands/5_app/app-doctor.md',
     ],
     'workspace' => [
         'singular' => 'workspace',
-        'doctor_doc' => 'docs/commands/5_workspace/workspace-doctor.md',
+        'doctor_doc' => 'docs/commands/6_workspace/workspace-doctor.md',
     ],
     'process' => [
         'singular' => 'process',
-        'doctor_doc' => 'docs/commands/6_process/process-doctor.md',
+        'doctor_doc' => 'docs/commands/7_process/process-doctor.md',
     ],
     'proxy_route' => [
         'singular' => 'proxy_route',

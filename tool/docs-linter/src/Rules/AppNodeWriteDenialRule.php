@@ -25,7 +25,7 @@ final class AppNodeWriteDenialRule implements CommandDocsLintRule
         $findings = [];
 
         foreach ($context->convertedFamilyDirectories() as $familyDirectory) {
-            if (basename($familyDirectory) !== '4_app') {
+            if (basename($familyDirectory) !== '5_app') {
                 continue;
             }
 

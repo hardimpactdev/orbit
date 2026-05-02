@@ -145,7 +145,7 @@ Role-specific behavior is defined in these companion contracts:
   node is the local machine.
 
 Operators should remove or migrate apps through app-family commands such as
-[`app:remove`](../../../4_app/6_app-remove/app-remove.md) before removing the app
+[`app:remove`](../../../5_app/6_app-remove/app-remove.md) before removing the app
 node that owns them. This is operational guidance, not a blocking precondition:
 `node:remove` remains scoped to node identity, grants, and WireGuard peer
 detach.

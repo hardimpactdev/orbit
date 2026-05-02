@@ -55,7 +55,7 @@ slot above app scope. A change to the node default is naturally picked up at the
 next consumer-side resolution event without a push from this command. Workspace
 cleanup remains app-scoped: changing a node default does not prune workspaces
 for inheriting apps. Run
-[`app:prune`](../../4_app/7_app-prune/app-prune.md) for each affected app when
+[`app:prune`](../../5_app/7_app-prune/app-prune.md) for each affected app when
 stale workspace cleanup is wanted after a node-default change.
 
 `node:agent-ide` does not:
@@ -104,7 +104,7 @@ payload shape.
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`node:update`](../7_node-update/node-update.md) — update node metadata
 - [`node:default`](../9_node-default/node-default.md) — set the local default development app node
-- [`app:prune`](../../4_app/7_app-prune/app-prune.md) — prune stale workspaces for an app
+- [`app:prune`](../../5_app/7_app-prune/app-prune.md) — prune stale workspaces for an app
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 
 ## Technical Contract
