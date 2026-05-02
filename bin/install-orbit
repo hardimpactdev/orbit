@@ -9,6 +9,9 @@ BRANCH="${ORBIT_BRANCH:-main}"
 SOURCE_ARCHIVE=""
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
+VERBOSE=0
+LOG_FILE="${ORBIT_INSTALL_LOG:-}"
+CURRENT_STEP=""
 
 usage() {
     cat <<'HELP'
@@ -25,6 +28,7 @@ Options:
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
   --no-sudo                    Run package and symlink commands without sudo.
+  --verbose                    Stream underlying command output.
   -h, --help                   Show this help text.
 
 The installer is intentionally local-host only. A new control node runs it
@@ -33,12 +37,16 @@ source archive to the remote gateway host, then run it there over SSH.
 HELP
 }
 
-log() {
-    printf 'orbit-install: %s\n' "$*"
-}
-
 fail() {
-    printf 'orbit-install: %s\n' "$*" >&2
+    local code="$1"
+    shift
+
+    printf 'orbit-install: error [%s] %s\n' "$code" "$*" >&2
+
+    if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+        printf 'orbit-install: log %s\n' "$LOG_FILE" >&2
+    fi
+
     exit 1
 }
 
@@ -47,10 +55,21 @@ quote() {
 }
 
 run() {
-    printf '+'
-    printf ' %q' "$@"
-    printf '\n'
-    "$@"
+    ensure_log_file
+
+    {
+        printf '+'
+        printf ' %q' "$@"
+        printf '\n'
+    } >>"$LOG_FILE"
+
+    if [ "$VERBOSE" = "1" ]; then
+        "$@" 2>&1 | tee -a "$LOG_FILE"
+
+        return "${PIPESTATUS[0]}"
+    fi
+
+    "$@" >>"$LOG_FILE" 2>&1
 }
 
 sudo_run() {
@@ -63,7 +82,69 @@ sudo_run() {
 }
 
 require_command() {
-    command -v "$1" >/dev/null 2>&1 || fail "required command missing: $1"
+    command -v "$1" >/dev/null 2>&1 || fail validation_failed "required command missing: $1"
+}
+
+ensure_log_file() {
+    local tmp_dir
+    local tmp_file
+
+    if [ -n "$LOG_FILE" ]; then
+        return
+    fi
+
+    tmp_dir="${TMPDIR:-/tmp}"
+    tmp_dir="${tmp_dir%/}"
+    tmp_file="$(mktemp "$tmp_dir/orbit-install.XXXXXX")"
+    LOG_FILE="${tmp_file}.log"
+    mv "$tmp_file" "$LOG_FILE"
+}
+
+render_plan() {
+    printf '  ┌ Orbit install\n'
+    printf '  │\n'
+    printf '  ○  Validate installer input\n'
+    printf '  │\n'
+    printf '  ○  Install platform prerequisites\n'
+    printf '  │\n'
+    printf '  ○  Install Orbit source\n'
+    printf '  │\n'
+    printf '  ○  Bootstrap Laravel runtime\n'
+    printf '  │\n'
+    printf '  ○  Link orbit executable\n'
+    printf '  │\n'
+    printf '  ○  Verify Orbit\n'
+    printf '  │\n'
+    printf '  └  Log: %s\n\n' "$LOG_FILE"
+}
+
+start_step() {
+    CURRENT_STEP="$1"
+    printf '  ◉  %s\n' "$CURRENT_STEP"
+}
+
+complete_step() {
+    printf '  ●  %s\n' "$CURRENT_STEP"
+    CURRENT_STEP=""
+}
+
+fail_step() {
+    local status="$1"
+
+    if [ -n "$CURRENT_STEP" ]; then
+        printf '  ●  %s failed\n' "$CURRENT_STEP" >&2
+    fi
+
+    if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+        printf 'orbit-install: log %s\n' "$LOG_FILE" >&2
+        tail -n 20 "$LOG_FILE" >&2 || true
+    fi
+
+    exit "$status"
+}
+
+finish_tree() {
+    printf '\n  └  Orbit installed for %s at %s\n' "$ROLE" "$TARGET_DIR"
 }
 
 parse_args() {
@@ -90,12 +171,15 @@ parse_args() {
             --no-sudo)
                 USE_SUDO=0
                 ;;
+            --verbose)
+                VERBOSE=1
+                ;;
             -h|--help)
                 usage
                 exit 0
                 ;;
             *)
-                fail "unknown option: $1"
+                fail validation_failed "unknown option: $1"
                 ;;
         esac
 
@@ -108,17 +192,15 @@ validate_args() {
         control|gateway|app)
             ;;
         *)
-            fail "--role must be one of: control, gateway, app"
+            fail validation_failed "--role must be one of: control, gateway, app"
             ;;
     esac
 
-    [ -n "$TARGET_DIR" ] || fail "--path is required"
-    [ -n "$LINK_PATH" ] || fail "--bin is required"
+    [ -n "$TARGET_DIR" ] || fail validation_failed "--path is required"
+    [ -n "$LINK_PATH" ] || fail validation_failed "--bin is required"
 }
 
 install_ubuntu_prerequisites() {
-    log "installing Ubuntu prerequisites"
-
     sudo_run apt-get update
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
@@ -139,7 +221,6 @@ install_ubuntu_prerequisites() {
 install_macos_prerequisites() {
     require_command brew
 
-    log "installing macOS prerequisites"
     run brew update
     run brew install php composer git
 }
@@ -152,23 +233,25 @@ install_prerequisites() {
                 return
             fi
 
-            fail "only Ubuntu Linux is supported for Orbit host installation"
+            fail node.unsupported_platform "only Ubuntu Linux is supported for Orbit host installation"
             ;;
         Darwin)
             install_macos_prerequisites
             ;;
         *)
-            fail "unsupported operating system: $(uname -s)"
+            fail node.unsupported_platform "unsupported operating system: $(uname -s)"
             ;;
     esac
 }
 
 install_source() {
     if [ -n "$SOURCE_ARCHIVE" ]; then
-        [ -f "$SOURCE_ARCHIVE" ] || fail "source archive not found: $SOURCE_ARCHIVE"
+        [ -f "$SOURCE_ARCHIVE" ] || fail validation_failed "source archive not found: $SOURCE_ARCHIVE"
 
-        log "extracting Orbit source archive"
-        run rm -rf "$TARGET_DIR"
+        if [ -e "$TARGET_DIR" ] && [ ! -f "$TARGET_DIR/artisan" ]; then
+            fail validation_failed "$TARGET_DIR exists and does not look like an Orbit checkout"
+        fi
+
         run mkdir -p "$TARGET_DIR"
         run tar -xzf "$SOURCE_ARCHIVE" -C "$TARGET_DIR"
 
@@ -187,10 +270,9 @@ install_source() {
     fi
 
     if [ -e "$TARGET_DIR" ]; then
-        fail "$TARGET_DIR exists but is not a git checkout"
+        fail validation_failed "$TARGET_DIR exists but is not a git checkout"
     fi
 
-    log "cloning Orbit"
     run git clone --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
 }
 
@@ -199,7 +281,6 @@ bootstrap_laravel() {
 
     target="$(quote "$TARGET_DIR")"
 
-    log "installing Composer dependencies"
     run bash -lc "cd $target && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"
 
     if [ ! -f "$TARGET_DIR/.env" ]; then
@@ -212,13 +293,15 @@ bootstrap_laravel() {
         run touch "$TARGET_DIR/database/database.sqlite"
     fi
 
-    log "bootstrapping Laravel"
     run bash -lc "cd $target && grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
     run bash -lc "cd $target && php artisan migrate --force --no-interaction"
 }
 
 link_orbit() {
-    log "linking orbit executable"
+    if [ -e "$LINK_PATH" ] && [ ! -L "$LINK_PATH" ]; then
+        fail validation_failed "$LINK_PATH exists and is not a symlink"
+    fi
+
     sudo_run ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"
 }
 
@@ -227,22 +310,42 @@ verify_install() {
 
     target="$(quote "$TARGET_DIR")"
 
-    log "verifying Orbit"
     run bash -lc "cd $target && php artisan --version"
 }
 
 main() {
     parse_args "$@"
+
+    ensure_log_file
+    trap 'fail_step "$?"' ERR
+
+    render_plan
+
+    start_step "Validate installer input"
     validate_args
+    complete_step
 
-    log "preparing ${ROLE} host at ${TARGET_DIR}"
+    start_step "Install platform prerequisites"
     install_prerequisites
-    install_source
-    bootstrap_laravel
-    link_orbit
-    verify_install
+    complete_step
 
-    log "done"
+    start_step "Install Orbit source"
+    install_source
+    complete_step
+
+    start_step "Bootstrap Laravel runtime"
+    bootstrap_laravel
+    complete_step
+
+    start_step "Link orbit executable"
+    link_orbit
+    complete_step
+
+    start_step "Verify Orbit"
+    verify_install
+    complete_step
+
+    finish_tree
 }
 
 main "$@"

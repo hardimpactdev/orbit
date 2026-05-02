@@ -274,10 +274,12 @@ curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/instal
 The installer prepares the host before Orbit can run: it installs PHP, Composer,
 Git, and required PHP extensions, then installs the Orbit source checkout,
 creates the local SQLite database, runs migrations, and links `orbit` into the
-local executable path. It does not create a gateway-owned control-node identity;
-that identity is minted by `node:new --role=gateway` for first-gateway
-bootstrap, or by `node:new --role=control` on an existing gateway before the
-control machine runs `gateway:add`.
+local executable path. Human output is a quiet step tree by default; pass
+`--verbose` only when the underlying package or shell command output is needed
+for debugging. The installer does not create a gateway-owned control-node
+identity; that identity is minted by `node:new --role=gateway` for
+first-gateway bootstrap, or by `node:new --role=control` on an existing gateway
+before the control machine runs `gateway:add`.
 
 Gateway and app nodes are created through `orbit node:new [name]`.
 `node:new --role=gateway --host=<host> --control-name=<control-name>` is the

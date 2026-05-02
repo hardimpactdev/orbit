@@ -121,6 +121,9 @@ yet satisfy the full product contracts.
   - Bootstrap slice implemented: local control/gateway/app host prerequisite
     installer for Ubuntu and macOS that installs PHP, Composer, Git, Orbit
     source, SQLite database state, migrations, and the `orbit` symlink.
+  - UX note: follows the command-designer human output shape with immediate
+    step-tree progress, stable error codes, quiet default logs, and `--verbose`
+    for underlying package and shell command output.
   - Porting note: this is the first user touch point before any Orbit command
     can run on a fresh control node. It does not create gateway-owned node
     identity or WireGuard material.

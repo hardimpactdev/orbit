@@ -25,8 +25,21 @@ describe('node:new', function (): void {
         expect($help->successful())->toBeTrue($help->errorOutput())
             ->and($help->output())->toContain('--role=control|gateway|app')
             ->and($help->output())->toContain('--source-archive=PATH')
+            ->and($help->output())->toContain('--verbose')
             ->and($help->output())->toContain('A new control node runs it')
             ->and($help->output())->toContain('First-gateway bootstrap may ship this same script');
+    });
+
+    it('renders installer failures with Orbit-style progress and stable error codes', function (): void {
+        $installer = base_path('bin/install-orbit');
+        $result = Process::run(escapeshellarg($installer).' --role=invalid --path=/tmp/orbit-test --bin=/tmp/orbit-test --no-sudo');
+
+        expect($result->failed())->toBeTrue()
+            ->and($result->output())->toContain('┌ Orbit install')
+            ->and($result->output())->toContain('◉  Validate installer input')
+            ->and($result->output())->not->toContain('+ ')
+            ->and($result->errorOutput())->toContain('error [validation_failed]')
+            ->and($result->errorOutput())->toContain('--role must be one of: control, gateway, app');
     });
 
     it('bootstraps the first gateway from an unconfigured control node', function (): void {
