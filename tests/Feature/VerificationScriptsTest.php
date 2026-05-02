@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Process;
+
 it('keeps ephemeral e2e on the Incus backend separate from standing live smoke', function (): void {
     $script = base_path('bin/e2e');
     $contents = file_get_contents($script);
@@ -60,7 +62,10 @@ it('documents and prepares the reusable blank e2e image', function (): void {
     expect($script)
         ->toContain('--prepare-blank')
         ->toContain('ORBIT_E2E_BLANK_IMAGE')
+        ->toContain('ORBIT_E2E_BOOTSTRAP_USER')
         ->toContain('orbit-blank-ubuntu-26.04')
+        ->toContain('provisioner')
+        ->toContain('ORBIT_E2E_BOOTSTRAP_USER must be a non-orbit Linux username')
         ->toContain('incus publish "$name" --force --reuse --alias "$blank_image"')
         ->toContain('source_image="$1"')
         ->toContain('blank_image="$2"');
@@ -73,8 +78,25 @@ it('documents and prepares the reusable ready control e2e image', function (): v
         ->toContain('--prepare-control')
         ->toContain('--control')
         ->toContain('ORBIT_E2E_CONTROL_IMAGE')
+        ->toContain('ORBIT_E2E_CONTROL_USER')
         ->toContain('orbit-ready-control')
+        ->toContain('control')
+        ->toContain('ORBIT_E2E_CONTROL_USER must be a non-orbit Linux username')
         ->toContain('bin/install-orbit')
+        ->toContain("usermod -p '*'")
         ->toContain('--role=control')
+        ->toContain('--path=/home/${control_user}/orbit')
         ->toContain('orbit --version');
+});
+
+it('rejects orbit as an ephemeral e2e bootstrap or control user', function (): void {
+    $script = escapeshellarg(base_path('bin/e2e'));
+
+    $bootstrapUser = Process::run("ORBIT_E2E_BOOTSTRAP_USER=orbit {$script} --preflight");
+    $controlUser = Process::run("ORBIT_E2E_CONTROL_USER=orbit {$script} --preflight");
+
+    expect($bootstrapUser->exitCode())->toBe(2)
+        ->and($bootstrapUser->errorOutput())->toContain('ORBIT_E2E_BOOTSTRAP_USER must be a non-orbit Linux username')
+        ->and($controlUser->exitCode())->toBe(2)
+        ->and($controlUser->errorOutput())->toContain('ORBIT_E2E_CONTROL_USER must be a non-orbit Linux username');
 });

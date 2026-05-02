@@ -46,15 +46,17 @@ The first ephemeral E2E harness uses Incus VMs on beast. Run
 `bin/e2e --prepare-blank` to build or replace the reusable
 `orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The default
 `composer test:e2e` path launches one disposable VM from that blank image,
-injects an ephemeral SSH key, verifies SSH from beast into the VM, and deletes
-the VM.
+injects an ephemeral SSH key for the non-`orbit` bootstrap user, verifies SSH
+from beast into the VM, and deletes the VM. The blank image intentionally does
+not use `orbit` as the bootstrap user so gateway and app provisioning tests can
+prove Orbit creates or prepares the node-side `orbit` user itself.
 
 Run `bin/e2e --prepare-control` to build or replace the reusable
 `orbit-ready-control` image from the blank image. That lane ships the current
 Orbit source and `bin/install-orbit` into a disposable VM, installs the control
-node prerequisites and CLI, verifies `orbit --version`, then publishes the ready
-image. Run `bin/e2e --control` to launch from that image and verify the ready
-control node over SSH.
+node prerequisites and CLI as the non-`orbit` control user, verifies
+`orbit --version`, then publishes the ready image. Run `bin/e2e --control` to
+launch from that image and verify the ready control node over SSH.
 
 These are backend and single-role smokes only; they do not yet validate a full
 gateway/control/development-app/production-app topology.
@@ -69,6 +71,8 @@ ORBIT_E2E_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
+ORBIT_E2E_BOOTSTRAP_USER=provisioner
+ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
 ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1

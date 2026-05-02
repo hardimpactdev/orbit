@@ -115,10 +115,11 @@ yet satisfy the full product contracts.
     cleanup.
   - Blank lane implemented: `bin/e2e --prepare-blank` builds the reusable
     `orbit-blank-ubuntu-26.04` Incus image; `composer test:e2e` launches from
-    that image.
+    that image and verifies SSH through a non-`orbit` bootstrap user.
   - Control-ready lane implemented: `bin/e2e --prepare-control` builds the
-    reusable `orbit-ready-control` Incus image from the blank image, and
-    `bin/e2e --control` launches it and verifies `orbit --version` over SSH.
+    reusable `orbit-ready-control` Incus image from the blank image by
+    installing Orbit as a non-`orbit` control user, and `bin/e2e --control`
+    launches it and verifies `orbit --version` over SSH.
   - Contract gap: gateway/development-app/production-app role provisioning and
     full topology coverage still need ready Incus snapshot lanes.
 - [~] Orbit host installer
@@ -136,7 +137,10 @@ yet satisfy the full product contracts.
     for underlying package and shell command output.
   - Porting note: this is the first user touch point before any Orbit command
     can run on a fresh control node. It does not create gateway-owned node
-    identity or WireGuard material.
+    identity or WireGuard material. The ready control E2E lane intentionally
+    installs as a non-`orbit` user because real control machines are expected to
+    be user-owned, while gateway and app provisioning must create or prepare the
+    node-side `orbit` user when needed.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current docs: `docs/commands/11_operation/1_update`
