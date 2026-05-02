@@ -2,3 +2,4 @@
 command = "php"
 args = ["artisan", "boost:mcp"]
 cwd = "."
+required = true
