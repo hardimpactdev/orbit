@@ -45,7 +45,7 @@ final class SignatureArgumentOrderRule implements CommandDocsLintRule
                 $findings[] = new CommandDocsLintFinding(
                     path: $context->relativePath($file),
                     ruleId: $this->id(),
-                    message: 'Command signature arguments must be ordered as required arguments, required flags, optional arguments, then optional flags. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'.$expected.'`.',
+                    message: 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'.$expected.'`.',
                     line: $signature['lineNumber'],
                 );
             }
@@ -145,8 +145,8 @@ final class SignatureArgumentOrderRule implements CommandDocsLintRule
     private function orderKey(string $token, int $index): array
     {
         return [
-            $this->isOptional($token) ? 1 : 0,
             $this->isOptionToken($token) ? 1 : 0,
+            $this->isOptional($token) ? 1 : 0,
             $this->specificityRank($token),
             $index,
         ];

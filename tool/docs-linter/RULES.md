@@ -48,7 +48,7 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 | `command_docs.json_renderer_examples` | error or warning | JSON examples are parseable, use valid envelopes, and match canonical entity shapes. | Fix invalid JSON, remove envelope conflicts, or align entity payloads with registries. |
 | `command_docs.json_warning_shape` | error | Warning payloads use canonical machine-readable warning fields. | Add required warning fields and remove unsupported shapes. |
 | `command_docs.next_action_contract` | error | JSON examples keep `next_steps` as a success onboarding checklist and `next_command` as warning/error recovery metadata. | Move human checklists to `success.data.next_steps`, or move machine-runnable repair commands to warning/error metadata. |
-| `command_docs.signature_argument_order` | error | Canonical signatures order required arguments, required flags, optional arguments, then optional flags; shared target flags use `--app`, `--workspace`, then `--node`, and `--json` stays last. | Reorder the canonical signature line without changing the input contract table. |
+| `command_docs.signature_argument_order` | error | Canonical signatures order all arguments before flags, required before optional inside each group; shared target flags use `--app`, `--workspace`, then `--node`, and `--json` stays last. | Reorder the canonical signature line without changing the input contract table. |
 | `command_docs.signature_option_consistency` | error | Technical companion files only mention options present in the canonical signature, except registered shared references. | Add the option to the signature, remove the stale mention, or register a shared option exception. |
 
 ## References

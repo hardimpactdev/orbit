@@ -30,7 +30,7 @@ function signatureArgumentOrderContext(array $files): CommandDocsLintContext
     );
 }
 
-it('flags optional arguments before required flags', function (): void {
+it('keeps optional arguments before required flags', function (): void {
     $rule = new SignatureArgumentOrderRule;
     $context = signatureArgumentOrderContext([
         '4_firewall/2_firewall-allow/technical/1_firewall-allow.md' => <<<'MD'
@@ -48,7 +48,7 @@ MD,
 
     expect($findings)->toHaveCount(1)
         ->and($findings[0]->ruleId)->toBe('command_docs.signature_argument_order')
-        ->and($findings[0]->message)->toContain('orbit firewall:allow --port=<port> [name] [--node=<node>] [--json]');
+        ->and($findings[0]->message)->toContain('orbit firewall:allow [name] --port=<port> [--node=<node>] [--json]');
 });
 
 it('flags shared target flags in the wrong specificity order', function (): void {
@@ -100,7 +100,7 @@ it('allows signatures in canonical order', function (): void {
 ## Signature
 
 ```bash
-orbit schedule:add (--command=<command>|--script=<path>) --interval=<expression> [name] [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
+orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
 ```
 MD,
     ]);

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit firewall:allow --port=<port> [name] [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
+# Technical Contract: `orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
 
 [Back to public `firewall-allow` documentation.](../firewall-allow.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit firewall:allow --port=<port> [name] [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
+orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
 ```
 
 ## Input Contract

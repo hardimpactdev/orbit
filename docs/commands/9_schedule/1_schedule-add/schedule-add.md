@@ -11,7 +11,7 @@ service artifacts on the resolved target node through the gateway.
 ## Usage
 
 ```bash
-orbit schedule:add (--command=<command>|--script=<path>) --interval=<expression> [name] [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
+orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
 orbit schedule:add
 ```
 

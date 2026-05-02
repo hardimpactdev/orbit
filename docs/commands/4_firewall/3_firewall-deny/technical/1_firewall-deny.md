@@ -1,4 +1,4 @@
-# Technical Contract: `orbit firewall:deny --port=<port> [name] [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
+# Technical Contract: `orbit firewall:deny [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
 
 [Back to public `firewall-deny` documentation.](../firewall-deny.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit firewall:deny --port=<port> [name] [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
+orbit firewall:deny [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
 ```
 
 ## Input Contract
