@@ -32,7 +32,7 @@ then migrate docs until it passes.
 - Commands must state which domain owns the behavior.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
-  `2_gateway` contains `gateway:*` commands, `3_dns` contains `dns:*`
+  `2_gateway` contains `gateway:*` commands, `11_dns` contains `dns:*`
   commands, and `4_app` contains `app:*` commands. `10_operation` is the
   exception for miscellaneous operational commands such as `doctor`, `update`,
   and `activity:*`.

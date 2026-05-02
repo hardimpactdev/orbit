@@ -194,7 +194,7 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
-- [x] `docs/commands/3_dns`
+- [x] `docs/commands/11_dns`
 - [x] `docs/commands/4_app`
 - [x] `docs/commands/5_workspace`
 - [x] `docs/commands/6_process`
