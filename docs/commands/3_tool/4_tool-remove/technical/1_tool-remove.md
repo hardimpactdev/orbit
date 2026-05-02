@@ -48,6 +48,10 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - Removes tool-owned credential material and service endpoint intent when the
   tool definition owns those artifacts.
 - Removes gateway tool intent after supported cleanup succeeds.
+- If cleanup partially fails, Orbit keeps the gateway tool row and any
+  tool-owned credential or endpoint intent needed to retry cleanup. Removal does
+  not erase intent before managed artifacts are either removed or explicitly
+  reported as requiring manual recovery.
 
 ### Scope Boundaries
 

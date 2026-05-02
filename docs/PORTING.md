@@ -344,6 +344,21 @@ feature-detail audit, semantic tightening, and implementation-gap tracking.
   - [x] Crash event intake is app-node-only, crashed-event-only, idempotent by
         event id, preserves unmatched unit events, and Agent IDE delivery is
         best-effort after event recording.
+- [x] Tool family feature details
+  - [x] Supported-tool catalog, tool row shape, config/credential ownership,
+        generated Orbit secret policy, live/show/logs boundaries, and safe
+        doctor fix/adopt contracts checked against the old implementation.
+  - [x] Command docs preserve intent-before-enactment behavior: remote
+        install/start/stop/update/reconfigure failures keep gateway intent and
+        hand convergence to doctor when a safe repair path exists.
+  - [x] Restart fallback, partial removal cleanup, unsupported reload/update
+        handling, DNS gateway-runtime scope, and Polyscope provider-login
+        recovery are documented.
+  - [x] Conflicting legacy behavior was flagged but not imported: static or
+        unauthenticated service credentials, plural `tools` state-family naming,
+        `container:*` and legacy `tool:*` aliases, `tool:version` PHP ownership,
+        and backend `ToolSettings`/service-template settings as product
+        concepts.
 
 ### Todo Pipeline Hints
 

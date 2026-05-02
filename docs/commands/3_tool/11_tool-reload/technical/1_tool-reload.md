@@ -44,6 +44,8 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - Resolves a reload-capable registered tool.
 - Runs the tool definition reload action through the gateway.
 - Does not change version or configuration intent.
+- Explicitly selecting a registered tool without reload support fails before
+  remote work and leaves the gateway tool row unchanged.
 
 ### Scope Boundaries
 

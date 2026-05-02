@@ -45,6 +45,12 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 - Verifies update support and requested version compatibility.
 - Writes gateway version intent and enacts the update through the gateway.
 - Reports updated, skipped, and failed tools.
+- Bulk mode skips managed tools without update support and reports the skip
+  reason as part of the command result. Explicitly selecting an unsupported tool
+  is a command failure.
+- If remote update enactment fails after version intent is written, Orbit keeps
+  the requested version intent and reports the tool as not yet converged; doctor
+  owns later repair when the tool definition supports safe version repair.
 
 ### Scope Boundaries
 

@@ -49,6 +49,10 @@ No input-mode-specific contracts are required. The command does not prompt; miss
   definition declares an endpoint.
 - Enacts install and configuration through the gateway.
 - Starts the tool when expected status is running.
+- If remote installation, configuration, or start fails after gateway intent is
+  written, Orbit keeps the intended tool row and reports the node as not yet
+  converged; `doctor --family=tool --fix` owns later convergence when the tool
+  definition declares a safe repair path.
 
 ### Scope Boundaries
 

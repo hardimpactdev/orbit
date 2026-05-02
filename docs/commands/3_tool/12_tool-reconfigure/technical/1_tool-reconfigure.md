@@ -48,6 +48,11 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - Updates tool-owned service endpoint intent only when the tool definition
   owns that endpoint.
 - Preserves intended version.
+- Supplying `--password` for a tool that does not own password reconfiguration
+  fails before config, credential, endpoint, or node artifacts are mutated.
+- If remote configuration enactment fails after intent changes, Orbit keeps the
+  requested intent and reports the tool as not yet converged; doctor owns later
+  repair when the tool definition supports safe configuration repair.
 
 ### Scope Boundaries
 

@@ -42,7 +42,11 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 - Verifies the registered tool is managed and restartable.
 - Runs the lifecycle restart action through the gateway.
+- When the tool definition has no native restart action but supports both stop
+  and start, Orbit may restart through a stop-then-start fallback.
 - Preserves existing gateway version and configuration intent.
+- If restart or fallback enactment partially fails, Orbit leaves gateway intent
+  unchanged and reports the lifecycle action failure for doctor/manual follow-up.
 
 ### Scope Boundaries
 
