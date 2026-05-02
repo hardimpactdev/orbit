@@ -28,7 +28,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the owning app. |
+| `name` | `[name]` | Optional. | Never. | None. | Existing process slug within the owning app when supplied. Omit to restart all process definitions in process order. |
 | `app` | `--app` or app context | Required unless `workspace` resolves the app. | Never. | Local app context when exactly one app is resolvable. | Must resolve to an app the caller may operate. |
 | `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may operate. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
@@ -57,16 +57,20 @@ resolved app or workspace context.
 ### Process Restart Rules
 
 1. Resolve caller role. Deny `unknown` callers before prompts or side effects.
-2. Resolve caller authorization, target app or workspace context, and process
-   definition.
-3. Derive the runtime-unit identity for the selected context.
-4. Restart the runtime unit through the gateway on the owning app node.
-5. Record and publish lifecycle events for the stopped and started runtime
-   transitions.
-6. Render the selected output.
+2. Resolve caller authorization and target app or workspace context.
+3. Resolve the selected process set:
+   - when `[name]` is supplied, select exactly that process definition;
+   - when `[name]` is omitted, select every process definition for the app in
+     process order.
+4. Derive runtime-unit identities for the selected context.
+5. Restart each runtime unit through the gateway on the owning app node.
+6. Record and publish lifecycle events for each successful stopped and started
+   runtime transition.
+7. Render the selected output.
 
 `process:restart` does not change process intent and does not repair divergent
-runtime-unit files.
+runtime-unit files. In bulk mode, successful restarts are not rolled back when a
+later process fails; the failure renderer reports partial runtime results.
 
 ## Renderer Contracts
 
@@ -78,9 +82,10 @@ runtime-unit files.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Caller role not allowed | The caller role is `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | Process, app, or workspace context is missing, invalid, or ambiguous in non-interactive input mode. | Failure (`error.code=validation_failed`). |
+| Validation failed | App or workspace context is missing, invalid, or ambiguous in non-interactive input mode. | Failure (`error.code=validation_failed`). |
 | Authorization failed | The caller cannot operate process runtime state for the target context. | Failure (`error.code=authorization_failed`). |
-| Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
+| Process not found | `[name]` is supplied and the named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
+| No processes configured | `[name]` is omitted and the owning app has no process definitions. | Failure (`error.code=process.none_configured`). |
 | Runtime action failed | The gateway cannot restart the runtime unit on the owning app node. | Failure (`error.code=process.runtime_action_failed`). |
 
 ## Doctor Relationship
@@ -95,7 +100,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, runtime-unit derivation, successful restart, durable lifecycle event recording, no process intent mutation, no direct app-node systemd operation, runtime action failure, and authorization failure. |
-| `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, and `--json` input-mode selection. |
+| `tests/Feature/Commands/Processes/ProcessRestartCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, named and all-process selection, process-order execution, runtime-unit derivation, successful restart, durable lifecycle event recording, partial bulk failure reporting, no process intent mutation, no direct app-node systemd operation, runtime action failure, and authorization failure. |
+| `tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

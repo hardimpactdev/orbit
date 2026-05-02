@@ -336,6 +336,14 @@ feature-detail audit, semantic tightening, and implementation-gap tracking.
         machinery is not imported as product behavior.
   - [x] Workspace setup and teardown step commands use lifecycle environment
         variables rather than command-string templating.
+- [x] Process runtime lifecycle details
+  - [x] `process:start`, `process:stop`, and `process:restart` support omitted
+        `[name]` as all-process selection in process order.
+  - [x] Process definitions have stable app-local order; `process:add` appends
+        to that order.
+  - [x] Crash event intake is app-node-only, crashed-event-only, idempotent by
+        event id, preserves unmatched unit events, and Agent IDE delivery is
+        best-effort after event recording.
 
 ### Todo Pipeline Hints
 
@@ -476,7 +484,7 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 - [ ] Port process add/edit/remove/list commands.
 - [ ] Port process start/stop/restart commands.
 - [ ] Port process log and event stream behavior.
-- [ ] Port process exit hook support if still part of the product contract.
+- [ ] Port process crash event hook support from the process contract.
 
 ## Gateway API Client And Transport Workstream
 

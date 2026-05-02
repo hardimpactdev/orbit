@@ -15,8 +15,9 @@ The process family owns these facts:
 - runtime-unit artifacts rendered from process, app, workspace, and node
   intent, including command, working directory, restart policy, and runtime
   environment;
-- Orbit-managed lifecycle event notifier material required to record
-  `started`, `stopped`, and `crashed` process events;
+- Orbit-managed lifecycle event notifier material required to record runtime
+  `crashed` events from app-node units whose process definitions require crash
+  event reporting;
 - stale Orbit-owned process runtime units whose identity no longer maps to an
   active app, workspace, or process definition.
 
@@ -42,9 +43,9 @@ The processes probe reads gateway process definitions and checks these layers:
    owning app node when the node is reachable through gateway-owned SSH.
 5. **Runtime-unit artifact content:** rendered command, working directory,
    restart policy, user, and runtime environment match gateway intent.
-6. **Lifecycle notifier material:** Orbit-managed event hooks or notifier
-   material required to write durable process lifecycle events exist and match
-   the selected process definitions.
+6. **Lifecycle notifier material:** Orbit-managed crash event hooks, gateway
+   endpoint material, and gateway CA material required to write durable
+   `crashed` lifecycle events exist and match the selected process definitions.
 7. **Stale runtime units:** Orbit-owned process runtime units whose encoded app,
    workspace, or process identity no longer maps to active gateway intent are
    reported as process-family drift.
@@ -65,7 +66,7 @@ event history.
 | `process.runtime_unit_mismatch` | The runtime-unit command, working directory, user, or unit identity differs from gateway process intent. |
 | `process.restart_policy_mismatch` | The rendered runtime-unit restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime-unit environment differs from the process runtime environment contract. |
-| `process.event_notifier_missing` | Runtime lifecycle event notifier material is absent for a process runtime context that should emit events. |
+| `process.event_notifier_missing` | Runtime lifecycle event notifier material is absent for a process runtime context that should emit crash events. |
 | `process.event_notifier_mismatch` | Runtime lifecycle event notifier material exists but points at the wrong gateway endpoint, app, workspace, process, or event intake identity. |
 
 ## Process Fix Map

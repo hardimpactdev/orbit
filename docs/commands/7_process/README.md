@@ -17,6 +17,9 @@ node.
   process intent. They are not the product model.
 - Each process definition renders one runtime unit for the main app instance and
   one runtime unit for each workspace of that app.
+- Process definitions have a stable app-local order. `process:add` appends new
+  definitions after existing definitions. Read and bulk lifecycle commands use
+  that order.
 - Runtime unit filenames use
   `orbit_<app>_<workspace|main>_<process>.service`. The `orbit_` prefix marks
   Orbit ownership; underscores are reserved as backend segment delimiters and
@@ -27,19 +30,28 @@ node.
 - Process definitions are edited at the app level, not per workspace.
 - Process definitions may opt in to crash notification. When enabled, a
   `crashed` process event resolves the effective agent IDE for the app or
-  workspace and notifies the active session when one is available.
+  workspace and notifies the active session when one is available. Delivery is
+  best-effort and must not prevent the event from being recorded.
 - Crash events come from a narrow internal app-node-to-gateway intake path
-  emitted by Orbit-managed runtime hooks. That intake path is not a CLI command
-  contract.
+  emitted by Orbit-managed runtime hooks for process definitions whose
+  crash-notification policy requires crash reporting. The intake accepts only
+  authenticated active app-node identities, only `crashed` events, and is
+  idempotent by event id. That intake path is not a CLI command contract.
 - Process lifecycle events are durable history, not process-unit intent. Orbit
   records `started`, `stopped`, and `crashed` events so SSE consumers, CLI
   streams, and automation can react without storing runtime units as state rows.
+  `started` and `stopped` events are recorded by successful gateway runtime
+  lifecycle actions; `crashed` events are recorded when an app-node runtime hook
+  reports an exit.
 - Default process read commands report gateway intent plus latest durable
   process events. They do not synchronously SSH to app nodes or run live
   `systemctl` probes. Live runtime verification belongs to
   [`doctor --family=process`](process-doctor.md); live event delivery belongs
   to the internal event stream.
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
+  When `[name]` is omitted, `process:start`, `process:stop`, and
+  `process:restart` operate on all process definitions for the resolved app or
+  workspace context in process order.
 - Logs come from the node runtime backend.
 - Create commands may use positional arguments for required identity or payload
   fields. Edit commands use named options for editable fields so omitted fields
@@ -108,6 +120,26 @@ connected through the network path.
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by
 their respective families. The process family owns the stored command, runtime
 unit environment, and process lifecycle, not public exposure policy.
+
+## Crash Event Delivery
+
+Orbit-managed crash hooks post `crashed` events from app nodes back to the
+gateway when a process definition's crash-notification policy requires crash
+reporting. No crash hook is required for `crash_notification=none`. The payload
+includes a stable event id, runtime unit name, exit code, exit status, and
+occurrence time. Duplicate event ids return the original record instead of
+creating duplicate history.
+
+When the runtime unit name resolves to active process intent, the event is linked
+to the process, app, workspace, and node. Unmatched units are still recorded with
+their raw runtime-unit name so operators do not lose crash history while doctor
+or process intent is being repaired.
+
+Agent IDE crash notification is a consumer of the recorded crash event. For
+`agent_ide`, Orbit reads a short recent journal tail for the runtime unit and
+sends a crash report to the effective app or workspace Agent IDE session when
+one is available. Failure to read the log tail or deliver the notification does
+not fail event ingestion.
 
 ## Commands
 

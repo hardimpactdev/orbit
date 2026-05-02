@@ -55,7 +55,7 @@ or workspace context.
 
 1. Resolve caller role. Deny `unknown` callers before prompts or side effects.
 2. Resolve caller authorization and app or workspace context.
-3. Read app-owned process definitions from gateway intent.
+3. Read app-owned process definitions from gateway intent in process order.
 4. Derive expected runtime-unit identities for the selected main app or
    workspace context.
 5. Read latest durable lifecycle events for the selected runtime context when
@@ -94,7 +94,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | Command contract for app context resolution, workspace context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, registry-backed process listing, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
+| `tests/Feature/Commands/Processes/ProcessListCommandTest.php` | Command contract for app context resolution, workspace context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, registry-backed process listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
 | `tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.
