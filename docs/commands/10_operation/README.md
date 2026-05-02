@@ -33,6 +33,7 @@ drift keys remain the product family keys defined by the blueprint, such as
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
+4. [`orbit ca:trust`](4_ca-trust/ca-trust.md)
 
 ## Not Yet Converted
 
@@ -40,7 +41,6 @@ The legacy operation commands below are tracked in
 [`docs/PORTING.md`](../../PORTING.md) and are not part of this converted domain
 until their current contracts are added here:
 
-- `ca:trust`
 - `profile`
 - `activity:list`
 - `activity:show`
