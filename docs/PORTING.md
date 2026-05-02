@@ -114,16 +114,23 @@ yet satisfy the full product contracts.
     launch, ephemeral SSH key injection, SSH readiness check from beast, and VM
     cleanup.
   - Blank lane implemented: `bin/e2e --prepare-blank` builds the reusable
-    `orbit-blank-ubuntu-24.04` Incus image; `composer test:e2e` launches from
+    `orbit-blank-ubuntu-26.04` Incus image; `composer test:e2e` launches from
     that image.
-  - Contract gap: role provisioning and gateway/control/development-app/
-    production-app topology coverage still need ready Incus snapshot lanes.
+  - Control-ready lane implemented: `bin/e2e --prepare-control` builds the
+    reusable `orbit-ready-control` Incus image from the blank image, and
+    `bin/e2e --control` launches it and verifies `orbit --version` over SSH.
+  - Contract gap: gateway/development-app/production-app role provisioning and
+    full topology coverage still need ready Incus snapshot lanes.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
   - Bootstrap slice implemented: local control/gateway/app host prerequisite
     installer for Ubuntu and macOS that installs PHP, Composer, Git, Orbit
-    source, SQLite database state, migrations, and the `orbit` symlink.
+    source, SQLite database state, migrations, and the `orbit` symlink. Ubuntu
+    installs PHP 8.5 by default when the native package is available, with the
+    same Ondrej PHP PPA pattern used by old Orbit as a fallback. Ephemeral E2E
+    uses Ubuntu 26.04 because its native PHP 8.5 packages avoid depending on
+    Launchpad reachability from Incus guests.
   - UX note: follows the command-designer human output shape with immediate
     step-tree progress, stable error codes, quiet default logs, and `--verbose`
     for underlying package and shell command output.
@@ -420,9 +427,10 @@ semantic issues before marking the command or family ported.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.
   - [x] Create a blank snapshot lane for provisioning tests.
-  - [~] Add reusable host installer needed by the ready control snapshot.
-  - [ ] Create ready control, gateway, development app, and production app
-    snapshot lanes for fast command-porting tests.
+  - [x] Add reusable host installer needed by the ready control snapshot.
+  - [x] Create a ready control snapshot lane for fast command-porting tests.
+  - [ ] Create ready gateway, development app, and production app snapshot
+    lanes for fast command-porting tests.
 - [ ] Add E2E topology for gateway + control + development app + production
   app nodes.
 - [ ] Add safe read-only standing-node smoke coverage for registry reads.
@@ -430,9 +438,8 @@ semantic issues before marking the command or family ported.
 
 ## Next Priorities
 
-1. Use `bin/install-orbit` to build the ready control Incus snapshot, then use
-   that control node to run `node:new --role=gateway` against a blank gateway
-   VM.
+1. Use the ready control Incus snapshot to run `node:new --role=gateway`
+   against a blank gateway VM.
 2. Extend `node:new --role=gateway` to finish WireGuard, gateway API, gateway
    CA trust, and `/api/me` verification before treating first-gateway bootstrap
    as contract-complete.

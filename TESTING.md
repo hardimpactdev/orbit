@@ -37,16 +37,27 @@ mutation checks:
 composer test:e2e
 bin/e2e --preflight
 bin/e2e --prepare-blank
+bin/e2e --prepare-control
 bin/e2e --lifecycle
+bin/e2e --control
 ```
 
 The first ephemeral E2E harness uses Incus VMs on beast. Run
 `bin/e2e --prepare-blank` to build or replace the reusable
-`orbit-blank-ubuntu-24.04` image from the Ubuntu cloud image. The default
+`orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The default
 `composer test:e2e` path launches one disposable VM from that blank image,
 injects an ephemeral SSH key, verifies SSH from beast into the VM, and deletes
-the VM. This is a backend lifecycle smoke only; it does not yet provision Orbit
-roles or validate a gateway/control/app topology.
+the VM.
+
+Run `bin/e2e --prepare-control` to build or replace the reusable
+`orbit-ready-control` image from the blank image. That lane ships the current
+Orbit source and `bin/install-orbit` into a disposable VM, installs the control
+node prerequisites and CLI, verifies `orbit --version`, then publishes the ready
+image. Run `bin/e2e --control` to launch from that image and verify the ready
+control node over SSH.
+
+These are backend and single-role smokes only; they do not yet validate a full
+gateway/control/development-app/production-app topology.
 
 Environment overrides:
 
@@ -55,24 +66,25 @@ ORBIT_LIVE_GATEWAY_SSH=gateway
 ORBIT_LIVE_GATEWAY_PATH=~/orbit
 
 ORBIT_E2E_HOST=beast
-ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/24.04/cloud
-ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-24.04
+ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
+ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
+ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
 ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1
 ```
 
-The next E2E step is to create the ready Incus lane:
+The next E2E step is to create the remaining ready Incus lanes:
 
-- ready snapshots for fast command-porting tests against prepared control,
-  gateway, development app, and production app nodes.
+- ready snapshots for fast command-porting tests against prepared gateway,
+  development app, and production app nodes.
 
-Planned ready image aliases:
+Ready image aliases:
 
-- `orbit-ready-control`
-- `orbit-ready-gateway`
-- `orbit-ready-app-development`
-- `orbit-ready-app-production`
+- `orbit-ready-control` via `bin/e2e --prepare-control`
+- `orbit-ready-gateway` planned
+- `orbit-ready-app-development` planned
+- `orbit-ready-app-production` planned
 
 ## Standing Live Node Rule
 

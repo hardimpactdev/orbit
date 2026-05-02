@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
 
 ROLE="control"
 TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
 REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
 BRANCH="${ORBIT_BRANCH:-main}"
+PHP_VERSION="${ORBIT_PHP_VERSION:-8.5}"
 SOURCE_ARCHIVE=""
 LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
 USE_SUDO=1
@@ -24,6 +25,8 @@ Options:
   --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
   --repo=URL                   Git repository to clone when no source archive is provided.
   --branch=NAME                Git branch to clone or update. Defaults to "main".
+  --php=8.4|8.5                PHP CLI version to install on Ubuntu.
+                               Defaults to "8.5".
   --source-archive=PATH        Extract this Orbit source tarball instead of cloning.
   --bin=PATH                   Symlink path for the orbit executable.
                                Defaults to "/usr/local/bin/orbit".
@@ -79,6 +82,15 @@ sudo_run() {
     fi
 
     run "$@"
+}
+
+sudo_shell() {
+    if [ "$USE_SUDO" = "1" ] && [ "$(id -u)" -ne 0 ]; then
+        run sudo bash -lc "$1"
+        return
+    fi
+
+    run bash -lc "$1"
 }
 
 require_command() {
@@ -162,6 +174,9 @@ parse_args() {
             --branch=*)
                 BRANCH="${1#*=}"
                 ;;
+            --php=*)
+                PHP_VERSION="${1#*=}"
+                ;;
             --source-archive=*)
                 SOURCE_ARCHIVE="${1#*=}"
                 ;;
@@ -198,24 +213,63 @@ validate_args() {
 
     [ -n "$TARGET_DIR" ] || fail validation_failed "--path is required"
     [ -n "$LINK_PATH" ] || fail validation_failed "--bin is required"
+
+    case "$PHP_VERSION" in
+        8.4|8.5)
+            ;;
+        *)
+            fail validation_failed "--php must be one of: 8.4, 8.5"
+            ;;
+    esac
+}
+
+ubuntu_php_package_available() {
+    apt-cache show "php${PHP_VERSION}-cli" >/dev/null 2>&1
+}
+
+install_ondrej_php_ppa() {
+    local codename
+    local ppa_source
+
+    codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+    ppa_source="deb [signed-by=/etc/apt/keyrings/ondrej-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu ${codename} main"
+
+    sudo_run install -d -m 0755 /etc/apt/keyrings
+    sudo_shell "curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' | gpg --batch --yes --dearmor -o /etc/apt/keyrings/ondrej-php.gpg"
+    sudo_shell "printf '%s\n' $(quote "$ppa_source") > /etc/apt/sources.list.d/ondrej-php.list"
+    sudo_run chmod 0644 /etc/apt/keyrings/ondrej-php.gpg /etc/apt/sources.list.d/ondrej-php.list
 }
 
 install_ubuntu_prerequisites() {
     sudo_run apt-get update
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
+        curl \
+        git \
+        gnupg \
+        tar \
+        unzip
+
+    if ! ubuntu_php_package_available; then
+        install_ondrej_php_ppa
+        sudo_run apt-get update
+    fi
+
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        ca-certificates \
         composer \
         curl \
         git \
-        php-bcmath \
-        php-cli \
-        php-curl \
-        php-mbstring \
-        php-sqlite3 \
-        php-xml \
-        php-zip \
+        "php${PHP_VERSION}-bcmath" \
+        "php${PHP_VERSION}-cli" \
+        "php${PHP_VERSION}-curl" \
+        "php${PHP_VERSION}-mbstring" \
+        "php${PHP_VERSION}-sqlite3" \
+        "php${PHP_VERSION}-xml" \
+        "php${PHP_VERSION}-zip" \
         tar \
         unzip
+    sudo_run update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
 }
 
 install_macos_prerequisites() {
@@ -261,7 +315,6 @@ install_source() {
     require_command git
 
     if [ -d "$TARGET_DIR/.git" ]; then
-        log "updating Orbit checkout"
         run git -C "$TARGET_DIR" fetch --prune
         run git -C "$TARGET_DIR" checkout "$BRANCH"
         run git -C "$TARGET_DIR" pull --ff-only

@@ -60,8 +60,21 @@ it('documents and prepares the reusable blank e2e image', function (): void {
     expect($script)
         ->toContain('--prepare-blank')
         ->toContain('ORBIT_E2E_BLANK_IMAGE')
-        ->toContain('orbit-blank-ubuntu-24.04')
+        ->toContain('orbit-blank-ubuntu-26.04')
         ->toContain('incus publish "$name" --force --reuse --alias "$blank_image"')
         ->toContain('source_image="$1"')
         ->toContain('blank_image="$2"');
+});
+
+it('documents and prepares the reusable ready control e2e image', function (): void {
+    $script = file_get_contents(base_path('bin/e2e'));
+
+    expect($script)
+        ->toContain('--prepare-control')
+        ->toContain('--control')
+        ->toContain('ORBIT_E2E_CONTROL_IMAGE')
+        ->toContain('orbit-ready-control')
+        ->toContain('bin/install-orbit')
+        ->toContain('--role=control')
+        ->toContain('orbit --version');
 });

@@ -12,6 +12,7 @@ uses(RefreshDatabase::class);
 describe('node:new', function (): void {
     it('ships a local installer for control and gateway bootstrap hosts', function (): void {
         $installer = base_path('bin/install-orbit');
+        $contents = file_get_contents($installer);
 
         expect($installer)->toBeFile()
             ->and(is_executable($installer))->toBeTrue();
@@ -24,10 +25,13 @@ describe('node:new', function (): void {
 
         expect($help->successful())->toBeTrue($help->errorOutput())
             ->and($help->output())->toContain('--role=control|gateway|app')
+            ->and($help->output())->toContain('--php=8.4|8.5')
             ->and($help->output())->toContain('--source-archive=PATH')
             ->and($help->output())->toContain('--verbose')
             ->and($help->output())->toContain('A new control node runs it')
-            ->and($help->output())->toContain('First-gateway bootstrap may ship this same script');
+            ->and($help->output())->toContain('First-gateway bootstrap may ship this same script')
+            ->and($contents)->toContain('ppa.launchpadcontent.net/ondrej/php')
+            ->and($contents)->toContain('php${PHP_VERSION}-cli');
     });
 
     it('renders installer failures with Orbit-style progress and stable error codes', function (): void {
