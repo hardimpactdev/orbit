@@ -3,7 +3,9 @@
 The command docs linter checks converted `docs/commands/**` files for structure,
 contract coherence, reference integrity, complexity, and prose ambiguity. The
 raw CLI default fails on errors and reports warnings. The `composer docs-lint`
-script runs the CLI with `--strict`, so warnings fail project verification.
+script runs the CLI with `--strict --format=agent`, so warnings fail project
+verification and agent-facing output stays compact. Use `composer docs-lint --
+--format=text` for the expanded human report.
 
 ## Baseline
 

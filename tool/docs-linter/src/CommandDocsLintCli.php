@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OrbitDocsLinter;
 
+use Laravel\Pao\OutputCleaner;
 use OrbitDocsLinter\Rules\AppNodeWriteDenialRule;
 use OrbitDocsLinter\Rules\AppPhpVersionContractRule;
 use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
@@ -67,10 +68,29 @@ final class CommandDocsLintCli
             fn (CommandDocsLintFinding $finding): bool => $finding->severity === CommandDocsLintSeverity::Error,
         ));
 
+        $exitCode = $this->exitCode($findings, $errors, $options['strict']);
+
+        if ($options['format'] === 'agent') {
+            $this->printAgentResult($findings, $errors, $exitCode);
+
+            return $exitCode;
+        }
+
+        $this->printTextResult($findings, $errors);
+
+        return $exitCode;
+    }
+
+    /**
+     * @param  list<CommandDocsLintFinding>  $findings
+     * @param  list<CommandDocsLintFinding>  $errors
+     */
+    private function printTextResult(array $findings, array $errors): void
+    {
         if ($findings === []) {
             fwrite(STDOUT, "Command docs lint passed.\n");
 
-            return 0;
+            return;
         }
 
         $currentPath = null;
@@ -96,12 +116,67 @@ final class CommandDocsLintCli
                 count($findings) - count($errors),
             ),
         );
+    }
 
+    /**
+     * @param  list<CommandDocsLintFinding>  $findings
+     * @param  list<CommandDocsLintFinding>  $errors
+     */
+    private function printAgentResult(array $findings, array $errors, int $exitCode): void
+    {
+        $warnings = array_values(array_filter(
+            $findings,
+            fn (CommandDocsLintFinding $finding): bool => $finding->severity === CommandDocsLintSeverity::Warning,
+        ));
+
+        $payload = [
+            'tool' => 'docs-lint',
+            'result' => $exitCode === 0 ? 'passed' : 'failed',
+            'issues' => count($findings),
+            'errors' => count($errors),
+            'warnings' => count($warnings),
+        ];
+
+        if ($findings !== []) {
+            $payload['findings'] = array_map(
+                fn (CommandDocsLintFinding $finding): array => $this->agentFinding($finding),
+                $findings,
+            );
+        }
+
+        fwrite(STDOUT, json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR).PHP_EOL);
+    }
+
+    /**
+     * @return array{path: string, line?: int, severity: string, rule: string, message: string}
+     */
+    private function agentFinding(CommandDocsLintFinding $finding): array
+    {
+        $payload = [
+            'path' => $finding->path,
+            'severity' => $finding->severity->value,
+            'rule' => $finding->ruleId,
+            'message' => OutputCleaner::clean($finding->message),
+        ];
+
+        if ($finding->line !== null) {
+            $payload['line'] = $finding->line;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  list<CommandDocsLintFinding>  $findings
+     * @param  list<CommandDocsLintFinding>  $errors
+     */
+    private function exitCode(array $findings, array $errors, bool $strict): int
+    {
         if ($errors !== []) {
             return 1;
         }
 
-        return $options['strict'] ? 1 : 0;
+        return $strict && $findings !== [] ? 1 : 0;
     }
 
     private function linter(string $repositoryRoot): CommandDocsLinter
@@ -149,7 +224,7 @@ final class CommandDocsLintCli
 
     /**
      * @param  list<string>  $arguments
-     * @return array{path: string, group: ?string, help: bool, strict: bool}
+     * @return array{path: string, group: ?string, help: bool, strict: bool, format: string}
      */
     private function parseArguments(array $arguments): array
     {
@@ -158,6 +233,7 @@ final class CommandDocsLintCli
             'group' => null,
             'help' => false,
             'strict' => false,
+            'format' => 'text',
         ];
 
         foreach (array_slice($arguments, 1) as $argument) {
@@ -185,12 +261,31 @@ final class CommandDocsLintCli
                 continue;
             }
 
+            if (str_starts_with($argument, '--format=')) {
+                $options['format'] = $this->parseFormat(substr($argument, strlen('--format=')));
+
+                continue;
+            }
+
             fwrite(STDERR, "Unknown argument: {$argument}\n\n");
             $this->printHelp(STDERR);
             exit(2);
         }
 
         return $options;
+    }
+
+    private function parseFormat(string $format): string
+    {
+        $supportedFormats = ['text', 'agent'];
+
+        if (in_array($format, $supportedFormats, true)) {
+            return $format;
+        }
+
+        fwrite(STDERR, "Unknown format: {$format}\n\n");
+        $this->printHelp(STDERR);
+        exit(2);
     }
 
     private function parseGroup(string $group): string
@@ -222,10 +317,11 @@ final class CommandDocsLintCli
     {
         fwrite($stream, <<<'HELP'
 Usage:
-  php tool/docs-linter/docs-linter.php [--path=docs/commands] [--group=structure|contracts|references|complexity|prose] [--strict]
+  php tool/docs-linter/docs-linter.php [--path=docs/commands] [--group=structure|contracts|references|complexity|prose] [--format=text|agent] [--strict]
 
 Examples:
   composer docs-lint
+  composer docs-lint -- --format=text
   composer docs-lint -- --path=docs/commands/1_node
   composer docs-lint -- --path=docs/commands/1_node/1_node-new
   composer docs-lint -- --group=contracts

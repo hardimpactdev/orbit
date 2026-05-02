@@ -27,5 +27,7 @@ it('documents the standing live smoke mode', function (): void {
 it('fails command docs lint when warnings are present', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['docs-lint'])->toContain('--strict');
+    expect($composer['scripts']['docs-lint'])
+        ->toContain('--strict')
+        ->toContain('--format=agent');
 });
