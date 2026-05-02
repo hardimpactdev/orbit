@@ -40,9 +40,13 @@ Target context is required when neither `--node`, `--app`, nor local
 1. Resolves the target node and tool definition.
 2. Verifies the tool is supported for the target node role and platform.
 3. Creates or updates the gateway tool row for the node.
-4. Enacts the managed install/configuration through the gateway.
-5. Starts the tool when the expected state is `running`.
-6. Reports the resulting intended state and command-owned enactment outcome.
+4. Generates managed credentials when the selected tool declares a credential
+   contract.
+5. Creates or updates tool-owned service endpoint intent when the selected tool
+   declares one.
+6. Enacts the managed install/configuration through the gateway.
+7. Starts the tool when the expected state is `running`.
+8. Reports the resulting intended state and command-owned enactment outcome.
 
 If the tool is already managed and the operator wants to change its version,
 use [`tool:update`](../9_tool-update/tool-update.md).

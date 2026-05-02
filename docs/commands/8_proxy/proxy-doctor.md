@@ -2,12 +2,12 @@
 
 [Back to Proxy commands.](README.md)
 
-`doctor --family=proxy_route` verifies whether gateway proxy-route intent still
+`doctor --family=proxy` verifies whether gateway proxy route intent still
 matches node proxy and TLS reality. It covers Orbit-owned ingress routes only.
 
 The proxy family owns these facts:
 
-- gateway-owned proxy-route rows: domain, kind, owner, serving node, target,
+- gateway-owned proxy route rows: domain, kind, owner, serving node, target,
   redirect code, TLS policy, and backend metadata needed to identify the enacted
   route;
 - managed proxy backend artifacts rendered from those rows;
@@ -23,7 +23,7 @@ service behind the route.
 
 ## Probe Layers
 
-The proxy probe reads gateway proxy-route intent and checks these layers:
+The proxy probe reads gateway proxy route intent and checks these layers:
 
 1. **Registry intent:** every selected route has a valid domain, kind, owner,
    serving node, target, and TLS policy.
@@ -53,36 +53,36 @@ an explicit adoption scope.
 
 | Code | Detected when |
 | --- | --- |
-| `proxy_route.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy_route.owner_invalid` | An app, workspace, gateway, or tool owner reference cannot be resolved or is not visible to the caller. |
-| `proxy_route.node_invalid` | The route points at a missing, unauthorized, inactive, unsupported, or role-incompatible serving node. |
-| `proxy_route.domain_conflict` | A custom route claims a domain owned by an app, workspace, gateway, or tool route. |
-| `proxy_route.route_missing` | Gateway intent expects a managed backend route, but the route is absent from node reality. |
-| `proxy_route.route_mismatch` | A managed backend route exists but differs from gateway intent. |
-| `proxy_route.tls_missing` | Gateway intent expects Orbit-managed TLS material, but it is absent from node reality. |
-| `proxy_route.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
-| `proxy_route.route_extra` | An Orbit-owned backend route has no matching gateway proxy-route row, or an explicitly selected observed backend route has no matching gateway proxy-route row during adoption scope. |
+| `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
+| `proxy.owner_invalid` | An app, workspace, gateway, or tool owner reference cannot be resolved or is not visible to the caller. |
+| `proxy.node_invalid` | The route points at a missing, unauthorized, inactive, unsupported, or role-incompatible serving node. |
+| `proxy.domain_conflict` | A custom route claims a domain owned by an app, workspace, gateway, or tool route. |
+| `proxy.route_missing` | Gateway intent expects a managed backend route, but the route is absent from node reality. |
+| `proxy.route_mismatch` | A managed backend route exists but differs from gateway intent. |
+| `proxy.tls_missing` | Gateway intent expects Orbit-managed TLS material, but it is absent from node reality. |
+| `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
+| `proxy.route_extra` | An Orbit-owned backend route has no matching gateway proxy route row, or an explicitly selected observed backend route has no matching gateway proxy route row during adoption scope. |
 
 ## Proxy Fix Map
 
 | Code | `--fix` behavior |
 | --- | --- |
-| `proxy_route.route_missing` | Recreate the backend route from gateway intent when the node is reachable and eligible. |
-| `proxy_route.route_mismatch` | Replace the backend route with the gateway-intended route when the route can be identified safely. |
-| `proxy_route.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
-| `proxy_route.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway intent. |
-| `proxy_route.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
+| `proxy.route_missing` | Recreate the backend route from gateway intent when the node is reachable and eligible. |
+| `proxy.route_mismatch` | Replace the backend route with the gateway-intended route when the route can be identified safely. |
+| `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
+| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway intent. |
+| `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`--fix` does not handle `proxy_route.record_incomplete`,
-`proxy_route.owner_invalid`, `proxy_route.node_invalid`,
-or `proxy_route.domain_conflict`.
+`--fix` does not handle `proxy.record_incomplete`,
+`proxy.owner_invalid`, `proxy.node_invalid`,
+or `proxy.domain_conflict`.
 
 ## Proxy Adopt Map
 
 | Code | `--adopt` behavior |
 | --- | --- |
-| `proxy_route.route_extra` | Create a custom gateway proxy-route row only when the operator selected a specific node and backend route, the domain is not owned by another Orbit route, and the observed route can be represented as either `--upstream` or `--redirect`. |
-| `proxy_route.route_mismatch` | Update gateway intent only when the operator selected a custom route and the observed backend route can be represented without changing app, workspace, gateway, or tool ownership. |
+| `proxy.route_extra` | Create a custom gateway proxy route row only when the operator selected a specific node and backend route, the domain is not owned by another Orbit route, and the observed route can be represented as either `--upstream` or `--redirect`. |
+| `proxy.route_mismatch` | Update gateway intent only when the operator selected a custom route and the observed backend route can be represented without changing app, workspace, gateway, or tool ownership. |
 
 `--adopt` does not scan arbitrary hosts, adopt app/workspace/gateway/tool routes
 as custom routes, infer app ownership from upstream paths, or adopt service
@@ -96,6 +96,6 @@ Required test files:
 | --- | --- |
 | `tests/Feature/Doctor/ProxyFamilyDoctorContractTest.php` | Proxy-family dispatch, probe-layer selection, proxy issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects proxy probes. |
 | `tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry intent, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, TLS drift, and selected extra routes in adoption scope. |
-| `tests/E2E/Read/ProxyDoctorTest.php` | Real read-only `doctor --family=proxy_route --json` against nodes with managed proxy routes. |
-| `tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --family=proxy_route --fix` repair of safe managed proxy and TLS drift. |
-| `tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --family=proxy_route --adopt` for compatible selected custom route adoption. |
+| `tests/E2E/Read/ProxyDoctorTest.php` | Real read-only `doctor --family=proxy --json` against nodes with managed proxy routes. |
+| `tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --family=proxy --fix` repair of safe managed proxy and TLS drift. |
+| `tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --family=proxy --adopt` for compatible selected custom route adoption. |

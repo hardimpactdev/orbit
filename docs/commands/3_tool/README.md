@@ -31,8 +31,50 @@ binaries, containers, and services are backend details.
 - Node reality import is not part of the tool command surface. If an adoption
   flow needs to adopt node reality, it must use explicit
   `doctor --family=tool --adopt` semantics.
+- Credential-bearing managed service tools use Orbit-owned generated secrets.
+  The default service username is `orbit` when the protocol has a username
+  concept.
+- Tool definitions may declare tool-owned service endpoints. HTTP and
+  WebSocket tool endpoints are represented as tool-owned `proxy` routes; TCP
+  service endpoints are WireGuard-only host/port records and are not HTTP proxy
+  routes.
 - Tools supply capabilities that other domains depend on, but they do not own
-  apps, workspaces, processes, schedules, proxy routes, or firewall rules.
+  apps, workspaces, processes, schedules, custom proxy routes, or non-tool
+  firewall policy.
+
+## Supported Tool Catalog
+
+Orbit supports only the catalogued tool slugs below. A syntactically valid tool
+name that is not present in this catalog fails as an unsupported tool. Detailed
+tool-specific contracts live in [`catalog/`](catalog/README.md).
+
+| Slug | Label | Backend | Support model | Category | Primary capability surface |
+| --- | --- | --- | --- | --- | --- |
+| [`caddy`](catalog/caddy.md) | Caddy | system service | Required baseline, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
+| [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
+| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
+| [`php-cli`](catalog/php-cli.md) | PHP CLI | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
+| [`gh`](catalog/gh.md) | GitHub CLI | system binary | Required baseline, adopted and kept converged | `always` | update, adopt |
+| [`composer`](catalog/composer.md) | Composer | system binary | Required baseline, adopted and kept converged | `always` | update, adopt |
+| [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | lifecycle, update, logs, fix, adopt |
+| [`php`](catalog/php.md) | PHP-FPM | system service | Installable and removable by Orbit | `runtime` | install, remove, lifecycle, reload, update, logs, fix, adopt |
+| [`postgres`](catalog/postgres.md) | PostgreSQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`mysql`](catalog/mysql.md) | MySQL | Docker service | Installable and removable by Orbit | `database` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`redis`](catalog/redis.md) | Redis | Docker service | Installable and removable by Orbit | `cache` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`reverb`](catalog/reverb.md) | Reverb | Docker service | Installable and removable by Orbit | `communication` | install, remove, lifecycle, update, logs, credentials, service endpoint, fix, adopt |
+| [`polyscope-server`](catalog/polyscope-server.md) | Polyscope Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, update, streamed logs, fix, adopt |
+| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | user systemd service | Installable and removable by Orbit | `development` | install, remove, lifecycle, reconfigure, password reset, update, streamed logs, credentials, service endpoint, fix, adopt |
+
+Required baseline tools are expected to exist as part of node provisioning or
+host bootstrap. `tool:install` does not create those tools from scratch unless
+a future tool definition explicitly changes their support model. Installable
+tools are provisioned by `tool:install`, removed by `tool:remove`, and verified
+by `doctor --family=tool`.
+
+The `dns` tool is the runtime capability behind Orbit-managed DNS
+infrastructure. DNS records, zones, and DNS command behavior remain owned by
+the DNS command family.
 
 ## Tool JSON Entity
 
@@ -48,7 +90,15 @@ the entity in the command result.
   "expected_state": "running",
   "observed_state": "running",
   "version": "7.2",
-  "managed": true
+  "managed": true,
+  "endpoints": [
+    {
+      "name": "redis",
+      "kind": "tcp",
+      "host": "orbit.test",
+      "port": 6379
+    }
+  ]
 }
 ```
 
@@ -60,6 +110,7 @@ the entity in the command result.
 | `observed_state` | string \| null | Last known or live observed state when the command includes it. Registry reads may return `null`. |
 | `version` | string \| null | Intended or observed version when the tool definition tracks versions. |
 | `managed` | boolean | Whether Orbit owns lifecycle/configuration for this tool on the node. |
+| `endpoints` | array | Non-secret service endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no service endpoint. |
 
 ## Commands
 

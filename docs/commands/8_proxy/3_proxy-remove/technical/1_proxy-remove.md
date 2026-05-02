@@ -31,7 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 All authenticated caller roles use the same gateway-owned access policy.
 App-node callers may remove custom proxy routes only when their node identity has
-explicit proxy-route management authorization for the route's serving node.
+explicit proxy route management authorization for the route's serving node.
 Management remains gateway-owned and enacted through gateway-to-node transport.
 
 ## Input Mode Contracts
@@ -43,9 +43,9 @@ Management remains gateway-owned and enacted through gateway-to-node transport.
 
 ### Custom Route Removal Rules
 
-- Resolves the route by domain from gateway proxy-route intent.
+- Resolves the route by domain from gateway proxy route intent.
 - Fails before side effects unless the route owner is `custom`.
-- Removes the custom proxy-route row from gateway intent.
+- Removes the custom proxy route row from gateway intent.
 - Removes the backend route artifact from the serving node.
 - Removes Orbit-managed TLS material only when it is route-scoped and not
   shared by any remaining proxy route.
@@ -75,20 +75,20 @@ service processes. Owned-route removal belongs to the owner domain.
 | Validation failed | Required input is missing or invalid. | `error.code=validation_failed` |
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to manage custom proxy routes for the serving node. | `error.code=authorization_failed` |
-| Route not found | The selected domain has no proxy-route row. | `error.code=proxy_route.not_found` |
-| Owned route denied | The selected route is owned by app, workspace, gateway, or tool. | `error.code=proxy_route.owned_route_denied` |
+| Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
+| Owned route denied | The selected route is owned by app, workspace, gateway, or tool. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
-| Cleanup failed | Gateway intent was removed, but backend route or TLS cleanup failed. | `error.code=proxy_route.cleanup_failed` |
+| Cleanup failed | Gateway intent was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
 
 ## Doctor Relationship
 
-`proxy-remove` removes custom gateway proxy-route intent and performs
+`proxy-remove` removes custom gateway proxy route intent and performs
 command-owned cleanup only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the
-authoritative `proxy_route` probe, issue codes, fix map, and adopt map.
+authoritative `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php` | Command contract for input validation, gateway authorization, destructive consent, custom-only removal, owned-route denial, cleanup failure codes, and doctor handoff behavior. |
-| `tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, route ownership checks, destructive consent mapping, and proxy-route entity mapping. |
+| `tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, route ownership checks, destructive consent mapping, and proxy route entity mapping. |

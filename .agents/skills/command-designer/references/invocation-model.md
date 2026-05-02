@@ -110,7 +110,7 @@ codes use dotted singular `<domain>.<condition>` form, such as
 `app.not_found`, `node.wireguard_peer_missing`, or
 `workspace.path_missing`, rather than snake-case domain prefixes or plural
 family prefixes. Doctor family selector keys and warning `family` values are
-singular (`node`, `app`, `workspace`, `process`, `proxy_route`,
+singular (`node`, `app`, `workspace`, `process`, `proxy`,
 `firewall_rule`, `tool`, `schedule`); the machine-readable `code` beside
 that family uses the singular product prefix.
 

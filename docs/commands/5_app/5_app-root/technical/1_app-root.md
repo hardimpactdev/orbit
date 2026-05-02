@@ -111,7 +111,7 @@ is unchanged.
       Product Principle 5 ("Backend names are not product names"). When an
       app-owned proxy route references the document root, `app:root` updates
       the app intent and leaves proxy backend artifact convergence to the
-      `proxy_route` family.
+      `proxy` family.
     - `success.meta.artifacts_reenacted` reports whether enactment found
       observable changes on the node (`true`) or completed as a clean
       idempotent no-op (`false`). Both are success.

@@ -182,7 +182,7 @@ The node domain does not own:
 - firewall policy beyond role bootstrap requirements;
 - app registration or app runtime policy;
 - workspace registration;
-- proxy-route lifecycle;
+- proxy route lifecycle;
 - process or schedule definitions;
 - deployment pipelines.
 

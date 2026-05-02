@@ -126,7 +126,7 @@ HTTP probe results. Live workspace reality belongs to
   `doctor --family=workspace`.
 - See [`workspace-doctor.md`](../../workspace-doctor.md) for the authoritative
   workspace-family probe, drift, fix, and adopt contract.
-- Workspace hostname artifact convergence belongs to `doctor --family=proxy_route`;
+- Workspace hostname artifact convergence belongs to `doctor --family=proxy`;
   inherited process-unit convergence belongs to `doctor --family=process`.
 
 ## Test Mapping

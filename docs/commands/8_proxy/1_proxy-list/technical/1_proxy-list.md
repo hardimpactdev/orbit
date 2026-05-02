@@ -44,7 +44,7 @@ invalid filters or node filters fail according to the shared invocation model.
 
 ### Registry Visibility Rules
 
-- Reads gateway proxy-route intent.
+- Reads gateway proxy route intent.
 - Includes all visible route owners and route kinds by default.
 - Applies `--filter` after authorization-visible routes are resolved.
 - Applies `--node` as a serving-node filter.
@@ -61,8 +61,8 @@ invalid filters or node filters fail according to the shared invocation model.
 
 ### Scope Boundaries
 
-`proxy-list` must not create, update, remove, adopt, fix, or probe proxy-route
-artifacts. Live backend drift belongs to `doctor --family=proxy_route`.
+`proxy-list` must not create, update, remove, adopt, fix, or probe proxy route
+artifacts. Live backend drift belongs to `doctor --family=proxy`.
 
 ## Renderer Contracts
 
@@ -79,12 +79,12 @@ artifacts. Live backend drift belongs to `doctor --family=proxy_route`.
 
 ## Doctor Relationship
 
-`proxy-list` reports gateway proxy-route intent only. [`proxy-doctor.md`](../../proxy-doctor.md)
-owns the authoritative `proxy_route` probe, issue codes, fix map, and adopt map.
+`proxy-list` reports gateway proxy route intent only. [`proxy-doctor.md`](../../proxy-doctor.md)
+owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Proxy/ProxyListCommandTest.php` | Command contract for filter validation, node filter validation, gateway authorization, no-live-probe behavior, and doctor handoff behavior. |
-| `tests/Unit/Services/Proxy/ProxyRouteQueryTest.php` | In-memory proxy-route visibility filtering, filter semantics, node filter semantics, and proxy-route entity mapping. |
+| `tests/Unit/Services/Proxy/ProxyRouteQueryTest.php` | In-memory proxy route visibility filtering, filter semantics, node filter semantics, and proxy route entity mapping. |

@@ -119,8 +119,8 @@ register an existing path use
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace
-     `proxy_route` record; backend artifact convergence is owned by the
-     `proxy_route` family.
+     proxy route record; backend artifact convergence is owned by the
+     `proxy` family.
    - **PHP-FPM:** render and install the workspace-specific FPM pool config
      on the app node.
    - **Inherited process units:** render and (re)install systemd units
@@ -138,7 +138,7 @@ register an existing path use
    `workspace` family, primarily `workspace.path_missing`,
    `workspace.fpm_config_missing`, `workspace.fpm_config_mismatch`,
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`,
-   plus `proxy_route` handoffs for workspace route drift). The command exits `0` and the
+   plus `proxy` handoffs for workspace route drift). The command exits `0` and the
    operator repairs drift via `doctor --family=workspace --fix`. This
    matches the `app:new`/`app:register` pattern: once intent is durable,
    enactment drift is convergence work, not a hard failure.

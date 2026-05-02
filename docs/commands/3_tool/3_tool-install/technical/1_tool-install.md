@@ -43,12 +43,19 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 - Verifies the tool supports managed installation on the target node.
 - Writes or updates gateway tool intent.
+- Generates managed credential material when the tool definition owns
+  credentials.
+- Creates or updates tool-owned service endpoint intent when the tool
+  definition declares an endpoint.
 - Enacts install and configuration through the gateway.
 - Starts the tool when expected status is running.
 
 ### Scope Boundaries
 
-`tool-install` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-install` must not create apps, workspaces, processes, schedules, custom
+proxy routes, non-tool firewall rules, node identities, or node grants.
+Tool-owned endpoint intent is allowed only when declared by the selected tool
+definition. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

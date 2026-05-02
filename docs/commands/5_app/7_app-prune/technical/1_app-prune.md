@@ -94,7 +94,7 @@ If `dry_run` is `false`:
   - Apply the normal
     [`workspace:remove`](../../../6_workspace/5_workspace-remove/technical/1_workspace-remove.md)
     semantics with destructive consent already satisfied by `app:prune`.
-  - Phase A deletes workspace-owned `proxy_route` rows and the `workspace`
+  - Phase A deletes workspace-owned proxy route rows and the `workspace`
     row in one gateway transaction.
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
     inherited processes, run teardown steps, remove the workspace FPM pool, and

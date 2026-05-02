@@ -45,5 +45,5 @@ output returns `success.data.route` with the removed route.
 
 - [`orbit proxy:list`](../1_proxy-list/proxy-list.md)
 - [`orbit proxy:add`](../2_proxy-add/proxy-add.md)
-- [`doctor --family=proxy_route`](../proxy-doctor.md)
+- [`doctor --family=proxy`](../proxy-doctor.md)
 - [Technical contract](technical/1_proxy-remove.md)

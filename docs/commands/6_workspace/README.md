@@ -23,10 +23,10 @@ canonical name, and owns one workspace route lifecycle.
 - During `doctor --family=workspace --adopt`, project files are adoption hints
   only. `composer.json` is the only project file Orbit may inspect for PHP
   version hints, and only when the workspace is a PHP project.
-- Workspace hostnames are represented in `proxy_route` as workspace-owned
+- Workspace hostnames are represented in `proxy` as workspace-owned
   route records. Workspace commands create, update, and remove the workspace
   intent that owns those routes; proxy route registry and backend artifact
-  convergence belong to the `proxy_route` family.
+  convergence belong to the `proxy` family.
 - A workspace hostname is the workspace slug prepended to the parent app's
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.

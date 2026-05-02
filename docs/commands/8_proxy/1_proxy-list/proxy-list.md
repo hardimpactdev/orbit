@@ -4,7 +4,7 @@
 
 ## Purpose
 
-List proxy-route intent across the Orbit fleet.
+List proxy route intent across the Orbit fleet.
 
 ## Usage
 
@@ -31,7 +31,7 @@ Use `--filter` to narrow the list:
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |
 
 `proxy:list` reads gateway intent only. It does not probe node proxy backends or
-verify TLS files. Use `doctor --family=proxy_route` for drift verification.
+verify TLS files. Use `doctor --family=proxy` for drift verification.
 
 ## Examples
 
@@ -46,7 +46,7 @@ orbit proxy:list --json
 
 Human output renders a table of route domain, kind, owner, node, target, TLS
 summary, and status. JSON output returns `success.data.routes[]` using the
-family proxy-route entity shape.
+family proxy route entity shape.
 
 ## Requirements
 
@@ -57,5 +57,5 @@ family proxy-route entity shape.
 
 - [`orbit proxy:add`](../2_proxy-add/proxy-add.md)
 - [`orbit proxy:remove`](../3_proxy-remove/proxy-remove.md)
-- [`doctor --family=proxy_route`](../proxy-doctor.md)
+- [`doctor --family=proxy`](../proxy-doctor.md)
 - [Technical contract](technical/1_proxy-list.md)

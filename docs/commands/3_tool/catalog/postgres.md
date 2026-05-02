@@ -1,0 +1,64 @@
+# Tool Catalog: `postgres`
+
+[Back to tool catalog.](README.md)
+
+## Catalog
+
+| Field | Value |
+| --- | --- |
+| Slug | `postgres` |
+| Label | PostgreSQL |
+| Backend | Docker service |
+| Support model | Installable and removable by Orbit |
+| Category | `database` |
+
+## Capabilities
+
+`postgres` supports `tool:install`, `tool:remove`, lifecycle actions,
+`tool:update`, `tool:logs`, `tool:credentials`, WireGuard service endpoint
+management, safe doctor fix, and safe doctor adopt.
+
+## Credentials
+
+`tool:credentials postgres` returns database connection fields for the managed
+PostgreSQL service. Orbit generates and stores the password; catalog examples
+use a placeholder rather than a literal default.
+
+Example JSON shape:
+
+```json
+{
+  "success": {
+    "data": {
+      "credentials": {
+        "tool": "postgres",
+        "node": "app-1",
+        "fields": {
+          "host": "orbit.test",
+          "port": 5432,
+          "database": "orbit",
+          "username": "orbit",
+          "password": "<generated-password>"
+        }
+      }
+    },
+    "meta": {}
+  }
+}
+```
+
+## Service Endpoint
+
+`postgres` exposes a WireGuard-only TCP service endpoint at
+`orbit.<node-tld>:5432` for development app nodes. This is DNS/service endpoint
+intent owned by the tool definition, not an HTTP proxy route.
+
+## Orbit Notes
+
+PostgreSQL is a managed database capability. App database selection and
+application migrations remain app or deployment concerns.
+
+## Doctor Relationship
+
+`doctor --family=tool` verifies the managed PostgreSQL container, expected
+lifecycle state, logs availability, and safe repair/adoption boundaries.

@@ -31,7 +31,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | All doctor-supported product families. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy_route`, `firewall_rule`, `tool`, or `schedule`. |
+| `family` | `--family` | Never. | Never. | All doctor-supported product families. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. |
 | `node` | `--node` | Never. | `--self` is present. | Nodes selected by each family contract after authorization and app/workspace filters. | Gateway-known node name. |
 | `self` | `--self` | Never. | `--node` is present. | `false`. | Resolves to the caller's gateway-known node identity. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |

@@ -117,7 +117,7 @@ Execute the convergent behavior shared with `app:register`:
 If `--domain` is supplied:
 - Record production domain intent.
 - Configure production runtime policy (e.g., user isolation).
-- DNS and TLS enactment are handled by the `proxy_route` family; `app:new`
+- DNS and TLS enactment are handled by the `proxy` family; `app:new`
   triggers the request.
 - If DNS or TLS prerequisites are not yet satisfied (propagation pending,
   certificate not yet issued), the command still completes successfully:
@@ -125,7 +125,7 @@ If `--domain` is supplied:
   reported as a non-fatal warning. Operators retry with
   `app:register [name] --domain=<host>`, which is safe to call repeatedly.
   Hard activation failures unrelated to propagation (malformed domain,
-  registry conflict, internal proxy-route registry write failure) fail
+  registry conflict, internal proxy route registry write failure) fail
   validation up front before any side effects and use the `error` envelope.
 
 ## Renderer Contracts
@@ -154,7 +154,7 @@ If `--domain` is supplied:
   with a `next_command` handoff (e.g. `doctor --family=app --fix` or
   `app:register [name] --domain=<host>`). Examples include node-side PHP
   version unavailable (`app.php_version_unavailable`) and pending domain
-  activation (`proxy_route.domain_inactive`).
+  activation (`proxy.domain_inactive`).
 
 ## Doctor Relationship
 

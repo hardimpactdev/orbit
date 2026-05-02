@@ -30,7 +30,7 @@ The app family owns these facts:
   maps to an active gateway app record.
 
 Node reachability belongs to the node family. App-owned proxy routes belong to
-`proxy_route`. Workspace artifacts belong to `workspace`. App process units
+`proxy`. Workspace artifacts belong to `workspace`. App process units
 belong to `process`. App schedules belong to `schedule`. Tool installation
 and firewall policy belong to `tool` and `firewall_rule`.
 
@@ -129,7 +129,7 @@ or changes node reachability.
 | `app.runtime_config_mismatch` | Update app runtime intent only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 
 `--adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
-virtual hosts, adopt proxy-route backend artifacts as app intent, infer database
+virtual hosts, adopt proxy route backend artifacts as app intent, infer database
 ownership, adopt deployment run outcomes, or adopt workspace/process/schedule
 artifacts as app facts.
 

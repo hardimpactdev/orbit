@@ -54,7 +54,7 @@ node.
 
 1. **Resolution**: Identifies the app and target node from the provided name, options, or local context.
 2. **Registration/Adoption**: Writes the app's intent to the gateway database. If the path already exists but isn't managed by Orbit, it is "adopted."
-3. **Enactment**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route intent for the `proxy_route` family to converge.
+3. **Enactment**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route intent for the `proxy` family to converge.
 4. **Production Activation**: If a domain is supplied, it performs DNS and TLS checks to activate production routing. If DNS or TLS prerequisites are pending, the registration still succeeds and the inactive domain is reported as a non-fatal warning; retry the same command once propagation completes.
 
 This command is idempotent. Re-running on an already-managed app re-renders

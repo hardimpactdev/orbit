@@ -72,7 +72,7 @@ may remove an app only when authorized by gateway-owned access policy.
 ### 3. Execution Sequence
 - **Step 1: Gateway App Intent:** Delete the gateway app record. This is the point of no return.
 - **Step 2: Dependent Intent Cleanup:**
-    - Delete app-owned `proxy_route`.
+    - Delete app-owned proxy route records.
     - Delete app-owned `schedule`.
     - Delete app-owned `workspace` rows.
     - Stop and delete app-owned `process`.
@@ -120,7 +120,7 @@ not a removal failure.
 - Removed apps disappear from `app:list` and `app:show`.
 - App-owned artifacts remaining after a failed cleanup are detected as orphaned
   app drift by [`app-doctor.md`](../../app-doctor.md). Related-family artifacts
-  are detected by the affected family doctors (`proxy_route`, `workspace`,
+  are detected by the affected family doctors (`proxy`, `workspace`,
   `process`, `schedule`).
 - `app:remove` does not duplicate per-family drift item shapes; it points operators at the affected `doctor --family=<family> --fix` via the warning's `next_command`.
 

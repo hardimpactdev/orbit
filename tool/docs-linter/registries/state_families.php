@@ -19,8 +19,8 @@ return [
         'singular' => 'process',
         'doctor_doc' => 'docs/commands/7_process/process-doctor.md',
     ],
-    'proxy_route' => [
-        'singular' => 'proxy_route',
+    'proxy' => [
+        'singular' => 'proxy',
         'doctor_doc' => 'docs/commands/8_proxy/proxy-doctor.md',
     ],
     'schedule' => [

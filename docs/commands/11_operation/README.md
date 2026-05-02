@@ -7,7 +7,7 @@ diagnostic workflows.
 The operation domain does not own a state family. Operation commands may read,
 write, verify, or repair state that belongs to other families, but permanent
 drift keys remain the product family keys defined by the blueprint, such as
-`node`, `app`, `workspace`, `process`, `proxy_route`, `schedule`, `tool`, and
+`node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and
 `firewall_rule`.
 
 ## State Ownership
@@ -18,7 +18,7 @@ cross-family workflows.
 `doctor` routes concrete probes and issue codes to the family that owns the
 state: `doctor --family=node`, `doctor --family=app`,
 `doctor --family=workspace`, `doctor --family=process`,
-`doctor --family=proxy_route`, `doctor --family=schedule`,
+`doctor --family=proxy`, `doctor --family=schedule`,
 `doctor --family=tool`, and `doctor --family=firewall_rule`. Update and
 activity commands may reference those families, but they must not invent
 operation-family drift.

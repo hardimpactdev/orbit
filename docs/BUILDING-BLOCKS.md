@@ -168,8 +168,8 @@ implementation serves it only on the gateway WireGuard address and binds the
 listener to that address. It is not a public internet vhost and it is not an
 app-node control-plane endpoint.
 
-The gateway API ingress is a gateway-owned internal `proxy_route` entry. Its
-proxy/TLS artifact is repaired by `doctor --family=proxy_route --fix`, not by a
+The gateway API ingress is a gateway-owned internal `proxy` entry. Its
+proxy/TLS artifact is repaired by `doctor --family=proxy --fix`, not by a
 backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity.
@@ -217,7 +217,7 @@ The permanent product families are named in Orbit terms:
 - `app`;
 - `workspace`;
 - `process`;
-- `proxy_route`;
+- `proxy`;
 - `schedule`;
 - `tool`;
 - `firewall_rule`.
@@ -257,7 +257,7 @@ Typical app-node artifacts include:
 
 - app directories and workspace directories;
 - PHP-FPM pool configuration and sockets;
-- Caddy site configuration rendered from `proxy_route`;
+- Caddy site configuration rendered from `proxy`;
 - systemd service units derived from app-owned process definitions;
 - systemd timer/service pairs for schedules;
 - Docker Compose files for managed tools and services;

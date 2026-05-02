@@ -331,7 +331,7 @@ Ideal Orbit has these state families.
 | `app` | App registry, runtime config, production deployment pipeline, app health | PHP-FPM, app directories, app-owned proxy routes |
 | `workspace` | Worktree/workspace intent, workspace URL, FPM pool, inherited process runtime units | Git worktrees, PHP-FPM, workspace-owned proxy routes |
 | `process` | App-owned process definitions rendered into app/workspace runtime units | systemd, journald |
-| `proxy_route` | Canonical registry of Orbit-owned HTTP ingress | Caddy |
+| `proxy` | Canonical registry of Orbit-owned HTTP ingress | Caddy |
 | `schedule` | Recurring work for apps, nodes, and Orbit-managed tasks | systemd timers/services |
 | `tool` | Expected and managed node tools | package managers, binaries, systemd, Docker |
 | `firewall_rule` | Expected node network policy | UFW |
@@ -369,9 +369,9 @@ renamed, folded, or removed.
 ## Proxy Routing
 
 A proxy route is Orbit-owned HTTP ingress intent for a hostname at the fleet
-boundary. `proxy_route` is the canonical registry of every hostname Orbit
-exposes, regardless of whether the route exists because of an app, a workspace,
-the gateway, a tool, or a custom user-authored rule.
+boundary. The `proxy` state family is the canonical registry of every hostname
+Orbit exposes, regardless of whether the route exists because of an app, a
+workspace, the gateway, a tool, or a custom user-authored rule.
 
 A proxy route describes what should happen before a request reaches an app:
 
@@ -401,7 +401,7 @@ through custom proxy commands. For example, a workspace route is listed with all
 other routes, but its lifecycle belongs to the workspace.
 
 The gateway-owned internal route includes the Orbit gateway API ingress. Its
-proxy/TLS/backend artifact belongs to `proxy_route`, while the runtime service
+proxy/TLS/backend artifact belongs to `proxy`, while the runtime service
 readiness behind that route belongs to the `node` family. Backend-specific
 gateway vhost provisioning commands are not part of the product command surface.
 

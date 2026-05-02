@@ -18,7 +18,7 @@ final class ProductCodeNamespaceRule implements CommandDocsLintRule
         'firewall_rules' => 'firewall_rule',
         'nodes' => 'node',
         'processes' => 'process',
-        'proxy_routes' => 'proxy_route',
+        'proxy_routes' => 'proxy',
         'schedules' => 'schedule',
         'tools' => 'tool',
         'workspaces' => 'workspace',

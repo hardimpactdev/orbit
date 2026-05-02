@@ -38,7 +38,7 @@ Permanent state-family keys are singular product names:
 - `app`
 - `workspace`
 - `process`
-- `proxy_route`
+- `proxy`
 - `schedule`
 - `tool`
 - `firewall_rule`

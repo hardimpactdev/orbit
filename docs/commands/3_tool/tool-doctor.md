@@ -19,6 +19,9 @@ The tool family owns these facts:
   state;
 - reload, update, reconfigure, and removal support declared by the tool
   definition;
+- tool-owned service endpoint intent declared by the tool definition, while
+  backend proxy artifacts and firewall enactment remain verified by their own
+  state families;
 - adoption facts for explicitly selected observed node capabilities that can be
   tied to a supported Orbit tool definition.
 
@@ -86,8 +89,11 @@ explicit adoption scope.
 `tool.unregistered_capability`.
 
 Tools without a safe repair path are reported with the required manual action.
-Tool doctor never creates apps, workspaces, processes, schedules, proxy routes,
-firewall rules, node identities, or node grants.
+Tool doctor never creates apps, workspaces, processes, schedules, custom proxy
+routes, non-tool firewall rules, node identities, or node grants. It may repair
+tool-owned endpoint intent only when the selected tool definition owns that
+intent; live proxy and firewall artifact drift remains in the `proxy` and
+`firewall_rule` families.
 
 ## Tool Adopt Map
 

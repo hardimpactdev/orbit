@@ -123,12 +123,12 @@ Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
 
 Stable state families are `node`, `app`, `workspace`, `process`,
-`proxy_route`, `firewall_rule`, `tool`, and `schedule`. These are the keys
+`proxy`, `firewall_rule`, `tool`, and `schedule`. These are the keys
 accepted by `doctor --family=<family>` and the values carried by warning or
 doctor `family` fields. Machine-readable issue and warning codes use singular
 product prefixes, such as `node.wireguard_peer_missing`,
 `app.fpm_config_missing`, `workspace.path_missing`, `process.runtime_unit_missing`,
-`proxy_route.route_extra`, and `schedule.unit_extra`.
+`proxy.route_extra`, and `schedule.unit_extra`.
 
 Documentation domains may also contain command groups that are not state
 families, such as operations, deployments, VPN administration, PHP runtime, and
@@ -281,7 +281,7 @@ follow the contract without reading decision-history notes.
 
 `orbit doctor` is Orbit's convergence command. Public family filters must use
 product family keys: `node`, `app`, `workspace`, `process`,
-`proxy_route`, `firewall_rule`, `tool`, and `schedule`.
+`proxy`, `firewall_rule`, `tool`, and `schedule`.
 
 Use `--self` for the caller's gateway-known node identity. Use `--node=<name>`
 for an explicit target node; `--self` and `--node` are mutually exclusive.

@@ -35,7 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 All authenticated caller roles use the same gateway-owned access policy.
 App-node callers may add custom proxy routes only when their node identity has
-explicit proxy-route management authorization for the resolved serving node.
+explicit proxy route management authorization for the resolved serving node.
 Management remains gateway-owned and enacted through gateway-to-node transport.
 
 ## Input Mode Contracts
@@ -49,7 +49,7 @@ Management remains gateway-owned and enacted through gateway-to-node transport.
 
 - Resolves a proxy-capable serving node.
 - Validates that exactly one of `--upstream` or `--redirect` is selected.
-- Creates or updates a custom gateway proxy-route row.
+- Creates or updates a custom gateway proxy route row.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type
   `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type
@@ -84,15 +84,15 @@ future tool-owned routes belong to tool-family commands and are only visible in
 | Validation failed | Required input is missing, invalid, mutually exclusive, or forbidden with another option. | `error.code=validation_failed` |
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to manage custom proxy routes for the selected serving node. | `error.code=authorization_failed` |
-| Domain conflict | The selected domain is owned by an app, workspace, gateway, or tool route. | `error.code=proxy_route.domain_conflict` |
-| Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy_route.replacement_consent_required` |
-| Enactment failed | Gateway intent was written, but proxy or TLS backend enactment failed. | `error.code=proxy_route.enactment_failed` |
+| Domain conflict | The selected domain is owned by an app, workspace, gateway, or tool route. | `error.code=proxy.domain_conflict` |
+| Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy.replacement_consent_required` |
+| Enactment failed | Gateway intent was written, but proxy or TLS backend enactment failed. | `error.code=proxy.enactment_failed` |
 
 ## Doctor Relationship
 
-`proxy-add` changes custom gateway proxy-route intent and performs command-owned
+`proxy-add` changes custom gateway proxy route intent and performs command-owned
 enactment only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
-`proxy_route` probe, issue codes, fix map, and adopt map.
+`proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

@@ -90,12 +90,12 @@ boundaries.
      specified app and the durable `workspace.adopted` boolean is set to
      `true` for this run.
 2. **Proxy Routing** (`phase=routing`):
-   - Ensures a workspace-owned route record exists in `proxy_route`.
+   - Ensures a workspace-owned route record exists in `proxy`.
    - Updates the record if intent has changed.
 3. **Artifact Enactment** (`phase=artifacts`):
    - Connects to the app node via SSH.
    - Enacts workspace-specific runtime artifacts (PHP-FPM pool, environment).
-   - Hands proxy backend artifact convergence to the `proxy_route` family.
+   - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
    - Reads configured setup step definitions for the parent app.
    - Executes steps sequentially in the workspace directory on the app node.

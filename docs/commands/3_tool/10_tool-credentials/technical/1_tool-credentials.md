@@ -43,11 +43,15 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 
 - Resolves a credential-bearing tool on the target node.
 - Reads credential metadata from gateway intent or the managed secret store.
+- Returns generated Orbit-owned credentials for managed service tools, using
+  the tool catalog's field names and endpoint shape.
 - Does not rotate credentials or reconfigure the tool.
 
 ### Scope Boundaries
 
-`tool-credentials` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-credentials` must not create apps, workspaces, processes, schedules,
+proxy routes, firewall rules, node identities, node grants, service endpoints,
+or credentials. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

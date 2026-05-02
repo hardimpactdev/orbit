@@ -48,10 +48,13 @@ The command does not mutate gateway intent or node artifacts.
 ## Output
 
 Human output is a detail view with identity, target node, expected state,
-managed flag, version/config metadata, and live status when requested.
+managed flag, version/config metadata, service endpoint metadata when declared,
+and live status when requested. Secret values are not rendered by
+`tool:show`; use `tool:credentials` for authorized credential reads.
 
 JSON output returns the tool entity under `success.data.tool` and live detail
-under `success.data.live` when `--live` is present.
+under `success.data.live` when `--live` is present. Non-secret service
+endpoint metadata may be included under `success.data.tool.endpoints`.
 
 ## Requirements
 

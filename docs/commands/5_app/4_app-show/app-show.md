@@ -7,7 +7,7 @@ Show one app's gateway registry details.
 Use `app:show` when you need an app's gateway-owned registry record: owning
 node, repository, paths, PHP version, agent IDE configuration, and the durable
 intent it owns in related families (`workspace`, `process`, and app-owned
-`proxy_route`). Live runtime drift, readiness, and repair belong to
+`proxy`). Live runtime drift, readiness, and repair belong to
 [`doctor --family=app`](../app-doctor.md).
 
 ## Usage

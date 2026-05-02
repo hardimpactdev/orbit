@@ -83,7 +83,7 @@ callers are denied before prompts or side effects.
 ## Behavior Contract
 
 `workspace:remove` is a destructive-write command with cross-family cleanup
-across `proxy_route`, `process`, and the workspace's own node-side
+across `proxy`, `process`, and the workspace's own node-side
 artifacts. The contract follows the resolved `app:remove` atomicity boundary:
 gateway intent removal is the point of no return, and any node-side residue
 afterwards is non-fatal drift.
@@ -113,7 +113,7 @@ its sub-order is dictated by traffic, dependency, and lifecycle safety.
 
 #### Phase A — Gateway intent (atomic, point of no return)
 
-- **Step 1: Dependent intent rows.** Delete workspace-owned `proxy_route`
+- **Step 1: Dependent intent rows.** Delete workspace-owned proxy route
   records.
 - **Step 2: Workspace record.** Delete the gateway `workspace` row.
 
@@ -149,8 +149,8 @@ runs.
   orphaned drift by the affected family doctor:
   - Orphaned worktree or FPM pool: `workspace.artifact_extra` (handled by
     [`workspace-doctor.md`](../../workspace-doctor.md)).
-  - Orphaned proxy routes: `proxy_route.route_extra` (handled by the
-    `proxy_route` family doctor).
+  - Orphaned proxy routes: `proxy.route_extra` (handled by the
+    `proxy` family doctor).
   - Orphaned process: `process.runtime_unit_extra` (handled by the `process`
     family doctor).
 - Workspace-owned databases are out of scope for this contract revision; see
@@ -159,7 +159,7 @@ runs.
 ## Behavior Invariants
 
 1. **Registry First:** Phase A (gateway intent removal of workspace-owned
-   `proxy_route` rows and the `workspace` row) commits before any Phase B
+   proxy route rows and the `workspace` row) commits before any Phase B
    node-side cleanup begins.
 2. **Parent App Integrity:** Removing a workspace must not remove or modify
    process definitions, FPM configuration, or proxy routes owned by the
@@ -207,7 +207,7 @@ runs.
 | Caller role not allowed | The caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
 | Authorization failed | A forwarded control caller is not authorized to operate on the resolved workspace. | Failure (`error.code=authorization_failed`). |
-| Phase A (gateway intent) failure | Deleting workspace-owned `proxy_route` rows or the `workspace` row itself fails. No node-side side effects have occurred. | Failure (`error.code=workspace.removal_failed`). |
+| Phase A (gateway intent) failure | Deleting workspace-owned proxy route rows or the `workspace` row itself fails. No node-side side effects have occurred. | Failure (`error.code=workspace.removal_failed`). |
 
 Partial cleanup is **not** a command failure. Once Phase A succeeds, the
 workspace record is gone from gateway workspace registry scope by definition.
@@ -233,8 +233,8 @@ family doctor — not a removal failure.
   and the affected family doctors:
   - `workspace.artifact_extra` — orphaned worktree or FPM pool
     (`doctor --family=workspace --fix`).
-  - `proxy_route.route_extra` — orphaned workspace-owned proxy route
-    (`doctor --family=proxy_route --fix`).
+  - `proxy.route_extra` — orphaned workspace-owned proxy route
+    (`doctor --family=proxy --fix`).
   - `process.runtime_unit_extra` — orphaned inherited process unit
     (`doctor --family=process --fix`).
 - `workspace:remove` does not duplicate per-family drift item shapes; it

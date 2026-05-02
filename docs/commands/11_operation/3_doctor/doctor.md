@@ -6,7 +6,7 @@ Verify gateway intent against observed node reality, then optionally repair or
 adopt supported drift.
 
 `doctor` is Orbit's convergence command. It orchestrates state-family probes for
-families such as `node`, `app`, `workspace`, `process`, `proxy_route`,
+families such as `node`, `app`, `workspace`, `process`, `proxy`,
 `schedule`, `tool`, and `firewall_rule`. The global command owns scope
 resolution, mode selection, authorization, exit status, and output envelopes.
 Family doctor contracts own concrete probe facts, issue codes, and safe

@@ -45,11 +45,16 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - Verifies the tool supports managed removal.
 - Requires destructive consent before side effects.
 - Removes managed artifacts through the gateway.
+- Removes tool-owned credential material and service endpoint intent when the
+  tool definition owns those artifacts.
 - Removes gateway tool intent after supported cleanup succeeds.
 
 ### Scope Boundaries
 
-`tool-remove` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-remove` must not create apps, workspaces, processes, schedules, custom
+proxy routes, non-tool firewall rules, node identities, or node grants.
+Tool-owned endpoint cleanup is allowed only when declared by the selected tool
+definition. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

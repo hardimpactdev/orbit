@@ -42,8 +42,10 @@ Target context is required when neither `--node`, `--app`, nor local
 2. Verifies the tool supports managed removal.
 3. Requires destructive confirmation.
 4. Removes managed node artifacts through the gateway.
-5. Removes the gateway tool row when cleanup succeeds.
-6. Reports partial cleanup if gateway intent and node reality diverge.
+5. Removes tool-owned credential material and service endpoint intent when the
+   selected tool owns those artifacts.
+6. Removes the gateway tool row when cleanup succeeds.
+7. Reports partial cleanup if gateway intent and node reality diverge.
 
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.

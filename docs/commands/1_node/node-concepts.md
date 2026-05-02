@@ -76,6 +76,6 @@ configuration, node identity, app-node reachability from the gateway, access
 policy, gateway runtime readiness, and node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process
-or schedule definitions, proxy-route lifecycle, tool registration, or editable
+or schedule definitions, proxy route lifecycle, tool registration, or editable
 firewall policy beyond role bootstrap requirements. Those domains may depend on
 nodes, but their intent belongs to their own command families.

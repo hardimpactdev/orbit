@@ -39,7 +39,7 @@ then migrate docs until it passes.
 - Documentation domains and doctor state families are related but not
   interchangeable. A command belongs to a documentation domain; drift
   convergence belongs to a stable state family such as `node`, `app`,
-  `workspace`, `process`, `proxy_route`, `firewall_rule`, `tool`, or
+  `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or
   `schedule`.
 - Commands must state whether they mutate gateway intent, enact node artifacts,
   stream runtime data, or only read state.
@@ -135,12 +135,12 @@ Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
 
 Stable state families are `node`, `app`, `workspace`, `process`,
-`proxy_route`, `firewall_rule`, `tool`, and `schedule`. These are the keys
+`proxy`, `firewall_rule`, `tool`, and `schedule`. These are the keys
 accepted by `doctor --family=<family>` and the values carried by warning or
 doctor `family` fields. Machine-readable issue and warning codes use singular
 product prefixes, such as `node.wireguard_peer_missing`,
 `app.fpm_config_missing`, `workspace.path_missing`, `process.runtime_unit_missing`,
-`proxy_route.route_extra`, and `schedule.unit_extra`.
+`proxy.route_extra`, and `schedule.unit_extra`.
 
 Warning `family` is `null` only for command-owned warnings that are not doctor
 issue codes and do not point at `doctor` as the recovery command. Command-owned

@@ -95,8 +95,8 @@ See also:
 - **Artifact Enactment**: Connects to the app node over SSH to:
   - Configure and restart the PHP-FPM pool for the app.
   - Install managed app runtime configuration (e.g., environment files).
-  - Ensure app-owned route intent exists in `proxy_route`.
-  - Hand proxy backend artifact convergence to the `proxy_route` family.
+  - Ensure app-owned route intent exists in `proxy`.
+  - Hand proxy backend artifact convergence to the `proxy` family.
 - **Production Activation**: If `--domain` is supplied:
   - Verifies DNS records point to the Orbit fleet.
   - Requests/verifies TLS certificates.
@@ -105,11 +105,11 @@ See also:
     certificate not yet issued), the command still completes successfully:
     app intent and production-domain intent persist, and the inactive domain
     is reported as a non-fatal warning under `success.meta.warnings[]` with
-    `code=proxy_route.domain_inactive`, `family=proxy_route`, and a
+    `code=proxy.domain_inactive`, `family=proxy`, and a
     self-pointing `next_command=app:register [name] --domain=<host>`. The
     retry command is safe to call repeatedly. Hard activation failures
     unrelated to propagation (malformed domain, registry conflict, internal
-    proxy-route registry write failure) fail validation up front before any
+    proxy route registry write failure) fail validation up front before any
     side effects and use the `error` envelope.
 - **Idempotence (Re-enactment Refresh)**: `app:register` always re-applies
   management. Re-running on an already-managed app re-renders artifacts and
@@ -158,7 +158,7 @@ See also:
   `app.*` product codes and `family: "app"`.
 - **Activation Failures**:
   - Hard validation errors (malformed domain, registry conflict, internal
-    proxy-route registry write failure) fail before side effects with the
+    proxy route registry write failure) fail before side effects with the
     `error` envelope.
   - Propagation-pending DNS or TLS becomes a non-fatal warning under
     `success.meta.warnings[]`; the registration itself succeeds.
@@ -178,6 +178,6 @@ See also:
 | --- | --- |
 | `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Intent convergence, adoption logic, path-collision rejection, and enactment dispatch. |
 | `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Input resolution, role-based rejection, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy-route handoff behavior using mocked node execution. |
+| `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-enactment refresh. |
-| `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy_route.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
+| `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |

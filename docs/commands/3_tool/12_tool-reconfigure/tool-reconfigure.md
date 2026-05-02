@@ -18,7 +18,7 @@ orbit tool:reconfigure [tool] [--node=<node>] [--app=<app>] [--password=<passwor
 
 ```bash
 orbit tool:reconfigure redis --node=app-1
-orbit tool:reconfigure opencode --app=docs --password=secret
+orbit tool:reconfigure opencode-server --app=docs --password=<new-password>
 orbit tool:reconfigure redis --node=app-1 --json
 ```
 
@@ -44,8 +44,10 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Runs the tool definition's setup/configuration action through the gateway.
 4. Updates generated secrets or backend config only when the tool definition
    says reconfiguration owns those values.
-5. Preserves intended tool version.
-6. Reports the reconfiguration result.
+5. Updates tool-owned service endpoint intent only when the tool definition
+   owns that endpoint.
+6. Preserves intended tool version.
+7. Reports the reconfiguration result.
 
 The command does not create a tool row for an unmanaged observed tool. Use
 explicit `doctor --family=tool --adopt` semantics for supported adoption.

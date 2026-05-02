@@ -45,11 +45,16 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - Resolves a reconfigurable registered tool.
 - Runs setup/configuration through the gateway.
 - Updates generated secrets or backend config only when the tool definition owns those values.
+- Updates tool-owned service endpoint intent only when the tool definition
+  owns that endpoint.
 - Preserves intended version.
 
 ### Scope Boundaries
 
-`tool-reconfigure` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-reconfigure` must not create apps, workspaces, processes, schedules,
+custom proxy routes, non-tool firewall rules, node identities, or node grants.
+Tool-owned endpoint updates are allowed only when declared by the selected tool
+definition. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

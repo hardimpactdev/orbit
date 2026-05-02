@@ -26,7 +26,7 @@ The workspace family owns these facts:
 A workspace record that points at a missing, unauthorized, or non-workspaceable
 parent app is a workspace record issue because the workspace cannot resolve.
 Parent app runtime health belongs to the app family. Node reachability belongs
-to the node family. Workspace-owned proxy routes belong to `proxy_route`.
+to the node family. Workspace-owned proxy routes belong to `proxy`.
 Inherited process runtime units belong to `process`. Tool installation and
 firewall policy belong to `tool` and `firewall_rule`. Setup-time HTTP probe
 warnings such as `workspace.http_probe_unhealthy` are command outcome
@@ -113,7 +113,7 @@ inherited process units, or changes node reachability.
 | `workspace.runtime_config_mismatch` | Update workspace runtime intent only when the observed runtime configuration proves the same app and workspace identity and the observed values are supported. |
 
 `--adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
-virtual hosts, adopt proxy-route backend artifacts as workspace intent, infer
+virtual hosts, adopt proxy route backend artifacts as workspace intent, infer
 database ownership, read `.php-version`, or adopt process/schedule/tool/firewall
 artifacts as workspace facts.
 

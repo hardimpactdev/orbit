@@ -72,7 +72,7 @@ app node over SSH. The execution sequence has two phases.
    With `--keep-files`, the prompt body explicitly states the worktree will
    be preserved.
 3. **Phase A — Gateway intent (atomic, point of no return):** Delete
-   workspace-owned `proxy_route` rows and the `workspace` row in one
+   workspace-owned proxy route rows and the `workspace` row in one
    transaction.
 4. **Phase B — Node-side enactment (over SSH):** Stop traffic, stop
    inherited processes, run teardown steps, remove the FPM pool, and remove

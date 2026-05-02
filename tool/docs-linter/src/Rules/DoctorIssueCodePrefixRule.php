@@ -18,7 +18,7 @@ final class DoctorIssueCodePrefixRule implements CommandDocsLintRule
         'firewall' => 'firewall_rule',
         'node' => 'node',
         'process' => 'process',
-        'proxy' => 'proxy_route',
+        'proxy' => 'proxy',
         'schedule' => 'schedule',
         'tool' => 'tool',
         'workspace' => 'workspace',

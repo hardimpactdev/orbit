@@ -12,10 +12,10 @@ valid app targets.
   They cannot start or end with a hyphen and are limited to 40 characters.
 - App-node artifacts are enacted by the gateway over SSH.
 - Apps may be development or production apps.
-- App hostnames are represented in `proxy_route` as app-owned route records.
+- App hostnames are represented in `proxy` as app-owned route records.
   App commands create, update, and remove the app intent that owns those
   routes; proxy route registry and backend artifact convergence belong to the
-  `proxy_route` family.
+  `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
   local `node:default` development app node when configured.
 - `app:new` creates or clones app source/path and then uses `app:register`

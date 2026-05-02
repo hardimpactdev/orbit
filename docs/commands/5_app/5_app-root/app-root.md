@@ -36,7 +36,7 @@ and then re-enacts the necessary runtime artifacts on the application node.
     PHP-FPM configuration to the app node over SSH. The PHP-FPM pool reload
     required to pick up the new document root is part of this step. App-owned
     proxy route intent continues to belong to the app, but backend proxy
-    artifact convergence belongs to the `proxy_route` family.
+    artifact convergence belongs to the `proxy` family.
 3.  **No File Movement:** The command only updates the path configuration; it
     does **not** move or rename any files or directories on the application
     node.

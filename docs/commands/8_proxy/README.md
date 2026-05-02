@@ -1,14 +1,15 @@
 # Proxy Commands
 
 Proxy commands expose Orbit's HTTP ingress registry. The command family is
-`proxy:*`; the durable state family and doctor key is `proxy_route`.
+`proxy:*`; the durable state family and doctor key is `proxy`.
 
 Caddy is the current proxy backend. It is not the product model.
 
 ## Domain Rules
 
 - The proxy command family owns the `proxy:*` command prefix.
-- `proxy_route` is the canonical registry of every hostname Orbit exposes.
+- The `proxy` state family is the canonical registry of every hostname Orbit
+  exposes.
 - Every proxy route has an owner: `app`, `workspace`, `gateway`, `tool`, or
   `custom`.
 - Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
@@ -20,6 +21,9 @@ Caddy is the current proxy backend. It is not the product model.
   `all`, `app`, `workspace`, `gateway`, `tool`, `custom`, and `redirect`.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
+- Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP tool
+  service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
+  endpoints owned by the tool catalog and do not appear as HTTP proxy routes.
 - Custom routes are created, updated, and removed through `proxy:add` and
   `proxy:remove`.
 - Redirects are custom proxy routes with kind `redirect`; they are created by
@@ -31,10 +35,10 @@ Caddy is the current proxy backend. It is not the product model.
   material on the serving node. Those certificates chain to the gateway root
   CA trusted by `gateway:add` and `gateway:trust`.
 - Proxy reads use gateway intent by default. Live proxy backend reality belongs
-  to `doctor --family=proxy_route`.
+  to `doctor --family=proxy`.
 - Backend discovery/import is not part of the proxy command surface. Adoption
   of observed backend routes must use explicit
-  `doctor --family=proxy_route --adopt` semantics.
+  `doctor --family=proxy --adopt` semantics.
 
 ## Proxy Route JSON Entity
 
@@ -84,7 +88,7 @@ Proxy JSON renderers that return one route entity embed this shape under
 
 ## Related
 
-- [`doctor --family=proxy_route`](proxy-doctor.md)
+- [`doctor --family=proxy`](proxy-doctor.md)
 - [`orbit app:*`](../5_app/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)

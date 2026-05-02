@@ -44,7 +44,7 @@ orbit workspace:setup feature-a
   files to discover workspace identity.
 - **Gateway Intent**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
-  `proxy_route`.
+  `proxy`.
 - **Artifact Enactment**: Enacts runtime and proxy backend artifacts on the
   app node via SSH.
 - **Setup Steps**: Runs setup steps when configured.

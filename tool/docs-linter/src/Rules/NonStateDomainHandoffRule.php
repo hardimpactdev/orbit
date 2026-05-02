@@ -36,7 +36,7 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
             'app',
             'workspace',
             'process',
-            'proxy_route',
+            'proxy',
             'schedule',
             'tool',
             'firewall_rule',

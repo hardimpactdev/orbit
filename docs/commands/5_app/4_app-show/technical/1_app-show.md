@@ -61,7 +61,7 @@ policy. No role-specific companion contracts are needed.
    - If `[app]` is provided:
      - Check if it matches an app **name (slug)** visible to the caller.
      - If no name match, check if it matches an app **hostname** in
-       `proxy_route` owned by an app visible to the caller.
+       `proxy` owned by an app visible to the caller.
      - If both match (a name on one app and a hostname on a different app),
        **name match wins**. Hostnames are a convenience addressing form;
        identity slugs are the canonical key.

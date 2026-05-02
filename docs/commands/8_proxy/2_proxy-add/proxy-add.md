@@ -15,7 +15,7 @@ orbit proxy:add <domain> --redirect=<url> [--code=<code>] [--node=<node>] [--for
 
 ## Description
 
-`proxy:add` creates user-authored proxy-route intent. It supports two custom
+`proxy:add` creates user-authored proxy route intent. It supports two custom
 route shapes:
 
 - an upstream route from `<domain>` to a local service URL through
@@ -42,7 +42,7 @@ orbit proxy:add old.test --redirect=https://docs.test --force --json
 
 Human output renders a progress tree and a summary naming the domain, route
 kind, serving node, and target. JSON output returns `success.data.route` using
-the family proxy-route entity shape.
+the family proxy route entity shape.
 
 ## Requirements
 
@@ -56,5 +56,5 @@ the family proxy-route entity shape.
 
 - [`orbit proxy:list`](../1_proxy-list/proxy-list.md)
 - [`orbit proxy:remove`](../3_proxy-remove/proxy-remove.md)
-- [`doctor --family=proxy_route`](../proxy-doctor.md)
+- [`doctor --family=proxy`](../proxy-doctor.md)
 - [Technical contract](technical/1_proxy-add.md)

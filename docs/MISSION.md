@@ -102,7 +102,7 @@ explicit doctor mode so the direction of the change is always clear.
 Every piece of standing configuration Orbit manages is tracked as a **state
 family**: gateway-tracked configuration plus node reality that can be probed,
 diffed, and brought back into agreement. The permanent product families are
-`node`, `app`, `workspace`, `process`, `proxy_route`, `schedule`, `tool`,
+`node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`,
 and `firewall_rule`.
 
 The DB describes **intent**. SSH execution via `RemoteShell` enacts that intent
