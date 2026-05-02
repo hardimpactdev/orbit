@@ -17,4 +17,11 @@ return [
             'orbit workspace:setup',
         ],
     ],
+    'proxy_route.domain_inactive' => [
+        'family' => 'proxy_route',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'app:register',
+        ],
+    ],
 ];

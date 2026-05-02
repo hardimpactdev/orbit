@@ -225,17 +225,18 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/5_app`
 - [x] `docs/commands/6_workspace`
 - [x] `docs/commands/7_process`
+- [x] `docs/commands/8_proxy`
 - [x] `docs/commands/16_dns`
 
 ### Legacy Command Docs Still To Port
 
-- [ ] Proxy routes: `../orbit-old-may/docs/commands/07-proxy-routes`
-  - [ ] `proxy:list`
-  - [ ] `proxy:add`
-  - [ ] `proxy:remove`
-  - [ ] `proxy:redirect-add`
-  - [ ] `proxy:redirect-list`
-  - [ ] `proxy:redirect-remove`
+- [x] Proxy routes: `../orbit-old-may/docs/commands/07-proxy-routes`
+  - [x] `proxy:list`
+  - [x] `proxy:add`
+  - [x] `proxy:remove`
+  - [x] Legacy `proxy:redirect-add` folded into `proxy:add --redirect=<url>`.
+  - [x] Legacy `proxy:redirect-list` folded into `proxy:list --filter=redirect`.
+  - [x] Legacy `proxy:redirect-remove` folded into `proxy:remove`.
 - [ ] Schedules: `../orbit-old-may/docs/commands/08-schedules`
   - [ ] `schedule:add`
   - [ ] `schedule:list`

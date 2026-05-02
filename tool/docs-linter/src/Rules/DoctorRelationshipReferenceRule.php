@@ -18,7 +18,7 @@ final class DoctorRelationshipReferenceRule implements CommandDocsLintRule
         'firewall' => 'firewall-doctor.md',
         'node' => 'node-doctor.md',
         'process' => 'process-doctor.md',
-        'proxy-route' => 'proxy-route-doctor.md',
+        'proxy' => 'proxy-doctor.md',
         'schedule' => 'schedule-doctor.md',
         'tool' => 'tool-doctor.md',
         'workspace' => 'workspace-doctor.md',

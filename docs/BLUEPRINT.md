@@ -371,7 +371,7 @@ renamed, folded, or removed.
 A proxy route is Orbit-owned HTTP ingress intent for a hostname at the fleet
 boundary. `proxy_route` is the canonical registry of every hostname Orbit
 exposes, regardless of whether the route exists because of an app, a workspace,
-the gateway, or a standalone user-authored rule.
+the gateway, a tool, or a custom user-authored rule.
 
 A proxy route describes what should happen before a request reaches an app:
 
@@ -393,11 +393,12 @@ Every proxy route has an owner that controls its lifecycle:
 | `app` | App primary development or production hostname | Created, updated, and removed by app commands |
 | `workspace` | Workspace hostname | Created, updated, and removed by workspace commands |
 | `gateway` | Orbit gateway/API hostname | Created and updated by gateway/node lifecycle |
-| `standalone` | User-authored route without an app/workspace owner | Created, updated, and removed by proxy-route commands |
+| `tool` | Tool or node service hostname | Created, updated, and removed by tool commands |
+| `custom` | User-authored route without an app/workspace/gateway/tool owner | Created, updated, and removed by proxy commands |
 
 Owned routes are visible in the proxy route registry but are not edited directly
-through standalone proxy-route commands. For example, a workspace route is listed
-with all other routes, but its lifecycle belongs to the workspace.
+through custom proxy commands. For example, a workspace route is listed with all
+other routes, but its lifecycle belongs to the workspace.
 
 The gateway-owned internal route includes the Orbit gateway API ingress. Its
 proxy/TLS/backend artifact belongs to `proxy_route`, while the runtime service

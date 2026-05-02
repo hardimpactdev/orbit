@@ -531,7 +531,7 @@ build on top of that foundation.
 5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)
 7. [Processes](7_process/README.md)
-8. Proxy Routes (not yet converted)
+8. [Proxy](8_proxy/README.md)
 9. Schedules (not yet converted)
 10. Deployments (not yet converted)
 11. [Operations](11_operation/README.md)

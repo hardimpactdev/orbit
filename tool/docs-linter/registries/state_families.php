@@ -21,7 +21,7 @@ return [
     ],
     'proxy_route' => [
         'singular' => 'proxy_route',
-        'doctor_doc' => null,
+        'doctor_doc' => 'docs/commands/8_proxy/proxy-doctor.md',
     ],
     'schedule' => [
         'singular' => 'schedule',
