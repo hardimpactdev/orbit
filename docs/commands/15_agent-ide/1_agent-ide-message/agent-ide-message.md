@@ -15,7 +15,7 @@ the active IDE session to inspect or act on the current app or workspace.
 ## Usage
 
 ```bash
-orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit agent-ide:message [message] [--stdin] [--app=<app>] [--workspace=<workspace>] [--json]
 ```
 
 ## Examples
@@ -24,11 +24,14 @@ orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--jso
 orbit agent-ide:message "Run the focused test for the current change"
 orbit agent-ide:message "Inspect the queue worker logs" --app=docs
 orbit agent-ide:message "Review the open diff" --workspace=feature-docs
+git diff | orbit agent-ide:message --stdin --workspace=feature-docs
 orbit agent-ide:message "Summarize the failing request" --app=docs --json
 ```
 
 ## Behavior
 
+- Accepts the message from `[message]` or from standard input when `--stdin`
+  is present.
 - Resolves a target context before sending the message:
   - `--workspace=<workspace>` targets a workspace;
   - `--app=<app>` targets the app's main context;
@@ -36,7 +39,8 @@ orbit agent-ide:message "Summarize the failing request" --app=docs --json
     the current directory when possible.
 - Resolves the effective Agent IDE adapter from workspace setting when a future
   workspace override exists, then app override, then owning node default.
-- Finds the active adapter session for the resolved context.
+- Finds the active adapter session for the resolved context. The adapter owns
+  session lookup, but lookup must stay inside the resolved app/workspace scope.
 - Sends the message through the resolved adapter.
 - Reports delivery success or adapter failure.
 
@@ -48,7 +52,8 @@ Orbit app, workspace, process, node, or tool state.
 Human output reports the target context, adapter, and delivery result.
 
 JSON output returns the same result in the shared `success` or `error` envelope.
-See the [JSON renderer contract](technical/6.2_agent-ide-message_output-render_json.md)
+See the
+[JSON renderer contract](technical/6.2_agent-ide-message_output-render_json.md)
 for the exact shape.
 
 ## Requirements

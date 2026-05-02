@@ -98,6 +98,10 @@ app read for every caller.
 - Name matches win over hostname matches when both could resolve.
 - Workspace hostnames resolve to the workspace and parent app context; `--node`
   constrains target resolution but does not grant access.
+- Absolute path targets are local-context selectors. A control node that cannot
+  map the supplied path to a gateway-known app must fail and ask for a domain
+  target or `--app`; it must not guess which remote app-node path the user
+  meant.
 
 ### Request Measurement Rules
 
@@ -117,9 +121,10 @@ app read for every caller.
 ### Toolbar Enrichment Rules
 
 - Always return the baseline profile result when the main request completed.
-- Mark `instrumented=false` and `source=baseline` without Toolbar summary data;
-  mark `instrumented=true` and `source=baseline+toolbar` when summary data is
-  available.
+- Mark `instrumented=false` and `source=baseline` without Toolbar summary data.
+  When the response includes an `x-toolbar-summary` header containing a
+  base64-encoded JSON summary, decode it, attach the summary, and mark
+  `instrumented=true` and `source=baseline+toolbar`.
 - Toolbar data may include timing anchors, profiler stages, memory information,
   route/controller data, and query counts. Partial Toolbar data is successful;
   missing collector fields are empty, omitted, or `null` according to the JSON

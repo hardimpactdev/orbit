@@ -22,7 +22,7 @@
 ## Signature
 
 ```bash
-orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--json]
+orbit agent-ide:message [message] [--stdin] [--app=<app>] [--workspace=<workspace>] [--json]
 ```
 
 ## Input Contract
@@ -32,7 +32,8 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `message` | `[message]` | Always. | Never. | None. | Non-empty UTF-8 text after trimming surrounding whitespace. |
+| `message` | `[message]` or stdin | Always. | `[message]` is present and `--stdin` is true. | None. | Non-empty UTF-8 text. Positional message trims surrounding whitespace; stdin preserves the body except for one trailing newline added by common shells. |
+| `stdin` | `--stdin` | Never. | `[message]` is present. | `false`. | Reads message body from standard input. |
 | `app` | `--app` | Required when neither `--workspace` nor local app/workspace context resolves a target. | `--workspace` is present. | Local app/workspace context when available. | Existing app name or hostname visible to the caller. |
 | `workspace` | `--workspace` | Required when neither `--app` nor local app/workspace context resolves a target. | `--app` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside app scope when an app context is known. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
@@ -62,8 +63,10 @@ state as authority.
 
 1. Resolve caller role before prompts or gateway requests.
 2. Select the output renderer.
-3. Validate that `--app` and `--workspace` are not combined.
-4. Resolve `message` from `[message]`.
+3. Validate mutually exclusive inputs:
+   - `--app` and `--workspace` cannot be combined.
+   - `[message]` and `--stdin` cannot be combined.
+4. Resolve `message` from `[message]` or stdin.
 5. Resolve target context:
    - `--workspace=<workspace>` selects a workspace context.
    - `--app=<app>` selects the app main context.
@@ -106,6 +109,9 @@ state as authority.
 ### Delivery Rules
 
 - Deliver exactly the supplied message text after input-mode resolution.
+- Stdin input is a first-class automation path for long prompts and generated
+  context. It does not change target resolution, authorization, adapter
+  selection, or renderer behavior.
 - Do not modify app source, workspace files, process definitions, node intent,
   tool intent, or local settings.
 - Do not create a new Agent IDE session.
@@ -113,6 +119,9 @@ state as authority.
   failure with adapter context.
 - A successful delivery means the adapter accepted the message for the active
   session; it does not guarantee that the IDE completed the requested work.
+- Adapter session lookup is adapter-specific. App-context delivery may resolve
+  the most recent active app-owned session when the adapter represents sessions
+  as workspaces, but it must not cross app authorization boundaries.
 
 ### Scope Boundaries
 
@@ -134,7 +143,7 @@ state as authority.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required message/target input is missing, message is empty, or `--app` and `--workspace` are combined. | Failure before adapter delivery |
+| Validation failed | Required message/target input is missing, message is empty, `--app` and `--workspace` are combined, or `[message]` and `--stdin` are combined. | Failure before adapter delivery |
 | Local context invalid | The local node role setting is unreadable or unsupported. | Failure before prompts or gateway requests |
 | Gateway unavailable | A non-gateway caller cannot reach the configured gateway API. | Failure before adapter delivery |
 | Authorization failed | The current node identity is not authorized for the resolved app/workspace. | Failure before adapter delivery |
@@ -164,7 +173,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution from explicit app, explicit workspace, and cwd context; caller-role behavior; authorization failures; effective adapter resolution; no-adapter failure; no-active-session failure; adapter delivery failure; accepted delivery success; read-only guarantee for Orbit state; and no session creation. |
+| `tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution from explicit app, explicit workspace, and cwd context; caller-role behavior; authorization failures; effective adapter resolution; stdin message delivery; no-adapter failure; no-active-session failure; adapter delivery failure; accepted delivery success; read-only guarantee for Orbit state; and no session creation. |
 
 Input-mode-specific test mapping lives in:
 

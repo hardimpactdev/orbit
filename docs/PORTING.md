@@ -242,9 +242,11 @@ document the supported Orbit capability and ownership boundary.
 - [x] `docs/commands/8_proxy`
 - [x] `docs/commands/9_schedule`
 - [x] `docs/commands/10_deploy`
+- [x] `docs/commands/11_operation`
 - [x] `docs/commands/12_cf`
 - [x] `docs/commands/13_vpn`
 - [x] `docs/commands/14_php`
+- [x] `docs/commands/15_agent-ide`
 - [x] `docs/commands/16_dns`
 
 Docs marked converted here mean the command contracts exist in the clean repo.
@@ -273,13 +275,16 @@ They do not imply the matching implementation has been ported.
   - [x] `deploy:run`
   - [x] `deploy:history`
   - [x] `deploy:log`
-- [~] Operations: `../orbit-old-may/docs/commands/10-operations`
+- [x] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [x] `doctor`
+  - [x] Legacy `ca:trust` replaced by `gateway:trust`.
   - [x] `profile`
   - [x] `update`
   - [x] `update:all`
   - [x] `activity:list`
   - [x] `activity:show`
+  - [x] Legacy `dns:resolve-tld` moved into the DNS domain.
+  - [x] Legacy `dns:list` moved into the DNS domain.
 - [x] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
   - [x] Legacy `cf:zones` renamed to `cf-zone:list`.
   - [x] `cf-dns:list`
@@ -307,6 +312,21 @@ They do not imply the matching implementation has been ported.
   - [x] Tool-specific command family admission policy documented.
 - [x] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
   - [x] `agent-ide:message`
+
+All explicit legacy command docs have been structurally ported or deliberately
+folded into the current command domains. Remaining documentation work is legacy
+feature-detail audit, semantic tightening, and implementation-gap tracking.
+
+### Legacy Feature-Detail Audits
+
+- [x] `profile`
+  - [x] Full URL target parsing, local absolute-path limits, auth header
+        selection, completed non-2xx request success, and Toolbar summary
+        enrichment.
+- [x] Agent IDE messaging
+  - [x] Stdin message input preserved under `agent-ide:message`.
+  - [x] Adapter-specific active-session lookup constrained to the resolved
+        app/workspace scope.
 
 ### Todo Pipeline Hints
 
@@ -519,9 +539,10 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
    gateway, development app, and production app VMs.
 3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-4. Finish node registry and metadata slices first: `node:update`,
+4. Run legacy feature-detail audits for freshly converted docs before treating
+   their families as product-complete, starting with `profile` and Agent IDE,
+   then app/proxy/workspace cross-family behavior.
+5. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
-5. Convert `profile` docs once its node/app prerequisites are present, then
-   port it early as a verification-helper command.
 6. Complete the documented `update` and `update:all` implementation gaps once
    the current node access path is stable enough to enforce them.
