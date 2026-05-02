@@ -7,6 +7,9 @@ behavior from `../orbit-old-may`.
 
 - Current `docs/` are product authority.
 - `../orbit-old-may` is implementation evidence, not product authority.
+- Old features should be treated as reference material, not a mandate to copy
+  their structure. Before porting behavior, verify whether the clean rebuild can
+  implement it more simply, safely, or directly against the current contracts.
 - If a feature or command exists only in `../orbit-old-may/docs`, port its
   documentation into this repo before implementing it.
 - Legacy command docs must be converted into the current command-doc format
@@ -34,12 +37,14 @@ behavior from `../orbit-old-may`.
 4. Inspect the old implementation in `../orbit-old-may/app`,
    `../orbit-old-may/config`, `../orbit-old-may/database`, and
    `../orbit-old-may/tests`.
-5. Implement the smallest useful vertical slice in the clean repo.
-6. Add focused Pest tests that assert the current docs contract, not legacy
+5. Decide whether the old implementation should be ported directly or replaced
+   with a simpler clean-rebuild approach that better fits the current docs.
+6. Implement the smallest useful vertical slice in the clean repo.
+7. Add focused Pest tests that assert the current docs contract, not legacy
    internals.
-7. Run the narrow test, then `composer analyse`, `composer format`, and
+8. Run the narrow test, then `composer analyse`, `composer format`, and
    `composer test`.
-8. Update this tracker in the same commit as the ported slice.
+9. Update this tracker in the same commit as the ported slice.
 
 ## Current Clean Implementation
 
