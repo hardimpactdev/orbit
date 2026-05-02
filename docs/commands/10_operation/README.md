@@ -20,6 +20,8 @@ drift keys remain the product family keys defined by the blueprint, such as
 - Updates change Orbit installations. They do not replace doctor; run the
   doctor family that owns the changed artifact when configuration drift or
   runtime readiness matters.
+- `doctor` owns cross-family convergence orchestration. Family doctor contracts
+  own concrete probes, issue codes, and fix/adopt action maps.
 - Operational history is gateway history. A single operation may produce
   multiple records under one correlation id when history support is available.
 - Local trust and local DNS commands affect only the caller machine. They do not
@@ -30,6 +32,7 @@ drift keys remain the product family keys defined by the blueprint, such as
 
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
+3. [`orbit doctor`](3_doctor/doctor.md)
 
 ## Not Yet Converted
 
@@ -37,7 +40,6 @@ The legacy operation commands below are tracked in
 [`docs/PORTING.md`](../../PORTING.md) and are not part of this converted domain
 until their current contracts are added here:
 
-- `doctor`
 - `ca:trust`
 - `profile`
 - `activity:list`

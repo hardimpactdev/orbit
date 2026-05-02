@@ -239,7 +239,7 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [ ] `deploy:history`
   - [ ] `deploy:log`
 - [~] Operations: `../orbit-old-may/docs/commands/10-operations`
-  - [ ] `doctor`
+  - [x] `doctor`
   - [ ] CA trust command contract
   - [!] `profile` docs conversion is an early verification-helper candidate
     after node identity and minimal app resolution are available.
