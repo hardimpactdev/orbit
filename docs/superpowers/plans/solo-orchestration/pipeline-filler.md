@@ -1,6 +1,6 @@
 # Pipeline Filler Prompt
 
-You are the one-shot pipeline filler for `IMPLEMENTATION_PLAN`.
+You are the one-shot pipeline filler for the current Orbit porting run.
 
 ## Mission
 
@@ -15,10 +15,10 @@ You do not dispatch workers and you do not implement product code.
 
 Read:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
+- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
+  queue and agent configuration
 - this file
-- `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - relevant `docs/commands/**`
 - `docs/BLUEPRINT.md`

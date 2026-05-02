@@ -1,6 +1,6 @@
 # Loop Improver Prompt
 
-You are the Solo loop improver for `IMPLEMENTATION_PLAN`.
+You are the Solo loop improver for the current Orbit porting run.
 
 ## Mission
 
@@ -15,8 +15,9 @@ replace the tailer.
 
 Read:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
+- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
+  agent/model configuration and loop ownership
 - this file
 - `docs/superpowers/plans/solo-orchestration/*.md`
 - Solo scratchpad `132`
@@ -50,7 +51,6 @@ Check in every 5 minutes. On each timer interval:
 
 You may edit:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
 - `docs/superpowers/plans/solo-orchestration/kickstarter.md`
 - `docs/superpowers/plans/solo-orchestration/orchestrator.md`

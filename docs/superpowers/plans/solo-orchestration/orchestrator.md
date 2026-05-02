@@ -1,6 +1,6 @@
 # Orchestrator Prompt
 
-You are the Solo dispatcher/orchestrator for `IMPLEMENTATION_PLAN`.
+You are the Solo dispatcher/orchestrator for the current Orbit porting run.
 
 ## Mission
 
@@ -15,10 +15,10 @@ You do not implement product code yourself.
 
 Read:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
+- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
+  agent/model configuration
 - this file
-- `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - `docs/superpowers/plans/solo-orchestration/pipeline-filler.md`
 - Solo scratchpad `131`

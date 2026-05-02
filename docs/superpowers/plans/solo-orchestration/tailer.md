@@ -1,6 +1,6 @@
 # Tailer Prompt
 
-You are the Solo tailer/supervisor for `IMPLEMENTATION_PLAN`.
+You are the Solo tailer/supervisor for the current Orbit porting run.
 
 ## Mission
 
@@ -16,10 +16,10 @@ You do not implement product code yourself.
 
 Read:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
+- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
+  agent/model configuration
 - this file
-- `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - Solo scratchpad `131`
 - active todos, comments, locks, timers, and process list

@@ -1,15 +1,18 @@
-# Kickstarter Prompt
+# Kickstarter Procedure
 
-You are the Solo loop kickstarter for `IMPLEMENTATION_PLAN`.
+This is a coordinator-run procedure for starting or resuming the Solo
+orchestration loop.
+
+Do not spawn a Solo agent just to execute this file. The current human-facing
+agent or coordinator reads this procedure and performs the steps directly.
 
 ## Configuration
 
-Use these variables for this run unless the user provides overrides in the
-startup prompt:
+Use these variables for this run unless the user provides overrides:
 
 ```env
-IMPLEMENTATION_PLAN=`2026-04-30-node-command-contract-contraction`
-TASK_PREFIX=NC
+PORTING_TRACKER=docs/PORTING.md
+COORDINATION_TODO=190
 PIPELINE_READY_TARGET=2
 
 ORCHESTRATOR_AGENT=codex-gpt-5.4-mini-low
@@ -38,8 +41,9 @@ Examples:
 
 Resolve the variables once at startup and pass the resolved configuration
 verbatim to every spawned orchestrator, pipeline filler, tailer, loop improver,
-implementer, fresh reviewer, rubber-duck, and E2E tester. Do not hard-code task
-prefixes or agent/model choices when a variable exists.
+implementer, fresh reviewer, rubber-duck, and E2E tester. Do not hard-code
+coordination todo ids, queue targets, or agent/model choices when a variable
+exists.
 
 If a configured agent is not available in Solo, stop with `NEEDS_DIRECTION`
 instead of silently substituting a different model.
@@ -47,17 +51,15 @@ instead of silently substituting a different model.
 ## Mission
 
 Start or resume the Solo implementation loop without implementing code yourself.
-Your job is to make sure the right long-running roles exist, know their prompts,
+The job is to make sure the right long-running roles exist, know their prompts,
 and have enough context to keep moving on timers.
 
 ## Inputs
 
 Read:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - `docs/superpowers/plans/solo-orchestration/README.md`
 - this file
-- `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - Solo scratchpad `131`
 - Solo scratchpad `132`
@@ -71,7 +73,7 @@ Read:
 2. Select the correct Solo project.
 3. List Solo agent tools and verify each configured agent needed immediately is
    available.
-4. Identify the coordination todo for this plan, or create one if none exists.
+4. Identify the coordination todo for this run, or create one if none exists.
 5. Check whether an orchestrator is already active. If not, spawn one using
    `ORCHESTRATOR_AGENT` and `orchestrator.md`.
 6. Check whether a tailer is already active. If not, spawn one using
@@ -107,6 +109,7 @@ Read:
 
 ## Handoff
 
-After the orchestrator, tailer, and loop improver are active, stop. The
-orchestrator owns assignment. The tailer owns supervision and scratchpad `131`.
-The loop improver owns loop-level prompt improvement and scratchpad `132`.
+After the orchestrator, tailer, and loop improver are active, stop
+kickstarting. The orchestrator owns assignment. The tailer owns supervision and
+scratchpad `131`. The loop improver owns loop-level prompt improvement and
+scratchpad `132`.

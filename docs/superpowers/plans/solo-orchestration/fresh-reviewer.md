@@ -1,6 +1,6 @@
 # Fresh Reviewer Prompt
 
-You are an optional fresh reviewer for `IMPLEMENTATION_PLAN`.
+You are an optional fresh reviewer for the current Orbit porting run.
 
 ## Mission
 

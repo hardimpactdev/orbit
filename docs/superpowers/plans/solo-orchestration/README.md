@@ -1,11 +1,16 @@
 # Solo Orchestration Loop
 
-This directory contains copy-ready prompts for the agent roles used to implement
-an Orbit plan through Solo.
+This directory is the complete source for the Solo orchestration loop used to
+drive Orbit porting work.
+
+Do not use `../00-plan-implementation-prompt-solo.md` as an input for this
+loop. That file is deprecated and should only point back here.
 
 ## Role Map
 
-1. **Kickstarter** starts or resumes the loop.
+1. **Kickstarter** is a coordinator-run procedure, not a Solo agent role. The
+   current human-facing agent executes `kickstarter.md` directly to start or
+   resume the loop.
 2. **Orchestrator** is a cheap scheduler. It checks queue/process state, spawns
    one-shot fillers, spawns or restarts one implementer, asks the tailer for
    verification, and closes todos.
@@ -26,10 +31,10 @@ an Orbit plan through Solo.
 
 Every role should read only the context it needs:
 
-- `docs/superpowers/plans/00-plan-implementation-prompt-solo.md`
 - this `README.md`
+- `kickstarter.md` for the resolved run configuration when agent/model choices
+  are needed
 - the role-specific prompt file
-- `IMPLEMENTATION_PLAN`
 - `docs/PORTING.md`
 - relevant `docs/commands/**`
 - `docs/BLUEPRINT.md`
@@ -41,6 +46,26 @@ Every role should read only the context it needs:
 
 Current docs are product authority. Current implementation and the old repo are
 evidence only.
+
+## Startup Procedure
+
+The coordinator runs `kickstarter.md` directly. Do not spawn a Solo process
+whose only job is to read `kickstarter.md`.
+
+The kickstarter procedure:
+
+1. resolves the configuration in `kickstarter.md`;
+2. confirms the Solo project, process list, agent tools, todo state, scratchpad
+   state, and git status;
+3. spawns or resumes exactly the long-running roles needed by the loop:
+   orchestrator, tailer, and loop improver;
+4. uses the startup handshake for each spawned role;
+5. records the active process ids and queue state on the coordination todo;
+6. exits from coordination mode once those long-running roles are active.
+
+After that, the orchestrator owns assignment, the tailer owns implementation
+supervision and scratchpad `131`, and the loop improver owns loop-level prompt
+improvements and scratchpad `132`.
 
 ## Solo Tooling
 
@@ -232,7 +257,8 @@ When an implementer hits a blocker:
 
 The loop is complete only when:
 
-- all plan todos in scope are completed or explicitly deferred with evidence;
+- all todos in the current porting scope are completed or explicitly deferred
+  with evidence;
 - every completed implementation todo has tailer verification evidence;
 - a fresh batch reviewer approves when required by risk, tailer request, or user
   direction;
