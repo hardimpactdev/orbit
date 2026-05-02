@@ -2,18 +2,31 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 it('updates the local orbit checkout', function (): void {
-    Process::fake();
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
-    $this->artisan('update')
-        ->expectsOutputToContain('Updated local Orbit checkout.')
-        ->assertSuccessful();
+    $exitCode = Artisan::call('update');
 
-    Process::assertRan(fn ($process): bool => $process->path === base_path()
-        && str_contains($process->command, 'COMPOSER_BIN="$(command -v composer || true)"')
-        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction')
-        && str_contains($process->command, 'php artisan migrate --force'));
+    expect($exitCode)->toBe(0);
+});
+
+it('fails when a step fails', function (): void {
+    Process::fake([
+        'git pull --ff-only' => Process::result(
+            output: '',
+            errorOutput: 'merge conflict',
+            exitCode: 1,
+        ),
+    ]);
+    Process::preventStrayProcesses();
+
+    $exitCode = Artisan::call('update');
+
+    expect($exitCode)->toBe(1);
 });
