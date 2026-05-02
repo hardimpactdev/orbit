@@ -3,13 +3,45 @@
 declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
 describe('node:new', function (): void {
+    beforeEach(function (): void {
+        $this->tempStorage = sys_get_temp_dir().'/orbit-node-new-test-'.uniqid();
+        mkdir($this->tempStorage.'/app/orbit', 0777, true);
+        app()->useStoragePath($this->tempStorage);
+
+        $factory = new Factory;
+        $tmpKey = tempnam(sys_get_temp_dir(), 'orbit-test-key-');
+        $tmpCrt = tempnam(sys_get_temp_dir(), 'orbit-test-crt-');
+
+        $factory->run(sprintf('openssl genrsa -out %s 2048', escapeshellarg($tmpKey)));
+        $factory->run(implode(' ', [
+            'openssl req -x509 -new -nodes',
+            '-key '.escapeshellarg($tmpKey),
+            '-sha256 -days 1',
+            '-out '.escapeshellarg($tmpCrt),
+            '-subj '.escapeshellarg('/CN=Test CA/O=Orbit'),
+        ]));
+
+        $this->mockCaCert = trim($factory->run(sprintf('cat %s', escapeshellarg($tmpCrt)))->output());
+
+        @unlink($tmpKey);
+        @unlink($tmpCrt);
+    });
+
+    afterEach(function (): void {
+        if (isset($this->tempStorage) && is_dir($this->tempStorage)) {
+            File::deleteDirectory($this->tempStorage);
+        }
+    });
+
     it('ships a local installer for control and gateway bootstrap hosts', function (): void {
         $installer = base_path('bin/install-orbit');
         $contents = file_get_contents($installer);
@@ -47,7 +79,15 @@ describe('node:new', function (): void {
     });
 
     it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
-        Process::fake(['*' => Process::result(output: "Orbit 0.1.0\n")]);
+        $mockCaCert = $this->mockCaCert;
+
+        Process::fake(function ($process) use ($mockCaCert) {
+            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
+                return Process::result(output: $mockCaCert."\n");
+            }
+
+            return Process::result(output: '');
+        });
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
@@ -83,7 +123,7 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('mini')
             ->and($payload['success']['data']['local_onboarding'])->toBe([
                 'wireguard' => 'pending',
-                'gateway_trust' => 'pending',
+                'gateway_trust' => 'trusted',
                 'gateway_config' => 'stored',
                 'gateway_api' => 'pending',
             ])
@@ -105,6 +145,10 @@ describe('node:new', function (): void {
             ->and($control->role)->toBe('control')
             ->and((bool) $control->is_local)->toBeTrue();
 
+        $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
+        expect(file_exists($trustPath))->toBeTrue()
+            ->and(file_get_contents($trustPath))->toBe($mockCaCert);
+
         Process::assertRan(fn ($process): bool => str_starts_with($process->command, 'tar '));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'scp ')
             && str_contains($process->command, 'install-orbit'));
@@ -118,6 +162,86 @@ describe('node:new', function (): void {
             && str_contains($process->command, 'gateway')
             && str_contains($process->command, '--source-archive=')
             && str_contains($process->command, 'sudo su -'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
+    });
+
+    it('fails when remote bootstrap returns an invalid or empty CA certificate', function (): void {
+        Process::fake(function ($process) {
+            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
+                return Process::result(output: 'Orbit 0.1.0\n');
+            }
+
+            return Process::result(output: '');
+        });
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-invalid',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.99',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => "Gateway host '192.0.2.99' returned an invalid or empty CA certificate.",
+                    'meta' => [
+                        'host' => '192.0.2.99',
+                        'step' => 'bootstrap_gateway_identity',
+                        'error' => 'Remote bootstrap did not output a valid PEM certificate.',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->count())->toBe(0);
+
+        $trustPath = storage_path('app/orbit/trust/gateway-invalid-ca.crt');
+        expect(file_exists($trustPath))->toBeFalse();
+    });
+
+    it('fails when remote bootstrap returns malformed PEM with valid delimiters', function (): void {
+        Process::fake(function ($process) {
+            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
+                return Process::result(output: "-----BEGIN CERTIFICATE-----\nnot-a-valid-cert\n-----END CERTIFICATE-----\n");
+            }
+
+            return Process::result(output: '');
+        });
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-malformed',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.88',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => "Gateway host '192.0.2.88' returned an unparsable CA certificate.",
+                    'meta' => [
+                        'host' => '192.0.2.88',
+                        'step' => 'bootstrap_gateway_identity',
+                        'error' => 'Remote bootstrap output is not a valid X.509 certificate.',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->count())->toBe(0);
+
+        $trustPath = storage_path('app/orbit/trust/gateway-malformed-ca.crt');
+        expect(file_exists($trustPath))->toBeFalse();
     });
 
     it('fails app-node creation before side effects when no gateway is configured', function (): void {

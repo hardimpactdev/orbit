@@ -355,17 +355,21 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
   - [x] First-gateway command path validates required non-interactive input.
   - [x] First-gateway command path ships current Orbit source to the target over
     SSH and runs the installer there.
-  - [~] First-gateway command path records bootstrap gateway and local control
+  - [x] First-gateway command path records bootstrap gateway and local control
     registry rows.
   - [x] First-gateway bootstrap creates/verifies a steady-state runtime user
     (`orbit`) through the bootstrap SSH user and installs Orbit under that user.
   - [x] First-gateway ephemeral E2E lane (`bin/e2e --node-new-gateway`) verifies
     end-to-end provisioning against disposable Incus VMs.
+  - [x] First-gateway bootstrap invokes gateway-local internal command over SSH
+    to initialize gateway node identity (`is_local=true`) and generate root CA.
+  - [x] First-gateway bootstrap captures gateway root CA from remote command
+    output and stores it locally for control-node trust.
   - [ ] Interactive input mode.
   - [ ] Gateway-connected forwarding from configured control nodes.
   - [ ] Gateway-local app and control enrollment paths.
   - [ ] Real platform detection.
-  - [ ] Full documented JSON success state after WireGuard/API/trust work lands.
+  - [ ] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
   - [~] SSH bootstrap
   - [ ] WireGuard enrollment
@@ -389,9 +393,14 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
 - [~] Gateway root CA service.
   - [x] `OrbitCaService` generates, reads, and issues from a local gateway-root CA.
-  - [~] Truthful CA generation hook in `node:new --role=gateway` first-gateway bootstrap.
-    - Decision (todo 196): Remote enactment over SSH. A gateway-local internal command initializes the gateway's database identity (`is_local=true`, `role=gateway`, `status=active`) and calls `OrbitCaService::ensureRootCa()`. The control node invokes this command after remote Orbit installation and captures the root CA cert for local trust.
-    - Implementation: todo 195 (GATEWAY-CA-HOOK).
+  - [x] Truthful CA generation hook in `node:new --role=gateway` first-gateway bootstrap.
+    - Gateway-local internal command `orbit:internal:bootstrap-gateway-local` initializes
+      the gateway's database identity (`is_local=true`, `role=gateway`, `status=active`)
+      and calls `OrbitCaService::ensureRootCa()`.
+    - `node:new --role=gateway` invokes this command over SSH after remote Orbit
+      installation succeeds, captures the root CA cert, and stores it locally.
+    - Focused tests cover CA generation, idempotence, node demotion, invalid-PEM
+      rejection, and the full `node:new` bootstrap invocation path.
 
 ## DNS Workstream
 

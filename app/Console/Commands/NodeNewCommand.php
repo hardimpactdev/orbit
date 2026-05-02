@@ -10,6 +10,8 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 
 #[Signature('node:new
     {name? : Registry name for the node}
@@ -125,6 +127,77 @@ class NodeNewCommand extends Command
             );
         }
 
+        $bootstrapCommand = sprintf(
+            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s',
+            escapeshellarg("/home/{$runtimeUser}/orbit"),
+            escapeshellarg($name),
+            escapeshellarg($gatewayAddress),
+        );
+
+        $command = $sshUser === $runtimeUser
+            ? $bootstrapCommand
+            : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($bootstrapCommand));
+
+        $bootstrap = Process::timeout(120)->run(sprintf(
+            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+            escapeshellarg($sshUser),
+            escapeshellarg($host),
+            escapeshellarg($command),
+        ));
+
+        if (! $bootstrap->successful()) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' could not bootstrap gateway identity.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => trim($bootstrap->errorOutput()) ?: null,
+                ],
+            );
+        }
+
+        $caCert = trim($bootstrap->output());
+
+        if (! str_starts_with($caCert, '-----BEGIN CERTIFICATE-----') || ! str_contains($caCert, '-----END CERTIFICATE-----')) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' returned an invalid or empty CA certificate.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Remote bootstrap did not output a valid PEM certificate.',
+                ],
+            );
+        }
+
+        if (openssl_x509_parse($caCert) === false) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' returned an unparsable CA certificate.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Remote bootstrap output is not a valid X.509 certificate.',
+                ],
+            );
+        }
+
+        $trustPath = storage_path("app/orbit/trust/{$name}-ca.crt");
+        File::ensureDirectoryExists(dirname($trustPath));
+
+        if (! File::put($trustPath, $caCert)) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to store gateway CA certificate locally.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'bootstrap_gateway_identity',
+                    'error' => 'Trust file write failed.',
+                ],
+            );
+        }
+
         DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
@@ -198,7 +271,7 @@ class NodeNewCommand extends Command
             ],
             'local_onboarding' => [
                 'wireguard' => 'pending',
-                'gateway_trust' => 'pending',
+                'gateway_trust' => 'trusted',
                 'gateway_config' => 'stored',
                 'gateway_api' => 'pending',
             ],
