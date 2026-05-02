@@ -258,7 +258,8 @@ Control-node enrollment is a two-machine flow:
 3. On the control machine, run `orbit gateway:add [gateway_ip]` to trust the
    gateway CA, verify `/api/me`, and store local gateway settings.
 
-Before a control node can run [`orbit gateway:add [gateway_ip]`](2_gateway-add/gateway-add.md),
+Before a control node can run
+[`orbit gateway:add [gateway_ip]`](../2_gateway/1_gateway-add/gateway-add.md),
 it must already have gateway-issued WireGuard identity material installed and
 the Orbit WireGuard network must be active. `gateway:add` discovers or verifies
 the gateway and stores local gateway connection settings; it does not create
@@ -266,9 +267,10 @@ identity or access policy. This does not apply to the initiating control node
 after successful first-gateway bootstrap, because that flow already performs the
 local onboarding work.
 
-After onboarding, [`orbit gateway:trust`](11_gateway-trust/gateway-trust.md)
-can repair only local gateway CA trust without re-running identity verification
-or changing gateway settings.
+After onboarding,
+[`orbit gateway:trust`](../2_gateway/2_gateway-trust/gateway-trust.md) can
+repair only local gateway CA trust without re-running identity verification or
+changing gateway settings.
 
 When a gateway or app host is already provisioned and already known to the
 gateway registry, `node:new` adopts or converges that gateway-owned identity
@@ -284,23 +286,23 @@ instead of minting a duplicate node.
 
 1. New gateway, app, or control node:
    [`orbit node:new [name]`](1_node-new/node-new.md)
-2. Existing gateway: [`orbit gateway:add [gateway_ip]`](2_gateway-add/gateway-add.md)
-3. Repair local gateway CA trust:
-   [`orbit gateway:trust`](11_gateway-trust/gateway-trust.md)
+
+Gateway onboarding and gateway trust repair commands live in
+[`Gateway commands`](../2_gateway/README.md).
 
 ### Inventory
 
-4. [`orbit node:list`](3_node-list/node-list.md)
-5. [`orbit node:show [name]`](4_node-show/node-show.md)
+2. [`orbit node:list`](3_node-list/node-list.md)
+3. [`orbit node:show [name]`](4_node-show/node-show.md)
 
 ### Access Policy
 
-6. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
-7. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
+4. [`orbit node:grant [consuming_node] [serving_node]`](5_node-grant/node-grant.md)
+5. [`orbit node:revoke [consuming_node] [serving_node]`](6_node-revoke/node-revoke.md)
 
 ### Lifecycle And Verification
 
-8. [`orbit node:update [name]`](7_node-update/node-update.md)
-9. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
-10. [`orbit node:default [name]`](9_node-default/node-default.md)
-11. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
+6. [`orbit node:update [name]`](7_node-update/node-update.md)
+7. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
+8. [`orbit node:default [name]`](9_node-default/node-default.md)
+9. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)

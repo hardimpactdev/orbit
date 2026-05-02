@@ -21,6 +21,7 @@ use OrbitDocsLinter\Rules\DocumentComplexityRule;
 use OrbitDocsLinter\Rules\DriftIssueSuffixRule;
 use OrbitDocsLinter\Rules\ErrorCodeRegistryRule;
 use OrbitDocsLinter\Rules\ExitStatusPolicyRule;
+use OrbitDocsLinter\Rules\FamilyCommandPrefixRule;
 use OrbitDocsLinter\Rules\HumanRendererProgressTreeRule;
 use OrbitDocsLinter\Rules\InputModeContractRule;
 use OrbitDocsLinter\Rules\JsonRendererEnvelopeRule;
@@ -185,6 +186,7 @@ final class CommandDocsLintCli
             rules: [
                 new ConvertedFamilyStructureRule,
                 new CommandDirectoryStructureRule,
+                new FamilyCommandPrefixRule,
                 new NoCommandAmbiguityFilesRule,
                 new TechnicalSlotSemanticsRule,
                 new MarkdownLinkIntegrityRule,

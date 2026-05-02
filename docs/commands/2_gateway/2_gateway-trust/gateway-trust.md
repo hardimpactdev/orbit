@@ -1,6 +1,6 @@
 # `orbit gateway:trust`
 
-[Back to Node commands.](../README.md)
+[Back to Gateway commands.](../README.md)
 
 Repair local trust for the configured Orbit gateway root CA.
 
@@ -41,11 +41,12 @@ orbit gateway:trust --json
 The command is idempotent. If the same gateway CA is already trusted locally, it
 reports success without changing gateway intent.
 
-Use [`gateway:add`](../2_gateway-add/gateway-add.md) for first-time
+Use [`gateway:add`](../1_gateway-add/gateway-add.md) for first-time
 control-node onboarding. `gateway:add` uses the same trust behavior as part of
 the onboarding flow, then verifies `/api/me` and stores complete local gateway
-configuration. Use [`doctor --family=node --self`](../node-doctor.md) when the
-operator needs local gateway endpoint, identity, and trust diagnostics.
+configuration. Use
+[`doctor --family=node --self`](../../1_node/node-doctor.md) when the operator
+needs local gateway endpoint, identity, and trust diagnostics.
 
 ## Output
 
@@ -64,10 +65,10 @@ using the shared command envelope.
 
 ## Related Commands
 
-- [`gateway:add`](../2_gateway-add/gateway-add.md) - configure a control node
+- [`gateway:add`](../1_gateway-add/gateway-add.md) - configure a control node
   for an already-issued gateway identity
-- [`doctor --family=node`](../node-doctor.md) - verify local gateway trust and
-  node identity drift
+- [`doctor --family=node`](../../1_node/node-doctor.md) - verify local gateway
+  trust and node identity drift
 
 ## Technical Contract
 

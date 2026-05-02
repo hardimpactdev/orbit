@@ -74,7 +74,8 @@ exact payload shape.
 
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
-- [`gateway:add`](../2_gateway-add/gateway-add.md) — add a gateway to local config
+- [`gateway:add`](../../2_gateway/1_gateway-add/gateway-add.md) — add a gateway
+  to local config
 - [`node:update`](../7_node-update/node-update.md) — update node metadata
 - [`node:remove`](../8_node-remove/node-remove.md) — remove a node from the fleet
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift

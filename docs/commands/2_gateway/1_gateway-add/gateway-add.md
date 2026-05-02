@@ -1,6 +1,6 @@
 # `orbit gateway:add [gateway_ip]`
 
-[Back to Nodes commands.](../README.md)
+[Back to Gateway commands.](../README.md)
 
 Add a reachable Orbit gateway to the local CLI configuration.
 
@@ -34,7 +34,7 @@ orbit gateway:add 10.6.0.2 --json
 `gateway:add` performs local control-node onboarding for an already-issued
 gateway identity. It does not create gateway registry rows, local registry
 mirror rows, WireGuard peer material, identity, or access policy; those are
-owned by [`node:new`](../1_node-new/node-new.md) and gateway intent.
+owned by [`node:new`](../../1_node/1_node-new/node-new.md) and gateway intent.
 
 The command:
 
@@ -55,10 +55,10 @@ The command:
 
 If the gateway is already configured and verified, `gateway:add` exits
 successfully as converged. Broader node drift is handled by
-[`doctor --family=node --fix`](../node-doctor.md).
+[`doctor --family=node --fix`](../../1_node/node-doctor.md).
 
 If local gateway settings already exist and only OS trust for the gateway CA is
-missing or stale, use [`gateway:trust`](../11_gateway-trust/gateway-trust.md).
+missing or stale, use [`gateway:trust`](../2_gateway-trust/gateway-trust.md).
 
 `gateway:add` does not need SSH access to the gateway or any app node, does not
 provision hosts, does not mint access grants, and does not repair unrelated node
@@ -80,7 +80,7 @@ identity, command result action, and local onboarding state.
 ## Requirements
 
 - The gateway has already issued a WireGuard identity and active node record for
-  this machine. See [Node identity issuance](../README.md#node-identity-issuance).
+  this machine. See [Node identity issuance](../../1_node/README.md#node-identity-issuance).
 - The local machine has imported that WireGuard configuration and joined the
   active Orbit WireGuard network.
 - The gateway can expose its root CA or trust bundle through the Orbit network
@@ -88,14 +88,14 @@ identity, command result action, and local onboarding state.
 
 ## Related Commands
 
-- [`node:new`](../1_node-new/node-new.md) — create or enroll nodes, including
-  first-gateway bootstrap
-- [`gateway:trust`](../11_gateway-trust/gateway-trust.md) — repair local
+- [`node:new`](../../1_node/1_node-new/node-new.md) — create or enroll nodes,
+  including first-gateway bootstrap
+- [`gateway:trust`](../2_gateway-trust/gateway-trust.md) — repair local
   gateway CA trust after onboarding
-- [`node:list`](../3_node-list/node-list.md) — list registered nodes
-- [`node:show`](../4_node-show/node-show.md) — show node details
-- [`doctor --family=node`](../node-doctor.md) — verify node drift including
-local gateway configuration
+- [`node:list`](../../1_node/3_node-list/node-list.md) — list registered nodes
+- [`node:show`](../../1_node/4_node-show/node-show.md) — show node details
+- [`doctor --family=node`](../../1_node/node-doctor.md) — verify node drift
+  including local gateway configuration
 
 ## Technical Contract
 

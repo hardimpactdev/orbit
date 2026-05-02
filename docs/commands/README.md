@@ -30,6 +30,11 @@ then migrate docs until it passes.
 - Every command that returns structured data has a JSON contract.
 - Human output and JSON output represent the same result.
 - Commands must state which domain owns the behavior.
+- In non-operation command families, public command names must start with that
+  family's command prefix. For example, `1_node` contains `node:*` commands,
+  `2_gateway` contains `gateway:*` commands, and `4_app` contains `app:*`
+  commands. `10_operation` is the exception for miscellaneous operational
+  commands such as `doctor`, `update`, and local DNS helpers.
 - Documentation domains and doctor state families are related but not
   interchangeable. A command belongs to a documentation domain; drift
   convergence belongs to a stable state family such as `node`, `app`,

@@ -111,7 +111,7 @@ and payload shapes.
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
-- [`gateway:add`](../2_gateway-add/gateway-add.md) — configure local gateway
+- [`gateway:add`](../../2_gateway/1_gateway-add/gateway-add.md) — configure local gateway
   access
 - [`doctor --self`](../node-doctor.md) — verify local node context and default
   node warnings

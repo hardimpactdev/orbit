@@ -2,14 +2,14 @@
 
 [Back to public `gateway:add` documentation.](../gateway-add.md)
 
-**Owner:** `node`.
+**Owner:** `gateway`.
 
 **Effects:** `read`, `write`.
 
 **Prerequisites:**
 - The gateway has already issued a WireGuard identity and active node record for
   this machine. See [Node identity
-  issuance](../../README.md#node-identity-issuance).
+  issuance](../../../1_node/README.md#node-identity-issuance).
 - The local machine has imported that WireGuard configuration and joined the
   active Orbit WireGuard network.
 - The gateway can expose its root CA or trust bundle through the Orbit network
@@ -35,7 +35,8 @@ This command follows the shared
 
 `gateway:add` resolves the caller role from the local node role setting before
 it reads command inputs, renders prompts, or starts side effects. See the
-node-family [Local Caller Role](../../README.md#local-caller-role) contract.
+node-family [Local Caller Role](../../../1_node/README.md#local-caller-role)
+contract.
 
 If `general.local_node_role` is unset or `null`, the caller role is `control`.
 Gateway and app callers must be explicit through `general.local_node_role`.
@@ -113,7 +114,7 @@ categories, doctor relationship, and test mapping.
 - Install the fetched CA into local trust storage when local gateway CA trust is
   missing or stale.
 - Use the same local trust-store repair behavior documented by
-  [`gateway:trust`](../../11_gateway-trust/gateway-trust.md), but with the
+  [`gateway:trust`](../../2_gateway-trust/gateway-trust.md), but with the
   gateway endpoint resolved by the onboarding flow.
 
 ### Identity Verification Rules
@@ -168,7 +169,7 @@ Already-configured convergence is success, not failure.
 
 - `doctor --self` verifies local control-node identity, trusted gateway
   material, configured gateway API endpoint, and gateway reachability. See
-  [`node-doctor.md`](../../node-doctor.md).
+  [`node-doctor.md`](../../../1_node/node-doctor.md).
 - `doctor --family=node` verifies the gateway-owned node identity and access
   policy.
 - `gateway:add` owns only the explicit local onboarding flow for an already
@@ -191,9 +192,9 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/GatewayAddInputContractTest.php` | Command contract: input resolution, side-effect boundaries, local settings persistence, CA trust installation, no local node registry mirror creation, idempotent convergence, and gateway API verification. |
-| `tests/Feature/Commands/Nodes/GatewayAddInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, gateway IP derivation, prompt when derivation is ambiguous, prompt validation and retry, and caller-role denial rules. |
-| `tests/Feature/Commands/Nodes/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures, and caller-role denial rules. |
-| `tests/Feature/Commands/Nodes/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
-| `tests/Feature/Commands/Nodes/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
-| `tests/Feature/Commands/Nodes/GatewayAddCallerRoleContractTest.php` | Caller role behavior: control caller allowed, gateway caller denied, app caller denied, and local context error handling. |
+| `tests/Feature/Commands/Gateway/GatewayAddInputContractTest.php` | Command contract: input resolution, side-effect boundaries, local settings persistence, CA trust installation, no local node registry mirror creation, idempotent convergence, and gateway API verification. |
+| `tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, gateway IP derivation, prompt when derivation is ambiguous, prompt validation and retry, and caller-role denial rules. |
+| `tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures, and caller-role denial rules. |
+| `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
+| `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Caller role behavior: control caller allowed, gateway caller denied, app caller denied, and local context error handling. |

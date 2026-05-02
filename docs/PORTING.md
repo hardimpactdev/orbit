@@ -193,6 +193,7 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 ### Already Ported Command Docs
 
 - [x] `docs/commands/1_node`
+- [x] `docs/commands/2_gateway`
 - [x] `docs/commands/4_app`
 - [x] `docs/commands/5_workspace`
 - [x] `docs/commands/6_process`
@@ -240,8 +241,6 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [ ] `deploy:log`
 - [~] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [x] `doctor`
-  - [x] Gateway trust repair command contract (current command:
-    `gateway:trust`)
   - [!] `profile` docs conversion is an early verification-helper candidate
     after node identity and minimal app resolution are available.
   - [x] `update`
@@ -300,7 +299,6 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 - [ ] Port `node:revoke`.
 - [ ] Port `node:remove`.
 - [ ] Port `node:agent-ide`.
-- [ ] Port `gateway:add`.
 - [~] Port `node:new`.
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
     fresh gateway host.
@@ -324,6 +322,12 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [ ] gateway-to-node SSH trust model
 - [!] Restore ephemeral node E2E before treating provisioning and host-mutation
   flows as fully verified.
+
+## Gateway Workstream
+
+- [x] Convert gateway command docs into current format.
+- [ ] Port `gateway:add`.
+- [ ] Port `gateway:trust`.
 
 ## App Workstream
 

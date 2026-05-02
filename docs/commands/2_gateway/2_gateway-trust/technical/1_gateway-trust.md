@@ -2,7 +2,7 @@
 
 [Back to public `gateway:trust` documentation.](../gateway-trust.md)
 
-**Owner:** `node`.
+**Owner:** `gateway`.
 
 **Effects:** `read`, `write`, `local-only`, `stream`.
 
@@ -31,9 +31,10 @@ This command follows the shared
 ## Caller Role Behavior
 
 `gateway:trust` resolves the caller role from the shared node-family
-[Local Caller Role](../../README.md#local-caller-role) setting for diagnostics,
-but caller role does not change the command path. Control, gateway, and app
-callers may repair gateway CA trust on their own caller machine.
+[Local Caller Role](../../../1_node/README.md#local-caller-role) setting for
+diagnostics, but caller role does not change the command path. Control,
+gateway, and app callers may repair gateway CA trust on their own caller
+machine.
 
 For app-node callers, `gateway:trust` is only a caller-local trust-store repair.
 It does not grant app-node write authority, create gateway intent, or replace
@@ -60,7 +61,7 @@ missing gateway endpoint; it fails fast and tells the operator to run
 
 - Use the configured local gateway endpoint as the only public command target.
 - Do not accept arbitrary gateway URLs through `gateway:trust`; first-time
-  gateway selection belongs to [`gateway:add`](../../2_gateway-add/gateway-add.md).
+  gateway selection belongs to [`gateway:add`](../../1_gateway-add/gateway-add.md).
 - Do not add speculative multi-network selection flags before Orbit has a
   multi-network model.
 
@@ -125,7 +126,7 @@ missing gateway endpoint; it fails fast and tells the operator to run
 - `gateway:trust` repairs only caller-local gateway CA trust.
 - `doctor --family=node --self` verifies configured gateway trust, gateway API
   reachability, and local caller identity. See
-  [`node-doctor.md`](../../node-doctor.md).
+  [`node-doctor.md`](../../../1_node/node-doctor.md).
 - `doctor --family=node --fix` may call the same trust-store repair behavior for
   `node.gateway_ca_mismatch` when the caller is authorized to receive
   gateway-owned trust material.
@@ -139,7 +140,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway intent writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
-| `tests/Feature/Commands/Nodes/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Nodes/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
+| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway intent writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
+| `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
+| `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
 | `tests/E2E/Ephemeral/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform. |

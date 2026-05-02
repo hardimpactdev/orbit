@@ -7,7 +7,7 @@ a control node.
 
 **Prerequisites:**
 - The caller role has resolved to `control` per the node-family
-  [Local Caller Role](../../README.md#local-caller-role) contract.
+  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
 
 **Post-input path eligibility:**
 - The control node has an active gateway-issued WireGuard identity.
@@ -57,5 +57,5 @@ and trust configuration only.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/GatewayAddCallerRoleContractTest.php` | Control caller behavior: first add flow, idempotent convergence, local onboarding refresh, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and context flush. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Control caller behavior: first add flow, idempotent convergence, local onboarding refresh, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and context flush. |
 | `tests/E2E/Ephemeral/ControlNodeGatewayAddTest.php` | Real-node control node join flow via `gateway:add`. |

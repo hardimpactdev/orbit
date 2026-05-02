@@ -10,7 +10,7 @@ the caller role is `app`.
 
 **Prerequisites:**
 - The caller role has resolved to `app` per the node-family
-  [Local Caller Role](../../README.md#local-caller-role) contract.
+  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
 
 ## Behavior
 
@@ -42,4 +42,4 @@ The JSON renderer returns the same message with `error.code:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/GatewayAddCallerRoleContractTest.php` | App caller denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | App caller denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
