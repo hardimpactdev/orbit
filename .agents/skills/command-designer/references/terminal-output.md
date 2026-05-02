@@ -61,6 +61,30 @@ Every human-rendered long-running command renders a tree block:
 In sequential execution, only the currently active step shows the blinking
 `○`/`◉` animation. Pending steps stay as dim `○` until they become active.
 
+Progress tree labels are product-level user feedback, not storage or backend
+implementation logs. Do not expose labels such as `Write gateway intent`,
+`Write registry intent`, `Record gateway removal intent`, or
+`Enact runtime artifacts`.
+
+Use a tense lifecycle for sequential trees:
+
+- the title uses active present-participle phrasing:
+  `Updating PHP runtime to PHP 8.5`;
+- pending step labels use imperative phrasing:
+  `Resolve target`;
+- active step labels use active present-participle phrasing:
+  `Resolving target`;
+- completed step labels use past-tense phrasing:
+  `Resolved target`;
+- the footer says `Working...` until completion, then switches to a concrete
+  result such as `Successfully updated PHP runtime to PHP 8.5`.
+
+For command docs, define the initial tree plus any command-specific label
+lifecycle when labels change at runtime. Prefer a single operator-facing step
+such as `Apply and verify PHP change`, `Apply and verify firewall rule`, or
+`Apply and verify schedule` unless a remote operation is slow and meaningful
+enough to deserve a separate product-level step.
+
 ### Status Icons
 
 | State | Icon | Color | ANSI |

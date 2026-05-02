@@ -11,6 +11,7 @@ use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
 use OrbitDocsLinter\Rules\CanonicalTechnicalContractRule;
 use OrbitDocsLinter\Rules\CommandContractComplexityRule;
 use OrbitDocsLinter\Rules\CommandDirectoryStructureRule;
+use OrbitDocsLinter\Rules\CompoundCommandPrefixRule;
 use OrbitDocsLinter\Rules\ConceptIndexRule;
 use OrbitDocsLinter\Rules\ConvertedFamilyStructureRule;
 use OrbitDocsLinter\Rules\DestructiveConsentRule;
@@ -188,6 +189,7 @@ final class CommandDocsLintCli
                 new ConvertedFamilyStructureRule,
                 new CommandDirectoryStructureRule,
                 new FamilyCommandPrefixRule,
+                new CompoundCommandPrefixRule,
                 new NoCommandAmbiguityFilesRule,
                 new TechnicalSlotSemanticsRule,
                 new MarkdownLinkIntegrityRule,

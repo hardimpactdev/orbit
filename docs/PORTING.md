@@ -243,6 +243,8 @@ document the supported Orbit capability and ownership boundary.
 - [x] `docs/commands/9_schedule`
 - [x] `docs/commands/10_deploy`
 - [x] `docs/commands/12_cf`
+- [x] `docs/commands/13_vpn`
+- [x] `docs/commands/14_php`
 - [x] `docs/commands/16_dns`
 
 Docs marked converted here mean the command contracts exist in the clean repo.
@@ -289,19 +291,21 @@ They do not imply the matching implementation has been ported.
   - [x] `cf-cache-rule:remove`
   - [x] `cf-ssl:enable`
   - [x] `cf-ssl:disable`
+- [x] VPN: `../orbit-old-may/docs/commands/12-vpn`
+  - [x] Legacy `vpn-client:list` retained as `vpn-client:list`.
+  - [x] Legacy `vpn-client:new` retained as `vpn-client:new`.
+  - [x] Legacy `vpn-client:enable` retained as `vpn-client:enable`.
+  - [x] Legacy `vpn-client:disable` retained as `vpn-client:disable`.
+  - [x] Legacy `vpn-client:remove` retained as `vpn-client:remove`.
+  - [x] Legacy `vpn-web-ui:change-password` retained as
+        `vpn-web-ui:change-password`.
 
 ### Legacy Command Docs Still To Port
 
-- [ ] VPN: `../orbit-old-may/docs/commands/12-vpn`
-  - [ ] `vpn:client-list`
-  - [ ] `vpn:client-new`
-  - [ ] `vpn:client-enable`
-  - [ ] `vpn:client-disable`
-  - [ ] `vpn:client-remove`
-  - [ ] `vpn:web-ui-change-password`
-- [ ] PHP runtime: `../orbit-old-may/docs/commands/13-php`
-  - [ ] `php:list`
-  - [ ] `php:use`
+- [x] PHP runtime: `../orbit-old-may/docs/commands/13-php`
+  - [x] `php:list`
+  - [x] `php:use`
+  - [x] Tool-specific command family admission policy documented.
 - [ ] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
   - [ ] `agent-ide:message`
 

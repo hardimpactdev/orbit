@@ -1,0 +1,51 @@
+# `orbit vpn-client:disable <name>`
+
+Disable an existing non-node gateway VPN client without deleting it.
+
+## Usage
+
+```bash
+orbit vpn-client:disable <name> [--totp=<code>] [--json]
+```
+
+## Examples
+
+```bash
+orbit vpn-client:disable laptop
+orbit vpn-client:disable laptop --totp=123456
+orbit vpn-client:disable laptop --json
+```
+
+## Arguments And Options
+
+- `name`: VPN client name.
+- `--totp=<code>`: One-time code for the gateway VPN backend when required.
+- `--json`: Return the updated client in the shared JSON command envelope.
+
+## What Happens
+
+`vpn-client:disable` runs on the gateway host and marks the named VPN backend
+client as disabled. The peer record remains available so it can be enabled
+again later.
+
+The command is limited to non-node VPN clients. Active Orbit node peers are
+protected because disabling them would break node identity and reachability.
+
+## Output
+
+Human output confirms the client was disabled. JSON output returns
+`success.data.client` with `enabled=false` and `action="disabled"`.
+
+## Requirements
+
+- The caller is a gateway or authorized control node.
+- Control callers can SSH to the gateway over Orbit/WireGuard.
+- The gateway VPN backend is installed and reachable on the gateway host.
+- The named client exists and is not an active Orbit node peer.
+
+## Related Commands
+
+- [`orbit vpn-client:enable`](../3_vpn-client-enable/vpn-client-enable.md)
+- [`orbit vpn-client:list`](../1_vpn-client-list/vpn-client-list.md)
+- [`doctor --family=node`](../../1_node/node-doctor.md)
+- [Technical contract](technical/1_vpn-client-disable.md)

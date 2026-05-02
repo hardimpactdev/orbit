@@ -24,9 +24,10 @@ adopt.
 
 ## Orbit Notes
 
-The `php` tool owns PHP-FPM runtime installation and service lifecycle. CLI
-default selection and per-app PHP runtime intent may be owned by PHP runtime
-commands when that family is ported.
+The `php` tool owns PHP-FPM runtime installation and service lifecycle. PHP
+runtime selection is admitted as the separate `php:*` command family because it
+mutates app intent, workspace overrides, and node CLI defaults rather than only
+tool lifecycle state.
 
 ## Doctor Relationship
 

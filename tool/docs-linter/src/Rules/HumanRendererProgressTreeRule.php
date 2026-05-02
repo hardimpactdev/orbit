@@ -37,11 +37,29 @@ final class HumanRendererProgressTreeRule implements CommandDocsLintRule
                 continue;
             }
 
-            foreach ($this->progressTreeBlocks($contents) as $block) {
+            foreach ($this->progressTreeBlocks($contents) as $blockIndex => $block) {
                 $finding = $this->treeStyleFinding($context, $file, $block['text'], $block['line']);
 
                 if ($finding !== null) {
                     $findings[] = $finding;
+
+                    continue;
+                }
+
+                $finding = $this->productLanguageFinding($context, $file, $block['text'], $block['line']);
+
+                if ($finding !== null) {
+                    $findings[] = $finding;
+
+                    continue;
+                }
+
+                if ($blockIndex === 0) {
+                    $finding = $this->initialLifecycleFinding($context, $file, $block['text'], $block['line']);
+
+                    if ($finding !== null) {
+                        $findings[] = $finding;
+                    }
                 }
             }
         }
@@ -85,7 +103,7 @@ final class HumanRendererProgressTreeRule implements CommandDocsLintRule
             $sectionOffset = strpos($contents, $section);
 
             foreach ($matches['block'] as [$block, $offset]) {
-                if (! $this->looksLikeProgressTree($block)) {
+                if (! $this->looksLikeProgressTree($block) && ! $this->containsBracketedStatus($block)) {
                     continue;
                 }
 
@@ -157,6 +175,69 @@ final class HumanRendererProgressTreeRule implements CommandDocsLintRule
         return null;
     }
 
+    private function initialLifecycleFinding(CommandDocsLintContext $context, string $file, string $block, int $line): ?CommandDocsLintFinding
+    {
+        $lines = preg_split('/\R/', trim($block)) ?: [];
+
+        foreach ($lines as $index => $progressLine) {
+            if (preg_match('/^\s*┌\s+(?<title>.+)$/u', $progressLine, $matches) !== 1) {
+                continue;
+            }
+
+            if (preg_match('/^[A-Z][A-Za-z]+ing\b/', $matches['title']) === 1) {
+                break;
+            }
+
+            return new CommandDocsLintFinding(
+                path: $context->relativePath($file),
+                ruleId: $this->id(),
+                message: 'The first progress tree must document the initial running state with an active `-ing` title, such as `Updating PHP runtime to PHP 8.5`.',
+                line: $line + $index,
+            );
+        }
+
+        foreach ($lines as $index => $progressLine) {
+            if (preg_match('/^\s*└\s+(?<footer>.+)$/u', $progressLine, $matches) !== 1) {
+                continue;
+            }
+
+            if ($matches['footer'] === 'Working...') {
+                return null;
+            }
+
+            return new CommandDocsLintFinding(
+                path: $context->relativePath($file),
+                ruleId: $this->id(),
+                message: 'The first progress tree must use `└ Working...` as the pending footer. Completed result footers belong in later success or drift examples.',
+                line: $line + $index,
+            );
+        }
+
+        return null;
+    }
+
+    private function productLanguageFinding(CommandDocsLintContext $context, string $file, string $block, int $line): ?CommandDocsLintFinding
+    {
+        foreach (preg_split('/\R/', trim($block)) ?: [] as $index => $progressLine) {
+            if (preg_match('/^\s*[○◉●]\s+(?<label>.+)$/u', $progressLine, $matches) !== 1) {
+                continue;
+            }
+
+            if (! $this->containsImplementationLabel($matches['label'])) {
+                continue;
+            }
+
+            return new CommandDocsLintFinding(
+                path: $context->relativePath($file),
+                ruleId: $this->id(),
+                message: 'Progress tree step labels must describe product-level work, not storage or backend implementation. Use labels such as `Apply and verify <change>` instead of `Write gateway intent`, `Write registry intent`, or `Enact runtime artifacts`.',
+                line: $line + $index,
+            );
+        }
+
+        return null;
+    }
+
     /**
      * @param  list<string>  $lines
      */
@@ -188,6 +269,18 @@ final class HumanRendererProgressTreeRule implements CommandDocsLintRule
     private function looksLikeProgressTree(string $block): bool
     {
         return preg_match('/^[\s]*(?:┌|├|└|│|○|◉|●|◌)/mu', $block) === 1;
+    }
+
+    private function containsBracketedStatus(string $block): bool
+    {
+        return preg_match('/\[[A-Z][A-Z _-]*\]/', $block) === 1;
+    }
+
+    private function containsImplementationLabel(string $label): bool
+    {
+        return preg_match('/\b(?:write|record|converge|update|remove|removing)\b.*\b(?:intent|registry)\b/i', $label) === 1
+            || preg_match('/\benact\s+runtime(?:\/proxy)?\s+artifacts\b/i', $label) === 1
+            || preg_match('/\b(?:SQLite|database)\b/i', $label) === 1;
     }
 
     private function section(string $contents, string $heading): string

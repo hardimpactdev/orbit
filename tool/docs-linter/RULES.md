@@ -20,9 +20,10 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 | `command_docs.converted_family_structure` | error | Converted family directories contain the expected family-level files, command directories, and no flat numbered command files. | Restore the missing family file or move the command into the converted directory shape. |
 | `command_docs.command_directory_structure` | error | Command directories contain the public page, technical directory, canonical technical slot, and renderer contract slots. | Add or rename the missing command documentation file. |
 | `command_docs.family_command_prefix` | error | Non-operation command families only contain commands that start with the family command prefix. | Move the command into the matching family directory or rename the command to use the family prefix. |
+| `command_docs.compound_command_prefix` | error | Compound command groups keep the longest command prefix before the colon, such as `workspace-setup-step:add`, `cf-dns:list`, and `vpn-client:list`. | Rewrite split command names such as `workspace:setup-step-add`, `cf:dns-list`, and `vpn:client-list` to use the compound prefix. |
 | `command_docs.no_command_ambiguity_files` | error | Converted command directories do not keep `ambiguity.md` files in the docs tree. | Move ambiguity review notes to Solo scratchpads or another non-contract location. |
 | `command_docs.technical_slot_semantics` | error | Technical slot files use the expected numeric slot and command slug semantics. | Rename the slot file or move the content to the correct slot. |
-| `command_docs.human_progress_tree` | error | Human renderer docs include `## Progress Tree` and any progress-tree examples use the status-dot tree shape. | Add a progress-tree section or replace branch-style `[DONE]` examples with `┌`, `○`/`◉`/`●`, optional standalone `│`, and `└` lines. |
+| `command_docs.human_progress_tree` | error | Human renderer docs include `## Progress Tree` and any progress-tree examples use product-level status-dot labels. | Add a progress-tree section or replace branch-style `[DONE]` examples with `┌`, `○`/`◉`/`●`, optional standalone `│`, and `└` lines. Avoid implementation-shaped labels such as `Write gateway intent`; use the command-designer tense lifecycle for new progress examples. |
 
 ## Contracts
 

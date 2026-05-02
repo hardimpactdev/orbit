@@ -236,9 +236,10 @@ gateway remains the only writer of durable Orbit intent.
 Gateway VPN administration is a gateway-local exception. `vpn-client:*` commands
 administer VPN clients, and `vpn-web-ui:*` commands administer the VPN web UI.
 Both command groups must run on the gateway host. When a control node initiates
-one of these commands, Orbit uses SSH to the gateway to run the gateway-local
-command. This does not create a general control-node-to-gateway SSH command path,
-and it never applies to app node orchestration.
+one of these commands, Orbit uses SSH to the gateway over the Orbit/WireGuard
+path to run the gateway-local command. This does not create a general
+control-node-to-gateway public SSH command path, and it never applies to app
+node orchestration.
 
 The gateway-to-app-node primitive is `RemoteShell`. All gateway-to-node
 enactment goes through this contract:

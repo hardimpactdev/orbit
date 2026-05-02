@@ -32,6 +32,7 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
         'deploy' => ['app'],
         'dns' => ['node'],
         'gateway' => ['node'],
+        'php' => ['tool', 'app', 'workspace', 'proxy', 'node'],
         'operation' => [
             'node',
             'app',
@@ -42,6 +43,7 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
             'tool',
             'firewall_rule',
         ],
+        'vpn' => ['node'],
     ];
 
     public function id(): string

@@ -41,6 +41,14 @@ binaries, containers, and services are backend details.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
+- Tool-specific and capability-specific command families are opt-in product
+  surfaces. The tool catalog does not automatically create `redis:*`,
+  `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
+  lifecycle and inventory remain under `tool:*`; separate command families are
+  admitted only when the workflow is clearer as its own Orbit product surface.
+  PHP runtime selection is admitted as `php:*`. Redis-native data-plane
+  operations may use `redis:*`. Database backup and restore should use a future
+  `db:*` family with database drivers, not per-database command families.
 
 ## Supported Tool Catalog
 
