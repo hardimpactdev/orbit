@@ -22,8 +22,26 @@ Read:
 - legacy evidence listed by the todo in `../orbit-old-may`;
 - existing implementation and tests in the owned files/domains.
 
-Post `WORKER_STARTED` with your understood scope, non-goals, dependencies, and
-quality gate before making changes.
+Before making changes:
+
+1. Lock the assigned todo with `todo_lock`.
+2. Add `in-progress`.
+3. Remove `assigned` and `worker-ready` if either is present.
+4. Ask the orchestrator to update
+   `solo-orchestration/assignment/<todo_id>` to `state="in-progress"` if the
+   current KV record has not already moved.
+5. Post `WORKER_STARTED` with your understood scope, non-goals, dependencies,
+   and quality gate.
+
+`WORKER_STARTED` is audit evidence. Locks, tags, process state, blockers,
+completion state, and assignment KV are the primary coordination state.
+
+Because tag writes are lock-protected, the implementer owns phase-tag mutation
+while it owns the todo lock. If a coordinator, orchestrator, or reviewer tells you
+that tags are stale while you hold the lock, update the tags yourself before
+continuing work. During changes-requested fixes, use `in-progress` plus the
+`changes-requested` attention tag; switch back to `review-ready` only when
+posting a fresh handoff.
 
 ## Implementation Rules
 
@@ -94,7 +112,7 @@ vendor/bin/pint --dirty --format agent
 Do not replace the focused gate with a broad full-suite gate unless the todo
 says so.
 
-## Tailer Review
+## Reviewer Handoff
 
 Before handoff:
 
@@ -102,12 +120,18 @@ Before handoff:
 2. If PHP files changed, ensure Pint has run.
 3. Summarize changed files and why each is in scope.
 4. Report exact command output summaries and failures fixed.
-5. Leave the diff, gate results, lock state, and remaining risk for the tailer
-   to inspect.
+5. Add `review-ready` and remove `in-progress` when the handoff is ready.
+   Leave `changes-requested` in place if it was present; the reviewer removes
+   it only after verifying the corrected evidence.
+6. Ask the orchestrator to update
+   `solo-orchestration/assignment/<todo_id>` to `state="review-ready"`.
+7. Release the todo lock after posting the handoff comment.
+8. Leave the diff, gate results, tag state, lock state, and remaining risk for
+   the orchestrator-spawned reviewer to inspect.
 
-Do not spawn reviewer agents. The tailer is the reviewer for implementation
-work. If the todo cannot be verified through the tailer path, stop with
-`NEEDS_DIRECTION` and explain what evidence or role is missing.
+Do not spawn reviewer agents. The orchestrator owns reviewer dispatch after
+`WORKER_DONE`. If the todo cannot be verified through the reviewer path, stop
+with `NEEDS_DIRECTION` and explain what evidence or role is missing.
 
 ## Handoff Report
 
@@ -116,7 +140,11 @@ Post `WORKER_DONE status=DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_DIRECTION` with:
 - changed files;
 - exact commands run and whether each passed;
 - failures encountered and how they were fixed;
-- any tailer findings already resolved during the task;
+- any reviewer findings already resolved during the task;
 - out-of-scope findings converted to child todos or blockers;
-- lock state;
+- tag state and lock state;
 - remaining blockers or follow-up work.
+
+If the task is blocked or needs direction, add `needs-direction`, remove
+`in-progress`, `review-ready`, and `worker-ready`, and create or update the
+required blocker relationship before releasing the lock.

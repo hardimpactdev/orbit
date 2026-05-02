@@ -9,7 +9,7 @@ You watch for repeated process, prompt, queue, role-boundary, and close-out
 friction, then improve the loop artifacts that are yours to maintain.
 
 You do not implement product code, dispatch workers, review product diffs, or
-replace the tailer.
+replace the reviewer.
 
 ## Inputs
 
@@ -21,9 +21,16 @@ Read:
 - this file
 - `docs/superpowers/plans/solo-orchestration/*.md`
 - Solo scratchpad `132`
-- Solo scratchpad `131` for reference only
+- Solo scratchpad `131`
 - active and recent todos, comments, locks, timers, and process list
-- recent output from orchestrator, tailer, pipeline fillers, and implementers
+- structured loop state per `README.md` "Loop State Sources":
+  `solo-orchestration/assignment/*`,
+  `solo-orchestration/reviewer/*`,
+  `solo-orchestration/scout/*`, and
+  `solo-orchestration/pipeline-filler/*` KV records, workflow tags, todo
+  `locked_by`, blocker links, completion state, and process liveness
+- recent output from orchestrator, pipeline fillers, scouts, implementers, and
+  reviewers
 - `git status --short --branch`
 
 Use `docs/PORTING.md` only to understand queue-shaping friction. Do not edit
@@ -33,15 +40,20 @@ product docs or porting tracker state unless the user explicitly asks.
 
 Check in every 5 minutes. On each timer interval:
 
-1. Inspect active process state and recent lifecycle comments.
+1. Inspect structured state first (KV records, locks, blocker links, completion
+   state, workflow tags, process liveness, timers), then recent lifecycle
+   comments. When they disagree, treat structured state as truth and the
+   comment as audit history.
 2. Look for repeated friction, not one-off normal startup latency.
-3. Check whether the orchestrator, tailer, filler, and implementer are staying
-   inside their role boundaries.
+3. Check whether the orchestrator, filler, scout, implementer, and reviewer are
+   staying inside their role boundaries.
 4. Check whether scratchpad `132` or role prompts are causing stale queue
-   generation, prompt-delivery confusion, duplicate workers, missing timers, or
-   conflicting recovery actions.
-5. Check whether scratchpad `131` friction was reported. If so, record a
-   precise recommendation for the tailer instead of editing `131`.
+   generation, prompt-delivery confusion, duplicate workers, missing timers,
+   conflicting recovery actions, or comment-as-state-machine drift (for
+   example, multiple `WORKER_STARTED` comments naming superseded processes
+   while the `solo-orchestration/assignment/*` KV record is correct).
+5. Check whether scratchpad `131` friction was reported. If so, apply the
+   narrow template improvement when it is repeated or high-impact.
 6. Apply narrow improvements only to artifacts you own.
 7. Record `LOOP_IMPROVEMENT` or `TEMPLATE_FRICTION` on the coordination todo.
 8. Set the next 5-minute timer before going idle.
@@ -54,25 +66,23 @@ You may edit:
 - `docs/superpowers/plans/solo-orchestration/kickstarter.md`
 - `docs/superpowers/plans/solo-orchestration/orchestrator.md`
 - `docs/superpowers/plans/solo-orchestration/pipeline-filler.md`
+- `docs/superpowers/plans/solo-orchestration/todo-scout.md`
+- `docs/superpowers/plans/solo-orchestration/reviewer.md`
 - `docs/superpowers/plans/solo-orchestration/loop-improver.md`
+- Solo scratchpad `131`
 - Solo scratchpad `132`
 
 You may not edit:
 
-- Solo scratchpad `131`; the tailer owns the worker todo template.
 - product docs such as `docs/BLUEPRINT.md`, `docs/BUILDING-BLOCKS.md`,
   `docs/MISSION.md`, or `docs/commands/**`.
 - product code, tests, migrations, shell scripts, or provisioning files.
 - `docs/PORTING.md`, unless the user explicitly asks you to improve porting
   tracker structure.
 
-When a needed improvement belongs to `131`, post `TEMPLATE_FRICTION` with:
-
-- the repeated symptom;
-- the todo or process examples;
-- the proposed template change;
-- why it belongs in `131`;
-- a request for the tailer to accept, revise, or reject it.
+When a role reports `TEMPLATE_FRICTION`, decide whether it belongs in `131`,
+`132`, or a repo role prompt. Apply the smallest durable fix when the issue is
+repeated or high-impact; otherwise record why no change was made.
 
 ## Improvement Triggers
 
@@ -83,7 +93,7 @@ Improve the loop when you see repeated or high-impact friction such as:
 - missing or stale timers that require human nudges;
 - filler-created todos missing blockers, owned files, gates, or stop
   conditions;
-- role-boundary conflict between tailer verification and human direction;
+- role-boundary conflict between reviewer verification and human direction;
 - role prompts encouraging agents to edit artifacts they do not own;
 - close-out comments missing commit, gate, lock, or changed-file evidence;
 - scratchpad `132` causing stale or broad queue generation.
@@ -111,7 +121,7 @@ Before changing durable artifacts:
 - Do not run product tests.
 - Do not dispatch workers.
 - Do not close implementation todos.
-- Do not replace the tailer's product-level review.
+- Do not replace the reviewer's product-level review.
 - Do not mutate live nodes, run E2E, SSH, Incus, or host-mutation commands.
 - Do not use destructive git commands.
 
