@@ -49,8 +49,7 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
 7. Implement the smallest useful vertical slice in the clean repo.
 8. Add focused Pest tests that assert the current docs contract, not legacy
    internals.
-9. Run the narrow test, then `composer analyse`, `composer format`, and
-   `composer test`.
+9. Run the narrow test, then `composer quality-check`.
 10. Update this tracker in the same commit as the ported slice.
 
 ## Implementation Order
@@ -58,8 +57,8 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
 Default migration order is command-contract and capability driven:
 
 1. **Foundation and verification harness.**
-   - Keep `composer test`, `composer analyse`, `composer docs-lint`, and
-     standing live smoke executable, with known red gates tracked here.
+   - Keep `composer quality-check` and standing live smoke executable, with
+     known red gates tracked here.
    - Until the gateway-to-mini SSH trust decision is resolved, standing live
      smoke is a known red gate: it passes local tests, updates beast, then fails
      when the gateway tries to update mini.

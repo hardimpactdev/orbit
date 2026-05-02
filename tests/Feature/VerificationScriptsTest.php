@@ -31,3 +31,15 @@ it('fails command docs lint when warnings are present', function (): void {
         ->toContain('--strict')
         ->toContain('--format=agent');
 });
+
+it('keeps the aggregate quality gate complete', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($composer['scripts']['quality-check'])->toBe([
+        '@docs-lint',
+        '@analyse',
+        '@rector',
+        '@format',
+        '@test',
+    ]);
+});

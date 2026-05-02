@@ -29,10 +29,7 @@ php artisan test --compact
 Useful checks:
 
 ```bash
-composer analyse
-composer rector
-composer format
-composer test
+composer quality-check
 composer test:live
 ```
 

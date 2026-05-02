@@ -84,10 +84,7 @@ vendor/bin/pint --dirty --format agent
 Before handing off a code change that should be broadly safe, run:
 
 ```bash
-composer analyse
-composer rector
-composer format
-composer test
+composer quality-check
 ```
 
 For standing live-node smoke verification, run:

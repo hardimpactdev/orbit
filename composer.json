@@ -61,6 +61,13 @@
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
+        "quality-check": [
+            "@docs-lint",
+            "@analyse",
+            "@rector",
+            "@format",
+            "@test"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
