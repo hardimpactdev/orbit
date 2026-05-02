@@ -385,6 +385,15 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 - [ ] Port `gateway:add`.
 - [ ] Port `gateway:trust`.
 
+## Gateway CA Workstream
+
+- [~] Gateway root CA service.
+  - [x] `OrbitCaService` generates, reads, and issues from a local gateway-root CA.
+  - [x] Focused tests cover root CA generation, idempotence, partial-state detection, and leaf issuance.
+  - [ ] Truthful CA generation hook in `node:new --role=gateway` first-gateway bootstrap.
+    - Blocked: current first-gateway bootstrap runs from control node; `isLocalNodeGateway()` requires local gateway node.
+    - Unblocks when bootstrap architecture supports gateway-local CA generation or remote enactment.
+
 ## DNS Workstream
 
 - [x] Convert DNS command docs into current format.

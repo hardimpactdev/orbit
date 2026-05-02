@@ -1,0 +1,284 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Node;
+use App\Services\Ca\OrbitCaService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\Factory;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
+
+uses(RefreshDatabase::class);
+
+describe('OrbitCaService', function () {
+    beforeEach(function () {
+        $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
+        mkdir($this->tempStorage.'/app/orbit', 0777, true);
+        app()->useStoragePath($this->tempStorage);
+        Process::swap(new Factory);
+    });
+
+    afterEach(function () {
+        if (isset($this->tempStorage) && is_dir($this->tempStorage)) {
+            File::deleteDirectory($this->tempStorage);
+        }
+    });
+
+    describe('ensureRootCa()', function () {
+        it('generates root.crt and root.key on a local gateway node', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $caDir = storage_path('app/orbit/ca');
+
+            $service->ensureRootCa();
+
+            expect(File::exists("{$caDir}/root.crt"))->toBeTrue();
+            expect(File::exists("{$caDir}/root.key"))->toBeTrue();
+            expect(decoct(fileperms("{$caDir}/root.key") & 0777))->toBe('600');
+        });
+
+        it('is idempotent: running twice leaves files unchanged', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $caDir = storage_path('app/orbit/ca');
+
+            $service->ensureRootCa();
+
+            $crtBefore = File::get("{$caDir}/root.crt");
+            $keyBefore = File::get("{$caDir}/root.key");
+
+            $service->ensureRootCa();
+
+            expect(File::get("{$caDir}/root.crt"))->toBe($crtBefore);
+            expect(File::get("{$caDir}/root.key"))->toBe($keyBefore);
+        });
+
+        it('throws with "restore" message when only root.crt exists', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $caDir = storage_path('app/orbit/ca');
+
+            $service->ensureRootCa();
+            $crtContent = File::get("{$caDir}/root.crt");
+            File::delete("{$caDir}/root.key");
+
+            expect(fn () => $service->ensureRootCa())
+                ->toThrow(RuntimeException::class, 'restore');
+
+            expect(File::get("{$caDir}/root.crt"))->toBe($crtContent);
+        });
+
+        it('throws mentioning "gateway" when no local gateway node exists', function () {
+            Node::create([
+                'name' => 'not-a-gateway',
+                'role' => 'control',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '127.0.0.1',
+                'ssh_user' => get_current_user(),
+                'orbit_path' => base_path(),
+            ]);
+
+            $service = new OrbitCaService;
+
+            expect(fn () => $service->ensureRootCa())
+                ->toThrow(RuntimeException::class, 'gateway');
+        });
+    });
+
+    describe('issueLeaf()', function () {
+        beforeEach(function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $service->ensureRootCa();
+        });
+
+        it('issues a leaf cert for a DNS host and returns correct paths', function () {
+            $service = new OrbitCaService;
+            $dataPath = storage_path('app/orbit');
+
+            $paths = $service->issueLeaf('demo.beast');
+
+            expect($paths['cert'])->toBe("{$dataPath}/certs/demo.beast.crt");
+            expect($paths['key'])->toBe("{$dataPath}/certs/demo.beast.key");
+            expect(File::exists($paths['cert']))->toBeTrue();
+            expect(File::exists($paths['key']))->toBeTrue();
+            expect(decoct(fileperms($paths['key']) & 0777))->toBe('600');
+
+            $caDir = "{$dataPath}/ca";
+            $verify = (new Factory)->run(
+                "openssl verify -CAfile {$caDir}/root.crt {$paths['cert']}"
+            );
+            expect($verify->successful())->toBeTrue();
+        });
+
+        it('is idempotent: calling twice within freshness window returns same serial', function () {
+            $service = new OrbitCaService;
+            $dataPath = storage_path('app/orbit');
+
+            $paths1 = $service->issueLeaf('demo.beast');
+            $paths2 = $service->issueLeaf('demo.beast');
+
+            $factory = new Factory;
+
+            $serial1 = $factory->run("openssl x509 -in {$paths1['cert']} -serial -noout")->output();
+            $serial2 = $factory->run("openssl x509 -in {$paths2['cert']} -serial -noout")->output();
+
+            expect(trim($serial1))->toBe(trim($serial2));
+        });
+
+        it('embeds IP SAN for an IP host', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('10.0.0.1');
+
+            $factory = new Factory;
+            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+
+            expect($text)->toContain('IP Address:10.0.0.1');
+        });
+
+        it('embeds DNS SAN for a DNS host', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('demo.beast');
+
+            $factory = new Factory;
+            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+
+            expect($text)->toContain('DNS:demo.beast');
+        });
+
+        it('refuses path-traversal filenames', function () {
+            $service = new OrbitCaService;
+
+            expect(fn () => $service->issueLeaf('../evil'))
+                ->toThrow(RuntimeException::class);
+        });
+    });
+
+    describe('rootCert()', function () {
+        it('returns PEM content of root.crt', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $caDir = storage_path('app/orbit/ca');
+            $service = new OrbitCaService;
+            $service->ensureRootCa();
+
+            $pem = $service->rootCert();
+
+            expect($pem)->toContain('-----BEGIN CERTIFICATE-----');
+            expect($pem)->toBe(File::get("{$caDir}/root.crt"));
+        });
+
+        it('throws RuntimeException when root CA is not bootstrapped', function () {
+            $service = new OrbitCaService;
+
+            expect(fn () => $service->rootCert())
+                ->toThrow(RuntimeException::class);
+        });
+    });
+
+    describe('gateway-local guard', function () {
+        it('prevents issueLeaf on non-gateway even when CA files exist', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $service->ensureRootCa();
+
+            Node::query()->delete();
+            Node::create([
+                'name' => 'test-control',
+                'role' => 'control',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '127.0.0.1',
+                'ssh_user' => get_current_user(),
+                'orbit_path' => base_path(),
+            ]);
+
+            expect(fn () => $service->issueLeaf('demo.beast'))
+                ->toThrow(RuntimeException::class, 'gateway');
+        });
+
+        it('prevents rootCert on non-gateway even when CA files exist', function () {
+            Node::create([
+                'name' => 'test-gateway',
+                'role' => 'gateway',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '10.6.0.1',
+                'ssh_user' => 'orbit',
+                'orbit_path' => '/home/orbit/orbit',
+            ]);
+
+            $service = new OrbitCaService;
+            $service->ensureRootCa();
+
+            Node::query()->delete();
+            Node::create([
+                'name' => 'test-control',
+                'role' => 'control',
+                'status' => 'active',
+                'is_local' => true,
+                'host' => '127.0.0.1',
+                'ssh_user' => get_current_user(),
+                'orbit_path' => base_path(),
+            ]);
+
+            expect(fn () => $service->rootCert())
+                ->toThrow(RuntimeException::class, 'gateway');
+        });
+    });
+});
