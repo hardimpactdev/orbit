@@ -12,6 +12,9 @@ listed in the handoff requirements.
 
 Read:
 
+- `solo-orchestration/run-config`;
+- `solo-orchestration/prompt-registry/implementer`, then read the scratchpad
+  named by `scratchpad_id` in that registry entry;
 - the assigned todo and all comments;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
 - this file;
@@ -21,6 +24,10 @@ Read:
 - `docs/PORTING.md`;
 - legacy evidence listed by the todo in `../orbit-old-may`;
 - existing implementation and tests in the owned files/domains.
+
+The bootstrap prompt is only a pointer plus assignment details. If run config,
+the registry key, or the prompt scratchpad is missing, stop with
+`NEEDS_DIRECTION` instead of implementing from stale memory.
 
 Before making changes:
 

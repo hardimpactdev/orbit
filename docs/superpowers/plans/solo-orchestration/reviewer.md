@@ -12,6 +12,9 @@ rules. You do not implement code, dispatch workers, or close todos.
 
 Read:
 
+- `solo-orchestration/run-config`;
+- `solo-orchestration/prompt-registry/reviewer`, then read the scratchpad named
+  by `scratchpad_id` in that registry entry;
 - the assigned todo and all comments;
 - the implementer's latest `WORKER_DONE` report;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
@@ -25,6 +28,10 @@ Read:
 - focused gate evidence reported by the implementer;
 - KV records under `solo-orchestration/assignment/<todo_id>` and
   `solo-orchestration/reviewer/<todo_id>`.
+
+The bootstrap prompt is only a pointer plus review assignment details. If run
+config, the registry key, or the prompt scratchpad is missing, stop with
+`NEEDS_DIRECTION` instead of reviewing from stale memory.
 
 ## Review Scope
 
