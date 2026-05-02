@@ -77,6 +77,20 @@ missing gateway endpoint; it fails fast and tells the operator to run
 - Compute the SHA-256 fingerprint from the PEM certificate bytes that were
   installed.
 
+### Orbit Route Trust Rules
+
+The gateway root CA is the Orbit network trust anchor for Orbit-managed route
+certificates. Trusting that root makes the caller trust Orbit-managed app,
+workspace, proxy, gateway, and tool route leaf certificates that chain to the
+same root.
+
+The gateway remains the only node that owns root CA private material and route
+certificate issuance. Serving nodes may hold only the route-scoped certificate
+and key material required to serve HTTPS for routes enacted on that node. App,
+workspace, proxy, gateway, and tool route enactment owns leaf certificate
+creation, upload, renewal, cleanup, and backend TLS drift repair.
+`gateway:trust` owns only caller-local installation of the public root.
+
 ### Local Trust Store Rules
 
 - Install the fetched gateway root CA into the caller machine's OS trust store.
@@ -102,6 +116,11 @@ missing gateway endpoint; it fails fast and tells the operator to run
 - Repair node, app, workspace, process, proxy route, schedule, tool, or
   firewall drift.
 - Expose `--export` as a public command option.
+
+It also must not issue, upload, renew, or remove app, workspace, proxy,
+gateway, or tool route leaf certificates, and it must never place gateway root
+private key material, intermediate CA material, or general certificate-signing
+authority on app nodes or control nodes.
 
 ## Renderer Contracts
 

@@ -10,6 +10,14 @@ trust store, and records local trust metadata for later verification. It does
 not onboard a control node, verify node identity, or mutate gateway fleet
 intent.
 
+The trusted root is the Orbit network trust anchor. The gateway owns the root
+CA and issues Orbit-managed leaf certificates for app, workspace, proxy,
+gateway, and future tool routes. Serving nodes receive the route-scoped
+certificate and key material they need to serve HTTPS locally, but they do not
+receive the gateway root key or mint Orbit certificates themselves. Trusting
+the gateway root once lets the caller trust every Orbit-managed route
+certificate that chains back to that root.
+
 ## Usage
 
 ```bash
@@ -40,6 +48,10 @@ orbit gateway:trust --json
 
 The command is idempotent. If the same gateway CA is already trusted locally, it
 reports success without changing gateway intent.
+
+`gateway:trust` does not create or distribute route certificates. App,
+workspace, proxy, gateway, and tool route enactment own the gateway-issued
+leaf certificates and the serving-node TLS files they require.
 
 Use [`gateway:add`](../1_gateway-add/gateway-add.md) for first-time
 control-node onboarding. `gateway:add` uses the same trust behavior as part of

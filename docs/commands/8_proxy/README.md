@@ -27,6 +27,9 @@ Caddy is the current proxy backend. It is not the product model.
   and removed by `proxy:remove`.
 - Proxy writes mutate gateway-tracked configuration first, then enact proxy and
   TLS artifacts on the owning node.
+- Orbit-managed TLS means gateway-issued route leaf certificate and key
+  material on the serving node. Those certificates chain to the gateway root
+  CA trusted by `gateway:add` and `gateway:trust`.
 - Proxy reads use gateway intent by default. Live proxy backend reality belongs
   to `doctor --family=proxy_route`.
 - Backend discovery/import is not part of the proxy command surface. Adoption

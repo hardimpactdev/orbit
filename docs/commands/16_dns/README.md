@@ -11,6 +11,15 @@ Gateway-owned development DNS mappings are created by node/app provisioning and
 verified through node-family doctor behavior. The DNS command family only owns
 caller-local resolver overrides.
 
+## State Ownership
+
+The DNS command domain does not own a state family. DNS commands mutate
+caller-local resolver configuration only.
+
+[`doctor --family=node`](../1_node/node-doctor.md) owns gateway-provisioned
+development TLD readiness and app-node resolver drift. DNS commands must not
+create DNS doctor issues, gateway DNS intent, or proxy route intent.
+
 ## Domain Rules
 
 - DNS commands affect only the caller machine.

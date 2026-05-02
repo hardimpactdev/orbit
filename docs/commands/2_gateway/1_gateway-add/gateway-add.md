@@ -53,6 +53,12 @@ The command:
 8. Makes the stored gateway the default endpoint used by subsequent Orbit
    commands.
 
+The trusted gateway root CA is the same root that Orbit-managed app,
+workspace, proxy, gateway, and future tool route certificates chain to.
+`gateway:add` installs local trust for that root during onboarding, but route
+certificate issuance and serving-node TLS files are owned by the commands and
+doctor families that enact those routes.
+
 If the gateway is already configured and verified, `gateway:add` exits
 successfully as converged. Broader node drift is handled by
 [`doctor --family=node --fix`](../../1_node/node-doctor.md).

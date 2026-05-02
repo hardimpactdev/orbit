@@ -56,7 +56,8 @@ The gateway is supported on Ubuntu. It owns:
 
 - the canonical SQLite database;
 - the typed HTTPS API consumed by CLI callers;
-- the Orbit root CA and certificate issuance flow;
+- the Orbit root CA and certificate issuance flow for Orbit-managed route
+  certificates;
 - WireGuard network coordination and node identity;
 - DNS coordination inside the Orbit network;
 - Cloudflare integration when production domains are managed;
@@ -88,6 +89,10 @@ An app node is supported on Ubuntu. It runs the workload stack:
 - app and workspace files;
 - WireGuard and SSH;
 - small Orbit-authored hook files for event ingestion;
+
+App nodes serve Orbit-managed HTTPS routes with gateway-issued route-scoped
+certificate and key material. They do not hold gateway root CA private material
+or general certificate-signing authority.
 
 An app node may invoke Orbit commands as a gateway client and may emit narrow
 lifecycle events to the gateway, but the gateway remains the writer and enactor.

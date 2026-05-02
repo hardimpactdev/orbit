@@ -8,6 +8,24 @@ node provisioning, fleet membership, WireGuard peer issuance, or node drift
 repair. Those behaviors remain part of the node lifecycle and node doctor
 contracts.
 
+## State Ownership
+
+The gateway command domain does not own a state family. Gateway commands manage
+the caller's client-side relationship with gateway-owned node identity, gateway
+trust material, and gateway API access policy.
+
+The gateway root CA is the trust anchor for Orbit-managed HTTPS inside the
+Orbit network. The gateway owns root CA private material and route certificate
+issuance. App, workspace, proxy, gateway, and tool route domains may receive
+gateway-issued leaf certificate material on their serving nodes, but route
+enactment and route doctor families own those artifacts. Gateway commands only
+install or repair caller-local trust for the public root.
+
+[`doctor --family=node`](../1_node/node-doctor.md) owns gateway API readiness,
+gateway node identity, WireGuard identity, gateway CA mismatch checks, and node
+drift repair. Gateway commands may repair caller-local gateway trust, but they
+do not create a gateway doctor family.
+
 ## Domain Rules
 
 - Gateway commands must start with the `gateway:` prefix.
@@ -15,8 +33,13 @@ contracts.
   they verify the caller's gateway relationship.
 - Gateway commands may write caller-local gateway configuration, trust material,
   and gateway-client metadata.
+- Gateway commands may install or refresh local trust for the gateway root CA,
+  which is the root that Orbit-managed route certificates chain to.
 - Gateway commands must not create gateway node rows, control node rows, app
   node rows, WireGuard peer material, or node access grants.
+- Gateway commands must not issue, upload, renew, or clean up route-scoped TLS
+  leaf certificates; that belongs to the route-owning domain and its doctor
+  family.
 - First-gateway bootstrap and node identity issuance belong to
   [`node:new`](../1_node/1_node-new/node-new.md).
 - Node drift, gateway API reachability drift, and gateway CA mismatch checks

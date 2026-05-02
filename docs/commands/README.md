@@ -156,6 +156,11 @@ Other documentation domains, such as operations, deployments, VPN
 administration, PHP runtime, and agent IDE commands, may call or affect state
 families without becoming state families themselves.
 
+Converted documentation domains that are not state families must include a
+`## State Ownership` section in their family README. That section states that
+the command domain does not own a state family and names the state-family
+doctor handoff for any durable Orbit state or health it affects.
+
 When converting a command, state both the documentation domain that owns the
 user-facing command page and the state family or families whose intent/reality
 the command reads, writes, verifies, fixes, or adopts.
@@ -533,7 +538,7 @@ build on top of that foundation.
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
 9. [Schedules](9_schedule/README.md)
-10. Deployments (not yet converted)
+10. [Deployments](10_deploy/README.md)
 11. [Operations](11_operation/README.md)
 12. Cloudflare (not yet converted)
 13. VPN Administration (not yet converted)

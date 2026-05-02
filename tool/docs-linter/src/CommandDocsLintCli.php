@@ -30,6 +30,7 @@ use OrbitDocsLinter\Rules\JsonWarningShapeRule;
 use OrbitDocsLinter\Rules\MarkdownLinkIntegrityRule;
 use OrbitDocsLinter\Rules\NextActionContractRule;
 use OrbitDocsLinter\Rules\NoCommandAmbiguityFilesRule;
+use OrbitDocsLinter\Rules\NonStateDomainHandoffRule;
 use OrbitDocsLinter\Rules\ProductCodeNamespaceRule;
 use OrbitDocsLinter\Rules\PublicJsonOptionContractRule;
 use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
@@ -191,6 +192,7 @@ final class CommandDocsLintCli
                 new TechnicalSlotSemanticsRule,
                 new MarkdownLinkIntegrityRule,
                 new ConceptIndexRule,
+                new NonStateDomainHandoffRule,
                 new CanonicalTechnicalContractRule,
                 new BehaviorContractStructureRule,
                 new DestructiveConsentRule,

@@ -117,6 +117,11 @@ categories, doctor relationship, and test mapping.
   [`gateway:trust`](../../2_gateway-trust/gateway-trust.md), but with the
   gateway endpoint resolved by the onboarding flow.
 
+The trusted gateway root CA is the trust anchor for Orbit-managed app,
+workspace, proxy, gateway, and tool route certificates. `gateway:add` must not
+issue, upload, renew, or clean up route-scoped TLS leaf certificates. Route
+certificate lifecycle belongs to the route-owning domain and its doctor family.
+
 ### Identity Verification Rules
 
 - Make a trusted HTTPS request to `/api/me` using the newly trusted CA.
@@ -145,6 +150,9 @@ categories, doctor relationship, and test mapping.
 - Act as a broad repair or reset command. After local onboarding exists,
   standalone CA trust repair belongs to `gateway:trust`, and broader node drift
   belongs to `doctor --family=node --fix`.
+
+It also must not issue, upload, renew, or clean up app, workspace, proxy,
+gateway, or tool route leaf certificates.
 
 ## Renderer Contracts
 

@@ -227,6 +227,7 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/7_process`
 - [x] `docs/commands/8_proxy`
 - [x] `docs/commands/9_schedule`
+- [x] `docs/commands/10_deploy`
 - [x] `docs/commands/16_dns`
 
 ### Legacy Command Docs Still To Port
@@ -245,13 +246,13 @@ semantic issues before marking the command or family ported.
   - [x] `schedule:remove`
   - [x] `schedule:run`
   - [x] `schedule:logs`
-- [ ] Deployments: `../orbit-old-may/docs/commands/09-deployments`
-  - [ ] `deploy:step-add`
-  - [ ] `deploy:step-list`
-  - [ ] `deploy:step-remove`
-  - [ ] `deploy:run`
-  - [ ] `deploy:history`
-  - [ ] `deploy:log`
+- [x] Deployments: `../orbit-old-may/docs/commands/09-deployments`
+  - [x] `deploy:step-add`
+  - [x] `deploy:step-list`
+  - [x] `deploy:step-remove`
+  - [x] `deploy:run`
+  - [x] `deploy:history`
+  - [x] `deploy:log`
 - [~] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [x] `doctor`
   - [!] `profile` docs conversion is an early verification-helper candidate
