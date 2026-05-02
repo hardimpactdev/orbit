@@ -275,8 +275,7 @@ They do not imply the matching implementation has been ported.
   - [x] `deploy:log`
 - [~] Operations: `../orbit-old-may/docs/commands/10-operations`
   - [x] `doctor`
-  - [!] `profile` docs conversion is an early verification-helper candidate
-    after node identity and minimal app resolution are available.
+  - [x] `profile`
   - [x] `update`
   - [x] `update:all`
   - [x] `activity:list`
@@ -306,8 +305,8 @@ They do not imply the matching implementation has been ported.
   - [x] `php:list`
   - [x] `php:use`
   - [x] Tool-specific command family admission policy documented.
-- [ ] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
-  - [ ] `agent-ide:message`
+- [x] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
+  - [x] `agent-ide:message`
 
 ### Todo Pipeline Hints
 

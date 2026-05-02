@@ -136,6 +136,28 @@ MD,
         ->and($findings[0]->message)->toContain('doctor --family=proxy');
 });
 
+it('requires Agent IDE docs to hand off to adapter-consuming state doctors', function (): void {
+    $rule = new NonStateDomainHandoffRule;
+    $context = nonStateDomainHandoffContext([
+        '15_agent-ide/README.md' => <<<'MD'
+# Agent IDE Commands
+
+## State Ownership
+
+The agent-ide command domain does not own a state family.
+`doctor --family=node` owns node defaults.
+`doctor --family=app` owns app settings.
+`doctor --family=workspace` owns workspace state.
+`doctor --family=process` owns crash events.
+MD,
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->message)->toContain('doctor --family=tool');
+});
+
 it('ignores state-family command domains', function (): void {
     $rule = new NonStateDomainHandoffRule;
     $context = nonStateDomainHandoffContext([

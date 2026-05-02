@@ -558,5 +558,5 @@ build on top of that foundation.
 12. [Cloudflare](12_cf/README.md)
 13. [VPN Administration](13_vpn/README.md)
 14. [PHP Runtime](14_php/README.md)
-15. Agent IDE (not yet converted)
+15. [Agent IDE](15_agent-ide/README.md)
 16. [DNS](16_dns/README.md)
