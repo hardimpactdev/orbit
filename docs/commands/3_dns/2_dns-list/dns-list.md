@@ -1,6 +1,6 @@
 # `orbit dns:list`
 
-[Back to Operation commands.](../README.md)
+[Back to DNS commands.](../README.md)
 
 List caller-local Orbit DNS resolver overrides.
 
@@ -51,7 +51,7 @@ JSON output returns local resolver entries under `success.data.dns`.
 
 ## Related Commands
 
-- [`dns:resolve-tld`](../6_dns-resolve-tld/dns-resolve-tld.md) - configure or
+- [`dns:resolve-tld`](../1_dns-resolve-tld/dns-resolve-tld.md) - configure or
   remove a caller-local development TLD resolver override
 - [`doctor --family=node --self`](../../1_node/node-doctor.md) - verify
   node-family development TLD readiness

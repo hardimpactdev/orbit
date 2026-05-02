@@ -2,7 +2,7 @@
 
 [Back to public `dns:resolve-tld` documentation.](../dns-resolve-tld.md)
 
-**Owner:** `operation`.
+**Owner:** `dns`.
 
 **Effects:** `read`, `write`, `destructive`, `local-only`, `stream`.
 
@@ -144,9 +144,9 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DnsResolveTldCommandTest.php` | Command contract: caller-role eligibility, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway intent writes, no public DNS writes, and no arbitrary per-host mappings. |
-| `tests/Feature/Commands/Operations/DnsResolveTldInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, prompt order, prompt IDs, labels, primitives, field validation, reset confirmation, `--force` confirmation bypass, and prompt abort behavior. |
-| `tests/Feature/Commands/Operations/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
-| `tests/Feature/Commands/Operations/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Operations/DnsResolveTldHumanRendererTest.php` | Human renderer progress trees, resolved success prose, already-resolved prose, reset prose, already-absent prose, validation failure prose, unsupported-platform prose, resolver failure prose, and absence of JSON envelopes in human mode. |
+| `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: caller-role eligibility, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway intent writes, no public DNS writes, and no arbitrary per-host mappings. |
+| `tests/Feature/Commands/Dns/DnsResolveTldInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, prompt order, prompt IDs, labels, primitives, field validation, reset confirmation, `--force` confirmation bypass, and prompt abort behavior. |
+| `tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
+| `tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
+| `tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` | Human renderer progress trees, resolved success prose, already-resolved prose, reset prose, already-absent prose, validation failure prose, unsupported-platform prose, resolver failure prose, and absence of JSON envelopes in human mode. |
 | `tests/E2E/Ephemeral/DnsResolveTldTest.php` | Real local resolver configuration and reset against an ephemeral supported control-node platform. |

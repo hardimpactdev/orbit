@@ -24,8 +24,6 @@ drift keys remain the product family keys defined by the blueprint, such as
   own concrete probes, issue codes, and fix/adopt action maps.
 - Operational history is gateway history. A single operation may produce
   multiple records under one correlation id when history support is available.
-- Local DNS commands affect only the caller machine. They do not create gateway
-  intent, proxy routes, app domains, or public DNS records.
 - Profiling reads request/runtime data and must not mutate app intent.
 
 ## Commands
@@ -35,8 +33,6 @@ drift keys remain the product family keys defined by the blueprint, such as
 3. [`orbit doctor`](3_doctor/doctor.md)
 4. [`orbit activity:list`](4_activity-list/activity-list.md)
 5. [`orbit activity:show [id]`](5_activity-show/activity-show.md)
-6. [`orbit dns:resolve-tld [tld] [target]`](6_dns-resolve-tld/dns-resolve-tld.md)
-7. [`orbit dns:list`](7_dns-list/dns-list.md)
 
 ## Not Yet Converted
 

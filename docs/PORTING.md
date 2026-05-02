@@ -194,6 +194,7 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
+- [x] `docs/commands/3_dns`
 - [x] `docs/commands/4_app`
 - [x] `docs/commands/5_workspace`
 - [x] `docs/commands/6_process`
@@ -247,8 +248,6 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [x] `update:all`
   - [x] `activity:list`
   - [x] `activity:show`
-  - [x] `dns:resolve-tld`
-  - [x] `dns:list`
 - [ ] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
   - [ ] `cf:zones`
   - [ ] `cf:dns-list`
@@ -328,6 +327,12 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 - [x] Convert gateway command docs into current format.
 - [ ] Port `gateway:add`.
 - [ ] Port `gateway:trust`.
+
+## DNS Workstream
+
+- [x] Convert DNS command docs into current format.
+- [ ] Port `dns:resolve-tld`.
+- [ ] Port `dns:list`.
 
 ## App Workstream
 

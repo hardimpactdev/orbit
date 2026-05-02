@@ -1,6 +1,6 @@
 # `orbit dns:resolve-tld [tld] [target]`
 
-[Back to Operation commands.](../README.md)
+[Back to DNS commands.](../README.md)
 
 Configure or remove a caller-local development TLD resolver override.
 
@@ -66,7 +66,7 @@ whether local state changed.
 
 ## Related Commands
 
-- [`dns:list`](../7_dns-list/dns-list.md) - inspect caller-local Orbit resolver
+- [`dns:list`](../2_dns-list/dns-list.md) - inspect caller-local Orbit resolver
   overrides
 - [`node:new`](../../1_node/1_node-new/node-new.md) - create gateway-owned
   development TLD mappings for app nodes
