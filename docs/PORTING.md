@@ -38,19 +38,22 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
 
 1. Find the old documentation in `../orbit-old-may/docs`.
 2. Port or convert that documentation into this repo first.
-3. Run `composer docs-lint` when command docs changed.
-4. Inspect the old implementation in `../orbit-old-may/app`,
+3. For command docs, use the converted family directory/split-file shape and
+   run the command-designer semantic check for each ported command before
+   marking the command or family done.
+4. Run `composer docs-lint` when command docs changed.
+5. Inspect the old implementation in `../orbit-old-may/app`,
    `../orbit-old-may/config`, `../orbit-old-may/database`, and
    `../orbit-old-may/tests`.
-5. Decide whether the old implementation should be ported directly or replaced
+6. Decide whether the old implementation should be ported directly or replaced
    with a simpler clean-rebuild approach that better fits the current docs.
-6. Respect the implementation order below unless a verification-helper command
+7. Respect the implementation order below unless a verification-helper command
    unlocks better testing for the next slice.
-7. Implement the smallest useful vertical slice in the clean repo.
-8. Add focused Pest tests that assert the current docs contract, not legacy
+8. Implement the smallest useful vertical slice in the clean repo.
+9. Add focused Pest tests that assert the current docs contract, not legacy
    internals.
-9. Run the narrow test, then `composer quality-check`.
-10. Update this tracker in the same commit as the ported slice.
+10. Run the narrow test, then `composer quality-check`.
+11. Update this tracker in the same commit as the ported slice.
 
 ## Implementation Order
 
@@ -189,11 +192,24 @@ yet satisfy the full product contracts.
 Command or feature docs missing from this repo must be ported before rebuilding
 the matching implementation. Converted command docs should follow the
 directory/split-file format used by `docs/commands/1_node/1_node-new`.
+When porting a legacy command domain, do not preserve flat legacy command
+files. Each public command must live in its own numbered command directory with
+at least a public command page, canonical technical contract, and output
+renderer contracts. Add input-mode, caller-role, and other companion technical
+files whenever the command has prompts, non-interactive differences,
+destructive consent, topology behavior, or other split ownership.
+After structural conversion, run the command-designer semantic check for each
+ported command and family doctor file. Use
+`.agents/skills/command-designer/references/semantic-check.md` and current
+`docs/BLUEPRINT.md`, `docs/MISSION.md`, `docs/CONCEPTS.md`,
+`docs/BUILDING-BLOCKS.md`, and `docs/commands/README.md` as authority. Fix
+semantic issues before marking the command or family ported.
 
 ### Already Ported Command Docs
 
 - [x] `docs/commands/1_node`
 - [x] `docs/commands/2_gateway`
+- [x] `docs/commands/3_tool`
 - [x] `docs/commands/5_app`
 - [x] `docs/commands/6_workspace`
 - [x] `docs/commands/7_process`
@@ -201,19 +217,6 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 ### Legacy Command Docs Still To Port
 
-- [ ] Tools: `../orbit-old-may/docs/commands/02-tools`
-  - [ ] `tool:list`
-  - [ ] `tool:show`
-  - [ ] `tool:install`
-  - [ ] `tool:remove`
-  - [ ] `tool:start`
-  - [ ] `tool:stop`
-  - [ ] `tool:restart`
-  - [ ] `tool:logs`
-  - [ ] `tool:update`
-  - [ ] `tool:credentials`
-  - [ ] `tool:reload`
-  - [ ] `tool:reconfigure`
 - [ ] Firewall rules: `../orbit-old-may/docs/commands/03-firewall-rules`
   - [ ] `firewall:list`
   - [ ] `firewall:allow`

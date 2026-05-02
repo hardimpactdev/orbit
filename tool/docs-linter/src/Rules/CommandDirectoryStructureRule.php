@@ -103,6 +103,8 @@ final class CommandDirectoryStructureRule implements CommandDocsLintRule
             "{$commandDirectory}/{$commandName}.md" => "Command directories must contain {$commandName}.md.",
             "{$commandDirectory}/technical" => 'Command directories must contain a technical directory.',
             "{$commandDirectory}/technical/1_{$commandName}.md" => "Technical directories must contain 1_{$commandName}.md.",
+            "{$commandDirectory}/technical/6.1_{$commandName}_output-render_human.md" => "Technical directories must contain 6.1_{$commandName}_output-render_human.md.",
+            "{$commandDirectory}/technical/6.2_{$commandName}_output-render_json.md" => "Technical directories must contain 6.2_{$commandName}_output-render_json.md.",
         ];
     }
 }

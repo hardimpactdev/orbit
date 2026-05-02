@@ -98,10 +98,9 @@ then migrate docs until it passes.
 Each numbered domain directory contains:
 
 - `README.md`: domain rules and the ordered command index.
-- `N_command-name.md`: public-facing command documentation for simple commands
-  that do not need companion technical, input-mode, or renderer files.
-- `N_command-name/command-name.md`: public-facing command documentation for
-  commands with enough companion material to need their own ordered directory.
+- `N_command-name/command-name.md`: public-facing command documentation. Every
+  converted family command uses a numbered command directory, even when the
+  command is simple.
 - `N_command-name/technical/`: internal command behavior contracts, prompt
   contracts, failure semantics, progress shape, JSON edge cases, and test
   mapping for that command. Multiple technical files must be numbered, with
@@ -123,11 +122,12 @@ Each numbered domain directory contains:
 
 Command groups with hidden or internal machinery commands include an `Internal Commands` section in their `README.md` that links to the `internal/` subdirectory. Public command lists remain separate to maintain visibility distinctions.
 
-Flat command files are valid for commands whose contract fits in one page and
-does not need split ownership. Convert a command to the directory structure when
-it has non-trivial caller-role or topology behavior, substantial interactive or
-non-interactive input behavior, dedicated human or JSON renderer contracts,
-cross-node side effects, or E2E test mapping.
+Flat numbered command files are not valid in converted command families. If a
+legacy family is being ported, each public command must be converted into the
+directory shape with at least a public command page, canonical technical
+contract, and renderer contracts. Add companion technical files for caller-role,
+topology, input-mode, destructive consent, cross-node, or E2E behavior when
+those contracts need separate ownership.
 
 ### Domains And State Families
 
@@ -526,7 +526,7 @@ build on top of that foundation.
 
 1. [Nodes](1_node/README.md)
 2. [Gateway](2_gateway/README.md)
-3. Tools (not yet converted)
+3. [Tools](3_tool/README.md)
 4. Firewall Rules (not yet converted)
 5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)

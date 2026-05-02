@@ -26,11 +26,11 @@ docs/commands/N_family-singular/
 └── <family-singular>-doctor.md
 ```
 
-Use a single `N_command-name.md` file only for simple commands whose contract
-fits in one page and does not need split ownership. Convert a command to the
-directory shape when it has caller-role or topology behavior, substantial input
-mode behavior, dedicated renderer contracts, cross-node side effects, or E2E
-test mapping.
+Converted command families do not use flat numbered command files. Every public
+command lives in a numbered command directory with at least a public command
+page, canonical technical contract, and renderer contracts. Add input-mode,
+caller-role, topology, destructive-consent, cross-node, or E2E companion files
+when those contracts need separate ownership.
 
 Run `composer docs-lint` after changing converted command documentation. The
 docs linter is the executable structure contract for converted command docs; if

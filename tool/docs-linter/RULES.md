@@ -17,8 +17,8 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 
 | Rule | Severity | Checks | Fix |
 | --- | --- | --- | --- |
-| `command_docs.converted_family_structure` | error | Converted family directories contain the expected family-level files and command directories. | Restore the missing family file or move the command into the converted directory shape. |
-| `command_docs.command_directory_structure` | error | Command directories contain the public page, technical directory, and required technical slots. | Add or rename the missing command documentation file. |
+| `command_docs.converted_family_structure` | error | Converted family directories contain the expected family-level files, command directories, and no flat numbered command files. | Restore the missing family file or move the command into the converted directory shape. |
+| `command_docs.command_directory_structure` | error | Command directories contain the public page, technical directory, canonical technical slot, and renderer contract slots. | Add or rename the missing command documentation file. |
 | `command_docs.family_command_prefix` | error | Non-operation command families only contain commands that start with the family command prefix. | Move the command into the matching family directory or rename the command to use the family prefix. |
 | `command_docs.no_command_ambiguity_files` | error | Converted command directories do not keep `ambiguity.md` files in the docs tree. | Move ambiguity review notes to Solo scratchpads or another non-contract location. |
 | `command_docs.technical_slot_semantics` | error | Technical slot files use the expected numeric slot and command slug semantics. | Rename the slot file or move the content to the correct slot. |

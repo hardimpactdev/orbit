@@ -57,8 +57,25 @@ final class ConvertedFamilyStructureRule implements CommandDocsLintRule
                     message: "State-family documentation directories must contain {$doctorFile}.",
                 );
             }
+
+            foreach ($context->markdownFiles($familyDirectory, recursive: false) as $file) {
+                if (! $this->isFlatCommandFile($file)) {
+                    continue;
+                }
+
+                $findings[] = new CommandDocsLintFinding(
+                    path: $context->relativePath($file),
+                    ruleId: $this->id(),
+                    message: 'Converted family commands must use numbered command directories with split technical docs; move this flat command file into N_command-name/command-name.md with technical contracts.',
+                );
+            }
         }
 
         return $findings;
+    }
+
+    private function isFlatCommandFile(string $file): bool
+    {
+        return preg_match('/^[1-9]\d*_[a-z0-9]+(?:-[a-z0-9]+)*\.md$/', basename($file)) === 1;
     }
 }
