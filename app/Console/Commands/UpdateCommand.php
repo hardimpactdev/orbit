@@ -36,6 +36,14 @@ class UpdateCommand extends Command
                 $stepResults[$key] = $result->successful() ? 'completed' : 'failed';
 
                 if (! $result->successful()) {
+                    if ($key === 'pull_source' && $result->exitCode() === 128) {
+                        return $this->jsonError(
+                            code: 'local_checkout_unavailable',
+                            message: 'Local Orbit checkout cannot be updated.',
+                            meta: ['path' => base_path()],
+                        );
+                    }
+
                     return $this->jsonError(
                         code: 'local_update_failed',
                         message: 'Failed to update local Orbit checkout.',
@@ -53,9 +61,9 @@ class UpdateCommand extends Command
         foreach ($steps as $key => $step) {
             $result = $step();
             $stepResults[$key] = $result->successful() ? 'completed' : 'failed';
+            $this->updateProgressTree($stepResults);
 
             if (! $result->successful()) {
-                $this->updateProgressTree($stepResults);
                 $this->line('');
                 $this->error('Failed to update local Orbit checkout.');
                 $output = trim($result->errorOutput() ?: $result->output());
@@ -68,7 +76,6 @@ class UpdateCommand extends Command
             }
         }
 
-        $this->updateProgressTree($stepResults);
         $this->line('');
         $this->info('Updated local Orbit checkout.');
 
@@ -105,7 +112,7 @@ class UpdateCommand extends Command
                     ],
                 ],
             ],
-        ], JSON_THROW_ON_ERROR));
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;
     }
@@ -128,7 +135,7 @@ class UpdateCommand extends Command
 
         $this->line(json_encode([
             'error' => $error,
-        ], JSON_THROW_ON_ERROR));
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return self::FAILURE;
     }

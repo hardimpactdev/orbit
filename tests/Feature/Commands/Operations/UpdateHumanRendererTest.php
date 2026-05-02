@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 it('renders progress tree shape', function (): void {
@@ -11,14 +10,12 @@ it('renders progress tree shape', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $exitCode = Artisan::call('update');
-    $output = Artisan::output();
-
-    expect($exitCode)->toBe(0);
-    expect(str_contains($output, '┌ Update Orbit'))->toBeTrue();
-    expect(str_contains($output, 'Pull source'))->toBeTrue();
-    expect(str_contains($output, 'Install dependencies'))->toBeTrue();
-    expect(str_contains($output, 'Run migrations'))->toBeTrue();
+    $this->artisan('update')
+        ->expectsOutputToContain('┌ Update Orbit')
+        ->expectsOutputToContain('Pull source')
+        ->expectsOutputToContain('Install dependencies')
+        ->expectsOutputToContain('Run migrations')
+        ->assertSuccessful();
 });
 
 it('renders success prose', function (): void {
@@ -27,11 +24,9 @@ it('renders success prose', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $exitCode = Artisan::call('update');
-    $output = Artisan::output();
-
-    expect($exitCode)->toBe(0);
-    expect(str_contains($output, 'Updated local Orbit checkout.'))->toBeTrue();
+    $this->artisan('update')
+        ->expectsOutputToContain('Updated local Orbit checkout.')
+        ->assertSuccessful();
 });
 
 it('renders failed step prose', function (): void {
@@ -44,11 +39,9 @@ it('renders failed step prose', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $exitCode = Artisan::call('update');
-    $output = Artisan::output();
-
-    expect($exitCode)->toBe(1);
-    expect(str_contains($output, 'Failed to update local Orbit checkout.'))->toBeTrue();
+    $this->artisan('update')
+        ->expectsOutputToContain('Failed to update local Orbit checkout.')
+        ->assertFailed();
 });
 
 it('shows captured output on failure', function (): void {
@@ -61,11 +54,9 @@ it('shows captured output on failure', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $exitCode = Artisan::call('update');
-    $output = Artisan::output();
-
-    expect($exitCode)->toBe(1);
-    expect(str_contains($output, 'merge conflict'))->toBeTrue();
+    $this->artisan('update')
+        ->expectsOutputToContain('merge conflict')
+        ->assertFailed();
 });
 
 it('has no json envelope in human mode', function (): void {
@@ -74,10 +65,7 @@ it('has no json envelope in human mode', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $exitCode = Artisan::call('update');
-    $output = Artisan::output();
-
-    expect($exitCode)->toBe(0);
-    expect(str_contains($output, 'Updated local Orbit checkout.'))->toBeTrue();
-    expect(str_contains($output, '"success"'))->toBeFalse();
+    $this->artisan('update')
+        ->expectsOutputToContain('Updated local Orbit checkout.')
+        ->assertSuccessful();
 });

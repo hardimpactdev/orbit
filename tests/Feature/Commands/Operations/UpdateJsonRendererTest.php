@@ -81,8 +81,8 @@ it('renders local_checkout_unavailable with path', function (): void {
     $output = Artisan::output();
 
     expect($exitCode)->toBe(1);
-    expect(str_contains($output, '"code":"local_update_failed"'))->toBeTrue();
-    expect(str_contains($output, '"failed_step":"pull_source"'))->toBeTrue();
+    expect(str_contains($output, '"code":"local_checkout_unavailable"'))->toBeTrue();
+    expect(str_contains($output, '"path":"'.base_path().'"'))->toBeTrue();
 });
 
 it('includes no extra fields in error envelope', function (): void {
