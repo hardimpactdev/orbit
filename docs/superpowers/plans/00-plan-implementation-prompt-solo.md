@@ -11,7 +11,13 @@ kickstarter agent. The kickstarter is a one-off procedure for the current
 coordinator to run. The long-running Solo roles are:
 
 - orchestrator;
-- tailer;
 - loop improver.
+
+The one-shot Solo roles are:
+
+- pipeline filler;
+- todo scout;
+- implementer;
+- reviewer.
 
 The current loop source of truth lives entirely in `solo-orchestration/`.
