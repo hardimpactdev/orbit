@@ -77,6 +77,25 @@ MD,
     expect($rule->check($context))->toBe([]);
 });
 
+it('requires Cloudflare provider utility docs to hand off to proxy and app doctors', function (): void {
+    $rule = new NonStateDomainHandoffRule;
+    $context = nonStateDomainHandoffContext([
+        '12_cf/README.md' => <<<'MD'
+# Cloudflare Commands
+
+## State Ownership
+
+The cf command domain does not own a state family.
+`doctor --family=proxy` owns ingress route health.
+MD,
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->message)->toContain('doctor --family=app');
+});
+
 it('ignores state-family command domains', function (): void {
     $rule = new NonStateDomainHandoffRule;
     $context = nonStateDomainHandoffContext([

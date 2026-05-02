@@ -228,6 +228,7 @@ semantic issues before marking the command or family ported.
 - [x] `docs/commands/8_proxy`
 - [x] `docs/commands/9_schedule`
 - [x] `docs/commands/10_deploy`
+- [x] `docs/commands/12_cf`
 - [x] `docs/commands/16_dns`
 
 ### Legacy Command Docs Still To Port
@@ -261,16 +262,16 @@ semantic issues before marking the command or family ported.
   - [x] `update:all`
   - [x] `activity:list`
   - [x] `activity:show`
-- [ ] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
-  - [ ] `cf:zones`
-  - [ ] `cf:dns-list`
-  - [ ] `cf:dns-add`
-  - [ ] `cf:dns-remove`
-  - [ ] `cf:cache-flush`
-  - [ ] `cf:cache-rule-add`
-  - [ ] `cf:cache-rule-remove`
-  - [ ] `cf:ssl-enable`
-  - [ ] `cf:ssl-disable`
+- [x] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
+  - [x] Legacy `cf:zones` renamed to `cf-zone:list`.
+  - [x] `cf-dns:list`
+  - [x] `cf-dns:add`
+  - [x] `cf-dns:remove`
+  - [x] `cf-cache:flush`
+  - [x] `cf-cache-rule:add`
+  - [x] `cf-cache-rule:remove`
+  - [x] `cf-ssl:enable`
+  - [x] `cf-ssl:disable`
 - [ ] VPN: `../orbit-old-may/docs/commands/12-vpn`
   - [ ] `vpn:client-list`
   - [ ] `vpn:client-new`

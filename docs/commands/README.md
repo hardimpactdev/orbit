@@ -540,7 +540,7 @@ build on top of that foundation.
 9. [Schedules](9_schedule/README.md)
 10. [Deployments](10_deploy/README.md)
 11. [Operations](11_operation/README.md)
-12. Cloudflare (not yet converted)
+12. [Cloudflare](12_cf/README.md)
 13. VPN Administration (not yet converted)
 14. PHP Runtime (not yet converted)
 15. Agent IDE (not yet converted)

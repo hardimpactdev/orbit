@@ -1,0 +1,94 @@
+# Technical Contract: `orbit cf-dns:list <zone> [--json]`
+
+[Back to public `cf-dns:list` documentation.](../cf-dns-list.md)
+
+**Owner:** `cf`.
+
+**Effects:** `read`.
+
+**Prerequisites:**
+- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
+- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
+- The current node identity is authorized for Cloudflare provider administration.
+- The gateway has a Cloudflare API token configured.
+
+## Signature
+
+```bash
+orbit cf-dns:list <zone> [--json]
+```
+
+## Input Contract
+
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `zone` | Argument `zone` | `Always.` | `Never.` | `None.` | Cloudflare zone ID or exact zone domain name. |
+| `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
+
+## Caller Role Behavior
+
+Control callers send the command request to the gateway. Gateway callers
+execute the provider request directly. App-node and unknown callers are denied
+before prompts or side effects because Cloudflare commands are provider
+administration, not app-local runtime work. Authorized control and gateway
+callers use the gateway-owned authorization policy for Cloudflare provider
+administration.
+
+## Input Mode Contracts
+
+No input-mode-specific contracts are required. The command does not prompt;
+missing `zone` is invalid CLI usage or a shared validation failure before side
+effects depending on where the console runtime detects it.
+
+## Behavior Contract
+
+### Zone Resolution Rules
+
+- Accepts a Cloudflare zone ID or exact zone domain name.
+- Resolves a zone domain name by reading Cloudflare zones visible to the gateway
+  token.
+- Fails before DNS record lookup when the zone cannot be resolved.
+
+### Provider Record Visibility
+
+- Reads DNS records from the resolved Cloudflare zone.
+- Returns record ID, type, name, content, and proxy status for every provider
+  record Cloudflare returns.
+- Does not filter the response to Orbit-managed records because the purpose is
+  provider-state audit.
+
+### Scope Boundaries
+
+`cf-dns:list` must not create, update, remove, adopt, or fix DNS provider
+records. It must not create Orbit DNS, app, or proxy intent.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_cf-dns-list_output-render_human.md)
+- [JSON renderer](6.2_cf-dns-list_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Validation failed | `zone` is missing, malformed, or not found in the provider account. | `error.code=validation_failed` |
+| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
+| Gateway unavailable | A non-gateway caller cannot reach the gateway API. | `error.code=gateway_unavailable` |
+| Authorization failed | The caller is not authorized for Cloudflare provider administration. | `error.code=authorization_failed` |
+| Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
+
+## Doctor Relationship
+
+Cloudflare DNS listing is supplemental provider visibility. It does not create a
+doctor issue, fix drift, or adopt provider state. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
+owns ingress route health and [`doctor --family=app`](../../../5_app/app-doctor.md)
+owns app-domain health.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php` | Command contract for caller-role denial, zone resolution, provider authorization, gateway forwarding, provider failures, and no Orbit state writes. |
+| `tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

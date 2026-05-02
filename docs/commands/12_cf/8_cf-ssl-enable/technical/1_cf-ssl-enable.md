@@ -1,0 +1,88 @@
+# Technical Contract: `orbit cf-ssl:enable <zone> [--mode=<mode>] [--json]`
+
+[Back to public `cf-ssl:enable` documentation.](../cf-ssl-enable.md)
+
+**Owner:** `cf`.
+
+**Effects:** `write`.
+
+**Prerequisites:**
+- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
+- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
+- The current node identity is authorized for Cloudflare provider administration.
+- The gateway has a Cloudflare API token configured.
+
+## Signature
+
+```bash
+orbit cf-ssl:enable <zone> [--mode=<mode>] [--json]
+```
+
+## Input Contract
+
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `zone` | Argument `zone` | `Always.` | `Never.` | `None.` | Cloudflare zone ID or exact zone domain name. |
+| `mode` | `--mode` | `Optional.` | `Never.` | `strict` | `strict` or `full`. |
+| `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
+
+## Caller Role Behavior
+
+Control callers send the command request to the gateway. Gateway callers
+execute the provider request directly. App-node and unknown callers are denied
+before prompts or side effects because Cloudflare commands are provider
+administration, not app-local runtime work. Authorized control and gateway
+callers use the gateway-owned authorization policy for Cloudflare provider
+administration.
+
+## Input Mode Contracts
+
+No input-mode-specific contracts are required. The command does not prompt;
+missing or invalid `zone` or `mode` fails before side effects.
+
+## Behavior Contract
+
+### SSL Mode Rules
+
+- Resolves `zone` to a Cloudflare zone ID.
+- Sets the Cloudflare SSL mode to `strict` by default.
+- Allows `full` only when explicitly requested.
+- Refuses `flexible`, `off`, and any other mode through validation failure.
+- Does not create origin certificates or proxy TLS artifacts.
+
+### Origin Certificate Boundary
+
+Strict mode requires Cloudflare to validate the origin certificate. The command
+does not synchronously verify every hostname after the provider setting is
+changed; hostname and proxy TLS health remain app/proxy doctor concerns.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_cf-ssl-enable_output-render_human.md)
+- [JSON renderer](6.2_cf-ssl-enable_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Validation failed | `zone` is missing, zone lookup fails, or `mode` is not `strict` or `full`. | `error.code=validation_failed` |
+| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
+| Gateway unavailable | A non-gateway caller cannot reach the gateway API. | `error.code=gateway_unavailable` |
+| Authorization failed | The caller is not authorized for Cloudflare provider administration. | `error.code=authorization_failed` |
+| Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
+
+## Doctor Relationship
+
+`cf-ssl:enable` changes provider SSL mode, but it does not create a Cloudflare
+doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns
+proxy TLS artifact health and [`doctor --family=app`](../../../5_app/app-doctor.md)
+owns app-domain health.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php` | Command contract for caller-role denial, zone resolution, strict default, full mode, flexible refusal, provider authorization, provider failures, and no origin-certificate mutation. |
+| `tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
