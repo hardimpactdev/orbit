@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Gateway;
 
 use App\Models\LocalGatewaySettings;
+use App\Services\ActivityLogCorrelation;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 final class GatewayClient
 {
@@ -15,9 +15,6 @@ final class GatewayClient
     {
         $settings = LocalGatewaySettings::current();
 
-        // Note: X-Orbit-Request-Id is currently a random UUID per-request.
-        // Future slices will add real correlation header support that preserves
-        // the incoming ID from a parent caller when available.
         return Http::baseUrl($settings->gateway_url ?? '')
             ->withOptions([
                 'verify' => $settings->ca_pem_path,
@@ -25,7 +22,8 @@ final class GatewayClient
             ])
             ->acceptJson()
             ->withHeaders([
-                'X-Orbit-Request-Id' => (string) Str::uuid(),
+                'X-Orbit-Request-Id' => app(ActivityLogCorrelation::class)->start(),
+                'X-Orbit-Client' => app()->runningInConsole() ? 'cli' : 'api',
             ]);
     }
 }
