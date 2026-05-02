@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
@@ -48,89 +47,77 @@ describe('node:update human renderer contract', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0);
-        expect($output)->not->toContain('"success"')
-            ->and($output)->not->toContain('"error"');
+        ])
+            ->doesntExpectOutputToContain('"success"')
+            ->doesntExpectOutputToContain('"error"')
+            ->assertSuccessful();
     });
 
     it('renders progress tree with tree characters', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Update Node')
-            ->and($output)->toContain('○ Validate node')
-            ->and($output)->toContain('○ Update intent')
-            ->and($output)->toContain("└ Node 'app-1' updated");
+        ])
+            ->expectsOutputToContain('┌ Update Node')
+            ->expectsOutputToContain('○ Validate node')
+            ->expectsOutputToContain('○ Update intent')
+            ->expectsOutputToContain("└ Node 'app-1' updated")
+            ->assertSuccessful();
     });
 
     it('renders success prose with changed fields', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0);
-        expect($output)->toContain("Node 'app-1' updated")
-            ->and($output)->toContain('Changed: host');
+        ])
+            ->expectsOutputToContain("Node 'app-1' updated")
+            ->expectsOutputToContain('Changed: host')
+            ->assertSuccessful();
     });
 
     it('renders no-op prose when no fields changed', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.7',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0);
-        expect($output)->toContain("└ Node 'app-1' unchanged")
-            ->and($output)->toContain("Node 'app-1' unchanged")
-            ->and($output)->toContain('No fields were modified.');
+        ])
+            ->expectsOutputToContain("└ Node 'app-1' unchanged")
+            ->expectsOutputToContain("Node 'app-1' unchanged")
+            ->expectsOutputToContain('No fields were modified.')
+            ->assertSuccessful();
     });
 
     it('renders node-not-found prose error', function (): void {
         setupGatewayCallerHuman();
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'missing-node',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain("Node 'missing-node' not found.");
+        ])
+            ->expectsOutputToContain("Node 'missing-node' not found.")
+            ->assertFailed();
     });
 
     it('renders no-fields-provided prose error', function (): void {
         setupGatewayCallerHuman();
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('At least one field must be provided to update a node.');
+        ])
+            ->expectsOutputToContain('At least one field must be provided to update a node.')
+            ->assertFailed();
     });
 
     it('renders field-role-incompatible prose error', function (): void {
@@ -141,14 +128,12 @@ describe('node:update human renderer contract', function (): void {
             'environment' => null,
         ]));
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'target-gateway',
             '--environment' => 'production',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain("The field 'environment' is not valid for node 'target-gateway' (role: gateway).");
+        ])
+            ->expectsOutputToContain("The field 'environment' is not valid for node 'target-gateway' (role: gateway).")
+            ->assertFailed();
     });
 
     it('renders gateway-unavailable prose error for control caller', function (): void {
@@ -161,14 +146,12 @@ describe('node:update human renderer contract', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('Gateway connection is required to update a node.');
+        ])
+            ->expectsOutputToContain('Gateway connection is required to update a node.')
+            ->assertFailed();
     });
 
     it('renders caller-role-not-allowed prose error for app caller', function (): void {
@@ -179,14 +162,12 @@ describe('node:update human renderer contract', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('This command may only be run from a control or gateway node.');
+        ])
+            ->expectsOutputToContain('This command may only be run from a control or gateway node.')
+            ->assertFailed();
     });
 
     it('renders local-context-invalid prose error', function (): void {
@@ -199,13 +180,11 @@ describe('node:update human renderer contract', function (): void {
 
         DB::table('nodes')->insert(nodeUpdateHumanRow());
 
-        $exitCode = Artisan::call('node:update', [
+        $this->artisan('node:update', [
             'name' => 'app-1',
             '--host' => '10.6.0.99',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('Local node role setting is invalid.');
+        ])
+            ->expectsOutputToContain('Local node role setting is invalid.')
+            ->assertFailed();
     });
 });
