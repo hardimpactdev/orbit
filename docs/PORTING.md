@@ -115,6 +115,15 @@ yet satisfy the full product contracts.
     that image.
   - Contract gap: role provisioning and gateway/control/development-app/
     production-app topology coverage still need ready Incus snapshot lanes.
+- [~] Orbit host installer
+  - Current implementation: `bin/install-orbit`
+  - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
+  - Bootstrap slice implemented: local control/gateway/app host prerequisite
+    installer for Ubuntu and macOS that installs PHP, Composer, Git, Orbit
+    source, SQLite database state, migrations, and the `orbit` symlink.
+  - Porting note: this is the first user touch point before any Orbit command
+    can run on a fresh control node. It does not create gateway-owned node
+    identity or WireGuard material.
 - [~] `update`
   - Current implementation: `app/Console/Commands/UpdateCommand.php`
   - Current tests: `tests/Feature/Commands/UpdateCommandTest.php`
@@ -139,6 +148,20 @@ yet satisfy the full product contracts.
   - Bootstrap slice implemented: active registry lookup, human output, JSON
     envelope, not-found error, local-node fallback, and read-only behavior.
   - Contract gaps are tracked in the node workstream.
+- [~] `node:new`
+  - Current implementation: `app/Console/Commands/NodeNewCommand.php`
+  - Current docs: `docs/commands/1_node/1_node-new`
+  - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
+  - Old evidence: `../orbit-old-may/app/Console/Commands/NodeNewCommand.php`
+    and `../orbit-old-may/app/Services/RemoteProvisioner.php`.
+  - Bootstrap slice implemented: unconfigured control caller can invoke
+    first-gateway bootstrap with `--role=gateway`, ship the current Orbit
+    source and `bin/install-orbit` over SSH, install PHP/Composer/Orbit on the
+    gateway host, and persist local bootstrap registry rows for the gateway and
+    initiating control node.
+  - Contract gaps are tracked in the node workstream; this is not yet complete
+    first-gateway onboarding because WireGuard, gateway API, gateway CA trust,
+    real platform detection, and `/api/me` verification are still missing.
 - [~] `node:register`
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
@@ -265,12 +288,24 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 - [ ] Port `node:remove`.
 - [ ] Port `node:agent-ide`.
 - [ ] Port `gateway:add`.
-- [ ] Port `node:new`.
-- [ ] Restore node provisioning support:
-  - [ ] SSH bootstrap
+- [~] Port `node:new`.
+  - [x] Bootstrap host installer exists and is used before Orbit runs on a
+    fresh gateway host.
+  - [x] First-gateway command path validates required non-interactive input.
+  - [x] First-gateway command path ships current Orbit source to the target over
+    SSH and runs the installer there.
+  - [~] First-gateway command path records bootstrap gateway and local control
+    registry rows.
+  - [ ] Interactive input mode.
+  - [ ] Gateway-connected forwarding from configured control nodes.
+  - [ ] Gateway-local app and control enrollment paths.
+  - [ ] Real platform detection.
+  - [ ] Full documented JSON success state after WireGuard/API/trust work lands.
+- [~] Restore node provisioning support:
+  - [~] SSH bootstrap
   - [ ] WireGuard enrollment
-  - [ ] gateway registry writes
-  - [ ] local node role and identity persistence
+  - [~] gateway registry writes
+  - [~] local node role and identity persistence
   - [ ] Orbit API vhost provisioning
   - [ ] Orbit PHP-FPM pool provisioning
   - [ ] gateway-to-node SSH trust model
@@ -360,6 +395,7 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.
   - [x] Create a blank snapshot lane for provisioning tests.
+  - [~] Add reusable host installer needed by the ready control snapshot.
   - [ ] Create ready control, gateway, development app, and production app
     snapshot lanes for fast command-porting tests.
 - [ ] Add E2E topology for gateway + control + development app + production
@@ -369,16 +405,19 @@ directory/split-file format used by `docs/commands/1_node/1_node-new`.
 
 ## Next Priorities
 
-1. Build ready Incus E2E snapshot lanes for fast command-porting tests:
-   control, gateway, development app, and production app VMs.
-2. Use the blank E2E lane to start node provisioning logic safely before
-   treating `gateway:add`, `node:new`, or provisioning-heavy commands as
-   complete.
-3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
+1. Use `bin/install-orbit` to build the ready control Incus snapshot, then use
+   that control node to run `node:new --role=gateway` against a blank gateway
+   VM.
+2. Extend `node:new --role=gateway` to finish WireGuard, gateway API, gateway
+   CA trust, and `/api/me` verification before treating first-gateway bootstrap
+   as contract-complete.
+3. Build ready Incus E2E snapshot lanes for fast command-porting tests:
+   gateway, development app, and production app VMs.
+4. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
    should exclude updating mini.
-4. Finish node registry and metadata slices first: `node:update`,
+5. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
-5. Convert `profile` docs once its node/app prerequisites are present, then
+6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-6. Convert operations docs for `update` and `update:all` so existing bootstrap
+7. Convert operations docs for `update` and `update:all` so existing bootstrap
    utilities stop carrying docs debt.

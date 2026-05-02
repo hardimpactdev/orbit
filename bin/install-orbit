@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROLE="control"
+TARGET_DIR="${ORBIT_INSTALL_PATH:-$HOME/orbit}"
+REPO_URL="${ORBIT_REPO_URL:-https://github.com/hardimpactdev/orbit.git}"
+BRANCH="${ORBIT_BRANCH:-main}"
+SOURCE_ARCHIVE=""
+LINK_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
+USE_SUDO=1
+
+usage() {
+    cat <<'HELP'
+usage: bin/install-orbit [options]
+
+Install the Orbit CLI and its PHP runtime prerequisites on the current host.
+
+Options:
+  --role=control|gateway|app   Host role being prepared. Defaults to "control".
+  --path=PATH                  Orbit checkout path. Defaults to "$HOME/orbit".
+  --repo=URL                   Git repository to clone when no source archive is provided.
+  --branch=NAME                Git branch to clone or update. Defaults to "main".
+  --source-archive=PATH        Extract this Orbit source tarball instead of cloning.
+  --bin=PATH                   Symlink path for the orbit executable.
+                               Defaults to "/usr/local/bin/orbit".
+  --no-sudo                    Run package and symlink commands without sudo.
+  -h, --help                   Show this help text.
+
+The installer is intentionally local-host only. A new control node runs it
+before invoking Orbit. First-gateway bootstrap may ship this same script and a
+source archive to the remote gateway host, then run it there over SSH.
+HELP
+}
+
+log() {
+    printf 'orbit-install: %s\n' "$*"
+}
+
+fail() {
+    printf 'orbit-install: %s\n' "$*" >&2
+    exit 1
+}
+
+quote() {
+    printf '%q' "$1"
+}
+
+run() {
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
+}
+
+sudo_run() {
+    if [ "$USE_SUDO" = "1" ] && [ "$(id -u)" -ne 0 ]; then
+        run sudo "$@"
+        return
+    fi
+
+    run "$@"
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "required command missing: $1"
+}
+
+parse_args() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --role=*)
+                ROLE="${1#*=}"
+                ;;
+            --path=*)
+                TARGET_DIR="${1#*=}"
+                ;;
+            --repo=*)
+                REPO_URL="${1#*=}"
+                ;;
+            --branch=*)
+                BRANCH="${1#*=}"
+                ;;
+            --source-archive=*)
+                SOURCE_ARCHIVE="${1#*=}"
+                ;;
+            --bin=*)
+                LINK_PATH="${1#*=}"
+                ;;
+            --no-sudo)
+                USE_SUDO=0
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                fail "unknown option: $1"
+                ;;
+        esac
+
+        shift
+    done
+}
+
+validate_args() {
+    case "$ROLE" in
+        control|gateway|app)
+            ;;
+        *)
+            fail "--role must be one of: control, gateway, app"
+            ;;
+    esac
+
+    [ -n "$TARGET_DIR" ] || fail "--path is required"
+    [ -n "$LINK_PATH" ] || fail "--bin is required"
+}
+
+install_ubuntu_prerequisites() {
+    log "installing Ubuntu prerequisites"
+
+    sudo_run apt-get update
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        ca-certificates \
+        composer \
+        curl \
+        git \
+        php-bcmath \
+        php-cli \
+        php-curl \
+        php-mbstring \
+        php-sqlite3 \
+        php-xml \
+        php-zip \
+        tar \
+        unzip
+}
+
+install_macos_prerequisites() {
+    require_command brew
+
+    log "installing macOS prerequisites"
+    run brew update
+    run brew install php composer git
+}
+
+install_prerequisites() {
+    case "$(uname -s)" in
+        Linux)
+            if [ -r /etc/os-release ] && grep -q '^ID=ubuntu$' /etc/os-release; then
+                install_ubuntu_prerequisites
+                return
+            fi
+
+            fail "only Ubuntu Linux is supported for Orbit host installation"
+            ;;
+        Darwin)
+            install_macos_prerequisites
+            ;;
+        *)
+            fail "unsupported operating system: $(uname -s)"
+            ;;
+    esac
+}
+
+install_source() {
+    if [ -n "$SOURCE_ARCHIVE" ]; then
+        [ -f "$SOURCE_ARCHIVE" ] || fail "source archive not found: $SOURCE_ARCHIVE"
+
+        log "extracting Orbit source archive"
+        run rm -rf "$TARGET_DIR"
+        run mkdir -p "$TARGET_DIR"
+        run tar -xzf "$SOURCE_ARCHIVE" -C "$TARGET_DIR"
+
+        return
+    fi
+
+    require_command git
+
+    if [ -d "$TARGET_DIR/.git" ]; then
+        log "updating Orbit checkout"
+        run git -C "$TARGET_DIR" fetch --prune
+        run git -C "$TARGET_DIR" checkout "$BRANCH"
+        run git -C "$TARGET_DIR" pull --ff-only
+
+        return
+    fi
+
+    if [ -e "$TARGET_DIR" ]; then
+        fail "$TARGET_DIR exists but is not a git checkout"
+    fi
+
+    log "cloning Orbit"
+    run git clone --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
+}
+
+bootstrap_laravel() {
+    local target
+
+    target="$(quote "$TARGET_DIR")"
+
+    log "installing Composer dependencies"
+    run bash -lc "cd $target && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader"
+
+    if [ ! -f "$TARGET_DIR/.env" ]; then
+        run cp "$TARGET_DIR/.env.example" "$TARGET_DIR/.env"
+    fi
+
+    run mkdir -p "$TARGET_DIR/database"
+
+    if [ ! -f "$TARGET_DIR/database/database.sqlite" ]; then
+        run touch "$TARGET_DIR/database/database.sqlite"
+    fi
+
+    log "bootstrapping Laravel"
+    run bash -lc "cd $target && grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction"
+    run bash -lc "cd $target && php artisan migrate --force --no-interaction"
+}
+
+link_orbit() {
+    log "linking orbit executable"
+    sudo_run ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"
+}
+
+verify_install() {
+    local target
+
+    target="$(quote "$TARGET_DIR")"
+
+    log "verifying Orbit"
+    run bash -lc "cd $target && php artisan --version"
+}
+
+main() {
+    parse_args "$@"
+    validate_args
+
+    log "preparing ${ROLE} host at ${TARGET_DIR}"
+    install_prerequisites
+    install_source
+    bootstrap_laravel
+    link_orbit
+    verify_install
+
+    log "done"
+}
+
+main "$@"

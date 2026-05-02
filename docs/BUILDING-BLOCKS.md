@@ -268,10 +268,16 @@ Orbit runs from source.
 Control node setup is local:
 
 ```bash
-git clone git@github.com:hardimpactdev/orbit.git ~/orbit
-cd ~/orbit && composer install --no-dev
-sudo ln -s ~/orbit/artisan /usr/local/bin/orbit
+curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash -s -- --role=control
 ```
+
+The installer prepares the host before Orbit can run: it installs PHP, Composer,
+Git, and required PHP extensions, then installs the Orbit source checkout,
+creates the local SQLite database, runs migrations, and links `orbit` into the
+local executable path. It does not create a gateway-owned control-node identity;
+that identity is minted by `node:new --role=gateway` for first-gateway
+bootstrap, or by `node:new --role=control` on an existing gateway before the
+control machine runs `gateway:add`.
 
 Gateway and app nodes are created through `orbit node:new [name]`.
 `node:new --role=gateway --host=<host> --control-name=<control-name>` is the
