@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+
+uses(RefreshDatabase::class);
+
+describe('GET /api/ca/root', function (): void {
+    beforeEach(function (): void {
+        $this->tempStorage = sys_get_temp_dir().'/orbit-api-ca-test-'.uniqid();
+        mkdir($this->tempStorage.'/app/orbit/ca', 0777, true);
+        app()->useStoragePath($this->tempStorage);
+    });
+
+    afterEach(function (): void {
+        if (isset($this->tempStorage) && is_dir($this->tempStorage)) {
+            File::deleteDirectory($this->tempStorage);
+        }
+    });
+
+    it('returns success envelope with root_ca PEM', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'ssh_user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'platform' => 'ubuntu_24-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
+        $caDir = storage_path('app/orbit/ca');
+        file_put_contents("{$caDir}/root.crt", $pem);
+        file_put_contents("{$caDir}/root.key", 'dummy-key');
+
+        $response = $this->getJson('/api/ca/root');
+
+        $response->assertOk()
+            ->assertExactJson([
+                'success' => [
+                    'data' => [
+                        'root_ca' => $pem,
+                    ],
+                ],
+            ]);
+    });
+
+    it('returns error envelope when CA is not bootstrapped', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'ssh_user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'platform' => 'ubuntu_24-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/ca/root');
+
+        $response->assertStatus(503)
+            ->assertJson([
+                'error' => [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway root CA is not available.',
+                    'meta' => [
+                        'reason' => 'ca_not_bootstrapped',
+                    ],
+                ],
+            ]);
+    });
+});

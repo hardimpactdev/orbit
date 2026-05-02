@@ -452,8 +452,8 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
   `GatewayConnector` and `NodeConnector`.
 - [ ] Port request correlation header support.
 - [ ] Port typed gateway request sender.
-- [ ] Port WireGuard identity middleware.
-- [ ] Port `/api/me`.
+- [x] Port WireGuard identity middleware.
+- [x] Port `/api/me`.
 - [ ] Port node API controllers and typed client requests.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
