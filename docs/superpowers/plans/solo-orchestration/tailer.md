@@ -23,16 +23,14 @@ Read:
 - `docs/PORTING.md`
 - Solo scratchpad `131`
 - active todos, comments, locks, timers, and process list
-- recent output from orchestrator, pipeline fillers, implementers, and optional
-  fresh reviewers
+- recent output from orchestrator, pipeline fillers, and implementers
 - `git status --short --branch`
 
 ## Watch Loop
 
 Check in every 5 minutes. On each timer interval:
 
-1. Poll active orchestrator, pipeline filler, implementer, and optional fresh
-   reviewer processes.
+1. Poll active orchestrator, pipeline filler, and implementer processes.
 2. Check todo comments for lifecycle labels.
 3. Check locks for stale or external ownership.
 4. Check `git status --short --branch` and changed-file scope.
@@ -48,7 +46,6 @@ Check in every 5 minutes. On each timer interval:
    - `TAILER_VERIFIED`
    - `CHANGES_REQUESTED`
    - `NEEDS_DIRECTION`
-   - `NEEDS_FRESH_REVIEWER`
 8. Record a concise checkpoint on the coordination todo.
 9. Set the next 5-minute timer before going idle.
 
@@ -83,7 +80,7 @@ Intervene only for:
 - `PROMPT_RECOVERY`: prompt did not land or process is stuck at a welcome
   screen.
 - `LOCK_STALE`: lock blocks progress and appears stale or externally owned.
-- `SCOPE_DRIFT`: implementer or fresh reviewer leaves its todo scope.
+- `SCOPE_DRIFT`: implementer leaves its todo scope.
 - duplicate dispatch of the same todo.
 - stalled pipeline filler or missing `PIPELINE_FILL_DONE` after a reasonable
   interval.
@@ -125,8 +122,6 @@ template.
 - Do not run product tests unless the user explicitly asks the tailer to verify
   a reported gate.
 - Do not replace the worker's task decisions.
-- Do not spawn fresh reviewers unless the task is high-risk, you are uncertain,
-  or the orchestrator/user asks for independent review. When you do, record
-  `FRESH_REVIEW_STARTED process=<id>`.
+- Do not spawn additional reviewer agents.
 - Do not dispatch new workers unless the orchestrator is unavailable and the
   user asks for recovery.

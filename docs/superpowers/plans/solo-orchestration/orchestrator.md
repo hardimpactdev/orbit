@@ -33,11 +33,11 @@ On every timer tick, check only these facts:
 3. Is an implementer assigned to the active todo, and is its process running?
 4. Has the implementer posted `WORKER_DONE`, `BLOCKED`, or `NEEDS_DIRECTION`?
 5. Has the tailer posted `TAILER_VERIFIED`, `CHANGES_REQUESTED`,
-   `NEEDS_DIRECTION`, or `NEEDS_FRESH_REVIEWER`?
+   or `NEEDS_DIRECTION`?
 6. Are locks clear enough to close or dispatch?
 
 Do not perform deep code review, product reasoning, or implementation planning.
-Delegate those to the pipeline filler, implementer, tailer, or fresh reviewer.
+Delegate those to the pipeline filler, implementer, or tailer.
 
 ## Pipeline Fill
 
@@ -155,20 +155,17 @@ Before closing a todo, verify:
 
 Only then mark the todo complete and post `ORCHESTRATOR_CLOSED`.
 
-## Batch Review And Commit
+## Batch Close-Out And Commit
 
 When an implementation group is complete:
 
-1. Ask the tailer whether fresh batch review is needed.
-2. Spawn `REVIEWER_AGENT` with `fresh-reviewer.md` only for high-risk batches,
-   tailer uncertainty, user request, or final sign-off.
-3. Record `FRESH_REVIEW_STARTED process=<id>` when a fresh reviewer is spawned.
-4. If the fresh reviewer requests changes, create focused spillover todos and
-   repeat the normal worker/tailer loop.
-5. Before commit, verify current branch is `main`, status contains only
+1. Ask the tailer whether the completed work has enough evidence for close-out.
+2. If the tailer cannot verify the batch, create focused spillover todos or ask
+   for human direction. Do not spawn another review agent.
+3. Before commit, verify current branch is `main`, status contains only
    intentional changes, and unrelated user changes are not staged.
-6. Commit intentional changes to `main`.
-7. Start E2E only after the approved implementation is committed.
+4. Commit intentional changes to `main`.
+5. Start E2E only after the verified implementation is committed.
 
 E2E must follow `TESTING.md` and use only the ephemeral nodes or VMs described
 there.

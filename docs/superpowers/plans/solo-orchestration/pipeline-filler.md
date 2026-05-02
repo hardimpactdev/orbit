@@ -62,7 +62,7 @@ Every todo you create must include:
 - non-goals;
 - quality gate;
 - tailer verification requirements;
-- optional fresh-reviewer triggers;
+- escalation and stop conditions;
 - lock and close-out hygiene;
 - reporting requirements.
 

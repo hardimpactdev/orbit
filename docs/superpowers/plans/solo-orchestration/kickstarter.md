@@ -20,7 +20,6 @@ PIPELINE_FILLER_AGENT=claude
 TAILER_AGENT=codex-gpt-5.5-xhigh
 LOOP_IMPROVER_AGENT=claude
 IMPLEMENTATION_AGENT=opencode-kimi-k2.6
-REVIEWER_AGENT=codex-gpt-5.5-xhigh
 RUBBER_DUCK1=gemini-3.1-pro-preview
 RUBBER_DUCK2=claude
 E2E_AGENT=claude
@@ -41,9 +40,8 @@ Examples:
 
 Resolve the variables once at startup and pass the resolved configuration
 verbatim to every spawned orchestrator, pipeline filler, tailer, loop improver,
-implementer, fresh reviewer, rubber-duck, and E2E tester. Do not hard-code
-coordination todo ids, queue targets, or agent/model choices when a variable
-exists.
+implementer, rubber-duck, and E2E tester. Do not hard-code coordination todo
+ids, queue targets, or agent/model choices when a variable exists.
 
 If a configured agent is not available in Solo, stop with `NEEDS_DIRECTION`
 instead of silently substituting a different model.

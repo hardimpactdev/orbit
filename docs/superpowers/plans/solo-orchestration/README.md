@@ -24,8 +24,6 @@ loop. That file is deprecated and should only point back here.
    across cycles and keeps orchestration docs plus scratchpad `132`
    self-correcting.
 6. **Implementer** owns exactly one todo.
-7. **Fresh Reviewer** is optional escalation or final sign-off, not the normal
-   per-task review path.
 
 ## Shared Inputs
 
@@ -146,16 +144,13 @@ Use these exact labels in Solo comments so work can resume after compaction:
   worker handoff result.
 - `TAILER_VERIFIED`: tailer verified lifecycle, gate evidence, scope, and locks.
 - `CHANGES_REQUESTED`: tailer found in-scope issues for the implementer to fix.
-- `NEEDS_FRESH_REVIEWER`: tailer or orchestrator needs an independent reviewer.
-- `FRESH_REVIEW_STARTED process=<id>`: optional fresh reviewer was spawned.
-- `FRESH_REVIEW_DONE verdict=APPROVED|CHANGES_REQUESTED|BLOCKED`: optional
-  fresh reviewer result.
 - `ORCHESTRATOR_CLOSED`: orchestrator closed the todo lifecycle.
 - `PROMPT_RECOVERY`: prompt delivery or stalled-process recovery was performed.
 - `PIPELINE_FILL_STARTED process=<id>`: one-shot pipeline filler was spawned.
 - `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`: pipeline filler
   finished queue work.
-- `SCOPE_DRIFT`: worker or reviewer touched/proposed out-of-scope work.
+- `SCOPE_DRIFT`: worker or supervising agent touched/proposed out-of-scope
+  work.
 - `LOCK_STALE`: a Solo lock is stale or externally owned and needs recovery.
 - `TEMPLATE_FRICTION`: repeated todo-shape issue that should improve
   scratchpad `131`, scratchpad `132`, or the role prompts.
@@ -195,7 +190,7 @@ for the loop improver instead of expanding its own scope.
   sequencing context, not assignable work.
 - Every todo must state objective, sequencing rules, dependencies, product
   authority, legacy evidence, owned files/domains, non-goals, quality gate,
-  tailer verification requirements, optional fresh-reviewer triggers, lock
+  tailer verification requirements, escalation and stop conditions, lock
   hygiene, and reporting requirements.
 - A todo is worker-ready only when it has a single implementation or decision
   path. If it contains alternatives, create a decision todo first.
@@ -210,9 +205,8 @@ If PHP files changed, also run:
 vendor/bin/pint --dirty --format agent
 ```
 
-Before batch sign-off, the orchestrator must get a fresh final review when the
-batch is high-risk or when the tailer asks for one, and then ensure these gates
-have passed:
+Before batch close-out, the orchestrator and tailer must ensure these gates have
+passed:
 
 ```bash
 composer rector
@@ -249,7 +243,7 @@ When an implementer hits a blocker:
 3. Use `RUBBER_DUCK1` and `RUBBER_DUCK2` for independent solution proposals
    only when the active todo requires blocker resolution and the product docs do
    not already decide the answer.
-4. Record proposals and route them back to the owning implementer or reviewer.
+4. Record proposals and route them back to the owning implementer or tailer.
 5. Ask the user only for genuine product direction that cannot be decided from
    current docs, `docs/PORTING.md`, and legacy evidence.
 
@@ -260,8 +254,6 @@ The loop is complete only when:
 - all todos in the current porting scope are completed or explicitly deferred
   with evidence;
 - every completed implementation todo has tailer verification evidence;
-- a fresh batch reviewer approves when required by risk, tailer request, or user
-  direction;
 - intentional changes are committed to `main`;
 - applicable E2E validation in `TESTING.md` has passed or a tracked blocker
   explains why it cannot run yet;

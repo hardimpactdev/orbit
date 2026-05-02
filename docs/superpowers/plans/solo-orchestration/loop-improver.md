@@ -23,8 +23,7 @@ Read:
 - Solo scratchpad `132`
 - Solo scratchpad `131` for reference only
 - active and recent todos, comments, locks, timers, and process list
-- recent output from orchestrator, tailer, pipeline fillers, implementers, and
-  optional fresh reviewers
+- recent output from orchestrator, tailer, pipeline fillers, and implementers
 - `git status --short --branch`
 
 Use `docs/PORTING.md` only to understand queue-shaping friction. Do not edit
@@ -56,7 +55,6 @@ You may edit:
 - `docs/superpowers/plans/solo-orchestration/orchestrator.md`
 - `docs/superpowers/plans/solo-orchestration/pipeline-filler.md`
 - `docs/superpowers/plans/solo-orchestration/loop-improver.md`
-- `docs/superpowers/plans/solo-orchestration/fresh-reviewer.md`
 - Solo scratchpad `132`
 
 You may not edit:
@@ -85,8 +83,7 @@ Improve the loop when you see repeated or high-impact friction such as:
 - missing or stale timers that require human nudges;
 - filler-created todos missing blockers, owned files, gates, or stop
   conditions;
-- unclear distinction between tailer verification and fresh reviewer
-  escalation;
+- unclear distinction between tailer verification and human direction;
 - role prompts encouraging agents to edit artifacts they do not own;
 - close-out comments missing commit, gate, lock, or changed-file evidence;
 - scratchpad `132` causing stale or broad queue generation.

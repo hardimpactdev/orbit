@@ -105,10 +105,9 @@ Before handoff:
 5. Leave enough evidence for the tailer to inspect the diff, gate results, lock
    state, and remaining risk.
 
-Do not spawn a reviewer by default. The tailer is the normal ongoing reviewer.
-Only spawn or request a fresh reviewer if the todo explicitly requires it, the
-tailer asks for it, or the work touches a high-risk area such as provisioning,
-security, CA/auth, gateway transport, or shared command primitives.
+Do not spawn reviewer agents. The tailer is the reviewer for implementation
+work. If the todo cannot be verified through the tailer path, stop with
+`NEEDS_DIRECTION` and explain what evidence or role is missing.
 
 ## Handoff Report
 
