@@ -19,9 +19,10 @@ code.
 
 Read:
 
+- `solo-orchestration/run-config`
+- `solo-orchestration/prompt-registry/pipeline-filler`, then read the
+  scratchpad named by `scratchpad_id` in that registry entry
 - `docs/superpowers/plans/solo-orchestration/README.md`
-- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
-  queue and agent configuration
 - this file
 - `docs/superpowers/plans/solo-orchestration/todo-scout.md`
 - `docs/PORTING.md`
@@ -33,38 +34,62 @@ Read:
 - KV records under `solo-orchestration/assignment/`,
   `solo-orchestration/scout/`, and `solo-orchestration/pipeline-filler/`
 - active process list, so you do not duplicate assigned or scouted work
+- `list_agent_tools`, so `agents.todo_scout` from run config can be resolved
+  before any scout is spawned
 
 Use `../orbit-old-may` only as legacy implementation evidence when a candidate
 todo needs old behavior cited.
+
+The bootstrap prompt is only a pointer. If run config, the registry key, or the
+prompt scratchpad is missing, stop with `NEEDS_DIRECTION` instead of filling
+the queue from stale memory.
 
 ## Fill Rules
 
 1. Count dispatchable todos: `is_blocked=false`, `worker-ready` tag present,
    `locked_by=null`, no `solo-orchestration/assignment/<todo_id>` record, and
    no `solo-orchestration/reviewer/<todo_id>` record.
-2. If the queue already has at least `PIPELINE_READY_TARGET` dispatchable
-   todos, post `PIPELINE_FILL_DONE status=DONE` and stop.
+2. If the queue already has at least `pipeline_ready_target` from
+   `solo-orchestration/run-config` dispatchable todos, post
+   `PIPELINE_FILL_DONE status=DONE` and stop.
 3. Read `docs/PORTING.md` for the next priority and migration order.
 4. Cross-check the current command docs or product docs for that area.
 5. Check existing todos and KV records so you do not duplicate open, assigned,
    scouted, blocked, or completed work.
 6. Create or refresh only the todos needed to bring the queue up to
-   `PIPELINE_READY_TARGET`.
+   `pipeline_ready_target` from `solo-orchestration/run-config`.
 7. New or materially changed candidate todos start as `draft`, not
    `worker-ready`.
-8. Spawn one `TODO_SCOUT_AGENT` per candidate with `todo-scout.md`.
-9. Write `solo-orchestration/scout/<todo_id>` before spawning the scout and use
-   the startup handshake from `README.md`.
-10. Wait for `SCOUT_REPORT`.
-11. Apply the scout result. The scout may edit/refine the todo, but the
+8. Resolve `agents.todo_scout` from `solo-orchestration/run-config` with
+   `list_agent_tools`. The resolved tool type must match the configured agent
+   prefix (`gemini-*` -> `gemini`). If it cannot be resolved, stop with
+   `PIPELINE_FILL_DONE status=NEEDS_DIRECTION`.
+9. Spawn one configured `todo_scout` agent per candidate with `todo-scout.md`.
+   Do not substitute a different tool type during startup or recovery.
+10. Write `solo-orchestration/scout/<todo_id>` before spawning the scout and use
+   the startup handshake from `README.md`. The scout bootstrap prompt must name
+   `solo-orchestration/run-config`,
+   `solo-orchestration/prompt-registry/todo-scout`, the candidate todo id, and
+   any sequencing context the scout must validate.
+11. Wait for `SCOUT_REPORT`.
+12. Apply the scout result only when it was posted by a process whose tool type
+    matches configured `agents.todo_scout`. The scout may edit/refine the todo,
+    but the
     pipeline filler remains authoritative for promotion, blockers, splitting,
     and final queue state.
-12. Promote to `worker-ready` only when the scout reports
+13. Promote to `worker-ready` only when the configured scout reports
     `SCOUT_REPORT status=READY`, the todo has one documented path, no
     unresolved blockers, no active lock, and no active assignment/reviewer KV.
-13. Clear consumed `solo-orchestration/scout/<todo_id>` records.
-14. Post `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION` with what you
+14. Delete (`kv_delete`) each `solo-orchestration/scout/<todo_id>` record after
+   consuming the report; do not leave scout KVs in `consumed` or `done` state.
+15. Post `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION` with what you
     created, scouted, promoted, blocked, skipped, split, or escalated.
+
+If a configured scout process stalls, recovery may close that process and spawn
+one replacement using the same configured `agents.todo_scout` tool type. If the
+same configured tool type fails again, stop with
+`PIPELINE_FILL_DONE status=NEEDS_DIRECTION`. Never replace a configured Gemini
+scout with Codex, Claude, OpenCode, Amp, or any other tool type.
 
 ## Scout Requirement
 

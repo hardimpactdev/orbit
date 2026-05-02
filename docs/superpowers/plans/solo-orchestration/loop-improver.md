@@ -15,9 +15,12 @@ replace the reviewer.
 
 Read:
 
+- `solo-orchestration/run-config`
+- `solo-orchestration/prompt-registry/loop-improver`, then read the scratchpad
+  named by `scratchpad_id` in that registry entry
 - `docs/superpowers/plans/solo-orchestration/README.md`
-- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for resolved
-  agent/model configuration and loop ownership
+- `docs/superpowers/plans/solo-orchestration/kickstarter.md` for default
+  configuration and loop ownership
 - this file
 - `docs/superpowers/plans/solo-orchestration/*.md`
 - Solo scratchpad `132`
@@ -36,27 +39,41 @@ Read:
 Use `docs/PORTING.md` only to understand queue-shaping friction. Do not edit
 product docs or porting tracker state unless the user explicitly asks.
 
+The bootstrap prompt is only a pointer. If run config, the registry key, or the
+prompt scratchpad is missing, stop with `NEEDS_DIRECTION` instead of changing
+loop artifacts from stale memory.
+
 ## Watch Loop
 
 Check in every 5 minutes. On each timer interval:
 
-1. Inspect structured state first (KV records, locks, blocker links, completion
+1. Re-read `solo-orchestration/run-config` and
+   `solo-orchestration/prompt-registry/loop-improver`, then read that
+   scratchpad. Current run config and scratchpad content supersede your initial
+   prompt on that tick.
+2. Inspect structured state first (KV records, locks, blocker links, completion
    state, workflow tags, process liveness, timers), then recent lifecycle
    comments. When they disagree, treat structured state as truth and the
    comment as audit history.
-2. Look for repeated friction, not one-off normal startup latency.
-3. Check whether the orchestrator, filler, scout, implementer, and reviewer are
+3. Look for repeated friction, not one-off normal startup latency.
+4. Check whether the orchestrator, filler, scout, implementer, and reviewer are
    staying inside their role boundaries.
-4. Check whether scratchpad `132` or role prompts are causing stale queue
+5. Check whether prompt-cache scratchpads, scratchpad `132`, or role prompts
+   are causing stale queue
    generation, prompt-delivery confusion, duplicate workers, missing timers,
    conflicting recovery actions, or comment-as-state-machine drift (for
    example, multiple `WORKER_STARTED` comments naming superseded processes
    while the `solo-orchestration/assignment/*` KV record is correct).
-5. Check whether scratchpad `131` friction was reported. If so, apply the
+6. Check whether scratchpad `131` friction was reported. If so, apply the
    narrow template improvement when it is repeated or high-impact.
-6. Apply narrow improvements only to artifacts you own.
-7. Record `LOOP_IMPROVEMENT` or `TEMPLATE_FRICTION` on the coordination todo.
-8. Set the next 5-minute timer before going idle.
+7. Check whether `pipeline_ready_target` is causing queue starvation, runaway
+   queue growth, repeated filler churn, or idle implementer time. If tuning is
+   needed, update `solo-orchestration/run-config` and record
+   `RUN_CONFIG_UPDATED` with old value, new value, and reason.
+8. Apply narrow improvements only to artifacts you own.
+9. Record `LOOP_IMPROVEMENT`, `TEMPLATE_FRICTION`, or `RUN_CONFIG_UPDATED` on
+   the coordination todo.
+10. Set the next 5-minute timer before going idle.
 
 ## Ownership
 
@@ -71,6 +88,9 @@ You may edit:
 - `docs/superpowers/plans/solo-orchestration/loop-improver.md`
 - Solo scratchpad `131`
 - Solo scratchpad `132`
+- Solo scratchpads `134`–`139` (prompt mirror scratchpads for all six roles)
+- runtime loop-control fields in `solo-orchestration/run-config`, including
+  `pipeline_ready_target`
 
 You may not edit:
 
@@ -96,7 +116,13 @@ Improve the loop when you see repeated or high-impact friction such as:
 - role-boundary conflict between reviewer verification and human direction;
 - role prompts encouraging agents to edit artifacts they do not own;
 - close-out comments missing commit, gate, lock, or changed-file evidence;
-- scratchpad `132` causing stale or broad queue generation.
+- scratchpad `132` causing stale or broad queue generation;
+- `pipeline_ready_target` causing queue starvation, runaway queue growth,
+  repeated filler churn, or idle implementer time;
+- prompt-cache scratchpads (134–139) missing, stale relative to their repo
+  file, or diverged from `solo-orchestration/prompt-registry/<role>` — missing
+  or stale entries cause roles to act on outdated prompts even when the repo
+  file was corrected.
 
 Do not edit prompts for one-off issues that the current docs already cover.
 Record a checkpoint instead.
@@ -110,8 +136,11 @@ Before changing durable artifacts:
    product implementation commit.
 3. Make the smallest prompt or scratchpad change that prevents the repeated
    issue.
-4. Record `LOOP_IMPROVEMENT` with the changed files or scratchpad revision.
-5. If the repo files changed, leave them as a separate, obvious loop-improvement
+4. When changing `solo-orchestration/run-config`, write the full updated value
+   as a JSON object, not an encoded JSON string, and record
+   `RUN_CONFIG_UPDATED` with old value, new value, and reason.
+5. Record `LOOP_IMPROVEMENT` with the changed files or scratchpad revision.
+6. If the repo files changed, leave them as a separate, obvious loop-improvement
    diff or commit them separately when the user/orchestrator asks for a clean
    tree.
 
@@ -131,6 +160,7 @@ Use concise lifecycle comments:
 
 - `LOOP_IMPROVEMENT`: durable loop improvement made or recommended.
 - `TEMPLATE_FRICTION`: repeated template issue that needs the artifact owner.
+- `RUN_CONFIG_UPDATED`: runtime loop-control field changed.
 - `NEEDS_DIRECTION`: role boundary or workflow policy needs human direction.
 
 Each report must include:

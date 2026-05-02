@@ -34,8 +34,10 @@ loop. That file is deprecated and exists only to point back here.
 Every role reads only the context it needs:
 
 - this `README.md`
-- `kickstarter.md` for the resolved run configuration when agent/model choices
-  are needed
+- `solo-orchestration/run-config` for resolved queue targets, coordination
+  todo, and agent/model choices
+- the role's prompt-cache scratchpad from
+  `solo-orchestration/prompt-registry/<role>`
 - the role-specific prompt file
 - `docs/PORTING.md`
 - relevant `docs/commands/**`
@@ -44,7 +46,7 @@ Every role reads only the context it needs:
 - `docs/MISSION.md` when scope or capability questions arise
 - `../orbit-old-may` only as legacy implementation evidence
 - Solo scratchpad `131` for the worker todo template
-- Solo scratchpad `132` for the one-shot pipeline filler prompt
+- Solo scratchpad `132` for loop-level pipeline/template friction notes
 
 Current docs are product authority. Current implementation and the old repo are
 evidence only.
@@ -57,23 +59,145 @@ whose only job is to read `kickstarter.md`.
 The kickstarter procedure:
 
 1. resolves the configuration in `kickstarter.md`;
-2. confirms the Solo project, process list, agent tools, todo state, scratchpad
+2. writes the resolved configuration to `solo-orchestration/run-config`;
+3. confirms the Solo project, process list, agent tools, todo state, scratchpad
    state, and git status;
-3. spawns or resumes exactly the long-running roles needed by the loop:
+4. syncs the repo role prompts into prompt-cache scratchpads and writes
+   `solo-orchestration/prompt-registry/<role>` records;
+5. spawns or resumes exactly the long-running roles needed by the loop:
    orchestrator and loop improver;
-4. uses the startup handshake for each spawned role;
-5. records the active process ids and queue state on the coordination todo;
-6. exits from coordination mode once those long-running roles are active.
+6. uses the startup handshake for each spawned role;
+7. records the active process ids and queue state on the coordination todo;
+8. exits from coordination mode once those long-running roles are active.
 
 After that, the orchestrator owns assignment and reviewer dispatch, the
 pipeline filler owns todo quality through mandatory scouts, reviewers own
 task-level review, and the loop improver owns durable loop improvements plus
 scratchpads `131` and `132`.
 
+## Run Config KV
+
+`kickstarter.md` is the human-editable default configuration. The runtime
+configuration lives in Solo KV at:
+
+```text
+solo-orchestration/run-config
+```
+
+The coordinator executing `kickstarter.md` seeds this key with Solo `kv_set`
+after resolving defaults and user overrides. Write the value as a JSON object,
+not an encoded JSON string. Once the loop improver is active, the loop improver
+owns runtime loop-control fields in this key. All spawned roles read it before
+acting. If the key is missing, a role stops with `NEEDS_DIRECTION` instead of
+guessing values from `kickstarter.md`.
+
+Each value contains at least:
+
+```json
+{
+  "owner": "loop-improver",
+  "run_id": "<ISO-8601-slug-or-short-id>",
+  "porting_tracker": "docs/PORTING.md",
+  "coordination_todo": "<fresh todo id for this run>",
+  "pipeline_ready_target": 4,
+  "agents": {
+    "orchestrator": "claude-sonnet",
+    "pipeline_filler": "claude-opus",
+    "todo_scout": "gemini-3.1-pro-preview",
+    "reviewer": "gemini-3.1-pro-preview",
+    "loop_improver": "claude-sonnet",
+    "implementation": "opencode-kimi-k2.6",
+    "rubber_duck_1": "gemini-3.1-pro-preview",
+    "rubber_duck_2": "claude-opus",
+    "e2e": "claude-opus"
+  },
+  "synced_at": "<ISO-8601>"
+}
+```
+
+Create a fresh coordination todo for every fresh loop start and store that id
+in `coordination_todo`. Reuse an existing coordination todo only when resuming
+the same active `run_id`. This keeps the control log bounded and prevents old
+loop events from becoming the current run's state.
+
+The loop improver may update runtime loop-control fields such as
+`pipeline_ready_target` when the loop needs a different queue target. It must
+record `RUN_CONFIG_UPDATED` on the coordination todo with old value, new value,
+and reason. It must not change agent/model choices unless the user explicitly
+directs that change.
+
+The orchestrator, pipeline fillers, scouts, implementers, and reviewers read
+`solo-orchestration/run-config` but do not write it. They report config
+friction to the loop improver with `TEMPLATE_FRICTION`, `LOOP_IMPROVEMENT`, or
+`NEEDS_DIRECTION`.
+
+## Prompt Cache Scratchpads
+
+Repo files in `docs/superpowers/plans/solo-orchestration/` are canonical.
+Prompt-cache scratchpads are runtime mirrors that let long-running agents
+refresh their guidance without being restarted or receiving a large repeated
+prompt.
+
+The kickstarter syncs the canonical role prompt files into dedicated
+scratchpads and records the active mapping in KV:
+
+- `solo-orchestration/prompt-registry/orchestrator`
+- `solo-orchestration/prompt-registry/pipeline-filler`
+- `solo-orchestration/prompt-registry/todo-scout`
+- `solo-orchestration/prompt-registry/implementer`
+- `solo-orchestration/prompt-registry/reviewer`
+- `solo-orchestration/prompt-registry/loop-improver`
+
+Each KV value contains at least:
+
+```json
+{
+  "role_file": "orchestrator.md",
+  "scratchpad_id": 134,
+  "synced_at": "<ISO-8601>"
+}
+```
+
+Do not hard-code scratchpad ids in role prompts. Read the registry entry for
+the role, then read that scratchpad. If the registry entry is missing or points
+to a missing scratchpad, stop with `NEEDS_DIRECTION` instead of falling back to
+stale prompt text.
+
+Spawned roles receive a compact bootstrap prompt that points to the registry
+key and tells the agent to read its prompt scratchpad before acting. The
+bootstrap prompt is not the durable role definition.
+
+Use this shape for spawned role prompts:
+
+```text
+You are the <role> for Solo project <id>.
+
+Before acting, read:
+- kv key: solo-orchestration/run-config
+- kv key: solo-orchestration/prompt-registry/<role>
+- the scratchpad_id from that KV record
+- the assigned todo/comment/KV context listed below
+
+Then follow the prompt scratchpad as your role authority. If the run config,
+registry key, or scratchpad is missing, stop with NEEDS_DIRECTION.
+
+Assignment:
+- ...
+```
+
+Long-running roles must re-read their assigned prompt scratchpad on every timer
+tick before inspecting queue or process state. This is an intentional live
+control surface: prompt fixes can take effect on the next tick without
+restarting the process. Scratchpads remain mirrors/cache; repo files stay the
+source of truth.
+
 ## Solo Tooling
 
 Use Solo's process tools as the loop's source of runtime truth:
 
+- `list_agent_tools` to resolve configured agent strings from
+  `solo-orchestration/run-config` to Solo `agent_tool_id` values before any
+  role spawns a process.
 - `list_processes` to detect active, exited, duplicate, or stale processes.
 - `get_process_status` to check `status`, `pid`, `uptime_seconds`, and
   `agent_state` before deciding an agent is stalled.
@@ -100,8 +224,8 @@ Every spawned agent uses this handshake before the loop assumes it is active:
 2. Allow a normal startup window. Use `get_process_status` and
    `get_process_output`; do not recover just because the output still shows a
    welcome screen during the first moments after spawn.
-3. When the process is running and able to receive input, send the role prompt
-   with `send_input`.
+3. When the process is running and able to receive input, send the compact
+   prompt-cache bootstrap with `send_input`.
 4. Verify prompt delivery by checking rendered output, an `ASSIGNED` comment, a
    `WORKER_STARTED` comment, or the role-specific lifecycle label.
 5. If prompt-delivery evidence is absent, schedule an idle-triggered timer or
@@ -114,6 +238,28 @@ Every spawned agent uses this handshake before the loop assumes it is active:
 Keep the loop calm and self-correcting: observe first, wait while
 status/output still show startup, recover only when evidence shows a real
 stall.
+
+## Agent Tool Resolution
+
+Configured agent strings in `solo-orchestration/run-config` are role
+contracts, not suggestions. Resolve them through `list_agent_tools` before
+spawning:
+
+- `gemini-*` -> Solo tool type `gemini`
+- `opencode-*` -> Solo tool type `opencode`
+- `claude-*` -> Solo tool type `claude`
+- `codex-*` -> Solo tool type `codex`
+
+The resolved `agent_tool_id` must match the configured CLI/tool type for that
+role. If it cannot be resolved, stop with `NEEDS_DIRECTION`.
+
+Prompt recovery must use the same configured role agent. If a Gemini scout
+stalls, the replacement scout is still Gemini. If the configured tool type
+keeps failing, stop with `NEEDS_DIRECTION`; do not substitute Codex, Claude,
+OpenCode, Amp, or any other tool type.
+
+Any report from a process whose tool type does not match the configured role
+agent is invalid for promotion, review approval, or close-out.
 
 ## Decision Evidence Stack
 
@@ -144,28 +290,31 @@ reconstructing history across compaction. They are not a state machine.
 
 When deciding what to do next, read these structured sources together:
 
-1. **Completion state** (`completed`, `completed_at`) — terminal done-state.
+1. **Run config** (`kv_get solo-orchestration/run-config`) — resolved queue
+   target, coordination todo id, and configured agent/model choices. Roles do
+   not infer runtime values from `kickstarter.md` after startup.
+2. **Completion state** (`completed`, `completed_at`) — terminal done-state.
    Only the orchestrator flips this via `todo_complete` after `WORKER_DONE` +
    `REVIEW_APPROVED` + close-out evidence.
-2. **Todo lock** (`locked_by` plus `lock_status` for keyed lease locks) — who
+3. **Todo lock** (`locked_by` plus `lock_status` for keyed lease locks) — who
    currently owns the todo. A held lock means an in-flight worker, reviewer, or
    orchestrator is mid-action; do not dispatch or close on top of it.
-3. **KV assignment record** (`kv_get solo-orchestration/assignment/<todo_id>`)
+4. **KV assignment record** (`kv_get solo-orchestration/assignment/<todo_id>`)
    — the current implementer process id, role, and state. The orchestrator
    writes this on dispatch and clears it on `ORCHESTRATOR_CLOSED`. If the KV
    record says `process=569` but a `WORKER_STARTED` comment names
    `process=562`, trust the KV record; the comment is historical.
-4. **Tags** — queue and workflow phase. Tags are the writable substitute for
+5. **Tags** — queue and workflow phase. Tags are the writable substitute for
    the read-only MCP todo `status` field. Tag writes are protected by the todo
    lock: if another actor owns the lock, ask that lock owner to make the tag
    transition instead of forcing it from the outside.
-5. **Blocker links** (`blocker_ids`, `is_blocked`, `unresolved_blocker_count`)
+6. **Blocker links** (`blocker_ids`, `is_blocked`, `unresolved_blocker_count`)
    — queue dependencies. A todo is dispatchable only when `is_blocked=false`.
-6. **Process state** (`get_process_status`, `get_process_output`) — liveness of
+7. **Process state** (`get_process_status`, `get_process_output`) — liveness of
    the assigned worker.
-7. **Timers** (`timer_list`) — the next expected check-in for each long-running
+8. **Timers** (`timer_list`) — the next expected check-in for each long-running
    role.
-8. **Comments and lifecycle labels** — audit evidence only. Use them to
+9. **Comments and lifecycle labels** — audit evidence only. Use them to
    reconstruct history and to communicate intent across compaction, not to
    decide whether a todo is dispatchable, owned, or done.
 
@@ -214,6 +363,8 @@ permission to unlock or overwrite the todo.
 
 The orchestrator writes one record per active dispatch under a stable key:
 
+- `solo-orchestration/run-config` — resolved run configuration written by the
+  kickstarter and read by every role.
 - `solo-orchestration/assignment/<todo_id>` — current implementer dispatch.
 - `solo-orchestration/reviewer/<todo_id>` — current reviewer dispatch.
 - `solo-orchestration/scout/<todo_id>` — current todo scout dispatch.
@@ -281,9 +432,13 @@ not replace it:
   fix.
 - `ORCHESTRATOR_CLOSED`: orchestrator closed the todo lifecycle.
 - `PROMPT_RECOVERY`: prompt delivery or stalled-process recovery was performed.
+- `PROCESS_CLOSED process=<id> reason=<role>`: a completed, stale, or replaced
+  Solo process was closed after its durable todo/KV evidence was recorded.
 - `PIPELINE_FILL_STARTED process=<id>`: one-shot pipeline filler was spawned.
 - `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`: pipeline filler
   finished queue work.
+- `RUN_CONFIG_UPDATED`: loop improver changed a runtime loop-control field such
+  as `pipeline_ready_target`.
 - `SCOPE_DRIFT`: worker or supervising agent touched/proposed out-of-scope
   work.
 - `LOCK_STALE`: a Solo lock is stale or externally owned and needs recovery.
@@ -300,10 +455,12 @@ The loop is self-correcting, but each durable artifact has one owner:
 - Loop improver owns scratchpads `131` and `132` plus repo orchestration
   prompts in this directory. It may update them when todo-shape, process,
   pipeline, or role-boundary friction repeats.
+- Loop improver owns runtime loop-control tuning in
+  `solo-orchestration/run-config`, including `pipeline_ready_target`.
 - Pipeline filler, scouts, reviewers, implementers, and orchestrator may report
   `TEMPLATE_FRICTION`, but do not edit scratchpads or role prompts.
 - Orchestrator may report scheduling or process-recovery friction, but does not
-  edit templates.
+  edit templates or tune `pipeline_ready_target`.
 
 When a role finds friction in an artifact it does not own, it records
 `TEMPLATE_FRICTION` for the loop improver instead of expanding its own scope.
@@ -313,8 +470,8 @@ When a role finds friction in an artifact it does not own, it records
 - Keep a bounded queue of open, unblocked todos tagged `worker-ready` with
   `PIPELINE_READY` audit evidence.
 - The orchestrator must spawn a one-shot pipeline filler on timer ticks when
-  the queue has fewer than `PIPELINE_READY_TARGET` open, unblocked
-  `worker-ready` todos.
+  the queue has fewer than `pipeline_ready_target` from
+  `solo-orchestration/run-config` open, unblocked `worker-ready` todos.
 - The pipeline filler reads `docs/PORTING.md` first, then checks relevant
   command docs, current todos, blockers, and completed work.
 - The pipeline filler creates or refreshes candidate todos as `draft`, spawns
