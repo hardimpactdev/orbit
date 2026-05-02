@@ -391,7 +391,7 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
   - [x] `TrustStoreInstaller` interface with macOS/Linux implementations.
   - [x] `FetchGatewayRootCa` bootstrap-safe CA fetch service.
 - [ ] Port `gateway:add`.
-- [ ] Port `gateway:trust`.
+- [x] Port `gateway:trust`.
 
 ## Gateway CA Workstream
 
