@@ -121,7 +121,7 @@ ORBIT_E2E_KEEP=1
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
 
 - **`e2e-provisioning`** — tests that mutate disposable VMs from blank or ready
-  images and exercise setup flows such as blank VM lifecycle, control node smoke,
+  images and exercise setup flows such as blank VM lifecycle, control node readiness,
   gateway onboarding, and node provisioning. These tests are grouped with
   `pest()->group('e2e-provisioning')` at the file level and run via
   `composer test:e2e:provisioning`.
@@ -135,8 +135,8 @@ The ephemeral E2E suite is split into two explicit lanes at the Pest group level
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, so
 `composer test:e2e` continues to run all ephemeral tests together.
 
-Live or standing infrastructure smoke tests are sunset. Do not use persistent
- gateway, control, or app nodes as verification targets.
+Live or standing infrastructure verification lanes are sunset. Do not use
+persistent gateway, control, or app nodes as verification targets.
 
 ## Topology Kinds
 

@@ -109,8 +109,8 @@ Default migration order is command-contract and capability driven:
 These items exist in the clean repo today. Some are bootstrap slices and do not
 yet satisfy the full product contracts.
 
-- [x] Incus-backed ephemeral E2E harness (retired legacy `bin/e2e`; now
-    artisan commands + Pest E2E suite)
+- [x] Incus-backed ephemeral E2E harness (retired legacy shell harness; now
+    Artisan commands + Pest E2E suite)
   - Current commands: `php artisan e2e:*`
   - Current docs: `TESTING.md`
   - Current test script: `composer test:e2e`
@@ -181,7 +181,7 @@ yet satisfy the full product contracts.
       gateway state.
     - execution topology: gateway-owned `RemoteShell` is the only legal SSH
       edge. Control caller must not SSH to other nodes.
-  - Live smoke note: gateway-to-beast updates work. The earlier
+  - Historical topology note: gateway-to-beast updates work. The earlier
     gateway-to-mini `Permission denied (publickey)` symptom reflected an
     implementation that targeted the mini control node; under the clarified
     contract, mini is excluded from remote targets entirely.
@@ -406,7 +406,7 @@ commands. Order matters because each adds a new write API endpoint:
 
 1. `NODE-API-UPDATE-1` — gateway-side `PUT /api/nodes/{name}` + `UpdateNodeRequest`.
 2. `NODE-UPDATE-FWD-1` — wire `node:update` control-caller forwarding (paired
-   E2E only; no smoke — write command).
+   ephemeral Pest E2E; write command).
 3. `NODE-API-DEFAULT-1` + `NODE-DEFAULT-FWD-1` — same pattern for `node:default`.
 4. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
 5. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
@@ -423,9 +423,9 @@ slice candidates, in order:
 
 1. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
 2. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
-3. `APP-LIST-1` — `app:list` command (paired SMOKE + E2E).
+3. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
 4. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
-5. `APP-SHOW-1` — `app:show` command (paired SMOKE + E2E).
+5. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until
 the read pair is verified. Do not create workspace, process, tool, proxy,
@@ -763,7 +763,7 @@ A `GatewayClient` service class (or similar) that:
 - [x] Standing infrastructure test lane removed.
 - [~] Restore ephemeral E2E.
   - [x] Add Incus backend preflight on beast.
-  - [x] Add disposable blank Ubuntu VM lifecycle smoke.
+  - [x] Add disposable blank Ubuntu VM lifecycle check.
   - [x] Create a blank snapshot lane for `e2e-provisioning` tests.
   - [x] Add reusable host installer needed by the ready control snapshot.
   - [x] Create a ready control snapshot lane for `e2e-feature` tests.
