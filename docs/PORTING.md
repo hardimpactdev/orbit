@@ -21,6 +21,12 @@ behavior from `../orbit-old-may`.
   idempotent.
 - Provisioning, destructive, host-mutation, and repair/adoption flows require
   restored ephemeral E2E before they can be treated as fully verified.
+- Every newly-ported command requires a paired SMOKE-* todo (read-only standing
+  smoke) AND an E2E-* gate todo (ephemeral) before its workstream entry can flip
+  to `[x]`. Read-only commands need both. Write/destructive commands skip SMOKE
+  (cannot run against standing nodes) but still require the E2E gate. The
+  pipeline filler is responsible for creating both alongside the implementation
+  todo.
 
 ## Status Legend
 
@@ -342,17 +348,99 @@ All legacy command docs have been converted. See individual family statuses abov
 These hints are for the Solo pipeline filler. They describe todo sequencing
 only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
+#### Pairing Rule (Smoke + E2E Per Port)
+
+For every implementation todo the filler creates, also create the paired gate
+todos required by the Rules section:
+
+- `SMOKE-<short-id>` — read-only standing smoke todo for read commands. Tagged
+  `smoke`, lane `none` (the smoke IS the verification). Skip for write/
+  destructive commands.
+- `E2E-<short-id>` — ephemeral E2E gate todo. Tagged `e2e`, `e2e-gate`,
+  `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
+  `SCOUT_REPORT status=READY`. Lane must declare a concrete `bin/e2e --<lane>`
+  command; if that lane does not yet exist, create a separate implementer todo
+  to author it before the E2E gate becomes dispatchable.
+
+E2E gate todos are dispatched only by the orchestrator's E2E role per
+`references/todo-state.md`. Never promote them to `worker-ready` and never
+route them to the implementer agent.
+
+#### Sequencing Rules
+
 - Do not start new implementation while an active final-review or push recovery
   todo is open.
-- After the current `node:new` slice is pushed, fill the next worker-ready queue
-  with safe node registry reads first: `node:list`, then `node:show`.
-- Keep `node:update` and `node:default` blocked until the read-command slices
-  establish stable registry output and helper behavior.
+- Count only open, unblocked, unlocked `worker-ready` todos as dispatchable
+  worker capacity. Blocked `worker-ready` todos are planned inventory, not
+  available queue.
+- Count `e2e-ready` todos separately from `worker-ready`; both tags consume
+  pipeline capacity but dispatch through different orchestrator paths.
+
+#### Current Short Queue (Node Read-Forwarding Chain)
+
+1. Finish and review `NODE-API-READ-1` (todo 230).
+2. Then dispatch `NODE-LIST-FWD-1` (todo 234).
+3. Then dispatch `NODE-SHOW-FWD-1` (todo 235).
+4. Pair each of 234 and 235 with paired SMOKE and E2E gate todos. The E2E gates
+   need a `bin/e2e --read-topology` lane authored first (todo 238) — a shared
+   lane that spins up control + gateway + dev-app for multiple read-command
+   verifications.
+
+Do not create more downstream node-forwarding todos while any of 230, 234, or
+235 are still open. If the ready queue is below target during that chain, fill
+with independent read-only, smoke, or harness work only.
+
+#### After Read-Forwarding Chain Verifies (Next 5 Candidates)
+
+1. Authoring `bin/e2e --read-topology` lane (todo 238) so the paired E2E gates
+   above become dispatchable.
+2. Node doctor contract/docs slice needed for `node:list --doctor`.
+3. `node:list --doctor` and doctor handoff implementation (with paired smoke +
+   e2e gates).
+4. `node:show` real grant metadata / authorization visibility slice (with
+   paired smoke + e2e gates).
+5. Ready development-app and production-app Incus snapshot lanes (todos 237/239).
+
+#### Gateway Forwarding Chain (Unlocks After 234/235 Pattern Proven)
+
+Once `NODE-LIST-FWD-1` and `NODE-SHOW-FWD-1` are verified, the same
+caller-role-branch + typed-request pattern can be applied to the write
+commands. Order matters because each adds a new write API endpoint:
+
+1. `NODE-API-UPDATE-1` — gateway-side `PUT /api/nodes/{name}` + `UpdateNodeRequest`.
+2. `NODE-UPDATE-FWD-1` — wire `node:update` control-caller forwarding (paired
+   E2E only; no smoke — write command).
+3. `NODE-API-DEFAULT-1` + `NODE-DEFAULT-FWD-1` — same pattern for `node:default`.
+4. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
+5. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
+6. `NODE-API-REMOVE-1` + `NODE-REMOVE-FWD-1` — `node:remove` (paired E2E only,
+   coordinate with WireGuard peer teardown blocker).
+
+Do not create the FWD-* todos until the matching API-* todo is on `main`. Do
+not create more than 2 of these chains in flight at once.
+
+#### App Workstream Entry Point (Unlocks After Gateway Forwarding Chain)
+
+App work begins only after the node/gateway foundations are solid. The first
+slice candidates, in order:
+
+1. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
+2. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
+3. `APP-LIST-1` — `app:list` command (paired SMOKE + E2E).
+4. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
+5. `APP-SHOW-1` — `app:show` command (paired SMOKE + E2E).
+
+Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until
+the read pair is verified. Do not create workspace, process, tool, proxy,
+Cloudflare, VPN, PHP, or agent IDE implementation todos just because their docs
+exist. Those families wait for the node/gateway/app foundations.
+
+#### Hard Blocks
+
 - Keep gateway-family implementation blocked until the node identity and
   first-gateway provisioning prerequisites are clear.
-- Do not create app, workspace, process, tool, proxy, Cloudflare, VPN, PHP, or
-  agent IDE implementation todos just because their docs exist. Those families
-  wait for the node/gateway foundations defined in the implementation order.
+- Keep workspace, process, and downstream families blocked until the app
+  workstream entry point is verified.
 
 ## Node Workstream
 
