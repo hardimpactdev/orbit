@@ -44,8 +44,7 @@ Use this section when the user asks to start or resume the loop.
 1. Read `docs/superpowers/plans/solo-orchestration/control-config.md`.
 2. Read `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`.
 3. Read `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
-4. Ensure `coordination_todo` in `control-config.md` points at an open Solo
-   todo. If it is missing or closed, create one and update `control-config.md`.
+4. Ensure `coordination_todo` in `control-config.md` points at a new fresh open Solo todo. 
 5. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
 6. Send it only this prompt:
 
