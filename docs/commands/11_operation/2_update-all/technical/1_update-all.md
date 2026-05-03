@@ -45,14 +45,45 @@ contract.
 
 | Caller role | Behavior |
 | --- | --- |
-| `control` | Client call to the gateway for fleet update authorization and remote update execution. The local control checkout is updated as part of the command. |
-| `gateway` | Authority path. Updates the gateway checkout and selected managed remote installations. |
+| `control` | Reads node intent from the Gateway API. Updates the local control checkout. The gateway is then asked to authorize the fleet update, update the gateway checkout, and dispatch updates to selected app nodes through gateway-owned `RemoteShell`. The control caller never reads a local node registry and never opens SSH connections to other nodes. |
+| `gateway` | Authority path. Authorizes the fleet update locally. Reads node intent from local gateway state. Updates the gateway checkout, then dispatches to selected app nodes through gateway-owned `RemoteShell`. The command does not target control nodes (see [Fleet Selection Rules](#fleet-selection-rules)). |
 | `app` | Invalid. App-node CLI availability is not fleet update permission. Fail before side effects with `This command may only be run from a control or gateway node.` |
 | `unknown` | Invalid local context. Fail before side effects with a local context error. |
 
 No role-specific companion files are required. The detailed control and gateway
 paths share the same fleet update rules after the gateway authority path is
 selected, and app-node denial is fully defined here.
+
+### Intent Source
+
+`update:all` resolves "active non-local managed Orbit installations" from
+gateway node intent. The intent source depends on the caller role:
+
+- **Control caller:** MUST fetch node intent from the Gateway API over the
+  CLI-to-gateway edge. MUST NOT read any local node table on the control node,
+  even when one exists for caching or offline display. Stale local copies must
+  not influence target selection.
+- **Gateway caller:** Reads node intent from local gateway state directly. The
+  gateway is the authority for intent, so no API hop is required.
+
+Both paths must arrive at the same selected target list when applied against
+identical gateway state.
+
+### Execution Topology
+
+The only legal SSH edges during `update:all` are gateway-to-app-node edges
+through `RemoteShell`. Specifically:
+
+- A control caller never opens SSH connections to the gateway, to app nodes, or
+  to other control nodes as part of `update:all`. The gateway performs every
+  remote update.
+- A gateway caller opens SSH connections only to selected app nodes.
+- Control nodes are not part of the remote update topology in either path. See
+  [Fleet Selection Rules](#fleet-selection-rules).
+
+Implementations that shell out to `ssh` from the control caller, or that
+construct a target list by reading a control-local node registry, violate this
+contract regardless of whether the resulting fleet ends up converged.
 
 ## Input Resolution
 
@@ -73,23 +104,37 @@ fields and does not prompt.
 ### Fleet Selection Rules
 
 - Include the caller's local Orbit checkout.
-- Include active non-local managed Orbit installations from gateway node intent.
+- Include active non-local managed Orbit installations from gateway node intent,
+  subject to the role exclusion below.
+- **Exclude every node whose role is `control`, regardless of caller.** Control
+  nodes are operator workstations. They are updated locally through
+  [`orbit update`](../../1_update/update.md) on each workstation and are never
+  remote update targets of `update:all`. This applies even when gateway intent
+  records reachability metadata for a control node.
 - Exclude inactive, removed, or unknown node records.
 - Exclude the caller-local installation from the gateway-selected installation
   list. The local checkout is updated once through the local target.
 - Exclude nodes whose Orbit installation path is not known to gateway intent.
-- Exclude remote installations whose gateway-owned update transport metadata is
-  not known. A remote control-node checkout is managed by `update:all` only when
-  gateway intent records enough information for the gateway to reach and update
-  that checkout.
+- Exclude app nodes whose gateway-owned `RemoteShell` transport metadata is not
+  known. The gateway must have enough information to reach and update an app
+  node before that node is selected.
 - Apply gateway-owned authorization before updating any installation.
+
+The expected target shape per caller role:
+
+| Caller role | Local target | Gateway target | App-node targets | Other control-node targets |
+| --- | --- | --- | --- | --- |
+| `control` | The control checkout. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active app node selected by the rules above. | Never. |
+| `gateway` | The gateway checkout (via the local target). | N/A — the gateway is the local target. | Yes, every active app node selected by the rules above. | Never. |
 
 ### Per-Installation Update Rules
 
 - Update each selected installation with the same local checkout update sequence
   documented by [`update`](../../1_update/technical/1_update.md).
-- Remote update execution is gateway-owned node execution. Control nodes do not
-  SSH directly to app nodes as part of the command contract.
+- Remote update execution is gateway-owned node execution through `RemoteShell`.
+  Control nodes do not SSH directly to the gateway, app nodes, or other control
+  nodes as part of the command contract. The gateway does not SSH to control
+  nodes as part of the command contract.
 - Continue updating remaining installations after a target fails.
 - Preserve every target result for the selected output renderer.
 
