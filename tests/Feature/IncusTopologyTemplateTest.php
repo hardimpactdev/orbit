@@ -198,58 +198,68 @@ it('returns null when every host with templates is at capacity', function (): vo
     expect($pool->firstAvailableFor(E2ETopologyKind::Control))->toBeNull();
 });
 
-it('clones with limits applied between copy and start', function (): void {
+it('builds a batch script that copies all roles in parallel, applies limits, then starts in parallel', function (): void {
     $config = makeIncusTopologyTemplateTestConfig('1', '2GiB');
-
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('copyInstance')
-        ->with('orbit-template-control-control', 'orbit-e2e-runX-control')
-        ->ordered()
-        ->andReturn(successfulProcessResult());
-    $host->shouldReceive('setInstanceLimits')
-        ->with('orbit-e2e-runX-control', '1', '2GiB')
-        ->ordered()
-        ->andReturn(successfulProcessResult());
-    $host->shouldReceive('startInstance')
-        ->with('orbit-e2e-runX-control')
-        ->ordered()
-        ->andReturn(successfulProcessResult());
-    // waitForAgent uses host->run('incus exec ... -- true').
-    $host->shouldReceive('run')->andReturn(successfulProcessResult());
 
-    $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runX');
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::ControlGatewayDevProd,
+        'runX',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGatewayDevProd),
+    );
 
-    expect($instances)->toHaveKey('control');
+    // Every role gets a backgrounded copy with a captured pid.
+    foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
+        expect($script)->toContain("incus copy 'orbit-template-control-gateway-dev-prod-{$role}' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
+    }
+
+    // All copy commands appear before any start command (the dev block is
+    // copy/wait/limits/start/wait, in that order).
+    $firstStartPos = strpos($script, 'incus start');
+    foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
+        $copyPos = strpos($script, "incus copy 'orbit-template-control-gateway-dev-prod-{$role}'");
+        expect($copyPos)->toBeLessThan($firstStartPos);
+    }
 });
 
-it('passes configured topology cpus and memory to setInstanceLimits', function (): void {
-    $config = makeIncusTopologyTemplateTestConfig('2', '4GiB');
-
+it('clones runs the batch script through the host and waits for each agent', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('copyInstance')->andReturn(successfulProcessResult());
-    $host->shouldReceive('setInstanceLimits')
-        ->once()
-        ->with('orbit-e2e-runY-control', '2', '4GiB')
+
+    $captured = null;
+    $host->shouldReceive('run')
+        ->withArgs(function (string $command) use (&$captured): bool {
+            // First run is the batch (matches incus copy/start). Subsequent
+            // runs are the per-role waitForAgent (incus exec ... true).
+            if ($captured === null && str_contains($command, 'incus copy')) {
+                $captured = $command;
+            }
+
+            return true;
+        })
         ->andReturn(successfulProcessResult());
-    $host->shouldReceive('startInstance')->andReturn(successfulProcessResult());
-    $host->shouldReceive('run')->andReturn(successfulProcessResult());
 
-    $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runY');
+    $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::ControlGateway, 'runY');
 
-    expect($instances)->toHaveKey('control');
+    expect($instances)->toHaveKeys(['control', 'gateway'])
+        ->and($captured)->toContain('incus copy')
+        ->and($captured)->toContain("'orbit-e2e-runY-control'")
+        ->and($captured)->toContain("'orbit-e2e-runY-gateway'");
 });
 
-it('throws when setInstanceLimits fails', function (): void {
+it('throws when the batch script fails, surfacing the host error output', function (): void {
     $config = makeIncusTopologyTemplateTestConfig();
 
     $failure = m::mock(ProcessResult::class);
     $failure->shouldReceive('successful')->andReturn(false);
-    $failure->shouldReceive('errorOutput')->andReturn('config set failed');
+    $failure->shouldReceive('errorOutput')->andReturn("incus copy: not found\n");
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('copyInstance')->andReturn(successfulProcessResult());
-    $host->shouldReceive('setInstanceLimits')->andReturn($failure);
+    $host->shouldReceive('run')->andReturn($failure);
 
     expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runZ'))
-        ->toThrow(RuntimeException::class, 'Could not apply topology limits');
+        ->toThrow(RuntimeException::class, 'Topology batch failed for control');
 });

@@ -46,40 +46,62 @@ final readonly class IncusTopologyTemplate
     public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null): array
     {
         $timer ??= new E2EPhaseTimer;
+        $roles = self::rolesFor($kind);
+
+        $script = self::buildBatchScript($host, $kind, $runId, $roles);
+
+        $result = $timer->measure('batch.copy-start', fn () => $host->run($script));
+
+        if (! $result->successful()) {
+            throw new \RuntimeException(
+                "Topology batch failed for {$kind->value}: {$result->errorOutput()}"
+            );
+        }
+
         $instances = [];
-
-        foreach (self::rolesFor($kind) as $role) {
-            $template = self::templateName($kind, $role);
+        foreach ($roles as $role) {
             $clone = self::cloneName($runId, $role);
-
-            $result = $timer->measure("copy.{$role}", fn () => $host->copyInstance($template, $clone));
-
-            if (! $result->successful()) {
-                throw new \RuntimeException("Could not copy {$template} to {$clone}: {$result->errorOutput()}");
-            }
-
-            $result = $timer->measure("limits.{$role}", fn () => $host->setInstanceLimits(
-                $clone,
-                $host->config->topologyCpus,
-                $host->config->topologyMemory,
-            ));
-
-            if (! $result->successful()) {
-                throw new \RuntimeException("Could not apply topology limits to {$clone}: {$result->errorOutput()}");
-            }
-
-            $result = $timer->measure("start.{$role}", fn () => $host->startInstance($clone));
-
-            if (! $result->successful()) {
-                throw new \RuntimeException("Could not start {$clone}: {$result->errorOutput()}");
-            }
-
             $instance = new IncusInstance($host, $clone);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
-
             $instances[$role] = $instance;
         }
 
         return $instances;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles): string
+    {
+        $cpus = escapeshellarg($host->config->topologyCpus);
+        $memory = escapeshellarg($host->config->topologyMemory);
+
+        $copyLines = [];
+        $waitCopyLines = [];
+        $limitLines = [];
+        $startLines = [];
+        $waitStartLines = [];
+
+        $index = 0;
+        foreach ($roles as $role) {
+            $index++;
+            $template = escapeshellarg(self::templateName($kind, $role));
+            $clone = escapeshellarg(self::cloneName($runId, $role));
+
+            $copyLines[] = "incus copy {$template} {$clone} & PID_COPY_{$index}=\$!";
+            $waitCopyLines[] = "wait \$PID_COPY_{$index}";
+            $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
+            $startLines[] = "incus start {$clone} & PID_START_{$index}=\$!";
+            $waitStartLines[] = "wait \$PID_START_{$index}";
+        }
+
+        return implode("\n", [
+            ...$copyLines,
+            ...$waitCopyLines,
+            ...$limitLines,
+            ...$startLines,
+            ...$waitStartLines,
+        ]);
     }
 }
