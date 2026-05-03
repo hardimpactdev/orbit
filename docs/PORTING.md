@@ -375,32 +375,30 @@ route them to the implementer agent.
 
 #### Current Short Queue (Node Read-Forwarding Chain)
 
-1. Finish and review `NODE-API-READ-1` (todo 230).
-2. Then dispatch `NODE-LIST-FWD-1` (todo 234).
-3. Then dispatch `NODE-SHOW-FWD-1` (todo 235).
-4. Pair each of 234 and 235 with paired E2E gate todos. The E2E gates
-   need a `php artisan e2e:prepare-topology` lane authored first (todo 238) — a shared
-   lane that spins up control + gateway + dev-app for multiple read-command
-   verifications.
+1. Finish and review `NODE-SHOW-CONTRACT-1` (todo 251).
+2. Then promote and dispatch `NODE-READ-FWD-1` (todo 253).
+3. Then promote and dispatch `E2E-NODE-READ-1` (todo 254) after
+   `E2E-TOPOLOGY-MATRIX-1` (todo 250) and todo 253 are verified.
 
-Do not create more downstream node-forwarding todos while any of 230, 234, or
-235 are still open. If the ready queue is below target during that chain, fill
-with independent read-only Pest or harness work only.
+Do not create more downstream node-forwarding todos while todos 251, 253, or
+254 are still open. If the ready queue is below target during that chain, fill
+with independent read-only Pest, documentation, or E2E support work only.
 
 #### After Read-Forwarding Chain Verifies (Next 5 Candidates)
 
-1. Authoring `php artisan e2e:prepare-topology` lane (todo 238) so the paired E2E gates
-    above become dispatchable.
-2. Node doctor contract/docs slice needed for `node:list --doctor`.
-3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
+1. Node doctor contract/docs slice needed for `node:list --doctor` (todo 252 is
+   the current draft candidate).
+2. `node:list --doctor` and doctor handoff implementation (with paired Pest and
    E2E gates).
-4. `node:show` real grant metadata / authorization visibility slice (with
+3. `node:show` real grant metadata / authorization visibility slice (with
    paired Pest and E2E gates).
-5. Ready development-app and production-app Incus snapshot lanes (todos 237/239).
+4. Ready development-app and production-app Incus snapshot coverage if still
+   unchecked in the Testing Infrastructure section.
+5. The first gateway write-forwarding pair from the Gateway Forwarding Chain.
 
-#### Gateway Forwarding Chain (Unlocks After 234/235 Pattern Proven)
+#### Gateway Forwarding Chain (Unlocks After Read-Forwarding Chain)
 
-Once `NODE-LIST-FWD-1` and `NODE-SHOW-FWD-1` are verified, the same
+Once `NODE-READ-FWD-1` and `E2E-NODE-READ-1` are verified, the same
 caller-role-branch + typed-request pattern can be applied to the write
 commands. Order matters because each adds a new write API endpoint:
 

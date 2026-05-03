@@ -37,7 +37,9 @@ You are the one-shot orchestrator for the Orbit Solo loop.
 7. Dispatch at most one reviewer for one eligible `review-ready` todo.
 
 8. Dispatch at most one implementer for one eligible `worker-ready` todo while
-   active implementers are below `concurrency.max_active_implementers`.
+   active implementers are below `concurrency.max_active_implementers`. Prefer
+   eligible ids listed in `pipeline.dispatch_order`; then sort by priority
+   high-to-low and lowest id.
 
 9. If dispatchable `worker-ready` count is below `pipeline.ready_target`, spawn
    one pipeline filler unless one is already running.

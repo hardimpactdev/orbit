@@ -206,16 +206,16 @@ class IncusTopologyBuilder
         return $manifest;
     }
 
-    private function copyAndStart(string $source, string $target): void
+    private function copyAndStart(string $sourceImageAlias, string $target): void
     {
-        $result = $this->host->copyInstance($source, $target);
-        if (! $result->successful()) {
-            throw new RuntimeException("Could not copy {$source} to {$target}: {$result->errorOutput()}");
-        }
+        $result = $this->host->run(sprintf(
+            'incus launch %s %s --vm >/dev/null',
+            escapeshellarg($sourceImageAlias),
+            escapeshellarg($target),
+        ), timeoutSeconds: $this->host->config->timeoutSeconds);
 
-        $result = $this->host->startInstance($target);
         if (! $result->successful()) {
-            throw new RuntimeException("Could not start {$target}: {$result->errorOutput()}");
+            throw new RuntimeException("Could not launch {$target} from {$sourceImageAlias}: {$result->errorOutput()}");
         }
     }
 }

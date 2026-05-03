@@ -15,6 +15,11 @@ loop_clock:
 pipeline:
   ready_target: 2
   filler_enabled: true
+  dispatch_order:
+    - 251
+    - 248
+    - 249
+    - 250
 
 concurrency:
   max_active_implementers: 3
