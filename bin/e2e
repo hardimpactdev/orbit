@@ -19,7 +19,7 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --lifecycle | --control | --node-new-gateway | --gateway-add]
+usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --lifecycle | --control | --node-new-gateway | --gateway-add | --gateway-trust]
 
 Modes:
   --preflight        Check that the ephemeral backend is reachable on the E2E host.
@@ -34,6 +34,9 @@ Modes:
   --gateway-add      Launch a control VM and a gateway VM, then run orbit gateway:add
                      from the control VM to join the gateway. Verifies control-node
                      onboarding, CA trust, and gateway API reachability.
+  --gateway-trust    Launch a control VM and a ready gateway VM, then run orbit
+                     gateway:trust from the control VM. Verifies CA fetch, local
+                     trust store installation, and idempotent re-runs.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
@@ -1635,6 +1638,9 @@ case "${1:---lifecycle}" in
         ;;
     --gateway-add)
         gateway_add
+        ;;
+    --gateway-trust)
+        gateway_trust
         ;;
     *)
         echo "error: unknown mode '$1'" >&2

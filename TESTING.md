@@ -42,7 +42,7 @@ bin/e2e --prepare-gateway
 bin/e2e --lifecycle
 bin/e2e --control
 bin/e2e --node-new-gateway
-bin/e2e --gateway-add
+bin/e2e --gateway-trust
 ```
 
 The first ephemeral E2E harness uses Incus VMs on beast. Run
@@ -89,6 +89,17 @@ database, starts the gateway API server, and runs
 `orbit gateway:add 10.6.0.2 --json` from the control VM. It verifies that the
 command returns a success response. Full HTTPS verification depends on gateway
 web server infrastructure in the ephemeral harness. The VMs are destroyed at the
+end unless `ORBIT_E2E_KEEP=1`.
+
+Run `bin/e2e --gateway-trust` to exercise local gateway CA trust repair against
+a prepared gateway VM. This lane launches one disposable VM from the ready
+control image and one from the ready gateway image, injects an ephemeral SSH key
+into both, configures a dummy network interface on the gateway VM with the
+expected WireGuard IP (10.6.0.2), starts the gateway API server, seeds the
+gateway node into the control database, and runs `orbit gateway:trust --json`
+from the control VM with sudo. It verifies that the command returns a trusted
+success response, that the CA certificate is installed in the local OS trust
+store, and that a re-run reports `already_trusted`. The VMs are destroyed at the
 end unless `ORBIT_E2E_KEEP=1`.
 
 These are backend and single-role smokes only; they do not yet validate a full

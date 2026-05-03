@@ -672,6 +672,9 @@ A `GatewayClient` service class (or similar) that:
       blank gateway VM.
     - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
       exercises `gateway:add` from a ready control VM against a ready gateway VM.
+    - [x] Add gateway-trust E2E lane (`bin/e2e --gateway-trust`) that exercises
+      `gateway:trust` from a ready control VM against a ready gateway VM,
+      verifying CA fetch, local trust store installation, and idempotence.
     - [ ] Create ready development app and production app snapshot lanes for
       fast command-porting tests.
 - [ ] Add E2E topology for gateway + control + development app + production
