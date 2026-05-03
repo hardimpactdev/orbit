@@ -27,7 +27,7 @@ it('keeps hidden framework commands directly invocable', function (): void {
 });
 
 it('uses the Orbit CLI name independent of local environment drift', function (): void {
-    $process = new Process([PHP_BINARY, 'artisan', '--version'], base_path(), [
+    $process = new Process([PHP_BINARY, 'artisan', '--version', '--no-ansi'], base_path(), [
         'APP_NAME' => 'Laravel',
     ]);
     $process->mustRun();

@@ -54,13 +54,21 @@ it('updates the local checkout and every active remote node from the registry', 
         ->expectsOutputToContain('Updated node beast.')
         ->assertSuccessful();
 
-    Process::assertRanTimes(fn (): bool => true, 3);
+    Process::assertRanTimes(fn (): bool => true, 5);
     Process::assertRan(fn ($process): bool => $process->path === base_path()
-        && str_contains($process->command, 'COMPOSER_BIN="$(command -v composer || true)"')
-        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction')
-        && str_contains($process->command, 'php artisan migrate --force'));
-    Process::assertRan(fn ($process): bool => str_starts_with($process->command, "ssh nckrtl@mini 'cd /Users/nckrtl/orbit && ")
+        && $process->command === 'git pull --ff-only');
+    Process::assertRan(fn ($process): bool => $process->path === base_path()
+        && is_array($process->command)
+        && in_array('install', $process->command)
+        && in_array('--no-interaction', $process->command));
+    Process::assertRan(fn ($process): bool => $process->path === base_path()
+        && is_array($process->command)
+        && in_array('migrate', $process->command)
+        && in_array('--force', $process->command));
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_starts_with($process->command, "ssh nckrtl@mini 'cd /Users/nckrtl/orbit && ")
         && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction'));
-    Process::assertRan(fn ($process): bool => str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit && ")
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit && ")
         && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction'));
 });
