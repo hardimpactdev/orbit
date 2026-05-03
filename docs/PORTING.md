@@ -408,7 +408,19 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
     - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
     - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
     - `NodeGrantOnControlNodeContractTest.php` blocked by gateway forwarding.
-- [ ] Port `node:revoke`.
+- [~] Port `node:revoke`.
+  - Current implementation: `app/Console/Commands/NodeRevokeCommand.php`
+  - Current tests:
+    - `tests/Feature/Commands/Nodes/NodeRevokeCommandTest.php` (command contract)
+    - `tests/Feature/Commands/Nodes/NodeRevokeHumanRendererTest.php` (human renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeRevokeJsonRendererTest.php` (JSON renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeRevokeInteractiveInputModeTest.php` (interactive input mode contract)
+  - Bootstrap slice implemented: gateway-local grant revocation, idempotence, node-not-found validation, self-lockout detection, destructive consent (`--force`, interactive confirmation), caller role rejection, human progress tree and JSON renderer contracts, split contract tests.
+  - Contract gaps:
+    - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
+    - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
+    - `NodeRevokeOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [ ] Port `node:remove`.
 - [ ] Port `node:agent-ide`.
 - [~] Port `node:new`.
