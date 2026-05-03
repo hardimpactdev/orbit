@@ -99,12 +99,19 @@ it('returns new instances after reset', function (): void {
         ->and($lease->prodApp())->toBe($newProd);
 });
 
-it('throws when ORBIT_E2E_TOPOLOGY_RESET is snapshot-restore', function (): void {
+it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-restore', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
     putenv('ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore');
 
     try {
         $control = m::mock(E2EInstance::class);
+        // No delete() call — snapshot-restore must reuse the same instance handles.
+        $control->shouldNotReceive('delete');
+
+        $callCount = 0;
+        $snapshotReset = function () use (&$callCount): void {
+            $callCount++;
+        };
 
         $lease = new E2ETopologyLease(
             kind: E2ETopologyKind::Control,
@@ -113,11 +120,48 @@ it('throws when ORBIT_E2E_TOPOLOGY_RESET is snapshot-restore', function (): void
             dev: null,
             prod: null,
             sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
-            rebuild: fn () => [],
+            rebuild: function (): array {
+                throw new RuntimeException('rebuild should not run for snapshot-restore');
+            },
+            snapshotReset: $snapshotReset,
         );
 
-        expect(fn () => $lease->reset())
-            ->toThrow(RuntimeException::class, 'snapshot-restore reset strategy is not implemented yet');
+        $lease->reset();
+
+        expect($callCount)->toBe(1)
+            ->and($lease->control())->toBe($control);
+    } finally {
+        if ($previous === false) {
+            putenv('ORBIT_E2E_TOPOLOGY_RESET');
+        } else {
+            putenv("ORBIT_E2E_TOPOLOGY_RESET={$previous}");
+        }
+    }
+});
+
+it('falls back to fresh-clone when snapshot-restore is requested without a snapshot reset closure', function (): void {
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
+    putenv('ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore');
+
+    try {
+        $oldControl = m::mock(E2EInstance::class);
+        $oldControl->shouldReceive('delete')->once();
+
+        $newControl = m::mock(E2EInstance::class);
+
+        $lease = new E2ETopologyLease(
+            kind: E2ETopologyKind::Control,
+            control: $oldControl,
+            gateway: null,
+            dev: null,
+            prod: null,
+            sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+            rebuild: fn () => ['control' => $newControl],
+        );
+
+        $lease->reset();
+
+        expect($lease->control())->toBe($newControl);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');

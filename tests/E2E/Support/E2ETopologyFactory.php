@@ -45,12 +45,14 @@ final class E2ETopologyFactory
             $instances = IncusTopologyTemplate::clone($host, $resolved, $runId, $timer);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
+            $primaryUsers = [];
 
             foreach ($instances as $role => $instance) {
                 $primaryUser = match ($role) {
                     'control' => $config->controlUser,
                     default => 'orbit',
                 };
+                $primaryUsers[$role] = $primaryUser;
 
                 $timer->measure("ssh-authorize.{$role}", function () use ($instance, $config, $primaryUser, $sshKeyPair): void {
                     $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
@@ -60,6 +62,7 @@ final class E2ETopologyFactory
                     }
                 });
                 $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+                $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
             }
 
             $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
@@ -71,6 +74,30 @@ final class E2ETopologyFactory
                 return $newInstances;
             };
 
+            $snapshotReset = function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair): void {
+                foreach ($instances as $role => $instance) {
+                    $cycleTimer->measure("reset.stop.{$role}", fn () => $instance->stop());
+                    $cycleTimer->measure("reset.restore.{$role}", fn () => $instance->restoreSnapshot('lease-clean'));
+                    $cycleTimer->measure("reset.start.{$role}", fn () => $instance->start());
+                }
+
+                foreach ($instances as $role => $instance) {
+                    $cycleTimer->measure("reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
+                }
+
+                $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuard($instances));
+
+                foreach ($primaryUsers as $role => $primaryUser) {
+                    $instance = $instances[$role] ?? null;
+
+                    if ($instance === null) {
+                        continue;
+                    }
+
+                    $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+                }
+            };
+
             return new E2ETopologyLease(
                 kind: $resolved,
                 control: $instances['control'],
@@ -79,6 +106,7 @@ final class E2ETopologyFactory
                 prod: $instances['prod'] ?? null,
                 sshKeyPair: $sshKeyPair,
                 rebuild: $rebuild,
+                snapshotReset: $snapshotReset,
             );
         } finally {
             $timer->flush('acquire');

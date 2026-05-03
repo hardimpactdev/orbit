@@ -283,6 +283,21 @@ ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
 ```
 
+`ORBIT_E2E_TOPOLOGY_RESET` controls how `E2ETopologyLease::reset()` returns a
+clone to a known-clean state between sub-scenarios in the same test:
+
+- `fresh-clone` (default): delete the existing clones and rebuild via the
+  prepared topology templates. Always works but pays the full clone + start
+  cost on every reset.
+- `snapshot-restore`: stop each clone, restore the per-instance `lease-clean`
+  snapshot (created right after SSH authorization during acquire), start each
+  clone, then wait for agent and SSH on the same handles. Significantly
+  faster than `fresh-clone` for tests that reset multiple times. Falls back to
+  `fresh-clone` if a lease was constructed without a snapshot reset closure
+  (e.g. unit tests).
+
+Unknown values continue to fall back to `fresh-clone`.
+
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
 factory and lease (`availability`, `copy.*`, `start.*`, `agent-ready.*`,
 `ssh-authorize.*`, `ssh-ready.*`, `cleanup.*`). Output goes to STDERR with the

@@ -140,6 +140,44 @@ final class IncusInstance implements E2EInstance
         ), timeoutSeconds: 120);
     }
 
+    public function stop(): void
+    {
+        $this->ipv4 = null;
+
+        $result = $this->host->stopInstance($this->name);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not stop {$this->name}: {$result->errorOutput()}");
+        }
+    }
+
+    public function start(): void
+    {
+        $result = $this->host->startInstance($this->name);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not start {$this->name}: {$result->errorOutput()}");
+        }
+    }
+
+    public function snapshot(string $snapshot): void
+    {
+        $result = $this->host->snapshotInstance($this->name, $snapshot);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not snapshot {$this->name} as {$snapshot}: {$result->errorOutput()}");
+        }
+    }
+
+    public function restoreSnapshot(string $snapshot): void
+    {
+        $result = $this->host->restoreSnapshot($this->name, $snapshot);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not restore {$this->name} from {$snapshot}: {$result->errorOutput()}");
+        }
+    }
+
     private function ipv4(): ?string
     {
         $result = $this->host->run(sprintf(

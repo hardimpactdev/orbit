@@ -10,6 +10,7 @@ final class E2ETopologyLease
 
     /**
      * @param  \Closure(E2EPhaseTimer): array<string, E2EInstance>  $rebuild
+     * @param  \Closure(E2EPhaseTimer): void|null  $snapshotReset
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
@@ -19,6 +20,7 @@ final class E2ETopologyLease
         private ?E2EInstance $prod,
         private readonly SshKeyPair $sshKeyPair,
         private readonly \Closure $rebuild,
+        private readonly ?\Closure $snapshotReset = null,
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -73,13 +75,16 @@ final class E2ETopologyLease
         $strategy = getenv('ORBIT_E2E_TOPOLOGY_RESET');
         $strategy = is_string($strategy) && $strategy !== '' ? $strategy : 'fresh-clone';
 
-        if ($strategy === 'snapshot-restore') {
-            throw new \RuntimeException('snapshot-restore reset strategy is not implemented yet');
-        }
-
         $timer = new E2EPhaseTimer;
 
         try {
+            if ($strategy === 'snapshot-restore' && $this->snapshotReset !== null) {
+                ($this->snapshotReset)($timer);
+                $this->cleaned = false;
+
+                return;
+            }
+
             $this->cleanup($timer);
             $instances = ($this->rebuild)($timer);
 

@@ -125,4 +125,22 @@ class IncusHost
             escapeshellarg($snapshot),
         ));
     }
+
+    public function restoreSnapshot(string $name, string $snapshot): ProcessResult
+    {
+        return $this->run(sprintf(
+            'incus restore %s %s',
+            escapeshellarg($name),
+            escapeshellarg($snapshot),
+        ));
+    }
+
+    public function deleteSnapshot(string $name, string $snapshot): ProcessResult
+    {
+        return $this->run(sprintf(
+            'incus snapshot delete %s %s >/dev/null 2>&1 || true',
+            escapeshellarg($name),
+            escapeshellarg($snapshot),
+        ));
+    }
 }
