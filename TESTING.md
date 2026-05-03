@@ -150,6 +150,69 @@ that covers the behavior under test:
 | `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
 | `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
 
+## Prepared Topology Contract
+
+Prepared topology clones are not just booted VMs. When
+`E2ETopologyFactory::fromEnvironment()->require(...)` returns, the clone set must
+be ready for command assertions that depend on that topology kind.
+
+Common requirements for every prepared topology:
+
+- all nodes are disposable clones of `orbit-template-*` instances;
+- each clone has the current Orbit checkout installed at the expected user path;
+- SSH is authorized for the users needed by the topology handles;
+- `orbit --version` works for the steady-state Orbit user on each managed node;
+- tests may mutate clones, but must never mutate template instances;
+- cleanup deletes clones unless `ORBIT_E2E_KEEP=1`;
+- reset returns clones to the clean prepared state for the selected reset
+  strategy.
+
+`control`:
+
+- one control clone is available through the `control` topology handle;
+- the control user is `ORBIT_E2E_CONTROL_USER` (`control` by default);
+- Orbit is installed at `/home/<control-user>/orbit`;
+- commands can run from the control node through the `orbit` CLI;
+- the control registry contains the local control identity expected by
+  control-node commands.
+
+`control-gateway`:
+
+- includes everything from `control`;
+- one gateway clone is available through the `gateway` topology handle;
+- the gateway steady-state user is `orbit`, with Orbit installed at
+  `/home/orbit/orbit`;
+- the gateway identity visible to control-node commands is named `gateway`;
+- the control identity seeded on the gateway is named `control-1`;
+- WireGuard test addresses are stable: gateway `10.6.0.2`, control
+  `10.6.0.3`;
+- the control node can reach the gateway API over the synthetic WireGuard route;
+- `gateway:add 10.6.0.2 --json` has converged on the control node;
+- the control node stores gateway settings and trusts the gateway CA;
+- the gateway API exposes `/api/ca/root` over HTTP and `/api/me` over HTTPS.
+
+`control-gateway-dev`:
+
+- includes everything from `control-gateway`;
+- one development app clone is available through the `dev` topology handle;
+- the development app node is named `app-dev-1`;
+- the gateway registry stores it as role `app`, environment `development`,
+  TLD `test`, user `orbit`, and gateway endpoint `10.6.0.2`;
+- the development app receives a WireGuard address in the prepared topology and
+  is reachable through the gateway path required by app/workspace commands;
+- development TLD state exists for `test` and points at the development app's
+  WireGuard address.
+
+`control-gateway-dev-prod`:
+
+- includes everything from `control-gateway-dev`;
+- one production app clone is available through the `prod` topology handle;
+- the production app node is named `app-prod-1`;
+- the gateway registry stores it as role `app`, environment `production`, no
+  development TLD, user `orbit`, and gateway endpoint `10.6.0.2`;
+- production-app assertions can run without re-provisioning the control,
+  gateway, or development app nodes.
+
 ## Commands
 
 ```bash

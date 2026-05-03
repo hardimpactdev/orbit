@@ -43,9 +43,17 @@ final class E2ETopologyFactory
 
         $sshKeyPair = $this->createSshKeyPair($host, $runId);
 
-        foreach ($instances as $instance) {
+        foreach ($instances as $role => $instance) {
+            $primaryUser = match ($role) {
+                'control' => $config->controlUser,
+                default => 'orbit',
+            };
+
             $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
-            $instance->waitForSsh($config->bootstrapUser, $sshKeyPair);
+            if ($primaryUser !== $config->bootstrapUser) {
+                $instance->authorizeSsh($primaryUser, $sshKeyPair);
+            }
+            $instance->waitForSsh($primaryUser, $sshKeyPair);
         }
 
         $rebuild = function () use ($host, $resolved, $runId): array {
