@@ -73,6 +73,10 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-hcloud-images"
         ],
+        "e2e:prepare-topology": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan e2e:prepare-topology"
+        ],
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
