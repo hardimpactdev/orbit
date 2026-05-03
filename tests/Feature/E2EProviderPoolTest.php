@@ -8,6 +8,8 @@ use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2EInstance;
 use Tests\E2E\Support\E2EProvider;
 use Tests\E2E\Support\E2ERun;
+use Tests\E2E\Support\E2ETopologyKind;
+use Tests\E2E\Support\E2ETopologyLease;
 use Tests\E2E\Support\HcloudProvider;
 use Tests\E2E\Support\ProviderAvailability;
 use Tests\E2E\Support\ProviderPool;
@@ -132,6 +134,21 @@ function fakeE2EProvider(string $name, bool $available): E2EProvider
         public function cleanup(E2ERun $run, array $instances): void
         {
             throw new RuntimeException('Fake provider cannot clean up.');
+        }
+
+        public function supportsPreparedTopologies(): bool
+        {
+            return false;
+        }
+
+        public function topologyAvailability(E2ETopologyKind $kind): ProviderAvailability
+        {
+            return ProviderAvailability::unavailable('Fake provider does not support prepared topologies');
+        }
+
+        public function acquireTopology(E2ETopologyKind $kind, string $label): E2ETopologyLease
+        {
+            throw new RuntimeException('Fake provider cannot acquire topologies.');
         }
     };
 }

@@ -142,6 +142,21 @@ final readonly class IncusProvider implements E2EProvider
         }
     }
 
+    public function supportsPreparedTopologies(): bool
+    {
+        return false;
+    }
+
+    public function topologyAvailability(E2ETopologyKind $kind): ProviderAvailability
+    {
+        return ProviderAvailability::unavailable('Incus prepared topologies are accessed via IncusTopologyTemplate, not the provider directly');
+    }
+
+    public function acquireTopology(E2ETopologyKind $kind, string $label): E2ETopologyLease
+    {
+        throw new \RuntimeException('Incus prepared topologies are accessed via IncusTopologyTemplate, not the provider directly');
+    }
+
     private function aliasFor(E2EImage $image): string
     {
         return match ($image) {

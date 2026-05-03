@@ -166,6 +166,21 @@ final readonly class HcloudProvider implements E2EProvider
         $this->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 30);
     }
 
+    public function supportsPreparedTopologies(): bool
+    {
+        return false;
+    }
+
+    public function topologyAvailability(E2ETopologyKind $kind): ProviderAvailability
+    {
+        return ProviderAvailability::unavailable('hcloud prepared topologies are not implemented yet');
+    }
+
+    public function acquireTopology(E2ETopologyKind $kind, string $label): E2ETopologyLease
+    {
+        throw new \RuntimeException('hcloud prepared topologies are not implemented yet');
+    }
+
     private function run(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
         return Process::timeout($timeoutSeconds ?? $this->config->timeoutSeconds)->run($command);

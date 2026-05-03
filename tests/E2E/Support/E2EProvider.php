@@ -25,4 +25,10 @@ interface E2EProvider
      * @param  list<E2EInstance>  $instances
      */
     public function cleanup(E2ERun $run, array $instances): void;
+
+    public function supportsPreparedTopologies(): bool;
+
+    public function topologyAvailability(E2ETopologyKind $kind): ProviderAvailability;
+
+    public function acquireTopology(E2ETopologyKind $kind, string $label): E2ETopologyLease;
 }
