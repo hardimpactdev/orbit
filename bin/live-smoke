@@ -4,35 +4,35 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-GATEWAY_SSH="${ORBIT_LIVE_GATEWAY_SSH:-gateway}"
-GATEWAY_PATH="${ORBIT_LIVE_GATEWAY_PATH:-~/orbit}"
+CONTROL_SSH="${ORBIT_LIVE_CONTROL_SSH:-mini}"
+CONTROL_PATH="${ORBIT_LIVE_CONTROL_PATH:-~/orbit}"
 
-case "${1:---gateway}" in
+case "${1:---control}" in
     --local)
         php artisan test --compact
         ;;
-    --gateway)
+    --control)
         php artisan test --compact
-        ssh "$GATEWAY_SSH" "cd $GATEWAY_PATH && php artisan update:all && php artisan test --compact && php artisan node:list"
+        ssh "$CONTROL_SSH" "cd $CONTROL_PATH && php artisan update:all && php artisan test --compact && php artisan node:list"
         ;;
     -h|--help)
         cat <<'HELP'
-usage: bin/live-smoke [--local | --gateway]
+usage: bin/live-smoke [--local | --control]
 
 Modes:
   --local    Run the local test suite.
-  --gateway  Run local tests, then ask the standing gateway to run the
-             idempotent live smoke path: update:all, gateway-side tests,
+  --control  Run local tests, then ask the standing control node to run the
+             idempotent live smoke path: update:all, control-side tests,
              and node:list.
 
 Environment:
-  ORBIT_LIVE_GATEWAY_SSH   SSH target for the gateway. Defaults to "gateway".
-  ORBIT_LIVE_GATEWAY_PATH  Orbit checkout path on the gateway. Defaults to "~/orbit".
+  ORBIT_LIVE_CONTROL_SSH   SSH target for the control node. Defaults to "mini".
+  ORBIT_LIVE_CONTROL_PATH  Orbit checkout path on the control node. Defaults to "~/orbit".
 HELP
         ;;
     *)
         echo "error: unknown mode '$1'" >&2
-        echo "usage: bin/live-smoke [--local | --gateway]" >&2
+        echo "usage: bin/live-smoke [--local | --control]" >&2
         exit 2
         ;;
 esac

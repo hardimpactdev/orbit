@@ -22,8 +22,8 @@ it('documents the standing live smoke mode', function (): void {
 
     expect($script)->toBeFile()
         ->and(is_executable($script))->toBeTrue()
-        ->and($contents)->toContain('ORBIT_LIVE_GATEWAY_SSH')
-        ->and($contents)->toContain('ORBIT_LIVE_GATEWAY_PATH')
+        ->and($contents)->toContain('ORBIT_LIVE_CONTROL_SSH')
+        ->and($contents)->toContain('ORBIT_LIVE_CONTROL_PATH')
         ->and($contents)->toContain('update:all');
 });
 

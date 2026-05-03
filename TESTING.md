@@ -24,11 +24,11 @@ Use standing live-node smoke for fast non-destructive integration checks:
 
 ```bash
 composer test:live
-bin/live-smoke --gateway
+bin/live-smoke --control
 ```
 
-The live smoke path runs local tests, SSHes to the gateway, runs `update:all`,
-runs gateway-side tests, and prints `node:list`.
+The live smoke path runs local tests, SSHes to the control node, runs `update:all`,
+runs control-side tests, and prints `node:list`.
 
 Use ephemeral E2E only for full lifecycle, provisioning, destructive, or host
 mutation checks:
@@ -77,8 +77,8 @@ gateway/control/development-app/production-app topology.
 Environment overrides:
 
 ```bash
-ORBIT_LIVE_GATEWAY_SSH=gateway
-ORBIT_LIVE_GATEWAY_PATH=~/orbit
+ORBIT_LIVE_CONTROL_SSH=mini
+ORBIT_LIVE_CONTROL_PATH=~/orbit
 
 ORBIT_E2E_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
