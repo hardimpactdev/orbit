@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\E2E\IncusE2EImagePreparationOptions;
+use App\Services\E2E\IncusE2EImagePreparer;
+use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use RuntimeException;
 use Tests\E2E\Support\E2EConfig;
+use Tests\E2E\Support\IncusHostPool;
 
 #[Signature('e2e:prepare-incus-images
     {--role=all : Image role (all|blank|control|gateway|devapp|prodapp)}
@@ -18,6 +23,19 @@ class E2EPrepareIncusImagesCommand extends Command
 {
     protected $hidden = true;
 
+    /**
+     * @var (Closure(): IncusE2EImagePreparer)|null
+     */
+    private ?Closure $preparerFactory = null;
+
+    /**
+     * @param  Closure(): IncusE2EImagePreparer  $factory
+     */
+    public function setPreparerFactory(Closure $factory): void
+    {
+        $this->preparerFactory = $factory;
+    }
+
     public function handle(): int
     {
         $role = (string) $this->option('role');
@@ -27,17 +45,66 @@ class E2EPrepareIncusImagesCommand extends Command
             return $this->failValidation('--role must be one of: '.implode(', ', $validRoles).'.');
         }
 
-        if ((bool) $this->option('force')) {
-            return $this->failCommand('Building Incus images via artisan is not yet implemented.');
-        }
-
         $config = E2EConfig::fromEnvironment();
         $roles = $this->resolveRoles($role, $config);
 
+        if (! (bool) $this->option('force')) {
+            $result = [
+                'provider' => 'incus',
+                'dry_run' => true,
+                'roles' => $roles,
+            ];
+
+            if ((bool) $this->option('json')) {
+                $this->line(json_encode(['success' => ['data' => $result]], JSON_THROW_ON_ERROR));
+
+                return self::SUCCESS;
+            }
+
+            $this->renderHuman($result);
+
+            return self::SUCCESS;
+        }
+
+        if (! in_array('incus', $config->providerNames, true)) {
+            return $this->failCommand('No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.');
+        }
+
+        $hostPool = IncusHostPool::fromEnvironment($config);
+        $host = $hostPool->first();
+
+        if ($host === null) {
+            return $this->failCommand('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
+        }
+
+        $roleNames = array_column($roles, 'role');
+
+        $options = new IncusE2EImagePreparationOptions(
+            roles: $roleNames,
+            force: true,
+            sourceImage: $config->sourceImage,
+            blankImageAlias: $config->blankImage,
+            bootstrapUser: $config->bootstrapUser,
+            serverType: "{$config->cpus}cpu/{$config->memory}",
+            cpus: (int) $config->cpus,
+            memory: $config->memory,
+            timeoutSeconds: $config->timeoutSeconds,
+        );
+
+        try {
+            $preparer = $this->preparerFactory !== null
+                ? ($this->preparerFactory)()
+                : new IncusE2EImagePreparer($host);
+
+            $preparerResult = $preparer->prepare($options);
+        } catch (RuntimeException $exception) {
+            return $this->failCommand($exception->getMessage());
+        }
+
         $result = [
             'provider' => 'incus',
-            'dry_run' => true,
-            'roles' => $roles,
+            'dry_run' => false,
+            'images' => $preparerResult->images,
         ];
 
         if ((bool) $this->option('json')) {
@@ -46,7 +113,11 @@ class E2EPrepareIncusImagesCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->renderHuman($result);
+        $this->info('Built Incus images.');
+
+        foreach ($preparerResult->images as $image) {
+            $this->line("{$image['action']}: {$image['role']} -> {$image['alias']}");
+        }
 
         return self::SUCCESS;
     }

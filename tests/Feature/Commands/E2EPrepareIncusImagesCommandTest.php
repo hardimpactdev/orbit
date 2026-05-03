@@ -3,10 +3,18 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareIncusImagesCommand;
+use App\Services\E2E\IncusE2EImagePreparationResult;
+use App\Services\E2E\IncusE2EImagePreparer;
 use Illuminate\Support\Facades\Process;
+use Mockery as m;
+use RuntimeException;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+});
+
+afterEach(function (): void {
+    m::close();
 });
 
 it('is hidden', function (): void {
@@ -115,21 +123,87 @@ it('outputs json error for invalid role', function (): void {
         ->assertFailed();
 });
 
-it('--force fails with not yet implemented message', function (): void {
-    $this->artisan('e2e:prepare-incus-images', ['--force' => true])
-        ->expectsOutputToContain('Building Incus images via artisan is not yet implemented.')
+it('--force fails with not yet implemented message for non-blank roles', function (): void {
+    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--role' => 'control'])
+        ->expectsOutputToContain('Role [control] image build is not yet implemented.')
         ->assertFailed();
 });
 
-it('--force --json fails with error envelope', function (): void {
+it('--force --json fails with error envelope for non-blank roles', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'incus_e2e_image_prepare_failed',
-            'message' => 'Building Incus images via artisan is not yet implemented.',
+            'message' => 'Role [control] image build is not yet implemented.',
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--json' => true])
+    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--role' => 'control', '--json' => true])
         ->expectsOutput($expected)
+        ->assertFailed();
+});
+
+it('--force --role=blank invokes preparer and returns success envelope', function (): void {
+    $preparer = m::mock(IncusE2EImagePreparer::class);
+    $preparer->shouldReceive('prepare')->andReturn(new IncusE2EImagePreparationResult([
+        ['role' => 'blank', 'alias' => 'orbit-blank-ubuntu-26.04', 'action' => 'built'],
+    ]));
+
+    $command = app(E2EPrepareIncusImagesCommand::class);
+    $command->setPreparerFactory(fn () => $preparer);
+    $this->app->instance(E2EPrepareIncusImagesCommand::class, $command);
+
+    $expected = json_encode([
+        'success' => [
+            'data' => [
+                'provider' => 'incus',
+                'dry_run' => false,
+                'images' => [
+                    ['role' => 'blank', 'alias' => 'orbit-blank-ubuntu-26.04', 'action' => 'built'],
+                ],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--role' => 'blank', '--json' => true])
+        ->expectsOutput($expected)
+        ->assertSuccessful();
+});
+
+it('--force --role=blank without configured Incus host fails clearly', function (): void {
+    $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
+    $previousHost = getenv('ORBIT_E2E_HOST');
+    $previousProvider = getenv('ORBIT_E2E_PROVIDER');
+
+    putenv('ORBIT_E2E_INCUS_HOSTS=');
+    putenv('ORBIT_E2E_HOST=');
+    putenv('ORBIT_E2E_PROVIDER=incus');
+
+    try {
+        $this->artisan('e2e:prepare-incus-images', [
+            '--force' => true,
+            '--role' => 'blank',
+        ])
+            ->assertFailed();
+    } finally {
+        $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
+        $previousHost === false ? putenv('ORBIT_E2E_HOST') : putenv("ORBIT_E2E_HOST={$previousHost}");
+        $previousProvider === false ? putenv('ORBIT_E2E_PROVIDER') : putenv("ORBIT_E2E_PROVIDER={$previousProvider}");
+    }
+});
+
+it('--force surfaces preparer failure as command failure', function (): void {
+    $preparer = m::mock(IncusE2EImagePreparer::class);
+    $preparer->shouldReceive('prepare')
+        ->andThrow(new RuntimeException('Source image [missing] is not available.'));
+
+    $command = app(E2EPrepareIncusImagesCommand::class);
+    $command->setPreparerFactory(fn () => $preparer);
+    $this->app->instance(E2EPrepareIncusImagesCommand::class, $command);
+
+    $this->artisan('e2e:prepare-incus-images', [
+        '--force' => true,
+        '--role' => 'blank',
+    ])
+        ->expectsOutputToContain('Source image [missing] is not available.')
         ->assertFailed();
 });

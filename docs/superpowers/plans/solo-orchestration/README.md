@@ -145,9 +145,8 @@ Use this evidence order when product or architecture choices fork:
 Current docs decide product behavior. Current implementation and the old repo
 are evidence, not automatic authority.
 
-If tracker text still references new `bin/e2e` lane authoring, treat that as
-stale transitional guidance. The orchestration loop should create Pest E2E work
-using `composer test:e2e:provisioning`, `composer test:e2e:features`, and
+The orchestration loop should create Pest E2E work using
+`composer test:e2e:provisioning`, `composer test:e2e:features`, and
 `composer e2e:prepare-topology`, or create a docs-refresh todo when the tracker
 needs correction.
 
@@ -258,7 +257,7 @@ that a prompt landed.
   queue capacity.
 - Every command port ends with one E2E gate todo. Implementers author and run
   the lane; the E2E role reruns it after commit.
-- Do not create new `bin/e2e` lane work. Use Pest E2E lanes from `TESTING.md`.
+- Use Pest E2E lanes from `TESTING.md`.
 
 ## Commit Boundary
 
