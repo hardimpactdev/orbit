@@ -122,25 +122,6 @@ it('outputs json error for invalid role', function (): void {
         ->assertFailed();
 });
 
-it('--force fails with not yet implemented message for non-blank roles', function (): void {
-    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--role' => 'control'])
-        ->expectsOutputToContain('Role [control] image build is not yet implemented.')
-        ->assertFailed();
-});
-
-it('--force --json fails with error envelope for non-blank roles', function (): void {
-    $expected = json_encode([
-        'error' => [
-            'code' => 'incus_e2e_image_prepare_failed',
-            'message' => 'Role [control] image build is not yet implemented.',
-        ],
-    ], JSON_THROW_ON_ERROR);
-
-    $this->artisan('e2e:prepare-incus-images', ['--force' => true, '--role' => 'control', '--json' => true])
-        ->expectsOutput($expected)
-        ->assertFailed();
-});
-
 it('--force --role=blank invokes preparer and returns success envelope', function (): void {
     $preparer = m::mock(IncusE2EImagePreparer::class);
     $preparer->shouldReceive('prepare')->andReturn(new IncusE2EImagePreparationResult([

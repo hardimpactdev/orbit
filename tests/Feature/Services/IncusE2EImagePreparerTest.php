@@ -18,7 +18,13 @@ function baseOptions(bool $force = false, array $roles = ['blank']): IncusE2EIma
         force: $force,
         sourceImage: 'images:ubuntu/26.04/cloud',
         blankImageAlias: 'orbit-blank-ubuntu-26.04',
+        controlImageAlias: 'orbit-ready-control',
+        gatewayImageAlias: 'orbit-ready-gateway',
+        devappImageAlias: 'orbit-ready-devapp',
+        prodappImageAlias: 'orbit-ready-prodapp',
         bootstrapUser: 'provisioner',
+        controlUser: 'control',
+        installScriptPath: '/tmp/install-orbit',
         serverType: '2cpu/2GiB',
         cpus: 2,
         memory: '2GiB',
@@ -58,15 +64,10 @@ it('returns dry-run plans for every requested role', function (): void {
     expect(array_unique(array_column($result->images, 'action')))->toBe(['planned']);
 });
 
-it('throws for non-blank roles when forced', function (string $role): void {
+it('throws for unknown roles when forced', function (): void {
     $host = m::mock(IncusHost::class);
     $preparer = new IncusE2EImagePreparer($host);
 
-    expect(fn () => $preparer->prepare(baseOptions(force: true, roles: [$role])))
-        ->toThrow(RuntimeException::class, "Role [{$role}] image build is not yet implemented.");
-})->with([
-    'control',
-    'gateway',
-    'devapp',
-    'prodapp',
-]);
+    expect(fn () => $preparer->prepare(baseOptions(force: true, roles: ['mystery'])))
+        ->toThrow(RuntimeException::class, 'Unknown role [mystery].');
+});

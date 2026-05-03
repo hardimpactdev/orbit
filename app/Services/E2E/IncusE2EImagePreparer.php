@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Tests\E2E\Support\IncusHost;
 
 /**
  * Orchestrates building reusable Incus base images on a remote Incus host.
  *
- * All filesystem operations execute on the Incus host via `$host->run(...)`,
- * so the artisan process does not need to share a filesystem with Incus.
+ * The blank role is built fully on the host (cloud-init bootstraps a sudoers
+ * user). Every other role is built from the blank image: a tarball of the
+ * local Orbit source plus bin/install-orbit are pushed to the host, then into
+ * the VM, and install-orbit runs as the role-specific target user.
  *
- * Supported roles:
- *   - blank   → orbit-blank-ubuntu-* (cloud-init bootstraps a sudoers user)
- *
- * Roles that still throw "not yet implemented":
- *   - control, gateway, devapp, prodapp
+ * All Incus operations execute on the host via $host->run(). Local Process
+ * calls are used only for tar (the source archive) and scp (pushing the
+ * archive to a remote host).
  */
 class IncusE2EImagePreparer
 {
@@ -43,11 +44,29 @@ class IncusE2EImagePreparer
         foreach ($options->roles as $role) {
             $built[] = match ($role) {
                 'blank' => $this->buildBlank($options),
-                default => throw new RuntimeException("Role [{$role}] image build is not yet implemented."),
+                'control' => $this->buildFromBlank($options, role: 'control', orbitRole: 'control', targetUser: $options->controlUser, alias: $options->controlImageAlias, postInstall: []),
+                'gateway' => $this->buildFromBlank($options, role: 'gateway', orbitRole: 'gateway', targetUser: 'orbit', alias: $options->gatewayImageAlias, postInstall: [
+                    'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2',
+                ]),
+                'devapp' => $this->buildFromBlank($options, role: 'devapp', orbitRole: 'app', targetUser: 'orbit', alias: $options->devappImageAlias, postInstall: []),
+                'prodapp' => $this->buildFromBlank($options, role: 'prodapp', orbitRole: 'app', targetUser: 'orbit', alias: $options->prodappImageAlias, postInstall: []),
+                default => throw new RuntimeException("Unknown role [{$role}]."),
             };
         }
 
         return new IncusE2EImagePreparationResult($built);
+    }
+
+    private function aliasFor(string $role, IncusE2EImagePreparationOptions $options): string
+    {
+        return match ($role) {
+            'blank' => $options->blankImageAlias,
+            'control' => $options->controlImageAlias,
+            'gateway' => $options->gatewayImageAlias,
+            'devapp' => $options->devappImageAlias,
+            'prodapp' => $options->prodappImageAlias,
+            default => "orbit-ready-{$role}",
+        };
     }
 
     /**
@@ -55,7 +74,7 @@ class IncusE2EImagePreparer
      */
     private function buildBlank(IncusE2EImagePreparationOptions $options): array
     {
-        $runId = date('YmdHis').'-'.getmypid().'-'.bin2hex(random_bytes(3));
+        $runId = $this->newRunId();
         $instanceName = "orbit-e2e-{$runId}-prepare-blank";
         $remoteWorkDir = $this->createRemoteWorkDir($instanceName);
         $tempInstance = null;
@@ -70,11 +89,10 @@ class IncusE2EImagePreparer
             $tempInstance = $instanceName;
 
             $this->waitForCloudInit($instanceName, $options->timeoutSeconds);
-
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
-            $this->cleanImageState($instanceName, $options->bootstrapUser);
+            $this->cleanBlankImageState($instanceName, $options->bootstrapUser);
             $this->stopInstance($instanceName);
             $this->publishImage($instanceName, $options->blankImageAlias);
 
@@ -84,26 +102,90 @@ class IncusE2EImagePreparer
                 'action' => 'built',
             ];
         } finally {
-            if ($tempInstance !== null) {
-                $this->host->run(
-                    'incus delete --force '.escapeshellarg($tempInstance).' >/dev/null 2>&1 || true',
-                    timeoutSeconds: 120,
-                );
-            }
-
-            $this->host->run(
-                'rm -rf '.escapeshellarg($remoteWorkDir).' || true',
-                timeoutSeconds: 30,
-            );
+            $this->cleanupRemote($tempInstance, $remoteWorkDir);
         }
     }
 
-    private function aliasFor(string $role, IncusE2EImagePreparationOptions $options): string
+    /**
+     * @param  list<string>  $postInstall  Extra shell commands to run as the target user after install-orbit.
+     * @return array{role: string, alias: string, action: string}
+     */
+    private function buildFromBlank(
+        IncusE2EImagePreparationOptions $options,
+        string $role,
+        string $orbitRole,
+        string $targetUser,
+        string $alias,
+        array $postInstall,
+    ): array {
+        $runId = $this->newRunId();
+        $instanceName = "orbit-e2e-{$runId}-prepare-{$role}";
+        $remoteWorkDir = $this->createRemoteWorkDir($instanceName);
+        $tempInstance = null;
+        $localTarball = null;
+
+        try {
+            if (! $this->host->imageExists($options->blankImageAlias)) {
+                throw new RuntimeException(
+                    "Blank image [{$options->blankImageAlias}] missing on host. Run --role=blank --force first."
+                );
+            }
+
+            $localTarball = $this->buildSourceArchive();
+
+            $remoteTarball = "{$remoteWorkDir}/orbit-source.tar.gz";
+            $remoteInstaller = "{$remoteWorkDir}/install-orbit";
+            $this->pushFileToHost($localTarball, $remoteTarball);
+            $this->pushFileToHost($options->installScriptPath, $remoteInstaller);
+
+            $this->launchInstanceFromImage($instanceName, $options->blankImageAlias, $options);
+            $tempInstance = $instanceName;
+
+            $this->waitForAgent($instanceName, $options->timeoutSeconds);
+
+            $this->ensureSudoUser($instanceName, $targetUser);
+
+            $this->incusFilePush($remoteTarball, "{$instanceName}/tmp/orbit-source.tar.gz");
+            $this->incusFilePush($remoteInstaller, "{$instanceName}/tmp/install-orbit");
+
+            $this->execAsRoot($instanceName, sprintf(
+                'chmod +x /tmp/install-orbit && chown %1$s:%1$s /tmp/orbit-source.tar.gz /tmp/install-orbit',
+                $targetUser,
+            ));
+
+            $this->execAsUser($instanceName, $targetUser, sprintf(
+                '/tmp/install-orbit --role=%s --path=/home/%s/orbit --source-archive=/tmp/orbit-source.tar.gz --bin=/usr/local/bin/orbit',
+                $orbitRole,
+                $targetUser,
+            ), timeoutSeconds: $options->timeoutSeconds);
+
+            $this->execAsUser($instanceName, $targetUser, "orbit --version | grep -F 'Orbit'");
+
+            foreach ($postInstall as $step) {
+                $this->execAsUser($instanceName, $targetUser, $step, timeoutSeconds: $options->timeoutSeconds);
+            }
+
+            $this->cleanRoleImageState($instanceName, $options->bootstrapUser, $targetUser);
+            $this->stopInstance($instanceName);
+            $this->publishImage($instanceName, $alias);
+
+            return [
+                'role' => $role,
+                'alias' => $alias,
+                'action' => 'built',
+            ];
+        } finally {
+            $this->cleanupRemote($tempInstance, $remoteWorkDir);
+
+            if ($localTarball !== null && is_file($localTarball)) {
+                @unlink($localTarball);
+            }
+        }
+    }
+
+    private function newRunId(): string
     {
-        return match ($role) {
-            'blank' => $options->blankImageAlias,
-            default => "orbit-ready-{$role}",
-        };
+        return date('YmdHis').'-'.getmypid().'-'.bin2hex(random_bytes(3));
     }
 
     private function createRemoteWorkDir(string $instanceName): string
@@ -198,6 +280,44 @@ class IncusE2EImagePreparer
         }
     }
 
+    private function launchInstanceFromImage(
+        string $name,
+        string $imageAlias,
+        IncusE2EImagePreparationOptions $options,
+    ): void {
+        $launch = $this->host->run(sprintf(
+            'incus launch %s %s --vm --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
+            escapeshellarg($imageAlias),
+            escapeshellarg($name),
+            escapeshellarg((string) $options->cpus),
+            escapeshellarg($options->memory),
+        ), timeoutSeconds: $options->timeoutSeconds);
+
+        if (! $launch->successful()) {
+            throw new RuntimeException("Failed to launch [{$name}] from [{$imageAlias}]: {$launch->errorOutput()}");
+        }
+    }
+
+    private function waitForAgent(string $instanceName, int $timeoutSeconds): void
+    {
+        $deadline = time() + $timeoutSeconds;
+
+        while (time() < $deadline) {
+            $result = $this->host->run(
+                sprintf('incus exec %s -- true', escapeshellarg($instanceName)),
+                timeoutSeconds: 10,
+            );
+
+            if ($result->successful()) {
+                return;
+            }
+
+            sleep(2);
+        }
+
+        throw new RuntimeException("Incus agent never became ready on [{$instanceName}].");
+    }
+
     private function waitForCloudInit(string $instanceName, int $timeoutSeconds): void
     {
         $result = $this->host->run(
@@ -263,7 +383,144 @@ class IncusE2EImagePreparer
         throw new RuntimeException("SSH never became ready on {$ip} as {$bootstrapUser}.");
     }
 
-    private function cleanImageState(string $instanceName, string $bootstrapUser): void
+    private function ensureSudoUser(string $instanceName, string $user): void
+    {
+        if ($user === 'orbit') {
+            // orbit user is allowed; the legacy bin/e2e blocked it for the
+            // ready-control image, but the gateway/app images explicitly want
+            // orbit. We allow it here and let the install-orbit role flag
+            // decide what gets configured.
+        }
+
+        $this->execAsRoot($instanceName, sprintf(
+            'id -u %1$s >/dev/null 2>&1 || useradd -m -s /bin/bash %1$s',
+            escapeshellarg($user),
+        ));
+
+        $this->execAsRoot($instanceName, sprintf(
+            'usermod -p \'*\' %1$s && '
+            .'usermod -aG sudo %1$s && '
+            .'printf \'%%s ALL=(ALL) NOPASSWD:ALL\n\' %1$s > /etc/sudoers.d/99-%1$s && '
+            .'chmod 440 /etc/sudoers.d/99-%1$s && '
+            .'install -d -m 700 -o %1$s -g %1$s /home/%1$s/.ssh',
+            escapeshellarg($user),
+        ));
+    }
+
+    private function execAsRoot(string $instanceName, string $command, ?int $timeoutSeconds = null): void
+    {
+        $result = $this->host->run(sprintf(
+            'incus exec %s -- sh -lc %s',
+            escapeshellarg($instanceName),
+            escapeshellarg($command),
+        ), timeoutSeconds: $timeoutSeconds ?? 60);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Command failed on [{$instanceName}]: {$result->errorOutput()}");
+        }
+    }
+
+    private function execAsUser(string $instanceName, string $user, string $command, ?int $timeoutSeconds = null): void
+    {
+        $result = $this->host->run(sprintf(
+            'incus exec %s -- sudo -iu %s bash -lc %s',
+            escapeshellarg($instanceName),
+            escapeshellarg($user),
+            escapeshellarg($command),
+        ), timeoutSeconds: $timeoutSeconds ?? 120);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Command failed on [{$instanceName}] as [{$user}]: {$result->errorOutput()}");
+        }
+    }
+
+    private function incusFilePush(string $sourcePath, string $target): void
+    {
+        $result = $this->host->run(sprintf(
+            'incus file push %s %s',
+            escapeshellarg($sourcePath),
+            escapeshellarg($target),
+        ), timeoutSeconds: 120);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to push {$sourcePath} into {$target}: {$result->errorOutput()}");
+        }
+    }
+
+    private function buildSourceArchive(): string
+    {
+        $tarball = sys_get_temp_dir().'/orbit-source-'.bin2hex(random_bytes(6)).'.tar.gz';
+
+        $excludes = [
+            './.git',
+            './.env',
+            './database/*.sqlite',
+            './database/*.sqlite-*',
+            './node_modules',
+            './storage/framework/cache/data/*',
+            './storage/framework/sessions/*',
+            './storage/framework/testing/*',
+            './storage/framework/views/*',
+            './storage/logs/*',
+            './vendor',
+        ];
+
+        $excludeArgs = implode(' ', array_map(
+            fn (string $pattern): string => '--exclude='.escapeshellarg($pattern),
+            $excludes,
+        ));
+
+        $command = sprintf(
+            'COPYFILE_DISABLE=1 tar %s -czf %s -C %s .',
+            $excludeArgs,
+            escapeshellarg($tarball),
+            escapeshellarg(base_path()),
+        );
+
+        $result = Process::timeout(300)->run($command);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to build source archive locally: {$result->errorOutput()}");
+        }
+
+        return $tarball;
+    }
+
+    private function pushFileToHost(string $localPath, string $remotePath): void
+    {
+        if (! is_file($localPath)) {
+            throw new RuntimeException("Local file not found: {$localPath}");
+        }
+
+        $hostName = $this->host->config->host;
+
+        if ($this->isLocalHost($hostName)) {
+            if (! @copy($localPath, $remotePath)) {
+                throw new RuntimeException("Could not copy {$localPath} to {$remotePath}.");
+            }
+
+            return;
+        }
+
+        $result = Process::timeout(300)->run(sprintf(
+            'scp -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
+            escapeshellarg($localPath),
+            escapeshellarg($hostName),
+            escapeshellarg($remotePath),
+        ));
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to push {$localPath} to {$hostName}:{$remotePath}: {$result->errorOutput()}");
+        }
+    }
+
+    private function isLocalHost(string $host): bool
+    {
+        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname());
+    }
+
+    private function cleanBlankImageState(string $instanceName, string $bootstrapUser): void
     {
         $script = sprintf(
             'rm -f /home/%1$s/.ssh/authorized_keys && '
@@ -278,15 +535,31 @@ class IncusE2EImagePreparer
             $bootstrapUser,
         );
 
-        $result = $this->host->run(sprintf(
-            'incus exec %s -- sh -lc %s',
-            escapeshellarg($instanceName),
-            escapeshellarg($script),
-        ), timeoutSeconds: 60);
+        $this->execAsRoot($instanceName, $script);
+    }
 
-        if (! $result->successful()) {
-            throw new RuntimeException("Failed to clean image state on [{$instanceName}].");
-        }
+    private function cleanRoleImageState(string $instanceName, string $bootstrapUser, string $targetUser): void
+    {
+        $script = sprintf(
+            'rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit '
+            .'/home/%1$s/.ssh/authorized_keys '
+            .'/home/%2$s/.ssh/authorized_keys && '
+            .'install -d -m 700 -o %1$s -g %1$s /home/%1$s/.ssh && '
+            .'touch /home/%1$s/.ssh/authorized_keys && '
+            .'chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && '
+            .'chmod 600 /home/%1$s/.ssh/authorized_keys && '
+            .'install -d -m 700 -o %2$s -g %2$s /home/%2$s/.ssh && '
+            .'touch /home/%2$s/.ssh/authorized_keys && '
+            .'chown %2$s:%2$s /home/%2$s/.ssh/authorized_keys && '
+            .'chmod 600 /home/%2$s/.ssh/authorized_keys && '
+            .'rm -f /etc/machine-id && '
+            .'touch /etc/machine-id && '
+            .'cloud-init clean --logs --seed || true',
+            $targetUser,
+            $bootstrapUser,
+        );
+
+        $this->execAsRoot($instanceName, $script);
     }
 
     private function stopInstance(string $instanceName): void
@@ -312,6 +585,21 @@ class IncusE2EImagePreparer
         if (! $result->successful()) {
             throw new RuntimeException("Failed to publish image [{$alias}] from [{$instanceName}].");
         }
+    }
+
+    private function cleanupRemote(?string $tempInstance, string $remoteWorkDir): void
+    {
+        if ($tempInstance !== null) {
+            $this->host->run(
+                'incus delete --force '.escapeshellarg($tempInstance).' >/dev/null 2>&1 || true',
+                timeoutSeconds: 120,
+            );
+        }
+
+        $this->host->run(
+            'rm -rf '.escapeshellarg($remoteWorkDir).' || true',
+            timeoutSeconds: 30,
+        );
     }
 
     private function cloudInit(IncusE2EImagePreparationOptions $options, string $publicKey): string
