@@ -16,8 +16,8 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
-- the unarchived `Solo Worker Todo Template` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
+- `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`;
 - the assigned todo and all comments;
 - product authority docs named by the todo;
 - relevant `docs/commands/**`;
@@ -109,9 +109,15 @@ vendor/bin/pint --dirty --format agent
 
 Run the E2E lane declared by the command's gate todo:
 
-- `lane=ephemeral`: run the declared ephemeral commands, using `TESTING.md`
-  env vars when Incus or hcloud is remote.
+- `lane=e2e-provisioning`: run the declared provisioning commands against
+  disposable VMs, using `TESTING.md` env vars when Incus or hcloud is remote.
+- `lane=e2e-feature`: run the declared feature commands against prepared
+  ephemeral topology clones.
 - `lane=none`: no E2E run; cite the gate todo's reason.
+
+Do not author new `bin/e2e` lanes. If the assigned todo still asks for one,
+stop with `WORKER_DONE status=NEEDS_DIRECTION` and cite the stale todo/tracker
+text.
 
 If the gate todo explicitly says the first ephemeral run happens only in the
 E2E stage, record that deferral. Otherwise, do not post `WORKER_DONE` while
@@ -145,7 +151,7 @@ changed_files:
 gates:
   - <command>: exit=<code>, elapsed=<seconds>
 e2e:
-  - lane=<ephemeral|none>
+  - lane=<e2e-provisioning|e2e-feature|none>
   - <command or deferral reason>
 scope:
   - owned_scope_ok=<yes|no>

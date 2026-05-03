@@ -35,7 +35,7 @@ Use exact labels in todo comments:
 - `CHANGES_REQUESTED`
 - `NEEDS_DIRECTION`
 - `RUBBER_DUCK_PROPOSAL agent=<name> verdict=PATH|NEEDS_USER_DIRECTION`
-- `E2E_STARTED process=<id>`
+- `E2E_DISPATCHED process=<id> lane=<e2e-provisioning|e2e-feature|none>`
 - `E2E_DONE status=PASSED|FAILED|SKIPPED lane=<name>`
 - `ORCHESTRATOR_CLOSED`
 - `PROCESS_CLOSED process=<id> reason=<role>`
@@ -60,7 +60,7 @@ Use exact labels in todo comments:
 - Implementer start: `worker-ready` -> `in-progress`, post
   `WORKER_STARTED process=<id>`.
 - E2E gate start: `e2e-ready` -> `in-progress`, post
-  `E2E_STARTED process=<id>`.
+  `E2E_DISPATCHED process=<id> lane=<name>`.
 - `WORKER_DONE status=DONE|DONE_WITH_CONCERNS` -> `review-ready`.
 - `WORKER_DONE status=BLOCKED|NEEDS_DIRECTION` -> `needs-direction`.
 - `CHANGES_REQUESTED` -> `worker-ready` when fixes are in scope.

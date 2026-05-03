@@ -16,7 +16,7 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
 - the assigned E2E gate todo and comments;
 - `TESTING.md`;
 - `docs/PORTING.md`;
@@ -30,13 +30,18 @@ be identified, post `NEEDS_DIRECTION` on the coordination todo and exit.
 
 ## Lane Rules
 
-The gate todo declares `lane=ephemeral|none`.
+The gate todo declares `lane=e2e-provisioning|e2e-feature|none`.
 
-- `ephemeral`: destructive, provisioning, repair, adoption, or host-mutation
-  checks on disposable VMs only.
+- `e2e-provisioning`: destructive, provisioning, repair, adoption, or
+  host-mutation checks on disposable VMs only.
+- `e2e-feature`: command behavior against prepared ephemeral topology clones.
 - `none`: no runtime E2E; the gate must cite why.
 
 `TESTING.md` is canonical for lane safety.
+
+Do not run `bin/e2e` commands unless the gate todo is explicitly a legacy
+cleanup verification and `TESTING.md` still documents that command. Normal gate
+todos use Pest E2E commands.
 
 ## Safety Check
 
@@ -69,7 +74,7 @@ the owning implementation work.
 Post exactly one final comment on the gate todo:
 
 ```text
-E2E_DONE status=PASSED|FAILED|SKIPPED lane=<ephemeral|none>
+E2E_DONE status=PASSED|FAILED|SKIPPED lane=<e2e-provisioning|e2e-feature|none>
 
 commands:
   - <command>: exit=<code>, elapsed=<seconds>
@@ -90,7 +95,7 @@ evidence:
 
 ## Boundaries
 
-- Do not edit code, tests, docs, scripts, scratchpads, or prompts.
+- Do not edit code, tests, docs, scripts, or prompts.
 - Do not prepare missing VM prerequisites.
 - Do not run commands outside the gate declaration.
 - Do not run E2E flows against standing infrastructure.

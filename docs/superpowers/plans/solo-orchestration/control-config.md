@@ -5,8 +5,8 @@ Human-editable control file for the Orbit Solo orchestration loop.
 ## Control Values
 
 ```yaml
-run_id: 2026-05-03-current-190
-coordination_todo: 190
+run_id: 2026-05-03-current-257
+coordination_todo: 257
 
 loop_clock:
   enabled: true
@@ -18,6 +18,8 @@ pipeline:
 
 concurrency:
   max_active_implementers: 3
+  reviewer_dispatch_enabled: true
+  e2e_dispatch_enabled: true
 
 agents:
   loop_clock: claude-sonnet-low

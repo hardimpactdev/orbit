@@ -16,8 +16,8 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
-- the unarchived `Solo Worker Todo Template` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
+- `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`;
 - the assigned todo and all comments;
 - latest `WORKER_DONE`;
 - product authority docs named by the todo;
@@ -99,7 +99,7 @@ of forcing them.
 
 ## Boundaries
 
-- Do not edit product code, tests, docs, scratchpads, or role prompts.
+- Do not edit product code, tests, docs, or role prompts.
 - Do not run product tests unless the todo explicitly requires reviewer
   re-verification.
 - Do not run E2E.

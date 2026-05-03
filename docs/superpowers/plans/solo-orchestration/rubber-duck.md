@@ -16,7 +16,7 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
 - the blocked todo and comments;
 - the exact blocker comment named by the orchestrator;
 - product authority docs named by the todo;
@@ -25,7 +25,7 @@ Read before acting:
 - relevant `../orbit-old-may` evidence;
 - current code/tests touching the blocker.
 
-If the todo, blocker comment, control scratchpad, or evidence stack is missing,
+If the todo, blocker comment, control config, or evidence stack is missing,
 post `NEEDS_DIRECTION` on the coordination todo and exit.
 
 ## Decision Rule
@@ -84,7 +84,7 @@ what_was_checked:
 
 ## Boundaries
 
-- Do not edit todos, code, tests, docs, scratchpads, or prompts.
+- Do not edit todos, code, tests, docs, or prompts.
 - Do not run product tests, E2E, SSH, Incus, or destructive commands.
 - Do not lock the todo.
 - Do not spawn agents.

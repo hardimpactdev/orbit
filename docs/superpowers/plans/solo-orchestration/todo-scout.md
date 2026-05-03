@@ -15,8 +15,8 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
-- the unarchived `Solo Worker Todo Template` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
+- `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`;
 - the assigned todo and comments;
 - `docs/PORTING.md`;
 - product authority docs named by the todo;
@@ -66,7 +66,7 @@ You must not:
 - implement code;
 - run product tests or E2E;
 - schedule E2E against standing infrastructure;
-- edit scratchpads, product docs, or orchestration prompts.
+- edit product docs or orchestration prompts.
 
 ## Report
 

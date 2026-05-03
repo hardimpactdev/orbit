@@ -9,12 +9,13 @@ Source of truth for Orbit's Solo orchestration loop.
 - Every orchestrator is a fresh one-shot Solo agent. It runs one cycle,
   records what happened, and exits.
 - Helper roles are one-shot Solo agents spawned by the orchestrator.
-- Runtime knobs live in the unarchived scratchpad named exactly
-  `Solo Orchestration Control`. Resolve by name every wake/cycle. Never
-  hardcode the scratchpad id.
-- Worker todo shape lives in the unarchived scratchpad named exactly
-  `Solo Worker Todo Template`. Resolve by name when creating or validating
-  worker todos.
+- Runtime knobs live in
+  `docs/superpowers/plans/solo-orchestration/control-config.md`. Read that file
+  every wake/cycle. The old `Solo Orchestration Control` scratchpad is not a
+  runtime authority.
+- Worker todo shape lives in
+  `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
+  Read that file when creating or validating worker todos.
 - Dispatch KV is deprecated. Use tags, locks, blockers, process state, timers,
   and lifecycle comments.
 - There is no kickstarter role, long-running orchestrator, or loop improver.
@@ -40,47 +41,34 @@ coverage locally; E2E only verifies the committed result in a clean state.
 
 Use this section when the user asks to start or resume the loop.
 
-1. Resolve the unarchived control scratchpad named
-   `Solo Orchestration Control`.
-2. If it is missing, create it from the default below. If more than one
-   unarchived match exists, stop with `NEEDS_DIRECTION`.
-3. Resolve the unarchived worker template scratchpad named
-   `Solo Worker Todo Template`.
-4. If it is missing, create it from the current worker todo requirements. If
-   more than one unarchived match exists, stop with `NEEDS_DIRECTION`.
-5. Ensure `coordination_todo` in the control scratchpad points at an open Solo
-   todo. Create one and write its id into the scratchpad if needed.
-6. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
-7. Send it only this prompt:
+1. Read `docs/superpowers/plans/solo-orchestration/control-config.md`.
+2. Read `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`.
+3. Read `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
+4. Ensure `coordination_todo` in `control-config.md` points at an open Solo
+   todo. If it is missing or closed, create one and update `control-config.md`.
+5. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
+6. Send it only this prompt:
 
    ```text
    You are the Orbit Solo loop clock. Read docs/superpowers/plans/solo-orchestration/loop-clock.md before any other action.
    ```
 
-The loop clock handles orchestrator spawn and the next timer from the control
-scratchpad.
+The loop clock handles orchestrator spawn and the next timer from
+`control-config.md`.
 
-## Control Scratchpad
+## Control Config
 
-Default scratchpad name:
+Runtime control lives in:
 
 ```text
-Solo Orchestration Control
+docs/superpowers/plans/solo-orchestration/control-config.md
 ```
 
-Default content:
-
-````markdown
-# Solo Orchestration Control
-
-Human-editable control surface for the Orbit Solo orchestration loop.
-
-## Control Values
+Default shape:
 
 ```yaml
 run_id: <active-run-id>
 coordination_todo: <active coordination todo id>
-porting_tracker: docs/PORTING.md
 
 loop_clock:
   enabled: true
@@ -96,6 +84,7 @@ concurrency:
   e2e_dispatch_enabled: true
 
 agents:
+  loop_clock: claude-sonnet-low
   orchestrator: claude-sonnet
   pipeline_filler: claude-opus
   todo_scout: gemini-3.1-pro-preview
@@ -109,10 +98,8 @@ safety:
   standing_infrastructure: not-a-test-lane
   destructive_flows: ephemeral-only
 ```
-````
 
-The old `solo-orchestration/run-config` KV key is deprecated. Do not write
-runtime control values to KV.
+Do not write runtime control values to scratchpads or KV.
 
 ## Role Bootstrap Shape
 
@@ -135,14 +122,15 @@ Helper role bootstraps should be compact pointers plus assignment data:
 You are the <role> for Solo project orbit. Read:
 - docs/superpowers/plans/solo-orchestration/README.md
 - docs/superpowers/plans/solo-orchestration/<role>.md
-- the unarchived Solo Orchestration Control scratchpad
+- docs/superpowers/plans/solo-orchestration/control-config.md
+- docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md when todo shape matters
 - the assigned todo/comment/process context below
 
 Assignment:
 - ...
 ```
 
-If required prompt files, scratchpads, or assignment context are missing, the
+If required prompt files, config files, or assignment context are missing, the
 role stops with `NEEDS_DIRECTION`.
 
 ## Shared Authority
@@ -157,13 +145,19 @@ Use this evidence order when product or architecture choices fork:
 Current docs decide product behavior. Current implementation and the old repo
 are evidence, not automatic authority.
 
+If tracker text still references new `bin/e2e` lane authoring, treat that as
+stale transitional guidance. The orchestration loop should create Pest E2E work
+using `composer test:e2e:provisioning`, `composer test:e2e:features`, and
+`composer e2e:prepare-topology`, or create a docs-refresh todo when the tracker
+needs correction.
+
 ## Solo State Model
 
 Structured state wins over comments when they disagree.
 
 Read these together:
 
-1. Control scratchpad: run id, queue target, clock interval, pause switches,
+1. `control-config.md`: run id, queue target, clock interval, pause switches,
    and configured agents.
 2. Completion state: `completed`, `completed_at`.
 3. Locks: `locked_by` and keyed lease locks.
@@ -185,6 +179,7 @@ Exactly one open-work phase tag should be present:
 
 - `draft`: candidate not dispatchable.
 - `worker-ready`: open, unblocked, scoped, scout-approved.
+- `e2e-ready`: open, unblocked, scoped E2E gate approved for the E2E role.
 - `in-progress`: implementer is actively working.
 - `review-ready`: worker handed off, reviewer not yet approved.
 - `needs-direction`: product, architecture, safety, or sequencing decision
@@ -214,7 +209,7 @@ Use exact labels so future cycles can resume from durable evidence:
 - `CHANGES_REQUESTED`
 - `RUBBER_DUCK_PROPOSAL agent=<name> verdict=PATH|NEEDS_USER_DIRECTION`
 - `RUBBER_DUCK_RESOLVED status=AGREED|ESCALATED`
-- `E2E_DISPATCHED process=<id> lane=<ephemeral|none>`
+- `E2E_DISPATCHED process=<id> lane=<e2e-provisioning|e2e-feature|none>`
 - `E2E_DONE status=PASSED|FAILED|SKIPPED lane=<name>`
 - `ORCHESTRATOR_CLOSED`
 - `PROMPT_RECOVERY status=STALLED|RETRIED|REPLACED process=<id>`
@@ -241,7 +236,8 @@ liveness before replacing anything.
 
 ## Solo Tooling Rules
 
-- Use `scratchpad_list` and `scratchpad_read` to resolve named scratchpads.
+- Read orchestration prompts and runtime control from
+  `docs/superpowers/plans/solo-orchestration/**`.
 - Use `list_agent_tools` before spawning configured helper roles.
 - Use `list_processes`, `get_process_status`, `get_process_output`, and
   `search_output` for liveness and prompt-delivery evidence.
@@ -262,6 +258,7 @@ that a prompt landed.
   queue capacity.
 - Every command port ends with one E2E gate todo. Implementers author and run
   the lane; the E2E role reruns it after commit.
+- Do not create new `bin/e2e` lane work. Use Pest E2E lanes from `TESTING.md`.
 
 ## Commit Boundary
 

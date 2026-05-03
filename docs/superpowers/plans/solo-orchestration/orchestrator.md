@@ -16,17 +16,19 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
-- the coordination todo named by that scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
+- `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`;
+- the coordination todo named by `control-config.md`;
 - active todos with tags, blockers, locks, comments, and completion state;
 - process list, relevant process status/output, and timers;
 - `docs/PORTING.md`;
-- `Solo Worker Todo Template` when queue filling or todo validation matters;
+- `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
+  when queue filling or todo validation matters;
 - role prompt files only for roles you are about to spawn.
 
-If the control scratchpad is missing, duplicated, unreadable, or lacks
+If `control-config.md` is missing, unreadable, or lacks
 `coordination_todo`, post `CYCLE_DONE status=NEEDS_DIRECTION` if possible and
-exit. Do not use KV as fallback runtime state.
+exit. Do not use scratchpads or KV as fallback runtime state.
 
 Read Solo state through Solo tools. Do not inspect CLI internals such as
 `.claude/**`, tool-result files, or memory stores.
@@ -49,7 +51,8 @@ When comment history matters, read the specific todo's comments with
 - Tags are phase state. Comments are audit evidence.
 - Process names are hints, not ownership proof.
 - Todo locks control mutation.
-- Dispatch KV is deprecated. Do not create new dispatch KV records.
+- Scratchpads and KV are not runtime-control storage. Do not create new
+  dispatch KV records or control scratchpads.
 - If state conflicts, post one concise correction, then act on structured
   state.
 
@@ -96,12 +99,12 @@ todo, add `in-progress`, remove `worker-ready`, and post `WORKER_STARTED`.
 
 For every Solo-spawned helper:
 
-1. Resolve its configured agent from the control scratchpad with
+1. Resolve its configured agent from `control-config.md` with
    `list_agent_tools`.
 2. Spawn with the process name from `README.md`.
 3. Wait until status/output shows the CLI can receive input.
 4. Send a compact bootstrap naming `README.md`, the role file, the control
-   scratchpad, and exact assignment ids.
+   config file, and exact assignment ids.
 5. Verify prompt delivery from output or the role's start label.
 
 If a helper starts but never receives a prompt, retry the exact same prompt
@@ -211,7 +214,8 @@ Dispatch one E2E runner only when:
 - `concurrency.e2e_dispatch_enabled=true`;
 - all implementation todos for the command are `verified` or completed;
 - the implementation batch is committed to `main`;
-- the command's E2E gate todo exists and declares `lane=...`;
+- the command's E2E gate todo is open, unblocked, unlocked, tagged
+  `e2e-ready`, and declares `lane=...`;
 - no live `E2E-<gate_todo_id>` process exists.
 
 For `lane=none`, verify the cited reason and close the gate without spawning

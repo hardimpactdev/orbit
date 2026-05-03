@@ -16,8 +16,8 @@ Read before acting:
 
 - this file;
 - `docs/superpowers/plans/solo-orchestration/README.md`;
-- the unarchived `Solo Orchestration Control` scratchpad;
-- the unarchived `Solo Worker Todo Template` scratchpad;
+- `docs/superpowers/plans/solo-orchestration/control-config.md`;
+- `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`;
 - `docs/PORTING.md`;
 - `TESTING.md`;
 - relevant `docs/commands/**` and product docs;
@@ -26,7 +26,7 @@ Read before acting:
 - active process list;
 - `todo-scout.md` before spawning scouts.
 
-If required scratchpads, prompt files, or tracker docs are missing, post
+If required config files, prompt files, or tracker docs are missing, post
 `PIPELINE_FILL_DONE status=NEEDS_DIRECTION` and exit.
 
 ## Procedure
@@ -57,7 +57,7 @@ that fails, stop with `PIPELINE_FILL_DONE status=NEEDS_DIRECTION`.
 
 ## Worker Todo Requirements
 
-Use the resolved worker template scratchpad. Every implementation todo must
+Use `references/worker-todo-template.md`. Every implementation todo must
 state:
 
 - objective;
@@ -76,8 +76,8 @@ state:
 - lock, tag, and handoff rules.
 
 If repeated todo-shape friction comes from the template, post
-`TEMPLATE_FRICTION` on the coordination todo. Do not edit scratchpads unless
-the user explicitly asks.
+`TEMPLATE_FRICTION` on the coordination todo. Do not edit orchestration prompt
+files unless the user explicitly asks.
 
 ## Decision Todos
 
@@ -89,13 +89,14 @@ does not decide, the worker must stop with `NEEDS_DIRECTION`.
 
 ## E2E Gate Todos
 
-Every command port ends with one E2E gate todo. The gate is blocked by the
-command's implementation todos and is dispatched only by the orchestrator.
+Every command port ends with one E2E gate todo unless the current docs give a
+specific `lane=none` reason. The gate is blocked by the command's
+implementation todos and is dispatched only by the orchestrator.
 
 Each gate todo must declare:
 
 - command name and `docs/PORTING.md` entry;
-- `lane=ephemeral|none`;
+- `lane=e2e-provisioning|e2e-feature|none`;
 - exact commands to run;
 - E2E artifacts the implementer must create or update;
 - prerequisites from `TESTING.md`;
@@ -105,10 +106,17 @@ Each gate todo must declare:
 
 Lane rule:
 
-- `ephemeral`: provisioning, destructive, repair, adoption, or host mutation.
+- `e2e-provisioning`: provisioning, destructive, repair, adoption, or host
+  mutation against disposable VMs.
+- `e2e-feature`: command behavior against prepared ephemeral topology clones.
 - `none`: docs-only or pure refactor with no observable behavior change.
 
 Scouts must reject wrong or underspecified lanes.
+
+Do not create new `bin/e2e` lane todos. Use Pest E2E commands from `TESTING.md`,
+including `composer test:e2e:provisioning`, `composer test:e2e:features`, and
+`composer e2e:prepare-topology -- --force <kind>` when topology preparation is
+the prerequisite.
 
 ## Promotion Rules
 
@@ -131,7 +139,7 @@ All other scout statuses require filler action before dispatch.
 - Do not create broad future-work backlog.
 - Do not promote unscouted work.
 - Do not edit product docs to make a todo easier.
-- Do not edit scratchpads unless explicitly asked.
+- Do not edit orchestration prompt files unless explicitly asked.
 - Do not create dispatch KV records.
 
 ## Report
