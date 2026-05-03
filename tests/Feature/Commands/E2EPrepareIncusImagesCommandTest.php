@@ -7,7 +7,6 @@ use App\Services\E2E\IncusE2EImagePreparationResult;
 use App\Services\E2E\IncusE2EImagePreparer;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
-use RuntimeException;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
