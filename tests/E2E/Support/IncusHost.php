@@ -114,7 +114,7 @@ class IncusHost
 
     public function stopInstance(string $name): ProcessResult
     {
-        return $this->run(sprintf('incus stop --force %s', escapeshellarg($name)));
+        return $this->run(sprintf('incus stop %s --timeout 120', escapeshellarg($name)));
     }
 
     public function snapshotInstance(string $name, string $snapshot): ProcessResult

@@ -31,12 +31,6 @@ final readonly class E2ECommand
     {
         $result = $instance->ssh($user, $key, $command, $timeoutSeconds);
 
-        @file_put_contents('/tmp/e2e-ssh-trace.log',
-            sprintf("[%s] %s@%s : %s\n  rc=%s\n  out=%s\n  err=%s\n",
-                date('H:i:s'), $user, $instance->name(), substr($command, 0, 120),
-                $result->exitCode(), substr($result->output(), 0, 400), substr($result->errorOutput(), 0, 400)),
-            FILE_APPEND);
-
         expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 
         return $result;
