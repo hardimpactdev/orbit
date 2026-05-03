@@ -11,9 +11,9 @@ final class E2ETopologyLease
     /**
      * @param  \Closure(E2EPhaseTimer): array{
      *     instances: array<string, E2EInstance>,
-     *     snapshotReset: \Closure(E2EPhaseTimer): void|null
+     *     snapshotReset: (\Closure(E2EPhaseTimer): void)|null
      * }  $rebuild
-     * @param  \Closure(E2EPhaseTimer): void|null  $snapshotReset
+     * @param  (\Closure(E2EPhaseTimer): void)|null  $snapshotReset
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
