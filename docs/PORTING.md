@@ -166,11 +166,18 @@ yet satisfy the full product contracts.
     - caller-role and gateway authorization contract.
     - JSON renderer implementation.
     - tree-style per-installation human progress output.
-    - control-node remote update transport metadata and gateway-owned remote
-      execution boundary.
+    - intent source split: control caller must read node intent from the
+      Gateway API, not from any local node table. Gateway caller reads local
+      gateway state.
+    - execution topology: gateway-owned `RemoteShell` is the only legal SSH
+      edge. Control caller must not SSH to other nodes.
+    - control-node exclusion: control nodes are never remote update targets in
+      either path; they update via `orbit update` per workstation.
     - split operation contract tests mapped by the current docs.
-  - Live smoke note: gateway can update beast; gateway-to-mini SSH currently
-    fails with `Permission denied (publickey)`.
+  - Live smoke note: gateway-to-beast updates work. The earlier
+    gateway-to-mini `Permission denied (publickey)` symptom reflected an
+    implementation that targeted the mini control node; under the clarified
+    contract, mini is excluded from remote targets entirely.
 - [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
