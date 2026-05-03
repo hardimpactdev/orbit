@@ -421,7 +421,21 @@ only; `docs/PORTING.md` workstream statuses remain the authority for completion.
     - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
     - `NodeRevokeOnControlNodeContractTest.php` blocked by gateway forwarding.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
-- [ ] Port `node:remove`.
+- [~] Port `node:remove`.
+  - Files:
+    - `app/Console/Commands/NodeRemoveCommand.php` (gateway-local bootstrap slice)
+    - `tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` (command contract)
+    - `tests/Feature/Commands/Nodes/NodeRemoveHumanRendererTest.php` (human renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeRemoveJsonRendererTest.php` (JSON renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeRemoveInteractiveInputModeTest.php` (interactive input mode contract)
+  - Bootstrap slice implemented: gateway-local node removal, grant cascade (consumer and serving directions), node-not-found validation (NOT idempotent), gateway-node rejection, destructive consent (`--force`, interactive confirmation), caller role rejection, human progress tree and JSON renderer contracts, split contract tests.
+  - Contract gaps:
+    - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
+    - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
+    - `NodeRemoveOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - WireGuard peer teardown (no WireGuard peer management infrastructure in clean repo yet; `wireguard_peer_removed: false` in JSON response).
+    - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
+    - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [ ] Port `node:agent-ide`.
 - [~] Port `node:new`.
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
