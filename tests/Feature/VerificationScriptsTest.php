@@ -152,3 +152,13 @@ it('documents e2e topology timing event names', function (): void {
         ->toContain('wireguard')
         ->toContain('cleanup.<role>');
 });
+
+it('exposes opt-in parallel feature e2e after topology contracts', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($composer['scripts']['test:e2e:features:parallel'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        '@test:e2e:topology-contract',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=3',
+    ]);
+});

@@ -241,6 +241,7 @@ composer test:e2e:provisioning
 composer test:e2e:topology-contract
 composer test:e2e:features
 composer test:e2e:features:control-gateway-dev-prod
+composer test:e2e:features:parallel
 
 # Prepare or replace a topology clone for the feature lane
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
@@ -248,6 +249,11 @@ composer e2e:prepare-topology -- --force control-gateway-dev-prod
 # Reap stale Incus VMs and images created by E2E tests
 composer e2e:reap-incus
 ```
+
+`composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
+then runs feature assertions with Pest parallel mode and `--processes=3`, which
+maps naturally to `beast`, `sidecar1`, and `sidecar2` when prepared templates
+and capacity are available. Provisioning E2E remains serial by default.
 
 ## Environment
 
