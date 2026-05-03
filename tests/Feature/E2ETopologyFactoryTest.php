@@ -59,7 +59,9 @@ it('falls back to minimal for unknown strategy', function (): void {
 });
 
 it('skips test when requiring a topology', function (): void {
-    withE2ETopologyEnvironment([], function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_INCUS_HOSTS' => 'orbit-e2e-nonexistent.invalid',
+    ], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
@@ -114,7 +116,12 @@ it('cleans up all instances', function (): void {
  */
 function withE2ETopologyEnvironment(array $values, Closure $callback): void
 {
-    $keys = ['ORBIT_E2E_PROVIDER', 'ORBIT_E2E_TOPOLOGY_STRATEGY'];
+    $keys = [
+        'ORBIT_E2E_PROVIDER',
+        'ORBIT_E2E_TOPOLOGY_STRATEGY',
+        'ORBIT_E2E_INCUS_HOSTS',
+        'ORBIT_E2E_INCUS_MAX_VMS_PER_HOST',
+    ];
     $previous = [];
 
     foreach ($keys as $key) {

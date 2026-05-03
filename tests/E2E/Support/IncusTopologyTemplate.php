@@ -43,28 +43,29 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId): array
+    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null): array
     {
+        $timer ??= new E2EPhaseTimer;
         $instances = [];
 
         foreach (self::rolesFor($kind) as $role) {
             $template = self::templateName($kind, $role);
             $clone = self::cloneName($runId, $role);
 
-            $result = $host->copyInstance($template, $clone);
+            $result = $timer->measure("copy.{$role}", fn () => $host->copyInstance($template, $clone));
 
             if (! $result->successful()) {
                 throw new \RuntimeException("Could not copy {$template} to {$clone}: {$result->errorOutput()}");
             }
 
-            $result = $host->startInstance($clone);
+            $result = $timer->measure("start.{$role}", fn () => $host->startInstance($clone));
 
             if (! $result->successful()) {
                 throw new \RuntimeException("Could not start {$clone}: {$result->errorOutput()}");
             }
 
             $instance = new IncusInstance($host, $clone);
-            $instance->waitForAgent();
+            $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
 
             $instances[$role] = $instance;
         }

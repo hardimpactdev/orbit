@@ -9,7 +9,7 @@ final class E2ETopologyLease
     private bool $cleaned = false;
 
     /**
-     * @param  \Closure(): array<string, E2EInstance>  $rebuild
+     * @param  \Closure(E2EPhaseTimer): array<string, E2EInstance>  $rebuild
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
@@ -51,7 +51,7 @@ final class E2ETopologyLease
         return $this->sshKeyPair;
     }
 
-    public function cleanup(): void
+    public function cleanup(?E2EPhaseTimer $timer = null): void
     {
         if ($this->cleaned) {
             return;
@@ -59,9 +59,11 @@ final class E2ETopologyLease
 
         $this->cleaned = true;
 
-        foreach ([$this->control, $this->gateway, $this->dev, $this->prod] as $instance) {
+        $timer ??= new E2EPhaseTimer;
+
+        foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod] as $role => $instance) {
             if ($instance !== null) {
-                $instance->delete();
+                $timer->measure("cleanup.{$role}", fn () => $instance->delete());
             }
         }
     }
@@ -75,13 +77,19 @@ final class E2ETopologyLease
             throw new \RuntimeException('snapshot-restore reset strategy is not implemented yet');
         }
 
-        $this->cleanup();
-        $instances = ($this->rebuild)();
+        $timer = new E2EPhaseTimer;
 
-        $this->control = $instances['control'];
-        $this->gateway = $instances['gateway'] ?? null;
-        $this->dev = $instances['dev'] ?? null;
-        $this->prod = $instances['prod'] ?? null;
-        $this->cleaned = false;
+        try {
+            $this->cleanup($timer);
+            $instances = ($this->rebuild)($timer);
+
+            $this->control = $instances['control'];
+            $this->gateway = $instances['gateway'] ?? null;
+            $this->dev = $instances['dev'] ?? null;
+            $this->prod = $instances['prod'] ?? null;
+            $this->cleaned = false;
+        } finally {
+            $timer->flush('reset');
+        }
     }
 }

@@ -30,47 +30,59 @@ final class E2ETopologyFactory
             test()->markTestSkipped('Prepared topology not available for provider: '.$this->provider);
         }
 
-        $config = E2EConfig::fromEnvironment();
-        $pool = IncusHostPool::fromEnvironment($config);
-        $host = $pool->firstAvailableFor($resolved);
+        $timer = new E2EPhaseTimer;
 
-        if ($host === null) {
-            test()->markTestSkipped('Prepared topology not available: '.$resolved->value);
-        }
+        try {
+            $config = E2EConfig::fromEnvironment();
+            $pool = IncusHostPool::fromEnvironment($config);
+            $host = $timer->measure('availability', fn () => $pool->firstAvailableFor($resolved));
 
-        $runId = E2ERun::id();
-        $instances = IncusTopologyTemplate::clone($host, $resolved, $runId);
+            if ($host === null) {
+                test()->markTestSkipped('Prepared topology not available: '.$resolved->value);
+            }
 
-        $sshKeyPair = $this->createSshKeyPair($host, $runId);
+            $runId = E2ERun::id();
+            $instances = IncusTopologyTemplate::clone($host, $resolved, $runId, $timer);
 
-        foreach ($instances as $role => $instance) {
-            $primaryUser = match ($role) {
-                'control' => $config->controlUser,
-                default => 'orbit',
+            $sshKeyPair = $this->createSshKeyPair($host, $runId);
+
+            foreach ($instances as $role => $instance) {
+                $primaryUser = match ($role) {
+                    'control' => $config->controlUser,
+                    default => 'orbit',
+                };
+
+                $timer->measure("ssh-authorize.{$role}", function () use ($instance, $config, $primaryUser, $sshKeyPair): void {
+                    $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
+
+                    if ($primaryUser !== $config->bootstrapUser) {
+                        $instance->authorizeSsh($primaryUser, $sshKeyPair);
+                    }
+                });
+                $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            }
+
+            $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
+
+            $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $resolved, $runId): array {
+                $newInstances = IncusTopologyTemplate::clone($host, $resolved, $runId, $cycleTimer);
+                $cycleTimer->measure('wireguard', fn () => $this->reestablishWireGuard($newInstances));
+
+                return $newInstances;
             };
 
-            $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
-            if ($primaryUser !== $config->bootstrapUser) {
-                $instance->authorizeSsh($primaryUser, $sshKeyPair);
-            }
-            $instance->waitForSsh($primaryUser, $sshKeyPair);
+            return new E2ETopologyLease(
+                kind: $resolved,
+                control: $instances['control'],
+                gateway: $instances['gateway'] ?? null,
+                dev: $instances['dev'] ?? null,
+                prod: $instances['prod'] ?? null,
+                sshKeyPair: $sshKeyPair,
+                rebuild: $rebuild,
+            );
+        } finally {
+            $timer->flush('acquire');
         }
-
-        $this->reestablishWireGuard($instances);
-
-        $rebuild = function () use ($host, $resolved, $runId): array {
-            return IncusTopologyTemplate::clone($host, $resolved, $runId);
-        };
-
-        return new E2ETopologyLease(
-            kind: $resolved,
-            control: $instances['control'],
-            gateway: $instances['gateway'] ?? null,
-            dev: $instances['dev'] ?? null,
-            prod: $instances['prod'] ?? null,
-            sshKeyPair: $sshKeyPair,
-            rebuild: $rebuild,
-        );
     }
 
     public function resolveKind(E2ETopologyKind $kind): E2ETopologyKind

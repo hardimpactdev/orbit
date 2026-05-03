@@ -258,6 +258,12 @@ ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2  # Comma-separated Incus host pool
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
+ORBIT_E2E_TIMINGS=1                   # Print phase timings to STDERR (acquire / reset)
 ```
+
+Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
+factory and lease (`availability`, `copy.*`, `start.*`, `agent-ready.*`,
+`ssh-authorize.*`, `ssh-ready.*`, `cleanup.*`). Output goes to STDERR with the
+prefix `[orbit-e2e]` so it interleaves cleanly with Pest output.
 
 All E2E orchestration now runs via Pest groups and `php artisan e2e:*` commands.
