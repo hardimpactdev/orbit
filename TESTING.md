@@ -132,8 +132,15 @@ The ephemeral E2E suite is split into two explicit lanes at the Pest group level
   requires it. These tests are grouped with `pest()->group('e2e-feature')` at the
   file level and run via `composer test:e2e:features`.
 
+`composer test:e2e:features` always runs the `e2e-topology-contract` group first,
+then runs the remaining `e2e-feature` tests. If the prepared topology contract
+fails, the feature lane stops before command assertions can produce misleading
+results. Additional Pest arguments passed to `composer test:e2e:features` are
+applied only to the post-contract feature assertions.
+
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, so
-`composer test:e2e` continues to run all ephemeral tests together.
+`composer test:e2e` continues to run all ephemeral tests together through the
+ordered lane scripts.
 
 Live or standing infrastructure verification lanes are sunset. Do not use
 persistent gateway, control, or app nodes as verification targets.
@@ -221,6 +228,7 @@ composer test
 
 # Ephemeral E2E lanes (requires ORBIT_E2E=1)
 composer test:e2e:provisioning
+composer test:e2e:topology-contract
 composer test:e2e:features
 
 # Prepare or replace a topology clone for the feature lane

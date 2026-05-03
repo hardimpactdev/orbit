@@ -57,7 +57,7 @@ final class IncusInstance implements E2EInstance
         }
 
         $result = $this->exec(sprintf(
-            'chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && chmod 600 /home/%1$s/.ssh/authorized_keys && (systemctl start ssh || systemctl start sshd || true)',
+            'chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && chmod 600 /home/%1$s/.ssh/authorized_keys && usermod -p \'*\' %1$s && (systemctl start ssh || systemctl start sshd || true)',
             escapeshellarg($user),
         ));
 

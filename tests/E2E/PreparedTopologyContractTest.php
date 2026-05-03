@@ -10,7 +10,7 @@ use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
 use Tests\E2E\Support\SshKeyPair;
 
-pest()->group('e2e-feature');
+pest()->group('e2e-feature', 'e2e-topology-contract');
 
 it('satisfies the prepared full topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();

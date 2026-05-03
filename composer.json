@@ -58,7 +58,12 @@
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e"
+            "@test:e2e:provisioning",
+            "@test:e2e:features"
+        ],
+        "test:e2e:topology-contract": [
+            "Composer\\Config::disableProcessTimeout",
+            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract --fail-on-empty-test-suite"
         ],
         "test:e2e:provisioning": [
             "Composer\\Config::disableProcessTimeout",
@@ -66,7 +71,8 @@
         ],
         "test:e2e:features": [
             "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature"
+            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract --fail-on-empty-test-suite @no_additional_args",
+            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args"
         ],
         "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud",
         "e2e:reap-incus": "@php artisan e2e:reap-incus",
