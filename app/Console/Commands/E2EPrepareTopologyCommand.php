@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use RuntimeException;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2ETopologyKind;
+use Tests\E2E\Support\IncusHost;
 use Tests\E2E\Support\IncusHostPool;
+use Tests\E2E\Support\IncusTopologyBuilder;
 use Tests\E2E\Support\IncusTopologyTemplate;
 
 #[Signature('e2e:prepare-topology
@@ -21,6 +24,19 @@ use Tests\E2E\Support\IncusTopologyTemplate;
 class E2EPrepareTopologyCommand extends Command
 {
     protected $hidden = true;
+
+    /**
+     * @var (Closure(IncusHost): IncusTopologyBuilder)|null
+     */
+    private ?Closure $builderFactory = null;
+
+    /**
+     * @param  Closure(IncusHost): IncusTopologyBuilder  $factory
+     */
+    public function setBuilderFactory(Closure $factory): void
+    {
+        $this->builderFactory = $factory;
+    }
 
     public function handle(): int
     {
@@ -75,20 +91,42 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         $hostPool = IncusHostPool::fromEnvironment($config);
-        $host = $hostPool->firstAvailableFor($kind);
+        $host = $hostPool->first();
 
         if ($host === null) {
-            return $this->failCommand("No Incus host has templates available for kind [{$kind->value}].");
+            return $this->failCommand('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
         }
 
         try {
-            // TODO: Implement actual topology template builds.
-            // This involves creating VMs from prepared images, running provisioning logic,
-            // stopping VMs, and snapshotting each as 'clean'.
-            throw new RuntimeException('Actual topology template builds are not yet implemented. Use dry-run to preview the plan.');
+            $builder = $this->builderFactory !== null
+                ? ($this->builderFactory)($host)
+                : new IncusTopologyBuilder($host);
+
+            $manifest = $builder->build($kind);
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         }
+
+        $result = [
+            'provider' => 'incus',
+            'dry_run' => false,
+            'kind' => $kind->value,
+            'templates' => $manifest,
+        ];
+
+        if ((bool) $this->option('json')) {
+            $this->line(json_encode(['success' => ['data' => $result]], JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
+
+        $this->info("Built topology [{$kind->value}].");
+
+        foreach ($manifest as $template) {
+            $this->line("created: {$template['name']} (snapshot: {$template['snapshot']})");
+        }
+
+        return self::SUCCESS;
     }
 
     private function failValidation(string $message): int

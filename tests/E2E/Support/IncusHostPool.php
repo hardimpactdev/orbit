@@ -37,4 +37,9 @@ final readonly class IncusHostPool
 
         return null;
     }
+
+    public function first(): ?IncusHost
+    {
+        return $this->hosts[0] ?? null;
+    }
 }

@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareTopologyCommand;
 use Illuminate\Support\Facades\Process;
+use Mockery as m;
 use Tests\E2E\Support\E2ETopologyKind;
+use Tests\E2E\Support\IncusTopologyBuilder;
 use Tests\E2E\Support\IncusTopologyTemplate;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+});
+
+afterEach(function (): void {
+    m::close();
 });
 
 it('defaults to control-gateway-dev-prod kind', function (): void {
@@ -51,14 +57,6 @@ it('defaults to dry run', function (): void {
     $this->artisan('e2e:prepare-topology')
         ->expectsOutputToContain('Dry run. Pass --force to create Incus topology templates.')
         ->assertSuccessful();
-});
-
-it('can be forced but returns not implemented stub', function (): void {
-    Process::fake();
-
-    $this->artisan('e2e:prepare-topology', ['--force' => true])
-        ->expectsOutputToContain('not yet implemented')
-        ->assertFailed();
 });
 
 it('outputs json for dry run with default kind', function (): void {
@@ -145,4 +143,76 @@ it('is hidden', function (): void {
     $command = app(E2EPrepareTopologyCommand::class);
 
     expect($command->isHidden())->toBeTrue();
+});
+
+it('--force without configured Incus host fails clearly', function (): void {
+    $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
+    $previousHost = getenv('ORBIT_E2E_HOST');
+    $previousProvider = getenv('ORBIT_E2E_PROVIDER');
+
+    putenv('ORBIT_E2E_INCUS_HOSTS=');
+    putenv('ORBIT_E2E_HOST=');
+    putenv('ORBIT_E2E_PROVIDER=incus');
+
+    try {
+        $this->artisan('e2e:prepare-topology', [
+            'kind' => 'control',
+            '--force' => true,
+        ])
+            ->assertFailed();
+    } finally {
+        $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
+        $previousHost === false ? putenv('ORBIT_E2E_HOST') : putenv("ORBIT_E2E_HOST={$previousHost}");
+        $previousProvider === false ? putenv('ORBIT_E2E_PROVIDER') : putenv("ORBIT_E2E_PROVIDER={$previousProvider}");
+    }
+});
+
+it('--force outputs JSON success envelope when builder returns a manifest', function (): void {
+    $manifest = [
+        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+    ];
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('build')
+        ->with(E2ETopologyKind::Control)
+        ->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $expected = json_encode([
+        'success' => [
+            'data' => [
+                'provider' => 'incus',
+                'dry_run' => false,
+                'kind' => 'control',
+                'templates' => $manifest,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+        '--json' => true,
+    ])
+        ->expectsOutput($expected)
+        ->assertSuccessful();
+});
+
+it('--force surfaces builder failure as command failure', function (): void {
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('build')
+        ->andThrow(new RuntimeException('Required source image [orbit-ready-control] not found.'));
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+    ])
+        ->assertFailed();
 });
