@@ -6,6 +6,8 @@ use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\ProviderPool;
 
+pest()->group('e2e-provisioning');
+
 it('launches a blank VM, reaches it over SSH, and destroys it', function (): void {
     $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank);
 

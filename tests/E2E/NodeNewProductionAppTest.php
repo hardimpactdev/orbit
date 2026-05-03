@@ -9,6 +9,8 @@ use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\ProviderPool;
 use Tests\E2E\Support\SshKeyPair;
 
+pest()->group('e2e-provisioning');
+
 it('provisions a production app node from a ready control VM through a ready gateway VM', function (): void {
     $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank, E2EImage::Control, E2EImage::Gateway);
 

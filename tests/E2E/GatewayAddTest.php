@@ -11,6 +11,8 @@ use Tests\E2E\Support\IncusProvider;
 use Tests\E2E\Support\ProviderPool;
 use Tests\E2E\Support\SshKeyPair;
 
+pest()->group('e2e-provisioning');
+
 it('joins a prepared gateway from a ready control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
     $selection = (new ProviderPool([new IncusProvider($config)]))->select(E2EImage::Control, E2EImage::Gateway);

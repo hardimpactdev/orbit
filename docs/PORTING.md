@@ -22,7 +22,8 @@ behavior from `../orbit-old-may`.
 - In-memory Pest tests own deterministic command, service, database, renderer,
   and contract coverage.
 - Provisioning, destructive, host-mutation, live transport, and repair/adoption
-  flows require ephemeral E2E before they can be treated as fully verified.
+  flows require the `e2e-provisioning` lane before they can be treated as fully
+  verified.
 - Every newly-ported command requires focused in-memory Pest coverage and one
   E2E-* gate todo before its workstream entry can flip to `[x]`. The E2E gate
   may declare `lane=none` only when the command is docs-only, a pure refactor,
@@ -69,8 +70,8 @@ Default migration order is command-contract and capability driven:
    - Keep `composer quality-check` green for in-memory Pest coverage.
    - Expand the Incus-backed ephemeral E2E harness before provisioning or
      destructive flows depend on it.
-   - Use blank Incus VM snapshots for provisioning coverage and ready Incus VM
-     snapshots for fast command-porting coverage.
+    - Use blank Incus VM snapshots for the `e2e-provisioning` lane and ready
+      Incus VM snapshots for the `e2e-feature` lane.
    - Convert docs for the next implementation slice before writing code.
 2. **Nodes first.**
    - Finish node registry read and metadata commands before app/workspace
@@ -352,9 +353,10 @@ todos required by the Rules section:
 - `E2E-<short-id>` — ephemeral E2E gate todo. Tagged `e2e`, `e2e-gate`,
   `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
   `SCOUT_REPORT status=READY`. Lane must declare a concrete
-  `composer test:e2e` invocation, `bin/e2e --<lane>` command, or `lane=none`
-  reason; if that lane does not yet exist, create a separate implementer todo to
-  author it before the E2E gate becomes dispatchable.
+  `composer test:e2e:provisioning` invocation, `composer test:e2e:features`
+  invocation, `bin/e2e --<lane>` command, or `lane=none` reason; if that lane
+  does not yet exist, create a separate implementer todo to author it before the
+  E2E gate becomes dispatchable.
 
 E2E gate todos are dispatched only by the orchestrator's E2E role per
 `references/todo-state.md`. Never promote them to `worker-ready` and never
@@ -761,24 +763,23 @@ A `GatewayClient` service class (or similar) that:
 - [~] Restore ephemeral E2E.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.
-  - [x] Create a blank snapshot lane for provisioning tests.
+  - [x] Create a blank snapshot lane for `e2e-provisioning` tests.
   - [x] Add reusable host installer needed by the ready control snapshot.
-  - [x] Create a ready control snapshot lane for fast command-porting tests.
+  - [x] Create a ready control snapshot lane for `e2e-feature` tests.
   - [x] Create a ready gateway snapshot lane (`bin/e2e --prepare-gateway`)
     that builds a reusable `orbit-ready-gateway` image with bootstrapped
     gateway identity and root CA.
   - [x] Add first-gateway provisioning E2E lane (`bin/e2e --node-new-gateway`)
     that exercises `node:new --role=gateway` from a ready control VM against a
-    blank gateway VM.
+    blank gateway VM (`e2e-provisioning`).
   - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
-    exercises `gateway:add` from a ready control VM against a ready gateway VM.
-  - [~] Create ready development app snapshot lane for fast command-porting
-    tests.
-  - [ ] Create ready production app snapshot lane for fast command-porting
-    tests.
+    exercises `gateway:add` from a ready control VM against a ready gateway VM
+    (`e2e-provisioning`).
+  - [~] Create ready development app snapshot lane for `e2e-feature` tests.
+  - [ ] Create ready production app snapshot lane for `e2e-feature` tests.
 - [ ] Add E2E topology for gateway + control + development app + production
   app nodes.
-- [ ] Add provisioning/destructive coverage only against ephemeral nodes.
+- [ ] Add provisioning/destructive coverage only in the `e2e-provisioning` lane.
 
 ## Next Priorities
 

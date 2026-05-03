@@ -6,6 +6,8 @@ use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\ProviderPool;
 
+pest()->group('e2e-provisioning');
+
 it('provisions the first gateway from a ready control VM', function (): void {
     $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank, E2EImage::Control);
 
