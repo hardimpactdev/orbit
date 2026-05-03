@@ -50,7 +50,7 @@ class GatewayTrustCommand extends Command
 
         $gateway = $this->resolveGateway();
 
-        if (is_array($gateway) && array_key_exists('code', $gateway)) {
+        if (array_key_exists('code', $gateway)) {
             return $this->failCommand(
                 code: $gateway['code'],
                 message: $gateway['message'],
@@ -146,7 +146,7 @@ class GatewayTrustCommand extends Command
                 'ca_pem_path' => $pemPath,
                 'trusted_at' => now(),
             ])->save();
-        } catch (RuntimeException $e) {
+        } catch (RuntimeException) {
             return $this->failCommand(
                 code: 'node.local_config_write_failed',
                 message: 'Failed to write local trust metadata.',

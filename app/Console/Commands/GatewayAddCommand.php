@@ -65,7 +65,7 @@ class GatewayAddCommand extends Command
                     required: true,
                 );
 
-                if ($gatewayIp === '' || $gatewayIp === null) {
+                if ($gatewayIp === '') {
                     return $this->failCommand(
                         code: 'validation_failed',
                         message: 'Gateway IP is required.',
@@ -103,7 +103,7 @@ class GatewayAddCommand extends Command
             } else {
                 $verifyResult = $this->verifyGatewayApi($gatewayIp, $pemPath);
 
-                if (is_array($verifyResult) && array_key_exists('code', $verifyResult)) {
+                if (array_key_exists('code', $verifyResult)) {
                     return $this->failCommand(
                         code: $verifyResult['code'],
                         message: $verifyResult['message'],
@@ -200,7 +200,7 @@ class GatewayAddCommand extends Command
 
         $verifyResult = $this->verifyGatewayApi($gatewayIp, $pemPath);
 
-        if (is_array($verifyResult) && array_key_exists('code', $verifyResult)) {
+        if (array_key_exists('code', $verifyResult)) {
             return $this->failCommand(
                 code: $verifyResult['code'],
                 message: $verifyResult['message'],
@@ -221,7 +221,7 @@ class GatewayAddCommand extends Command
                 'ca_pem_path' => $pemPath,
                 'trusted_at' => now(),
             ])->save();
-        } catch (RuntimeException $e) {
+        } catch (RuntimeException) {
             return $this->failCommand(
                 code: 'node.local_config_write_failed',
                 message: 'Failed to store local gateway configuration.',
@@ -327,7 +327,7 @@ class GatewayAddCommand extends Command
                 ->acceptJson()
                 ->timeout(10)
                 ->get('/api/me');
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException) {
             return [
                 'code' => 'gateway_unavailable',
                 'message' => "Gateway at {$gatewayIp} is unreachable.",

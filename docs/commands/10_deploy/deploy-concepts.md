@@ -1,0 +1,65 @@
+# Deploy Concepts
+
+This document defines deploy-command-domain vocabulary and invariants. It
+supports the deploy command contracts and the [app doctor](../5_app/app-doctor.md);
+it does not override the [Blueprint](../../BLUEPRINT.md).
+
+## Domain And Ownership
+
+- **Deploy command domain:** The `deploy:*` command prefix. It manages
+  production app deployment policy, deployment runs, run history, and captured
+  deployment output, but it does not create a separate state family.
+- **Production app deployment:** Operator workflow for a production app that
+  executes configured deployment steps on the app's owning node through the
+  gateway.
+- **Deployment policy:** App-owned gateway state that defines the ordered
+  deployment steps for one production app.
+- **Deployment pipeline:** Ordered deployment step list for one production app.
+  It is gateway state owned by the app, not global deployment intent.
+
+## Steps
+
+- **Deployment step definition:** Gateway-assigned app-owned record containing a
+  title, shell command, order, timeout, and optional retention metadata.
+- **Deployment step command:** Arbitrary shell command executed during
+  `deploy:run` from the gateway-tracked app source path on the app's owning
+  node.
+- **Deployment step order:** Positive integer ordering within a production
+  app's deployment pipeline. Insertions and removals reorder neighboring steps
+  to keep the pipeline stable and ascending.
+- **Deployment step timeout:** Maximum runtime in seconds for one deployment
+  step before Orbit marks that step failed.
+- **Retention metadata:** Optional deploy-step metadata for steps that create or
+  prune versioned releases. It belongs only to the declaring step; Orbit does
+  not have global app deployment retention policy or release state.
+
+## Runs And Logs
+
+- **Deployment run:** Durable app-owned gateway history record created by
+  `deploy:run` before the first configured step executes.
+- **Deployment run status:** Run lifecycle value: `running`, `completed`,
+  `failed`, or `cancelled`.
+- **Deployment step execution:** One step's execution within a deployment run,
+  including captured stdout, stderr, exit code, timing, and status.
+- **Detached deployment run:** Deployment run started with `--detach`; the
+  command returns after the run is durable and gateway execution has been
+  handed off.
+- **Deployment run history:** Durable app-owned gateway history of deployment
+  runs. Read commands use stored history and do not inspect live node state.
+- **Deployment log:** Stored per-step deployment output for a previous run. It
+  is captured gateway history, not live streaming output, journald output, or a
+  node filesystem read.
+- **Latest deployment status:** App-owned gateway state recording the newest
+  deployment outcome used by app doctor when evaluating production app health.
+
+## Health And Boundaries
+
+- **Deployment health:** Production app health signal derived from deployment
+  pipeline validity and latest deployment status. It belongs to
+  `doctor --family=app`, not to a deploy doctor family.
+- **Deploy-domain boundaries:** Deploy commands own deployment policy writes,
+  deployment run execution, deployment history reads, and captured-output reads
+  for production apps. They do not own a state family, create app records,
+  manage development apps, create process definitions or schedules, inspect live
+  node state during reads, model releases as standalone state, or prove
+  production app health after a deployment run.

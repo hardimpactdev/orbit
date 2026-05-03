@@ -67,8 +67,337 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 - **Serving node**
 <!-- /concept-index -->
 
-## Future Family Concepts
+## Gateway Concepts
 
-Add family concept links here only after a family has an owning concept
-document. Until then, use the family `README.md`, family doctor document, and
-individual command contracts as the source of truth.
+Source: [Gateway Concepts](commands/2_gateway/gateway-concepts.md).
+
+<!-- concept-index:commands/2_gateway/gateway-concepts.md -->
+- **Gateway command domain**
+- **Gateway relationship**
+- **Configured gateway endpoint**
+- **Gateway WireGuard API address**
+- **Local gateway configuration**
+- **Gateway root CA**
+- **Gateway trust material**
+- **Bootstrap-safe trust path**
+- **Local gateway CA trust**
+- **Local trust metadata**
+- **Orbit route trust**
+- **Local gateway onboarding**
+- **Gateway trust repair**
+- **Gateway API verification**
+- **Gateway onboarding convergence**
+- **Gateway-domain boundaries**
+<!-- /concept-index -->
+
+## App Concepts
+
+Source: [App Concepts](commands/5_app/app-concepts.md).
+
+<!-- concept-index:commands/5_app/app-concepts.md -->
+- **App**
+- **App identity slug**
+- **App name argument**
+- **App selector argument**
+- **Owning app node**
+- **Development app**
+- **Production app**
+- **App PHP version**
+- **App agent IDE adapter**
+- **App registration**
+- **App adoption**
+- **App pruning**
+- **App-owned route**
+- **App-family boundaries**
+<!-- /concept-index -->
+
+## Workspace Concepts
+
+Source: [Workspace Concepts](commands/6_workspace/workspace-concepts.md).
+
+<!-- concept-index:commands/6_workspace/workspace-concepts.md -->
+- **Workspace**
+- **Workspace identity slug**
+- **Workspace hostname**
+- **Workspace path**
+- **Workspace lifecycle status**
+- **Workspace PHP override**
+- **Setup step definition**
+- **Setup steps phase**
+- **Teardown step definition**
+- **Lifecycle step environment**
+- **Workspace adoption**
+- **Workspace history**
+- **Workspace-owned route**
+- **Workspace-family boundaries**
+<!-- /concept-index -->
+
+## Process Concepts
+
+Source: [Process Concepts](commands/7_process/process-concepts.md).
+
+<!-- concept-index:commands/7_process/process-concepts.md -->
+- **Process definition**
+- **Process identity slug**
+- **Process order**
+- **Runtime unit**
+- **Runtime unit filename**
+- **Runtime unit environment**
+- **Restart policy**
+- **Crash notification policy**
+- **Process event**
+- **Crash event**
+- **Process-family boundaries**
+<!-- /concept-index -->
+
+## Proxy Concepts
+
+Source: [Proxy Concepts](commands/8_proxy/proxy-concepts.md).
+
+<!-- concept-index:commands/8_proxy/proxy-concepts.md -->
+- **Proxy route**
+- **Route owner**
+- **Route kind**
+- **App route**
+- **Workspace route**
+- **Internal route**
+- **Custom route**
+- **Redirect route**
+- **Tool-owned route**
+- **Orbit-managed TLS**
+- **Hostname compatibility material**
+- **App ingress baseline**
+- **Document-root policy**
+- **Proxy-family boundaries**
+<!-- /concept-index -->
+
+## Schedule Concepts
+
+Source: [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+
+<!-- concept-index:commands/9_schedule/schedule-concepts.md -->
+- **Schedule**
+- **Schedule scope**
+- **App-scoped schedule**
+- **Node-scoped schedule**
+- **Orbit-scoped schedule**
+- **Laravel scheduler**
+- **Execution source**
+- **Portable interval expression**
+- **Schedule run**
+- **Schedule-family boundaries**
+<!-- /concept-index -->
+
+## Deploy Concepts
+
+Source: [Deploy Concepts](commands/10_deploy/deploy-concepts.md).
+
+<!-- concept-index:commands/10_deploy/deploy-concepts.md -->
+- **Deploy command domain**
+- **Production app deployment**
+- **Deployment policy**
+- **Deployment pipeline**
+- **Deployment step definition**
+- **Deployment step command**
+- **Deployment step order**
+- **Deployment step timeout**
+- **Retention metadata**
+- **Deployment run**
+- **Deployment run status**
+- **Deployment step execution**
+- **Detached deployment run**
+- **Deployment run history**
+- **Deployment log**
+- **Latest deployment status**
+- **Deployment health**
+- **Deploy-domain boundaries**
+<!-- /concept-index -->
+
+## Operation Concepts
+
+Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
+
+<!-- concept-index:commands/11_operation/operation-concepts.md -->
+- **Operation command domain**
+- **Cross-family workflow**
+- **Local operation command**
+- **Fleet-changing operation command**
+- **Local update**
+- **Fleet update**
+- **Update target**
+- **Update step**
+- **Target result**
+- **Doctor orchestration**
+- **Doctor scope**
+- **Doctor mode**
+- **Family doctor contract**
+- **Doctor issue kind**
+- **Doctor action**
+- **Gateway activity history**
+- **Activity entry**
+- **Correlation id**
+- **Activity visibility**
+- **Profile target**
+- **Profile request origin**
+- **Baseline profile result**
+- **Toolbar enrichment**
+- **Toolbar auth mode**
+- **Operation-domain boundaries**
+<!-- /concept-index -->
+
+## Cloudflare Concepts
+
+Source: [Cloudflare Concepts](commands/12_cf/cf-concepts.md).
+
+<!-- concept-index:commands/12_cf/cf-concepts.md -->
+- **Cloudflare command domain**
+- **Cloudflare provider integration**
+- **Provider administration**
+- **Cloudflare API token**
+- **Real Cloudflare-backed domain**
+- **Cloudflare zone**
+- **Provider DNS record**
+- **Address record**
+- **Proxied DNS record**
+- **Provider DNS enactment**
+- **Provider cache purge**
+- **Cloudflare cache rule**
+- **Origin Cache-Control respect**
+- **Cloudflare SSL mode**
+- **Strict SSL mode**
+- **Full SSL mode**
+- **Flexible SSL exclusion**
+- **Origin certificate boundary**
+- **Cloudflare-domain boundaries**
+<!-- /concept-index -->
+
+## VPN Concepts
+
+Source: [VPN Concepts](commands/13_vpn/vpn-concepts.md).
+
+<!-- concept-index:commands/13_vpn/vpn-concepts.md -->
+- **VPN command domain**
+- **Gateway-local VPN administration**
+- **Gateway-local execution path**
+- **Gateway VPN backend**
+- **Backend TOTP code**
+- **VPN client**
+- **VPN client name**
+- **Admin VPN client**
+- **Orbit node peer**
+- **Unknown VPN peer**
+- **VPN client kind**
+- **WireGuard client configuration**
+- **VPN client enablement**
+- **VPN client removal**
+- **VPN web UI password**
+- **Backend admin credential**
+- **Gateway-local credential storage**
+- **VPN-domain boundaries**
+<!-- /concept-index -->
+
+## PHP Concepts
+
+Source: [PHP Concepts](commands/14_php/php-concepts.md).
+
+<!-- concept-index:commands/14_php/php-concepts.md -->
+- **PHP runtime command domain**
+- **PHP runtime selection**
+- **Supported PHP version set**
+- **Installed PHP runtime**
+- **PHP runtime catalog**
+- **Gateway-tracked installed-version facts**
+- **Live installed-version inspection**
+- **PHP runtime view**
+- **App PHP runtime selection**
+- **Workspace PHP runtime override**
+- **Workspace PHP inheritance**
+- **Effective workspace PHP version**
+- **Node CLI PHP default**
+- **PHP-FPM artifact**
+- **PHP runtime target**
+- **Partial PHP enactment warning**
+- **PHP-domain boundaries**
+<!-- /concept-index -->
+
+## Tool Concepts
+
+Source: [Tool Concepts](commands/3_tool/tool-concepts.md).
+
+<!-- concept-index:commands/3_tool/tool-concepts.md -->
+- **Tool**
+- **Tool catalog**
+- **Tool definition**
+- **Tool row**
+- **Required baseline tool**
+- **Installable tool**
+- **Managed tool**
+- **Observational tool**
+- **Role baseline tool**
+- **Unmanaged inventory**
+- **Tool-owned service endpoint**
+- **Tool credentials**
+- **Tool-family boundaries**
+<!-- /concept-index -->
+
+## Firewall Concepts
+
+Source: [Firewall Concepts](commands/4_firewall/firewall-concepts.md).
+
+<!-- concept-index:commands/4_firewall/firewall-concepts.md -->
+- **Firewall rule**
+- **Rule name**
+- **Direction**
+- **Action**
+- **Source**
+- **Destination**
+- **Port**
+- **Protocol**
+- **Reason**
+- **Eligible firewall target**
+- **Bootstrap policy**
+- **Firewall-family boundaries**
+<!-- /concept-index -->
+
+## Agent IDE Concepts
+
+Source: [Agent IDE Concepts](commands/15_agent-ide/agent-ide-concepts.md).
+
+<!-- concept-index:commands/15_agent-ide/agent-ide-concepts.md -->
+- **Agent IDE integration**
+- **Agent IDE adapter**
+- **Agent IDE adapter registry**
+- **Active Agent IDE session**
+- **Workspace discovery capability**
+- **Node Agent IDE default**
+- **App Agent IDE override**
+- **Effective Agent IDE adapter**
+- **Agent IDE input token**
+- **Agent IDE message**
+- **Agent-IDE-domain boundaries**
+<!-- /concept-index -->
+
+## DNS Concepts
+
+Source: [DNS Concepts](commands/16_dns/dns-concepts.md).
+
+<!-- concept-index:commands/16_dns/dns-concepts.md -->
+- **DNS command domain**
+- **Caller-local DNS administration**
+- **Caller-local resolver override**
+- **Orbit-managed local resolver state**
+- **Local resolver backend**
+- **Supported local DNS platform**
+- **Development TLD**
+- **Local DNS target**
+- **Resolve path**
+- **Reset path**
+- **Resolver refresh**
+- **Local DNS entry**
+- **Local resolver source**
+- **Local DNS entry status**
+- **Gateway-owned development DNS mapping**
+- **App-node resolver drift**
+- **Public DNS boundary**
+- **DNS-domain boundaries**
+<!-- /concept-index -->
