@@ -4,22 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
-use Illuminate\Contracts\Process\ProcessResult;
-use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Tests\E2E\Support\IncusHost;
 
 /**
- * Orchestrates building reusable Incus base images (orbit-blank-ubuntu-*,
- * orbit-ready-control, etc.) on a remote Incus host.
+ * Orchestrates building reusable Incus base images on a remote Incus host.
  *
- * NOTE: Only the `blank` role has a real implementation. Other roles throw
- * "not yet implemented" so the command surface is in place but actual builds
- * for control/gateway/devapp/prodapp remain follow-up work. Even the blank
- * implementation needs further refinement: SSH keys are generated remotely
- * via `$host->run('ssh-keygen ...')` but the cloud-init template reads the
- * pubkey from the local filesystem, so the current code only works when
- * artisan runs on the same host as Incus.
+ * All filesystem operations execute on the Incus host via `$host->run(...)`,
+ * so the artisan process does not need to share a filesystem with Incus.
+ *
+ * Supported roles:
+ *   - blank   → orbit-blank-ubuntu-* (cloud-init bootstraps a sudoers user)
+ *
+ * Roles that still throw "not yet implemented":
+ *   - control, gateway, devapp, prodapp
  */
 class IncusE2EImagePreparer
 {
@@ -40,57 +38,63 @@ class IncusE2EImagePreparer
             return new IncusE2EImagePreparationResult($planned);
         }
 
-        $runId = date('YmdHis').'-'.getmypid().'-'.bin2hex(random_bytes(3));
-        $instanceName = "orbit-e2e-{$runId}-prepare-blank";
-        $runDirectory = sys_get_temp_dir()."/{$instanceName}";
-        $privateKeyPath = "{$runDirectory}/id_ed25519";
-        $publicKeyPath = "{$privateKeyPath}.pub";
-        $tempInstance = null;
+        $built = [];
 
-        if (! is_dir($runDirectory) && ! mkdir($runDirectory, 0700, recursive: true) && ! is_dir($runDirectory)) {
-            throw new RuntimeException("Could not create Incus image preparation directory: {$runDirectory}");
+        foreach ($options->roles as $role) {
+            $built[] = match ($role) {
+                'blank' => $this->buildBlank($options),
+                default => throw new RuntimeException("Role [{$role}] image build is not yet implemented."),
+            };
         }
 
+        return new IncusE2EImagePreparationResult($built);
+    }
+
+    /**
+     * @return array{role: string, alias: string, action: string}
+     */
+    private function buildBlank(IncusE2EImagePreparationOptions $options): array
+    {
+        $runId = date('YmdHis').'-'.getmypid().'-'.bin2hex(random_bytes(3));
+        $instanceName = "orbit-e2e-{$runId}-prepare-blank";
+        $remoteWorkDir = $this->createRemoteWorkDir($instanceName);
+        $tempInstance = null;
+
         try {
-            foreach ($options->roles as $role) {
-                if ($role !== 'blank') {
-                    throw new RuntimeException("Role [{$role}] image build is not yet implemented.");
-                }
+            $this->ensureSourceImageExists($options->sourceImage);
 
-                $this->ensureSourceImageExists($options->sourceImage);
-                $this->createSshKey($privateKeyPath, $publicKeyPath, $runId);
-                $publicKey = file_get_contents($publicKeyPath);
+            $remotePrivateKey = "{$remoteWorkDir}/id_ed25519";
+            $publicKey = $this->createRemoteSshKey($remotePrivateKey, $runId);
 
-                if ($publicKey === false) {
-                    throw new RuntimeException("Could not read generated public key: {$publicKeyPath}");
-                }
+            $this->launchBlankInstance($instanceName, $remoteWorkDir, $options, $publicKey);
+            $tempInstance = $instanceName;
 
-                $this->launchBlankInstance($instanceName, $options, trim($publicKey));
-                $tempInstance = $instanceName;
+            $this->waitForCloudInit($instanceName, $options->timeoutSeconds);
 
-                $this->waitForCloudInit($instanceName, $options->timeoutSeconds);
+            $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
+            $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
-                $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
-                $this->waitForSsh($ipv4, $privateKeyPath, $options->bootstrapUser, $options->timeoutSeconds);
+            $this->cleanImageState($instanceName, $options->bootstrapUser);
+            $this->stopInstance($instanceName);
+            $this->publishImage($instanceName, $options->blankImageAlias);
 
-                $this->cleanImageState($instanceName, $options->bootstrapUser);
-                $this->stopInstance($instanceName);
-                $this->publishImage($instanceName, $options->blankImageAlias);
-            }
-
-            return new IncusE2EImagePreparationResult([
-                [
-                    'role' => 'blank',
-                    'alias' => $options->blankImageAlias,
-                    'action' => 'built',
-                ],
-            ]);
+            return [
+                'role' => 'blank',
+                'alias' => $options->blankImageAlias,
+                'action' => 'built',
+            ];
         } finally {
             if ($tempInstance !== null) {
-                $this->run('incus delete --force '.escapeshellarg($tempInstance).' >/dev/null 2>&1 || true', timeoutSeconds: 120, allowFailure: true);
+                $this->host->run(
+                    'incus delete --force '.escapeshellarg($tempInstance).' >/dev/null 2>&1 || true',
+                    timeoutSeconds: 120,
+                );
             }
 
-            File::deleteDirectory($runDirectory);
+            $this->host->run(
+                'rm -rf '.escapeshellarg($remoteWorkDir).' || true',
+                timeoutSeconds: 30,
+            );
         }
     }
 
@@ -100,6 +104,25 @@ class IncusE2EImagePreparer
             'blank' => $options->blankImageAlias,
             default => "orbit-ready-{$role}",
         };
+    }
+
+    private function createRemoteWorkDir(string $instanceName): string
+    {
+        $template = '/tmp/'.$instanceName.'-XXXXXX';
+
+        $result = $this->host->run('mktemp -d '.escapeshellarg($template), timeoutSeconds: 30);
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Could not create remote work directory.');
+        }
+
+        $path = trim($result->output());
+
+        if ($path === '') {
+            throw new RuntimeException('mktemp returned an empty path.');
+        }
+
+        return $path;
     }
 
     private function ensureSourceImageExists(string $sourceImage): void
@@ -114,28 +137,55 @@ class IncusE2EImagePreparer
         }
     }
 
-    private function createSshKey(string $privateKeyPath, string $publicKeyPath, string $runId): void
+    private function createRemoteSshKey(string $privateKeyPath, string $runId): string
     {
-        $result = $this->host->run(sprintf(
+        $generate = $this->host->run(sprintf(
             'ssh-keygen -t ed25519 -N %s -f %s -C %s >/dev/null',
             escapeshellarg(''),
             escapeshellarg($privateKeyPath),
             escapeshellarg("orbit-e2e-{$runId}"),
         ), timeoutSeconds: 60);
 
-        if (! $result->successful()) {
-            throw new RuntimeException('Failed to generate temporary SSH key.');
+        if (! $generate->successful()) {
+            throw new RuntimeException('Failed to generate temporary SSH key on Incus host.');
         }
+
+        $read = $this->host->run('cat '.escapeshellarg($privateKeyPath.'.pub'), timeoutSeconds: 10);
+
+        if (! $read->successful()) {
+            throw new RuntimeException('Failed to read generated public key on Incus host.');
+        }
+
+        $publicKey = trim($read->output());
+
+        if ($publicKey === '') {
+            throw new RuntimeException('Generated public key is empty.');
+        }
+
+        return $publicKey;
     }
 
-    private function launchBlankInstance(string $name, IncusE2EImagePreparationOptions $options, string $publicKey): void
-    {
+    private function launchBlankInstance(
+        string $name,
+        string $remoteWorkDir,
+        IncusE2EImagePreparationOptions $options,
+        string $publicKey,
+    ): void {
         $userData = $this->cloudInit($options, $publicKey);
-        $userDataPath = sys_get_temp_dir()."/orbit-e2e-{$name}-user-data";
-        file_put_contents($userDataPath, $userData);
+        $userDataPath = "{$remoteWorkDir}/user-data.yaml";
 
-        $result = $this->host->run(sprintf(
-            'incus launch %s %s --vm --config=user.user-data=%s --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
+        $write = $this->host->run(sprintf(
+            "cat > %s <<'CLOUDINITEOF'\n%s\nCLOUDINITEOF\n",
+            escapeshellarg($userDataPath),
+            $userData,
+        ), timeoutSeconds: 30);
+
+        if (! $write->successful()) {
+            throw new RuntimeException("Failed to write cloud-init user-data on Incus host: {$write->errorOutput()}");
+        }
+
+        $launch = $this->host->run(sprintf(
+            'incus launch %s %s --vm --config=user.user-data="$(cat %s)" --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
             escapeshellarg($options->sourceImage),
             escapeshellarg($name),
             escapeshellarg($userDataPath),
@@ -143,8 +193,8 @@ class IncusE2EImagePreparer
             escapeshellarg($options->memory),
         ), timeoutSeconds: $options->timeoutSeconds);
 
-        if (! $result->successful()) {
-            throw new RuntimeException("Failed to launch blank instance [{$name}].");
+        if (! $launch->successful()) {
+            throw new RuntimeException("Failed to launch blank instance [{$name}]: {$launch->errorOutput()}");
         }
     }
 
@@ -170,8 +220,7 @@ class IncusE2EImagePreparer
                 timeoutSeconds: 10,
             );
 
-            $output = $result->output();
-            $ip = $this->extractIpv4($output);
+            $ip = $this->extractIpv4($result->output());
 
             if ($ip !== null) {
                 return $ip;
@@ -192,14 +241,14 @@ class IncusE2EImagePreparer
         return null;
     }
 
-    private function waitForSsh(string $ip, string $privateKeyPath, string $bootstrapUser, int $timeoutSeconds): void
+    private function waitForSsh(string $ip, string $remotePrivateKey, string $bootstrapUser, int $timeoutSeconds): void
     {
         $deadline = time() + $timeoutSeconds;
 
         while (time() < $deadline) {
             $result = $this->host->run(sprintf(
                 'ssh -i %s -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s',
-                escapeshellarg($privateKeyPath),
+                escapeshellarg($remotePrivateKey),
                 escapeshellarg("{$bootstrapUser}@{$ip}"),
                 escapeshellarg('test "$(uname -s)" = Linux && test -r /etc/os-release'),
             ), timeoutSeconds: 10);
@@ -216,13 +265,23 @@ class IncusE2EImagePreparer
 
     private function cleanImageState(string $instanceName, string $bootstrapUser): void
     {
+        $script = sprintf(
+            'rm -f /home/%1$s/.ssh/authorized_keys && '
+            .'touch /home/%1$s/.ssh/authorized_keys && '
+            .'chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && '
+            .'chmod 600 /home/%1$s/.ssh/authorized_keys && '
+            .'grep -q "^Subsystem sftp" /etc/ssh/sshd_config || echo "Subsystem sftp /usr/lib/openssh/sftp-server" >> /etc/ssh/sshd_config && '
+            .'systemctl restart sshd || systemctl restart ssh || true && '
+            .'rm -f /etc/machine-id && '
+            .'touch /etc/machine-id && '
+            .'cloud-init clean --logs --seed || true',
+            $bootstrapUser,
+        );
+
         $result = $this->host->run(sprintf(
             'incus exec %s -- sh -lc %s',
             escapeshellarg($instanceName),
-            escapeshellarg(sprintf(
-                'rm -f /home/%1$s/.ssh/authorized_keys && touch /home/%1$s/.ssh/authorized_keys && chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && chmod 600 /home/%1$s/.ssh/authorized_keys && grep -q "^Subsystem sftp" /etc/ssh/sshd_config || echo "Subsystem sftp /usr/lib/openssh/sftp-server" >> /etc/ssh/sshd_config && systemctl restart sshd || systemctl restart ssh || true && rm -f /etc/machine-id && touch /etc/machine-id && cloud-init clean --logs --seed || true',
-                $bootstrapUser,
-            )),
+            escapeshellarg($script),
         ), timeoutSeconds: 60);
 
         if (! $result->successful()) {
@@ -253,17 +312,6 @@ class IncusE2EImagePreparer
         if (! $result->successful()) {
             throw new RuntimeException("Failed to publish image [{$alias}] from [{$instanceName}].");
         }
-    }
-
-    private function run(string $command, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
-    {
-        $result = $this->host->run($command, $timeoutSeconds);
-
-        if (! $result->successful() && ! $allowFailure) {
-            throw new RuntimeException("Command failed: {$command}\n{$result->errorOutput()}");
-        }
-
-        return $result;
     }
 
     private function cloudInit(IncusE2EImagePreparationOptions $options, string $publicKey): string
