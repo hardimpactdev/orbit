@@ -95,7 +95,7 @@ command's implementation todos and is dispatched only by the orchestrator.
 Each gate todo must declare:
 
 - command name and `docs/PORTING.md` entry;
-- `lane=live-smoke|ephemeral|both|none`;
+- `lane=ephemeral|none`;
 - exact commands to run;
 - E2E artifacts the implementer must create or update;
 - prerequisites from `TESTING.md`;
@@ -105,9 +105,7 @@ Each gate todo must declare:
 
 Lane rule:
 
-- `live-smoke`: read-only or idempotent standing-node checks.
 - `ephemeral`: provisioning, destructive, repair, adoption, or host mutation.
-- `both`: mixed regression and destructive coverage.
 - `none`: docs-only or pure refactor with no observable behavior change.
 
 Scouts must reject wrong or underspecified lanes.
@@ -129,7 +127,7 @@ All other scout statuses require filler action before dispatch.
 - Do not implement code.
 - Do not run tests or E2E.
 - Do not dispatch implementers or reviewers.
-- Do not mutate standing live nodes.
+- Do not schedule E2E against standing infrastructure.
 - Do not create broad future-work backlog.
 - Do not promote unscouted work.
 - Do not edit product docs to make a todo easier.

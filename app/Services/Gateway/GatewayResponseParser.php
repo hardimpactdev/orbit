@@ -11,13 +11,19 @@ final readonly class GatewayResponseParser
 {
     public function parse(Response $response): GatewayResponse
     {
+        $body = $response->body() ?: '';
+
         if ($response->failed()) {
+            $error = $this->parseStructuredError($body);
+
+            if ($error instanceof GatewayResponse) {
+                return $error;
+            }
+
             throw new RuntimeException(
                 "Gateway request failed with HTTP status {$response->status()}",
             );
         }
-
-        $body = $response->body() ?: '';
 
         if ($body === '') {
             throw new RuntimeException('Gateway response body is empty.');
@@ -83,5 +89,40 @@ final readonly class GatewayResponseParser
         }
 
         return GatewayResponse::success(data: $payload);
+    }
+
+    private function parseStructuredError(string $body): ?GatewayResponse
+    {
+        if ($body === '') {
+            return null;
+        }
+
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        $error = $payload['error'] ?? null;
+
+        if (! is_array($error)) {
+            return null;
+        }
+
+        $message = $error['message'] ?? null;
+
+        if (! is_string($message) || $message === '') {
+            return null;
+        }
+
+        $code = $error['code'] ?? null;
+        $meta = $error['meta'] ?? null;
+
+        return GatewayResponse::error(
+            code: is_string($code) ? $code : null,
+            message: $message,
+            errorMeta: is_array($meta) ? $meta : [],
+        );
     }
 }

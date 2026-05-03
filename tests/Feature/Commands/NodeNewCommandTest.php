@@ -7,6 +7,7 @@ use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
@@ -57,12 +58,13 @@ describe('node:new', function (): void {
 
         expect($help->successful())->toBeTrue($help->errorOutput())
             ->and($help->output())->toContain('--role=control|gateway|app')
-            ->and($help->output())->toContain('--php=8.4|8.5')
+            ->and($help->output())->toContain('--php=8.5')
             ->and($help->output())->toContain('--source-archive=PATH')
             ->and($help->output())->toContain('--verbose')
             ->and($help->output())->toContain('A new control node runs it')
             ->and($help->output())->toContain('First-gateway bootstrap may ship this same script')
-            ->and($contents)->toContain('ppa.launchpadcontent.net/ondrej/php')
+            ->and($contents)->toContain('packages.sury.org/php')
+            ->and($contents)->toContain('sury-php.gpg')
             ->and($contents)->toContain('php${PHP_VERSION}-cli');
     });
 
@@ -270,6 +272,337 @@ describe('node:new', function (): void {
                 ],
             ])
             ->and(DB::table('nodes')->count())->toBe(0);
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('provisions a development app node from a gateway caller', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-dev-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.20',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('created')
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'app-dev-1',
+                'role' => 'app',
+                'environment' => 'development',
+                'tld' => 'test',
+                'status' => 'active',
+            ])
+            ->and($payload['success']['data']['node']['addresses']['wireguard'])->toBe('10.6.0.3')
+            ->and($payload['success']['data']['development_tld'])->toMatchArray([
+                'tld' => 'test',
+                'gateway_dns' => [
+                    'domain' => '*.test',
+                    'target' => '10.6.0.3',
+                    'status' => 'configured',
+                ],
+            ])
+            ->and($node)->not->toBeNull()
+            ->and($node->role)->toBe('app')
+            ->and($node->environment)->toBe('development')
+            ->and($node->tld)->toBe('test')
+            ->and($node->host)->toBe('192.0.2.20')
+            ->and($node->wireguard_address)->toBe('10.6.0.3')
+            ->and($node->gateway_endpoint)->toBe('10.6.0.2')
+            ->and($node->ssh_user)->toBe('provisioner')
+            ->and($node->user)->toBe('orbit')
+            ->and($node->orbit_path)->toBe('/home/orbit/orbit')
+            ->and((bool) $node->is_local)->toBeFalse();
+
+        Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
+            && str_contains($process->command, 'app')
+            && str_contains($process->command, '--source-archive='));
+    });
+
+    it('provisions a production app node without a development tld from a gateway caller', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-prod-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.21',
+            '--environment' => 'production',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $node = DB::table('nodes')->where('name', 'app-prod-1')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'app-prod-1',
+                'role' => 'app',
+                'environment' => 'production',
+                'tld' => null,
+                'status' => 'active',
+            ])
+            ->and($payload['success']['data'])->not->toHaveKey('development_tld')
+            ->and($node)->not->toBeNull()
+            ->and($node->environment)->toBe('production')
+            ->and($node->tld)->toBeNull();
+    });
+
+    it('requires a tld for development app nodes before side effects', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-dev-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.20',
+            '--environment' => 'development',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('forwards app-node creation from a configured control node to the gateway API', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '127.0.0.1',
+            'wireguard_address' => '10.6.0.3',
+            'gateway_endpoint' => '10.6.0.2',
+            'ssh_user' => get_current_user(),
+            'user' => get_current_user(),
+            'orbit_path' => base_path(),
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes' => Http::response([
+                'success' => [
+                    'data' => [
+                        'result' => ['action' => 'created'],
+                        'node' => [
+                            'name' => 'app-dev-1',
+                            'role' => 'app',
+                            'environment' => 'development',
+                            'tld' => 'test',
+                            'platform' => 'unknown',
+                            'addresses' => [
+                                'wireguard' => '10.6.0.4',
+                                'gateway_endpoint' => '10.6.0.2',
+                            ],
+                            'status' => 'active',
+                        ],
+                        'provisioning' => [
+                            'transport' => 'ssh',
+                            'host' => '192.0.2.20',
+                            'status' => 'complete',
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-dev-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.20',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['name'])->toBe('app-dev-1')
+            ->and(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://10.6.0.2/api/nodes'
+            && $request['name'] === 'app-dev-1'
+            && $request['role'] === 'app'
+            && $request['host'] === '192.0.2.20'
+            && $request['environment'] === 'development'
+            && $request['tld'] === 'test'
+            && $request['ssh_user'] === 'provisioner');
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('forwards app-node creation when gateway add only stored local gateway settings', function (): void {
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes' => Http::response([
+                'success' => [
+                    'data' => [
+                        'result' => ['action' => 'created'],
+                        'node' => [
+                            'name' => 'app-dev-1',
+                            'role' => 'app',
+                            'environment' => 'development',
+                            'tld' => 'test',
+                            'platform' => 'unknown',
+                            'addresses' => [
+                                'wireguard' => '10.6.0.3',
+                            ],
+                            'status' => 'active',
+                        ],
+                        'provisioning' => [
+                            'transport' => 'ssh',
+                            'host' => '192.0.2.20',
+                            'status' => 'complete',
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-dev-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.20',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['name'])->toBe('app-dev-1')
+            ->and(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://10.6.0.2/api/nodes'
+            && $request['name'] === 'app-dev-1'
+            && $request['role'] === 'app'
+            && $request['host'] === '192.0.2.20'
+            && $request['environment'] === 'development'
+            && $request['tld'] === 'test'
+            && $request['ssh_user'] === 'provisioner');
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });

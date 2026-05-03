@@ -45,7 +45,7 @@ Check:
 - focused gate and Pint evidence are present when required;
 - JSON envelopes, CLI I/O, exit codes, and failure behavior match docs;
 - security and destructive-flow boundaries are respected;
-- standing live nodes were used only read-only/idempotently;
+- E2E coverage targets ephemeral infrastructure only;
 - `docs/PORTING.md` changes, if any, are semantically correct;
 - tags, locks, blockers, and process state are safe for the orchestrator.
 
@@ -106,4 +106,4 @@ of forcing them.
 - Do not spawn agents.
 - Do not close or complete the todo.
 - Do not use destructive git commands.
-- Do not mutate live nodes.
+- Do not run E2E against standing infrastructure.

@@ -30,12 +30,10 @@ be identified, post `NEEDS_DIRECTION` on the coordination todo and exit.
 
 ## Lane Rules
 
-The gate todo declares `lane=live-smoke|ephemeral|both|none`.
+The gate todo declares `lane=ephemeral|none`.
 
-- `live-smoke`: read-only or idempotent standing-node checks only.
 - `ephemeral`: destructive, provisioning, repair, adoption, or host-mutation
-  checks on ephemeral Incus VMs only.
-- `both`: live smoke plus ephemeral coverage in the gate's declared order.
+  checks on disposable VMs only.
 - `none`: no runtime E2E; the gate must cite why.
 
 `TESTING.md` is canonical for lane safety.
@@ -47,7 +45,7 @@ Before running commands:
 1. Read the gate todo's lane and exact command list.
 2. Verify the lane against `TESTING.md`.
 3. Refuse destructive, provisioning, repair, adoption, or host-mutation work on
-   standing live nodes.
+   standing infrastructure.
 4. Refuse commands not declared by the gate todo.
 5. Refuse commands whose required lane/prerequisite is absent from
    `TESTING.md`.
@@ -71,7 +69,7 @@ the owning implementation work.
 Post exactly one final comment on the gate todo:
 
 ```text
-E2E_DONE status=PASSED|FAILED|SKIPPED lane=<live-smoke|ephemeral|both|none>
+E2E_DONE status=PASSED|FAILED|SKIPPED lane=<ephemeral|none>
 
 commands:
   - <command>: exit=<code>, elapsed=<seconds>
@@ -93,8 +91,8 @@ evidence:
 ## Boundaries
 
 - Do not edit code, tests, docs, scripts, scratchpads, or prompts.
-- Do not prepare missing VMs or live-node prerequisites.
+- Do not prepare missing VM prerequisites.
 - Do not run commands outside the gate declaration.
-- Do not run destructive flows against standing live nodes.
+- Do not run E2E flows against standing infrastructure.
 - Do not apply tags or complete the todo.
 - Do not spawn agents.

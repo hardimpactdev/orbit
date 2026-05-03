@@ -17,16 +17,16 @@ behavior from `../orbit-old-may`.
   before the command is built here.
 - Every migrated implementation slice must cite the current docs it implements
   and the old code it used as evidence.
-- Standing live-node checks on gateway, beast, and mini must stay read-only or
-  idempotent.
-- Provisioning, destructive, host-mutation, and repair/adoption flows require
-  restored ephemeral E2E before they can be treated as fully verified.
-- Every newly-ported command requires a paired SMOKE-* todo (read-only standing
-  smoke) AND an E2E-* gate todo (ephemeral) before its workstream entry can flip
-  to `[x]`. Read-only commands need both. Write/destructive commands skip SMOKE
-  (cannot run against standing nodes) but still require the E2E gate. The
-  pipeline filler is responsible for creating both alongside the implementation
-  todo.
+- Standing live infrastructure is not a test lane. Do not use persistent
+  gateway, control, or app nodes as verification targets.
+- In-memory Pest tests own deterministic command, service, database, renderer,
+  and contract coverage.
+- Provisioning, destructive, host-mutation, live transport, and repair/adoption
+  flows require ephemeral E2E before they can be treated as fully verified.
+- Every newly-ported command requires focused in-memory Pest coverage and one
+  E2E-* gate todo before its workstream entry can flip to `[x]`. The E2E gate
+  may declare `lane=none` only when the command is docs-only, a pure refactor,
+  or has no observable runtime behavior outside Pest.
 
 ## Status Legend
 
@@ -66,11 +66,7 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
 Default migration order is command-contract and capability driven:
 
 1. **Foundation and verification harness.**
-   - Keep `composer quality-check` and standing live smoke executable, with
-     known red gates tracked here.
-   - Until the gateway-to-mini SSH trust decision is resolved, standing live
-     smoke is a known red gate: it passes local tests, updates beast, then fails
-     when the gateway tries to update mini.
+   - Keep `composer quality-check` green for in-memory Pest coverage.
    - Expand the Incus-backed ephemeral E2E harness before provisioning or
      destructive flows depend on it.
    - Use blank Incus VM snapshots for provisioning coverage and ready Incus VM
@@ -348,19 +344,17 @@ All legacy command docs have been converted. See individual family statuses abov
 These hints are for the Solo pipeline filler. They describe todo sequencing
 only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
-#### Pairing Rule (Smoke + E2E Per Port)
+#### Pairing Rule (Pest + E2E Per Port)
 
 For every implementation todo the filler creates, also create the paired gate
 todos required by the Rules section:
 
-- `SMOKE-<short-id>` — read-only standing smoke todo for read commands. Tagged
-  `smoke`, lane `none` (the smoke IS the verification). Skip for write/
-  destructive commands.
 - `E2E-<short-id>` — ephemeral E2E gate todo. Tagged `e2e`, `e2e-gate`,
   `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
-  `SCOUT_REPORT status=READY`. Lane must declare a concrete `bin/e2e --<lane>`
-  command; if that lane does not yet exist, create a separate implementer todo
-  to author it before the E2E gate becomes dispatchable.
+  `SCOUT_REPORT status=READY`. Lane must declare a concrete
+  `composer test:e2e` invocation, `bin/e2e --<lane>` command, or `lane=none`
+  reason; if that lane does not yet exist, create a separate implementer todo to
+  author it before the E2E gate becomes dispatchable.
 
 E2E gate todos are dispatched only by the orchestrator's E2E role per
 `references/todo-state.md`. Never promote them to `worker-ready` and never
@@ -381,24 +375,24 @@ route them to the implementer agent.
 1. Finish and review `NODE-API-READ-1` (todo 230).
 2. Then dispatch `NODE-LIST-FWD-1` (todo 234).
 3. Then dispatch `NODE-SHOW-FWD-1` (todo 235).
-4. Pair each of 234 and 235 with paired SMOKE and E2E gate todos. The E2E gates
+4. Pair each of 234 and 235 with paired E2E gate todos. The E2E gates
    need a `bin/e2e --read-topology` lane authored first (todo 238) — a shared
    lane that spins up control + gateway + dev-app for multiple read-command
    verifications.
 
 Do not create more downstream node-forwarding todos while any of 230, 234, or
 235 are still open. If the ready queue is below target during that chain, fill
-with independent read-only, smoke, or harness work only.
+with independent read-only Pest or harness work only.
 
 #### After Read-Forwarding Chain Verifies (Next 5 Candidates)
 
 1. Authoring `bin/e2e --read-topology` lane (todo 238) so the paired E2E gates
    above become dispatchable.
 2. Node doctor contract/docs slice needed for `node:list --doctor`.
-3. `node:list --doctor` and doctor handoff implementation (with paired smoke +
-   e2e gates).
+3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
+   E2E gates).
 4. `node:show` real grant metadata / authorization visibility slice (with
-   paired smoke + e2e gates).
+   paired Pest and E2E gates).
 5. Ready development-app and production-app Incus snapshot lanes (todos 237/239).
 
 #### Gateway Forwarding Chain (Unlocks After 234/235 Pattern Proven)
@@ -604,7 +598,18 @@ exist. Those families wait for the node/gateway/app foundations.
 ## DNS Workstream
 
 - [x] Convert DNS command docs into current format.
-- [ ] Port `dns:resolve-tld`.
+- [x] Port `dns:resolve-tld`.
+  - Current implementation: `app/Console/Commands/DnsResolveTldCommand.php`
+  - Current service: `app/Services/Dns/LocalResolver.php`
+  - Current tests:
+    - `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` (base contract, caller role, validation, idempotence, unsupported platform, safety)
+    - `tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` (non-interactive mode, missing input, forbidden input, invalid values)
+    - `tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` (JSON envelope, success/error shapes, every error code, refresh-failed partial data)
+    - `tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` (human progress trees, success/failure prose, no JSON envelopes)
+  - Contract gaps:
+    - Interactive input mode prompts are covered by command logic but not fully exercised via automated TTY prompts (standard PHPUnit/Pest limitation).
+    - Ephemeral E2E lane (`bin/e2e --dns-resolve-tld`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
+    - Linux backend support is intentionally deferred; only macOS dnsmasq backend is implemented.
 - [ ] Port `dns:list`.
 
 ## App Workstream
@@ -751,10 +756,8 @@ A `GatewayClient` service class (or similar) that:
 ## Testing Infrastructure
 
 - [x] Clean unit/feature test baseline.
-- [x] Standing live smoke script exists.
-- [x] Standing live smoke red gate resolved.
-  - `update:all` excludes control nodes via `where('role', '!=', 'control')`.
-  - Mini is no longer targeted as a remote update node.
+- [x] Default `composer test` runs in-memory Pest and excludes E2E.
+- [x] Standing infrastructure test lane removed.
 - [~] Restore ephemeral E2E.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.
@@ -769,11 +772,12 @@ A `GatewayClient` service class (or similar) that:
     blank gateway VM.
   - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
     exercises `gateway:add` from a ready control VM against a ready gateway VM.
-  - [ ] Create ready development app and production app snapshot lanes for
-    fast command-porting tests.
+  - [~] Create ready development app snapshot lane for fast command-porting
+    tests.
+  - [ ] Create ready production app snapshot lane for fast command-porting
+    tests.
 - [ ] Add E2E topology for gateway + control + development app + production
   app nodes.
-- [ ] Add safe read-only standing-node smoke coverage for registry reads.
 - [ ] Add provisioning/destructive coverage only against ephemeral nodes.
 
 ## Next Priorities
@@ -783,11 +787,9 @@ A `GatewayClient` service class (or similar) that:
    as contract-complete.
 2. Build ready Incus E2E snapshot lanes for fast command-porting tests:
    gateway, development app, and production app VMs.
-3. Fix gateway-to-mini SSH trust, or explicitly decide that standing live smoke
-   should exclude updating mini.
-4. Finish node registry and metadata slices first: `node:update`,
+3. Finish node registry and metadata slices first: `node:update`,
    `node:default`, and the missing `node:list` / `node:show` contract gaps.
-5. Convert `profile` docs once its node/app prerequisites are present, then
+4. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-6. Complete the documented `update` and `update:all` implementation gaps once
+5. Complete the documented `update` and `update:all` implementation gaps once
    the current node access path is stable enough to enforce them.

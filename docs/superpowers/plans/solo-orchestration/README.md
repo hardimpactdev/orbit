@@ -106,7 +106,7 @@ agents:
   e2e: claude-opus
 
 safety:
-  standing_live_nodes: read-only-or-idempotent
+  standing_infrastructure: not-a-test-lane
   destructive_flows: ephemeral-only
 ```
 ````
@@ -214,7 +214,7 @@ Use exact labels so future cycles can resume from durable evidence:
 - `CHANGES_REQUESTED`
 - `RUBBER_DUCK_PROPOSAL agent=<name> verdict=PATH|NEEDS_USER_DIRECTION`
 - `RUBBER_DUCK_RESOLVED status=AGREED|ESCALATED`
-- `E2E_DISPATCHED process=<id> lane=<live-smoke|ephemeral|both|none>`
+- `E2E_DISPATCHED process=<id> lane=<ephemeral|none>`
 - `E2E_DONE status=PASSED|FAILED|SKIPPED lane=<name>`
 - `ORCHESTRATOR_CLOSED`
 - `PROMPT_RECOVERY status=STALLED|RETRIED|REPLACED process=<id>`
@@ -294,9 +294,9 @@ Do not replace a focused gate with a broader gate unless the todo says so.
 
 ## Safety
 
-- Standing live nodes are read-only or idempotent only.
-- Destructive, provisioning, host-mutation, repair, and adoption flows are
-  ephemeral-only per `TESTING.md`.
+- Standing infrastructure is not a test lane.
+- Destructive, provisioning, host-mutation, repair, adoption, and live transport
+  verification flows are ephemeral-only per `TESTING.md`.
 - Do not use `git stash`, `git reset --hard`, `git checkout --`, broad
   `git restore`, or hidden reverts.
 - Shared worktree diffs may belong to another role or the user. Verify

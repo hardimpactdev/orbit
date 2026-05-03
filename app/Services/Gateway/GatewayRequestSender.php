@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
-final class GatewayRequestSender
+final readonly class GatewayRequestSender
 {
     public function __construct(
         private GatewayResponseParser $parser,

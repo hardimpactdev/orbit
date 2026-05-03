@@ -9,6 +9,7 @@ E2E_SOURCE_IMAGE="${ORBIT_E2E_SOURCE_IMAGE:-${ORBIT_E2E_IMAGE:-images:ubuntu/26.
 E2E_BLANK_IMAGE="${ORBIT_E2E_BLANK_IMAGE:-orbit-blank-ubuntu-26.04}"
 E2E_CONTROL_IMAGE="${ORBIT_E2E_CONTROL_IMAGE:-orbit-ready-control}"
 E2E_GATEWAY_IMAGE="${ORBIT_E2E_GATEWAY_IMAGE:-orbit-ready-gateway}"
+E2E_DEVAPP_IMAGE="${ORBIT_E2E_DEVAPP_IMAGE:-orbit-ready-devapp}"
 E2E_BOOTSTRAP_USER="${ORBIT_E2E_BOOTSTRAP_USER:-provisioner}"
 E2E_CONTROL_USER="${ORBIT_E2E_CONTROL_USER:-control}"
 E2E_PREFIX="${ORBIT_E2E_INSTANCE_PREFIX:-orbit-e2e}"
@@ -19,13 +20,14 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --lifecycle | --control | --node-new-gateway | --gateway-add]
+usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --prepare-devapp | --lifecycle | --control | --node-new-gateway | --gateway-add | --node-new-devapp | --node-new-prodapp]
 
 Modes:
   --preflight        Check that the ephemeral backend is reachable on the E2E host.
   --prepare-blank    Build or replace the reusable SSH-ready blank Incus image.
   --prepare-control  Build or replace the reusable Orbit-ready control image.
   --prepare-gateway  Build or replace the reusable Orbit-ready gateway image.
+  --prepare-devapp   Build or replace the reusable Orbit-ready development-app image.
   --lifecycle        Launch one VM from the blank image, verify SSH, then destroy it.
   --control          Launch one VM from the control image, verify Orbit, then destroy it.
   --node-new-gateway Launch a control VM and a blank gateway VM, then run orbit node:new
@@ -34,6 +36,16 @@ Modes:
   --gateway-add      Launch a control VM and a gateway VM, then run orbit gateway:add
                      from the control VM to join the gateway. Verifies control-node
                      onboarding, CA trust, and gateway API reachability.
+  --node-new-devapp  Launch control, gateway, and blank app VMs, then run
+                     orbit node:new --role=app --environment=development from
+                     the control VM through the gateway API. Verifies gateway
+                     registry state and app-node provisioning.
+  --node-new-prodapp Launch control, gateway, and blank app VMs, then run
+                     orbit node:new --role=app --environment=production from
+                     the control VM through the gateway API. Verifies gateway
+                     registry state and app-node provisioning without a dev TLD.
+  --dns-resolve-tld  Launch a control VM and verify orbit dns:resolve-tld behavior.
+                     On Linux VMs this exercises the unsupported-platform path.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
@@ -42,6 +54,7 @@ Environment:
   ORBIT_E2E_BLANK_IMAGE      Reusable blank image alias. Defaults to "orbit-blank-ubuntu-26.04".
   ORBIT_E2E_CONTROL_IMAGE    Reusable control image alias. Defaults to "orbit-ready-control".
   ORBIT_E2E_GATEWAY_IMAGE    Reusable gateway image alias. Defaults to "orbit-ready-gateway".
+  ORBIT_E2E_DEVAPP_IMAGE     Reusable development-app image alias. Defaults to "orbit-ready-devapp".
   ORBIT_E2E_BOOTSTRAP_USER   Fresh-host bootstrap SSH user. Defaults to "provisioner".
   ORBIT_E2E_CONTROL_USER     Ready control-node system user. Defaults to "control".
   ORBIT_E2E_INSTANCE_PREFIX  Prefix for disposable instances. Defaults to "orbit-e2e".
@@ -50,7 +63,9 @@ Environment:
   ORBIT_E2E_MEMORY           VM memory limit. Defaults to "2GiB".
   ORBIT_E2E_KEEP             Set to "1" to leave failed VMs behind for debugging.
 
-Do not run write/destructive E2E against standing live nodes.
+Use Pest for in-memory command and contract tests.
+Use E2E for provisioning or host-mutating workflows.
+Do not run E2E against standing infrastructure.
 HELP
 }
 
@@ -513,6 +528,130 @@ incus stop "$name" --timeout 120 </dev/null >/dev/null
 incus publish "$name" --force --reuse --alias "$gateway_image" </dev/null >/dev/null
 
 echo "orbit-e2e gateway image ready: ${gateway_image}"
+REMOTE
+        status=$?
+    fi
+
+    set -e
+    rm -rf "$local_bundle"
+    ssh "$E2E_HOST" "rm -rf $remote_bundle_quoted" >/dev/null 2>&1 || true
+
+    return "$status"
+}
+
+prepare_devapp() {
+    local local_bundle
+    local remote_bundle
+    local remote_bundle_quoted
+    local status
+
+    local_bundle="$(mktemp -d)"
+    remote_bundle="/tmp/${E2E_PREFIX}-$(date +%Y%m%d%H%M%S)-$$-devapp-bundle"
+    remote_bundle_quoted="$(printf '%q' "$remote_bundle")"
+
+    build_source_archive "$local_bundle/orbit-source.tar.gz"
+    cp bin/install-orbit "$local_bundle/install-orbit"
+
+    set +e
+    ssh "$E2E_HOST" "rm -rf $remote_bundle_quoted && mkdir -p $remote_bundle_quoted"
+    status=$?
+
+    if [ "$status" -eq 0 ]; then
+        scp "$local_bundle/orbit-source.tar.gz" "$local_bundle/install-orbit" "$E2E_HOST:$remote_bundle/" >/dev/null
+        status=$?
+    fi
+
+    if [ "$status" -eq 0 ]; then
+        ssh "$E2E_HOST" "bash -s" -- \
+            "$E2E_BLANK_IMAGE" \
+            "$E2E_DEVAPP_IMAGE" \
+            "$remote_bundle/orbit-source.tar.gz" \
+            "$remote_bundle/install-orbit" \
+            "$E2E_BOOTSTRAP_USER" \
+            "$E2E_PREFIX" \
+            "$E2E_TIMEOUT_SECONDS" \
+            "$E2E_CPUS" \
+            "$E2E_MEMORY" \
+            "$E2E_KEEP" <<'REMOTE'
+set -euo pipefail
+
+blank_image="$1"
+devapp_image="$2"
+source_archive="$3"
+installer="$4"
+bootstrap_user="$5"
+prefix="$6"
+timeout_seconds="$7"
+cpus="$8"
+memory="$9"
+keep="${10}"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+name="${prefix}-${run_id}-prepare-devapp"
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instance ${name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$name" >/dev/null 2>&1
+    fi
+
+    return "$status"
+}
+
+wait_for_agent() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+
+if ! incus image info "$blank_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing blank image: ${blank_image}; run bin/e2e --prepare-blank first" >&2
+    exit 2
+fi
+
+echo "orbit-e2e preparing ${devapp_image} from ${blank_image} on $(hostname)"
+incus launch "$blank_image" "$name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+wait_for_agent "$name"
+
+# Ensure orbit runtime user exists
+incus exec "$name" -- sh -lc "id -u orbit >/dev/null 2>&1 || useradd -m -s /bin/bash orbit" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "usermod -p '*' orbit && usermod -aG sudo orbit && printf 'orbit ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/99-orbit && chmod 440 /etc/sudoers.d/99-orbit && install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" </dev/null >/dev/null
+
+incus file push "$source_archive" "$name/tmp/orbit-source.tar.gz" </dev/null >/dev/null
+incus file push "$installer" "$name/tmp/install-orbit" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "chmod +x /tmp/install-orbit && chown orbit:orbit /tmp/orbit-source.tar.gz /tmp/install-orbit" </dev/null >/dev/null
+incus exec "$name" -- sudo -iu orbit bash -lc "/tmp/install-orbit --role=app --path=/home/orbit/orbit --source-archive=/tmp/orbit-source.tar.gz --bin=/usr/local/bin/orbit" </dev/null
+incus exec "$name" -- sudo -iu orbit bash -lc "orbit --version | grep -F 'Orbit 0.1.0'" </dev/null >/dev/null
+
+# Clean up ephemeral state so the image can be reused
+incus exec "$name" -- sh -lc "rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit /home/orbit/.ssh/authorized_keys /home/${bootstrap_user}/.ssh/authorized_keys && install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh && touch /home/${bootstrap_user}/.ssh/authorized_keys && chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && rm -f /etc/machine-id && touch /etc/machine-id && cloud-init clean --logs --seed || true" </dev/null >/dev/null
+
+incus stop "$name" --timeout 120 </dev/null >/dev/null
+incus publish "$name" --force --reuse --alias "$devapp_image" </dev/null >/dev/null
+
+echo "orbit-e2e devapp image ready: ${devapp_image}"
 REMOTE
         status=$?
     fi
@@ -1357,6 +1496,668 @@ echo "orbit-e2e gateway:add bootstrap-partial passed: control=${control_ipv4} ga
 REMOTE
 }
 
+node_new_app() {
+    local node_environment="$1"
+
+    ssh "$E2E_HOST" "bash -s" -- \
+        "$E2E_CONTROL_IMAGE" \
+        "$E2E_GATEWAY_IMAGE" \
+        "$E2E_BLANK_IMAGE" \
+        "$E2E_BOOTSTRAP_USER" \
+        "$E2E_CONTROL_USER" \
+        "$E2E_PREFIX" \
+        "$E2E_TIMEOUT_SECONDS" \
+        "$E2E_CPUS" \
+        "$E2E_MEMORY" \
+        "$E2E_KEEP" \
+        "$node_environment" <<'REMOTE'
+set -euo pipefail
+
+control_image="$1"
+gateway_image="$2"
+blank_image="$3"
+bootstrap_user="$4"
+control_user="$5"
+prefix="$6"
+timeout_seconds="$7"
+cpus="$8"
+memory="$9"
+keep="${10}"
+node_environment="${11}"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+control_name="${prefix}-${run_id}-control"
+gateway_name="${prefix}-${run_id}-gateway"
+app_name="${prefix}-${run_id}-app-${node_environment}"
+run_dir="/tmp/${prefix}-${run_id}-node-new-${node_environment}-app"
+
+if [ "$node_environment" = "development" ]; then
+    orbit_node_name="app-dev-1"
+    node_tld="e2edev"
+else
+    orbit_node_name="app-prod-1"
+    node_tld=""
+fi
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instances ${control_name}, ${gateway_name}, and ${app_name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$control_name" >/dev/null 2>&1
+        incus delete --force "$gateway_name" >/dev/null 2>&1
+        incus delete --force "$app_name" >/dev/null 2>&1
+        rm -rf "$run_dir"
+    fi
+
+    return "$status"
+}
+
+extract_ipv4() {
+    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
+}
+
+wait_for_agent() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ipv4() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(extract_ipv4 "$instance")"
+
+        if [ -n "$ipv4" ]; then
+            echo "$ipv4"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ssh() {
+    ipv4="$1"
+    key="$2"
+    ssh_user="$3"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ssh \
+            -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${ssh_user}@${ipv4}" \
+            "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "orbit-e2e failed: SSH never became ready on ${ipv4} within ${timeout_seconds}s" >&2
+    return 1
+}
+
+wait_for_gateway_api() {
+    url="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$control_name" -- sudo -iu "$control_user" php -r "exit(@file_get_contents('${url}/api/ca/root') === false ? 1 : 0);" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: gateway API did not become reachable at ${url}" >&2
+    incus exec "$gateway_name" -- sh -lc "tail -n 80 /tmp/gateway-api.log 2>/dev/null || true" </dev/null >&2 || true
+    return 1
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+command -v ssh-keygen >/dev/null
+command -v ssh >/dev/null
+
+if [ "$node_environment" != "development" ] && [ "$node_environment" != "production" ]; then
+    echo "orbit-e2e failed: node environment must be development or production" >&2
+    exit 2
+fi
+
+if ! incus image info "$control_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing control image: ${control_image}; run bin/e2e --prepare-control first" >&2
+    exit 2
+fi
+
+if ! incus image info "$gateway_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing gateway image: ${gateway_image}; run bin/e2e --prepare-gateway first" >&2
+    exit 2
+fi
+
+if ! incus image info "$blank_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing blank image: ${blank_image}; run bin/e2e --prepare-blank first" >&2
+    exit 2
+fi
+
+rm -rf "$run_dir"
+mkdir -p "$run_dir"
+
+ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
+
+echo "orbit-e2e launching ${control_name}, ${gateway_name}, and ${app_name} on $(hostname)"
+
+incus launch "$control_image" "$control_name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+sleep 3
+
+incus launch "$gateway_image" "$gateway_name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+sleep 3
+
+incus launch "$blank_image" "$app_name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+wait_for_agent "$control_name"
+wait_for_agent "$gateway_name"
+wait_for_agent "$app_name"
+
+# Set up SSH access on the control VM.
+incus exec "$control_name" -- sh -lc "install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$control_name/home/${control_user}/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$control_name" -- sh -lc "chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+# Set up SSH access from the gateway's orbit user to the blank app VM.
+incus exec "$gateway_name" -- sh -lc "install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519" "$gateway_name/home/orbit/.ssh/id_ed25519" </dev/null >/dev/null
+incus exec "$gateway_name" -- sh -lc "chown orbit:orbit /home/orbit/.ssh/id_ed25519 && chmod 600 /home/orbit/.ssh/id_ed25519 && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+# Set up SSH access on the app VM for the bootstrap user.
+incus exec "$app_name" -- sh -lc "install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$app_name/home/${bootstrap_user}/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$app_name" -- sh -lc "chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+control_ipv4="$(wait_for_ipv4 "$control_name")"
+gateway_ipv4="$(wait_for_ipv4 "$gateway_name")"
+app_ipv4="$(wait_for_ipv4 "$app_name")"
+
+ip_check_deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$ip_check_deadline" ] && { [ "$control_ipv4" = "$gateway_ipv4" ] || [ "$control_ipv4" = "$app_ipv4" ] || [ "$gateway_ipv4" = "$app_ipv4" ]; }; do
+    sleep 2
+    control_ipv4="$(extract_ipv4 "$control_name")"
+    gateway_ipv4="$(extract_ipv4 "$gateway_name")"
+    app_ipv4="$(extract_ipv4 "$app_name")"
+done
+
+if [ "$control_ipv4" = "$gateway_ipv4" ] || [ "$control_ipv4" = "$app_ipv4" ] || [ "$gateway_ipv4" = "$app_ipv4" ]; then
+    echo "orbit-e2e failed: launched VMs did not receive distinct IPs (control=${control_ipv4}, gateway=${gateway_ipv4}, app=${app_ipv4})" >&2
+    exit 1
+fi
+
+wait_for_ssh "$control_ipv4" "$run_dir/id_ed25519" "$control_user"
+wait_for_ssh "$app_ipv4" "$run_dir/id_ed25519" "$bootstrap_user"
+
+echo "orbit-e2e control VM ready at ${control_ipv4}"
+echo "orbit-e2e gateway VM ready at ${gateway_ipv4}"
+echo "orbit-e2e blank app VM ready at ${app_ipv4}"
+
+incus exec "$gateway_name" -- sudo -iu orbit bash -lc "ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new ${bootstrap_user}@${app_ipv4} true" </dev/null >/dev/null
+
+# Seed the control identity in the gateway database. The ephemeral harness uses
+# the Incus bridge IP as the authenticated peer identity for this HTTP lane.
+incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && php artisan tinker --execute '
+    \App\Models\Node::query()->updateOrCreate(
+        [\"name\" => \"control-1\"],
+        [
+            \"role\" => \"control\",
+            \"environment\" => null,
+            \"tld\" => null,
+            \"platform\" => \"unknown\",
+            \"host\" => \"${control_ipv4}\",
+            \"wireguard_address\" => \"${control_ipv4}\",
+            \"gateway_endpoint\" => \"10.6.0.2\",
+            \"ssh_user\" => \"${control_user}\",
+            \"user\" => \"${control_user}\",
+            \"orbit_path\" => \"/home/${control_user}/orbit\",
+            \"status\" => \"active\",
+            \"is_local\" => false,
+        ],
+    );
+'" </dev/null >/dev/null
+
+# Seed the control node with a configured gateway endpoint so node:new forwards
+# to the typed gateway API instead of attempting local provisioning.
+incus exec "$control_name" -- sudo -iu "$control_user" bash -lc "cd /home/${control_user}/orbit && php artisan tinker --execute '
+    \App\Models\Node::query()->updateOrCreate(
+        [\"name\" => \"control-1\"],
+        [
+            \"role\" => \"control\",
+            \"environment\" => null,
+            \"tld\" => null,
+            \"platform\" => \"unknown\",
+            \"host\" => \"127.0.0.1\",
+            \"wireguard_address\" => \"${control_ipv4}\",
+            \"gateway_endpoint\" => \"10.6.0.2\",
+            \"ssh_user\" => \"${control_user}\",
+            \"user\" => \"${control_user}\",
+            \"orbit_path\" => \"/home/${control_user}/orbit\",
+            \"status\" => \"active\",
+            \"is_local\" => true,
+        ],
+    );
+    \App\Models\Node::query()->updateOrCreate(
+        [\"name\" => \"gateway-1\"],
+        [
+            \"role\" => \"gateway\",
+            \"environment\" => null,
+            \"tld\" => null,
+            \"platform\" => \"unknown\",
+            \"host\" => \"${gateway_ipv4}\",
+            \"wireguard_address\" => \"10.6.0.2\",
+            \"gateway_endpoint\" => \"${gateway_ipv4}\",
+            \"ssh_user\" => \"orbit\",
+            \"user\" => \"orbit\",
+            \"orbit_path\" => \"/home/orbit/orbit\",
+            \"status\" => \"active\",
+            \"is_local\" => false,
+        ],
+    );
+    \App\Models\LocalGatewaySettings::query()->updateOrCreate(
+        [\"id\" => 1],
+        [
+            \"gateway_url\" => \"http://${gateway_ipv4}:8080\",
+            \"gateway_wg_ip\" => \"10.6.0.2\",
+            \"ca_sha256\" => null,
+            \"ca_pem_path\" => null,
+            \"trusted_at\" => now(),
+        ],
+    );
+'" </dev/null >/dev/null
+
+incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && nohup php artisan serve --host=0.0.0.0 --port=8080 > /tmp/gateway-api.log 2>&1 &" </dev/null >/dev/null
+wait_for_gateway_api "http://${gateway_ipv4}:8080"
+
+echo "orbit-e2e running 'orbit node:new ${orbit_node_name}' from control VM through gateway API"
+
+node_new_command="cd /home/${control_user}/orbit && orbit node:new ${orbit_node_name} --role=app --host=${app_ipv4} --environment=${node_environment} --ssh-user=${bootstrap_user} --json"
+
+if [ "$node_environment" = "development" ]; then
+    node_new_command="${node_new_command} --tld=${node_tld}"
+fi
+
+set +e
+node_new_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${control_ipv4}" \
+    "$node_new_command" </dev/null 2>&1)"
+node_new_exit_code=$?
+set -e
+
+if [ "$node_new_exit_code" -ne 0 ]; then
+    echo "orbit-e2e node:new app failed with exit code ${node_new_exit_code}" >&2
+    echo "$node_new_output" >&2
+    incus exec "$gateway_name" -- sh -lc "tail -n 120 /tmp/gateway-api.log 2>/dev/null || true" </dev/null >&2 || true
+    exit 1
+fi
+
+echo "orbit-e2e node:new app output:"
+echo "$node_new_output"
+
+if ! echo "$node_new_output" | grep -q '"success"'; then
+    echo "orbit-e2e failed: node:new app did not return a success response" >&2
+    echo "$node_new_output" >&2
+    exit 1
+fi
+
+if ! echo "$node_new_output" | grep -q "\"name\":\"${orbit_node_name}\""; then
+    echo "orbit-e2e failed: node:new app response does not include expected node ${orbit_node_name}" >&2
+    echo "$node_new_output" >&2
+    exit 1
+fi
+
+if ! echo "$node_new_output" | grep -q "\"environment\":\"${node_environment}\""; then
+    echo "orbit-e2e failed: node:new app response does not include environment ${node_environment}" >&2
+    echo "$node_new_output" >&2
+    exit 1
+fi
+
+if [ "$node_environment" = "development" ]; then
+    if ! echo "$node_new_output" | grep -q '"development_tld"'; then
+        echo "orbit-e2e failed: development app-node response missing development_tld" >&2
+        echo "$node_new_output" >&2
+        exit 1
+    fi
+else
+    if echo "$node_new_output" | grep -q '"development_tld"'; then
+        echo "orbit-e2e failed: production app-node response included development_tld" >&2
+        echo "$node_new_output" >&2
+        exit 1
+    fi
+fi
+
+gateway_registry="$(incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && orbit node:list --json" </dev/null 2>&1)"
+
+if ! echo "$gateway_registry" | grep -q "\"name\":\"${orbit_node_name}\""; then
+    echo "orbit-e2e failed: ${orbit_node_name} not found in gateway node:list" >&2
+    echo "$gateway_registry" >&2
+    exit 1
+fi
+
+if ! echo "$gateway_registry" | grep -q "\"environment\":\"${node_environment}\""; then
+    echo "orbit-e2e failed: ${orbit_node_name} environment not found in gateway node:list" >&2
+    echo "$gateway_registry" >&2
+    exit 1
+fi
+
+if ! incus exec "$app_name" -- sh -lc "test -d /home/orbit/orbit && test -f /home/orbit/orbit/artisan" </dev/null >/dev/null 2>&1; then
+    echo "orbit-e2e failed: Orbit not installed under /home/orbit/orbit on app node" >&2
+    exit 1
+fi
+
+app_orbit_version="$(incus exec "$app_name" -- sudo -iu orbit bash -lc "orbit --version" </dev/null 2>&1 || true)"
+
+if ! echo "$app_orbit_version" | grep -q "Orbit"; then
+    echo "orbit-e2e failed: orbit --version did not work on app node as orbit user" >&2
+    echo "$app_orbit_version" >&2
+    exit 1
+fi
+
+echo "orbit-e2e node:new ${node_environment} app passed: control=${control_ipv4} gateway=${gateway_ipv4} app=${app_ipv4}"
+REMOTE
+}
+
+dns_resolve_tld() {
+    ssh "$E2E_HOST" "bash -s" -- \
+        "$E2E_CONTROL_IMAGE" \
+        "$E2E_CONTROL_USER" \
+        "$E2E_PREFIX" \
+        "$E2E_TIMEOUT_SECONDS" \
+        "$E2E_CPUS" \
+        "$E2E_MEMORY" \
+        "$E2E_KEEP" <<'REMOTE'
+set -euo pipefail
+
+control_image="$1"
+control_user="$2"
+prefix="$3"
+timeout_seconds="$4"
+cpus="$5"
+memory="$6"
+keep="$7"
+
+run_id="$(date +%Y%m%d%H%M%S)-$$"
+name="${prefix}-${run_id}-dns-resolve-tld"
+run_dir="/tmp/${name}"
+
+cleanup() {
+    status=$?
+    set +e
+
+    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
+        echo "orbit-e2e keeping instance ${name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
+    else
+        incus delete --force "$name" >/dev/null 2>&1
+        rm -rf "$run_dir"
+    fi
+
+    return "$status"
+}
+
+extract_ipv4() {
+    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
+}
+
+wait_for_agent() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_ipv4() {
+    instance="$1"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        ipv4="$(extract_ipv4 "$instance")"
+
+        if [ -n "$ipv4" ]; then
+            echo "$ipv4"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
+    incus list "$instance" </dev/null >&2 || true
+    return 1
+}
+
+wait_for_orbit() {
+    ipv4="$1"
+    key="$2"
+    ssh_user="$3"
+    deadline=$((SECONDS + timeout_seconds))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ssh \
+            -i "$key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${ssh_user}@${ipv4}" \
+            "orbit --version | grep -F 'Orbit 0.1.0'" </dev/null >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    echo "orbit-e2e failed: Orbit never became ready on ${name} (${ipv4}) within ${timeout_seconds}s" >&2
+    incus list "$name" </dev/null >&2 || true
+    return 1
+}
+
+trap cleanup EXIT
+
+command -v incus >/dev/null
+command -v ssh-keygen >/dev/null
+command -v ssh >/dev/null
+
+if [ "$control_user" = "orbit" ]; then
+    echo "orbit-e2e failed: ready control user must not be orbit" >&2
+    exit 2
+fi
+
+if ! incus image info "$control_image" >/dev/null 2>&1; then
+    echo "orbit-e2e missing control image: ${control_image}; run bin/e2e --prepare-control first" >&2
+    exit 2
+fi
+
+rm -rf "$run_dir"
+mkdir -p "$run_dir"
+
+ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
+
+echo "orbit-e2e launching ${name} from ${control_image} on $(hostname)"
+incus launch "$control_image" "$name" --vm \
+    --config=limits.cpu="$cpus" \
+    --config=limits.memory="$memory" </dev/null >/dev/null
+
+wait_for_agent "$name"
+incus exec "$name" -- sh -lc "install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh" </dev/null >/dev/null
+incus file push "$run_dir/id_ed25519.pub" "$name/home/${control_user}/.ssh/authorized_keys" </dev/null >/dev/null
+incus exec "$name" -- sh -lc "chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
+
+ipv4="$(wait_for_ipv4 "$name")"
+wait_for_orbit "$ipv4" "$run_dir/id_ed25519" "$control_user"
+
+echo "orbit-e2e control VM ready at ${ipv4}"
+
+# Test 1: resolve-tld on Linux should report unsupported platform
+set +e
+resolve_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${ipv4}" \
+    "cd /home/${control_user}/orbit && orbit dns:resolve-tld test 10.6.0.7 --json" </dev/null 2>&1)"
+resolve_exit_code=$?
+set -e
+
+if [ "$resolve_exit_code" -eq 0 ]; then
+    echo "orbit-e2e dns:resolve-tld returned success on Linux (future platform support?)"
+    echo "$resolve_output"
+    # If it succeeds, verify JSON structure
+    if ! echo "$resolve_output" | grep -q '"success"'; then
+        echo "orbit-e2e failed: dns:resolve-tld did not return expected JSON success envelope" >&2
+        echo "$resolve_output" >&2
+        exit 1
+    fi
+    # Verify Linux resolver config was written
+    if ssh \
+        -i "$run_dir/id_ed25519" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        "${control_user}@${ipv4}" \
+        "test -f /etc/systemd/resolved.conf.d/orbit-test.conf && grep -q '10.6.0.7' /etc/systemd/resolved.conf.d/orbit-test.conf" </dev/null >/dev/null 2>&1; then
+        echo "orbit-e2e Linux resolver config verified: /etc/systemd/resolved.conf.d/orbit-test.conf contains 10.6.0.7"
+    else
+        echo "orbit-e2e warning: Linux resolver config not found at expected path (backend may use different path)" >&2
+    fi
+else
+    echo "orbit-e2e dns:resolve-tld returned exit code ${resolve_exit_code} on Linux (expected unsupported platform)"
+    echo "$resolve_output"
+    # On Linux we expect unsupported_platform error
+    if ! echo "$resolve_output" | grep -q 'unsupported_platform'; then
+        echo "orbit-e2e failed: dns:resolve-tld did not return expected unsupported_platform error on Linux" >&2
+        echo "$resolve_output" >&2
+        exit 1
+    fi
+fi
+
+# Test 2: validation failure for missing TLD in non-interactive mode
+set +e
+validate_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${ipv4}" \
+    "cd /home/${control_user}/orbit && orbit dns:resolve-tld --json" </dev/null 2>&1)"
+validate_exit_code=$?
+set -e
+
+if [ "$validate_exit_code" -eq 0 ]; then
+    echo "orbit-e2e warning: dns:resolve-tld without args unexpectedly succeeded" >&2
+else
+    echo "orbit-e2e dns:resolve-tld without args correctly failed with exit code ${validate_exit_code}"
+    echo "$validate_output"
+    if ! echo "$validate_output" | grep -q 'validation_failed'; then
+        echo "orbit-e2e failed: dns:resolve-tld missing TLD did not return validation_failed" >&2
+        echo "$validate_output" >&2
+        exit 1
+    fi
+fi
+
+# Test 3: reset with force on Linux should also report unsupported platform (or succeed on future support)
+set +e
+reset_output="$(ssh \
+    -i "$run_dir/id_ed25519" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "${control_user}@${ipv4}" \
+    "cd /home/${control_user}/orbit && orbit dns:resolve-tld test --reset --force --json" </dev/null 2>&1)"
+reset_exit_code=$?
+set -e
+
+if [ "$reset_exit_code" -eq 0 ]; then
+    echo "orbit-e2e dns:resolve-tld --reset returned success on Linux (future platform support?)"
+    echo "$reset_output"
+    if ! echo "$reset_output" | grep -q '"success"'; then
+        echo "orbit-e2e failed: dns:resolve-tld --reset did not return expected JSON success envelope" >&2
+        echo "$reset_output" >&2
+        exit 1
+    fi
+    # Verify Linux resolver config was removed
+    if ssh \
+        -i "$run_dir/id_ed25519" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        "${control_user}@${ipv4}" \
+        "test ! -f /etc/systemd/resolved.conf.d/orbit-test.conf" </dev/null >/dev/null 2>&1; then
+        echo "orbit-e2e Linux resolver config removal verified: /etc/systemd/resolved.conf.d/orbit-test.conf absent"
+    else
+        echo "orbit-e2e warning: Linux resolver config still present after reset (backend may use different path)" >&2
+    fi
+else
+    echo "orbit-e2e dns:resolve-tld --reset returned exit code ${reset_exit_code} on Linux (expected unsupported platform)"
+    echo "$reset_output"
+    if ! echo "$reset_output" | grep -q 'unsupported_platform'; then
+        echo "orbit-e2e failed: dns:resolve-tld --reset did not return expected unsupported_platform error on Linux" >&2
+        echo "$reset_output" >&2
+        exit 1
+    fi
+fi
+
+echo "orbit-e2e dns:resolve-tld passed: control=${ipv4}"
+REMOTE
+}
+
 case "${1:-}" in
     -h|--help)
         usage
@@ -1380,6 +2181,9 @@ case "${1:---lifecycle}" in
     --prepare-gateway)
         prepare_gateway
         ;;
+    --prepare-devapp)
+        prepare_devapp
+        ;;
     --lifecycle)
         lifecycle
         ;;
@@ -1391,6 +2195,15 @@ case "${1:---lifecycle}" in
         ;;
     --gateway-add)
         gateway_add
+        ;;
+    --node-new-devapp)
+        node_new_app development
+        ;;
+    --node-new-prodapp)
+        node_new_app production
+        ;;
+    --dns-resolve-tld)
+        dns_resolve_tld
         ;;
     *)
         echo "error: unknown mode '$1'" >&2

@@ -351,7 +351,7 @@ class GatewayAddCommand extends Command
             ];
         }
 
-        $payload = (array) ($response->json('data') ?? $response->json() ?? []);
+        $payload = (array) ($response->json('success.data') ?? $response->json('data') ?? $response->json() ?? []);
         $self = is_array($payload['self'] ?? null) ? $payload['self'] : ($payload['node'] ?? null);
         $gateway = is_array($payload['gateway'] ?? null) ? $payload['gateway'] : null;
 

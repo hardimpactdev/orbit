@@ -18,6 +18,15 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->in('Feature');
 
+pest()->extend(TestCase::class)
+    ->beforeEach(function (): void {
+        if (env('ORBIT_E2E') !== '1') {
+            $this->markTestSkipped('Set ORBIT_E2E=1 to run ephemeral E2E tests.');
+        }
+    })
+    ->group('e2e')
+    ->in('E2E');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

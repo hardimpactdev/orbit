@@ -19,6 +19,8 @@ final class GatewayClient
             ->withOptions([
                 'verify' => $settings->ca_pem_path,
                 'allow_redirects' => false,
+                'timeout' => 900,
+                'connect_timeout' => 10,
             ])
             ->acceptJson()
             ->withHeaders([

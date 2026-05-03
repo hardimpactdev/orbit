@@ -110,6 +110,24 @@ describe('GatewayResponseParser', function (): void {
             ->toThrow(RuntimeException::class, 'Gateway request failed with HTTP status 500');
     });
 
+    it('parses gateway error envelopes even when HTTP status failed', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(422, [
+            'error' => [
+                'code' => 'node.provisioning_incomplete',
+                'message' => 'Install failed',
+                'meta' => ['step' => 'install_orbit'],
+            ],
+        ]);
+
+        $result = $parser->parse($response);
+
+        expect($result->isSuccess())->toBeFalse();
+        expect($result->errorCode())->toBe('node.provisioning_incomplete');
+        expect($result->errorMessage())->toBe('Install failed');
+        expect($result->errorMeta())->toBe(['step' => 'install_orbit']);
+    });
+
     it('throws on empty body', function (): void {
         $parser = new GatewayResponseParser;
         $response = mockResponse(200, '');

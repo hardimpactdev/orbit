@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Services\Gateway\GatewayRequestSender;
 use App\Services\OrbitHostInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -12,6 +14,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use RuntimeException;
 
 #[Signature('node:new
     {name? : Registry name for the node}
@@ -58,12 +61,31 @@ class NodeNewCommand extends Command
             return $this->validationFailed('role', 'Node role must be one of gateway, app, or control.');
         }
 
-        $gatewayConfigured = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->exists();
+        $gatewayConfigured = $this->gatewayConfigured();
 
-        if ($callerRole === 'control' && ! $gatewayConfigured && $role !== 'gateway') {
+        if ($role === 'app') {
+            $inputs = $this->resolveAppInputs();
+
+            if (is_int($inputs)) {
+                return $inputs;
+            }
+
+            if (! $gatewayConfigured) {
+                return $this->failCommand(
+                    code: 'gateway_unavailable',
+                    message: 'Gateway connection is required before creating app or control nodes.',
+                    meta: ['requested_role' => $role],
+                );
+            }
+
+            if ($callerRole === 'control') {
+                return $this->forwardAppNodeCreation($name, $inputs);
+            }
+
+            return $this->provisionAppNode($installer, $name, $inputs);
+        }
+
+        if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required before creating app or control nodes.',
@@ -71,7 +93,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        if ($role !== 'gateway') {
+        if ($role === 'control') {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway forwarding is required before this node role can be created.',
@@ -79,7 +101,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        if ($gatewayConfigured) {
+        if ($gatewayConfigured || $callerRole === 'gateway') {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway forwarding is required before gateway convergence can run.',
@@ -88,6 +110,150 @@ class NodeNewCommand extends Command
         }
 
         return $this->bootstrapFirstGateway($installer, $name);
+    }
+
+    /**
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     */
+    private function forwardAppNodeCreation(string $name, array $inputs): int
+    {
+        try {
+            $response = GatewayRequestSender::make()->post('/api/nodes', [
+                'name' => $name,
+                'role' => 'app',
+                'host' => $inputs['host'],
+                'environment' => $inputs['environment'],
+                'tld' => $inputs['tld'],
+                'ssh_user' => $inputs['sshUser'],
+            ]);
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway API request failed.',
+                meta: [
+                    'requested_role' => 'app',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        if (! $response->isSuccess()) {
+            return $this->failCommand(
+                code: $response->errorCode() ?? 'gateway_unavailable',
+                message: $response->errorMessage() ?? 'Gateway API request failed.',
+                meta: $response->errorMeta(),
+            );
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($response->data());
+        }
+
+        $this->info("Created app node {$name}.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     */
+    private function provisionAppNode(OrbitHostInstaller $installer, string $name, array $inputs): int
+    {
+        if (Node::query()->where('name', $name)->where('status', 'active')->exists()) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Node '{$name}' already exists.",
+                meta: ['name' => $name],
+            );
+        }
+
+        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
+                meta: [
+                    'field' => 'tld',
+                    'value' => $inputs['tld'],
+                ],
+            );
+        }
+
+        $runtimeUser = self::DEFAULT_RUNTIME_USER;
+        $installation = $installer->install($inputs['host'], $inputs['sshUser'], 'app', $runtimeUser);
+
+        if (! $installation->successful) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "App host '{$inputs['host']}' could not complete Orbit installation.",
+                meta: [
+                    'host' => $inputs['host'],
+                    'step' => 'install_orbit',
+                    'error' => trim($installation->errorOutput) ?: null,
+                ],
+            );
+        }
+
+        $wireguardAddress = $this->nextWireguardAddress();
+        $gatewayEndpoint = $this->gatewayEndpoint();
+
+        Node::query()->create([
+            'name' => $name,
+            'role' => 'app',
+            'environment' => $inputs['environment'],
+            'tld' => $inputs['tld'],
+            'platform' => 'unknown',
+            'host' => $inputs['host'],
+            'wireguard_address' => $wireguardAddress,
+            'gateway_endpoint' => $gatewayEndpoint,
+            'ssh_user' => $inputs['sshUser'],
+            'user' => $runtimeUser,
+            'orbit_path' => "/home/{$runtimeUser}/orbit",
+            'status' => 'active',
+            'is_local' => false,
+        ]);
+
+        $payload = [
+            'result' => [
+                'action' => 'created',
+            ],
+            'node' => [
+                'name' => $name,
+                'role' => 'app',
+                'environment' => $inputs['environment'],
+                'tld' => $inputs['tld'],
+                'platform' => 'unknown',
+                'addresses' => [
+                    'wireguard' => $wireguardAddress,
+                ],
+                'status' => 'active',
+            ],
+            'provisioning' => [
+                'transport' => 'ssh',
+                'host' => $inputs['host'],
+                'status' => 'complete',
+            ],
+            'next_steps' => [],
+        ];
+
+        if ($inputs['environment'] === 'development') {
+            $payload['development_tld'] = [
+                'tld' => $inputs['tld'],
+                'gateway_dns' => [
+                    'domain' => "*.{$inputs['tld']}",
+                    'target' => $wireguardAddress,
+                    'status' => 'configured',
+                ],
+            ];
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Created app node {$name}.");
+        $this->line("Endpoint: {$inputs['host']}");
+
+        return self::SUCCESS;
     }
 
     private function bootstrapFirstGateway(OrbitHostInstaller $installer, string $name): int
@@ -299,6 +465,20 @@ class NodeNewCommand extends Command
         return is_string($localRole) && $localRole !== '' ? $localRole : 'control';
     }
 
+    private function gatewayConfigured(): bool
+    {
+        if (Node::query()->where('role', 'gateway')->where('status', 'active')->exists()) {
+            return true;
+        }
+
+        return LocalGatewaySettings::query()
+            ->whereNotNull('gateway_url')
+            ->where('gateway_url', '!=', '')
+            ->whereNotNull('ca_pem_path')
+            ->where('ca_pem_path', '!=', '')
+            ->exists();
+    }
+
     private function stringArgument(string $name): ?string
     {
         $value = $this->argument($name);
@@ -311,6 +491,51 @@ class NodeNewCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * @return array{host: string, environment: string, tld: ?string, sshUser: string}|int
+     */
+    private function resolveAppInputs(): array|int
+    {
+        $host = $this->stringOption('host');
+
+        if ($host === null) {
+            return $this->validationFailed('host', 'Host is required for app nodes.');
+        }
+
+        $environment = $this->stringOption('environment');
+
+        if ($environment === null) {
+            return $this->validationFailed('environment', 'Environment is required for app nodes.');
+        }
+
+        if (! in_array($environment, ['development', 'production'], true)) {
+            return $this->validationFailed('environment', 'Environment must be one of development or production.');
+        }
+
+        $tld = $this->stringOption('tld');
+
+        if ($environment === 'development') {
+            if ($tld === null) {
+                return $this->validationFailed('tld', 'Development app nodes require a TLD.');
+            }
+
+            if (! $this->isValidTld($tld)) {
+                return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
+            }
+        }
+
+        if ($environment === 'production' && $tld !== null) {
+            return $this->validationFailed('tld', 'Production app nodes do not use a development TLD.');
+        }
+
+        return [
+            'host' => $host,
+            'environment' => $environment,
+            'tld' => $tld,
+            'sshUser' => $this->stringOption('ssh-user') ?? 'root',
+        ];
     }
 
     private function defaultControlName(): ?string
@@ -333,6 +558,27 @@ class NodeNewCommand extends Command
         return (bool) preg_match('/^[a-z](?:[a-z0-9-]*[a-z0-9])?$/', $name);
     }
 
+    private function isValidTld(string $tld): bool
+    {
+        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
+    }
+
+    private function gatewayEndpoint(): ?string
+    {
+        /** @var Node|null $gateway */
+        $gateway = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->orderByDesc('is_local')
+            ->first();
+
+        if (! $gateway instanceof Node) {
+            return null;
+        }
+
+        return $gateway->wireguard_address ?? $gateway->gateway_endpoint ?? $gateway->host;
+    }
+
     /**
      * @param  array<int, string>  $excluding
      */
@@ -353,7 +599,7 @@ class NodeNewCommand extends Command
             }
         }
 
-        throw new \RuntimeException('No available WireGuard addresses remain in 10.6.0.0/24.');
+        throw new RuntimeException('No available WireGuard addresses remain in 10.6.0.0/24.');
     }
 
     private function validationFailed(string $field, string $message): int

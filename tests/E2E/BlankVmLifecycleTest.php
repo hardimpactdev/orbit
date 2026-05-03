@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+use Tests\E2E\Support\E2EImage;
+use Tests\E2E\Support\E2ERun;
+use Tests\E2E\Support\ProviderPool;
+
+it('launches a blank VM, reaches it over SSH, and destroys it', function (): void {
+    $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank);
+
+    if (! $selection->available()) {
+        $this->markTestSkipped($selection->message);
+    }
+
+    $provider = $selection->provider();
+    $config = $provider->config();
+    $run = E2ERun::start($provider, 'blank-lifecycle');
+
+    try {
+        $key = $run->createSshKeyPair();
+        $vm = $run->launchBlank('blank');
+
+        $vm->authorizeSsh($config->bootstrapUser, $key);
+        $vm->waitForSsh($config->bootstrapUser, $key);
+
+        $result = $vm->ssh($config->bootstrapUser, $key, 'test "$(uname -s)" = Linux && test -r /etc/os-release');
+
+        expect($result->successful())->toBeTrue($result->errorOutput());
+    } finally {
+        $run->cleanup();
+    }
+});

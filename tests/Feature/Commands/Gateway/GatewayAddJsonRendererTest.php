@@ -126,6 +126,28 @@ it('emits added success envelope', function (): void {
         ->and($output['success']['data']['local_onboarding']['gateway_api'])->toBe('verified');
 });
 
+it('accepts the gateway api success data envelope for identity verification', function (): void {
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'success' => [
+                'data' => [
+                    'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active', 'platform' => 'ubuntu_24-04'],
+                    'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'platform' => 'macos_15-4', 'addresses' => ['wireguard' => '10.6.0.8']],
+                ],
+            ],
+        ]),
+    ]);
+
+    $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
+
+    expect($output['success']['data']['gateway']['name'])->toBe('gateway-1')
+        ->and($output['success']['data']['local_node']['name'])->toBe('control-1')
+        ->and($output['success']['data']['local_node']['addresses']['wireguard'])->toBe('10.6.0.8');
+});
+
 it('emits converged success envelope', function (): void {
     $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----";
     $sha256 = hash('sha256', $pem);

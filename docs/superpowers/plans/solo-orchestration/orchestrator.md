@@ -230,7 +230,7 @@ Handle outcomes:
   todo or one focused fix todo.
 - `SKIPPED`: surface the safety or prerequisite issue on the coordination todo.
 
-E2E follows `TESTING.md`. Standing live nodes remain read-only/idempotent.
+E2E follows `TESTING.md` and targets ephemeral infrastructure only.
 
 ## Process Cleanup
 

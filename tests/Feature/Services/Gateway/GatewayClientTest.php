@@ -42,6 +42,20 @@ describe('GatewayClient', function (): void {
         expect($options)->toHaveKey('allow_redirects', false);
     });
 
+    it('allows long-running gateway command requests', function (): void {
+        $settings = LocalGatewaySettings::current();
+        $settings->gateway_url = 'https://10.6.0.2';
+        $settings->ca_pem_path = '/path/to/ca.pem';
+        $settings->save();
+
+        $pendingRequest = GatewayClient::make();
+
+        $options = (fn () => $this->options)->call($pendingRequest);
+
+        expect($options)->toHaveKey('timeout', 900)
+            ->and($options)->toHaveKey('connect_timeout', 10);
+    });
+
     it('sets accept json header', function (): void {
         $settings = LocalGatewaySettings::current();
         $settings->gateway_url = 'https://10.6.0.2';

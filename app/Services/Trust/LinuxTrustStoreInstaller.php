@@ -24,7 +24,7 @@ final class LinuxTrustStoreInstaller implements TrustStoreInstaller
         $targetPath = "/usr/local/share/ca-certificates/{$certName}";
 
         $command = sprintf(
-            'cp %s %s && update-ca-certificates',
+            'sudo cp %s %s && sudo update-ca-certificates',
             escapeshellarg($rootCaPath),
             escapeshellarg($targetPath),
         );

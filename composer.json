@@ -54,13 +54,17 @@
         "docs-lint": "@php tool/docs-linter/docs-linter.php --strict --format=agent",
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php artisan test"
+            "@php artisan test --exclude-group=e2e"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
-            "./bin/e2e"
+            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e"
         ],
-        "test:live": "./bin/live-smoke",
+        "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud",
+        "e2e:prepare-hcloud-images": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan e2e:prepare-hcloud-images"
+        ],
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",

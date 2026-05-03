@@ -109,11 +109,8 @@ vendor/bin/pint --dirty --format agent
 
 Run the E2E lane declared by the command's gate todo:
 
-- `lane=live-smoke`: run the declared read-only/idempotent live-smoke commands.
 - `lane=ephemeral`: run the declared ephemeral commands, using `TESTING.md`
-  env vars when Incus is remote.
-- `lane=both`: run the lane subset the todo changes unless the gate demands
-  both locally.
+  env vars when Incus or hcloud is remote.
 - `lane=none`: no E2E run; cite the gate todo's reason.
 
 If the gate todo explicitly says the first ephemeral run happens only in the
@@ -148,7 +145,7 @@ changed_files:
 gates:
   - <command>: exit=<code>, elapsed=<seconds>
 e2e:
-  - lane=<live-smoke|ephemeral|both|none>
+  - lane=<ephemeral|none>
   - <command or deferral reason>
 scope:
   - owned_scope_ok=<yes|no>

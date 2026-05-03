@@ -42,7 +42,7 @@ Reject or refine ambiguity in:
 - focused quality gate;
 - E2E lane and test authorship;
 - reviewer verification requirements;
-- live-node, provisioning, destructive-flow, SSH, Incus, and security safety.
+- provisioning, destructive-flow, SSH, provider, and security safety.
 
 Also check whether the todo is too broad, incorrectly ordered, duplicated, or
 better split into a blocker/decision todo.
@@ -65,7 +65,7 @@ You must not:
 - spawn agents;
 - implement code;
 - run product tests or E2E;
-- mutate standing live nodes;
+- schedule E2E against standing infrastructure;
 - edit scratchpads, product docs, or orchestration prompts.
 
 ## Report

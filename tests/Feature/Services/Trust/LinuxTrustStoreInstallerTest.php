@@ -28,14 +28,15 @@ describe('LinuxTrustStoreInstaller', function (): void {
         expect($this->installer->isCaTrusted($this->caPath, 'orbit'))->toBeFalse();
     });
 
-    it('trusts CA via cp and update-ca-certificates', function (): void {
+    it('trusts CA via sudo cp and update-ca-certificates', function (): void {
         Process::fake([
             '*' => Process::result(''),
         ]);
 
         $this->installer->trustCa($this->caPath, 'orbit');
 
-        Process::assertRan(fn ($process) => str_contains($process->command, 'update-ca-certificates'));
+        Process::assertRan(fn ($process) => str_contains($process->command, 'sudo cp')
+            && str_contains($process->command, 'sudo update-ca-certificates'));
     });
 
     it('throws TrustStoreInstallException when trust command fails', function (): void {

@@ -2,36 +2,34 @@
 
 Environment-specific verification for the clean Orbit rebuild.
 
-## Current Real Nodes
+## Verification Model
 
-The standing real-node smoke path uses the gateway registry:
+Orbit has two supported test lanes:
 
-- `gateway`: `10.6.0.2`, SSH alias `gateway`
-- `mini`: `10.6.0.8`, registered as a control node
-- `beast`: `10.6.0.7`, registered as an app node
+1. In-memory Pest tests for deterministic command, service, database, renderer,
+   and contract coverage.
+2. Ephemeral VM E2E tests for real SSH, provisioning, image, and host-mutation
+   coverage.
 
-`gateway` owns the current `nodes` registry used by `update:all`.
+Standing live infrastructure is not a test lane. Do not use persistent gateway,
+control, or app nodes as verification targets.
 
-## Verification Lanes
+## In-Memory Pest
 
-Use local tests for ordinary development:
+Use in-memory Pest tests for ordinary development:
 
 ```bash
 composer test
 ```
 
-Use standing live-node smoke for fast non-destructive integration checks:
+This lane must not require real SSH, hcloud, Incus mutation, or standing
+infrastructure. Fake process, gateway, provider, and transport boundaries in
+Pest when the behavior is a command or contract concern.
 
-```bash
-composer test:live
-bin/live-smoke --control
-```
+## Ephemeral VM E2E
 
-The live smoke path must run ON the control node (mini). It runs local tests,
-then runs `update:all` (which SSHes to gateway and beast) and prints `node:list`.
-
-Use ephemeral E2E only for full lifecycle, provisioning, destructive, or host
-mutation checks:
+Use ephemeral E2E for full lifecycle, provisioning, destructive, or host
+mutation checks against disposable VMs:
 
 ```bash
 composer test:e2e
@@ -67,6 +65,12 @@ gateway node prerequisites and CLI as the `orbit` user, bootstraps gateway-local
 identity and root CA via `orbit:internal:bootstrap-gateway-local`, verifies
 `orbit --version`, then publishes the ready image.
 
+Run `bin/e2e --prepare-devapp` to build or replace the reusable
+`orbit-ready-devapp` Incus image from the blank image. That lane ships the
+current Orbit source and `bin/install-orbit` into a disposable VM, installs the
+development-app node prerequisites and CLI as the `orbit` user with
+`--role=app`, verifies `orbit --version`, then publishes the ready image.
+
 Run `bin/e2e --node-new-gateway` to exercise the first-gateway bootstrap path.
 This lane launches one disposable VM from the ready control image and one from
 the blank image, injects an ephemeral SSH key into both, runs
@@ -93,7 +97,7 @@ gateway web server/TLS infrastructure in the ephemeral harness; this lane is an
 explicit bootstrap-partial gate. The VMs are destroyed at the end unless
 `ORBIT_E2E_KEEP=1`.
 
-These are backend and single-role smokes only; they do not yet validate a full
+These are backend and single-role E2E checks only; they do not yet validate a full
 gateway/control/development-app/production-app topology.
 
 Environment overrides:
@@ -104,6 +108,7 @@ ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
 ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
+ORBIT_E2E_DEVAPP_IMAGE=orbit-ready-devapp
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
@@ -120,26 +125,5 @@ Ready image aliases:
 
 - `orbit-ready-control` via `bin/e2e --prepare-control`
 - `orbit-ready-gateway` via `bin/e2e --prepare-gateway`
-- `orbit-ready-app-development` planned
-- `orbit-ready-app-production` planned
-
-## Standing Live Node Rule
-
-Standing live nodes may be used for read-only or idempotent smoke checks only.
-Allowed examples:
-
-- `node:list`
-- gateway reachability
-- local and gateway-side test suites
-- `update:all`, because it is the intended update mechanism
-- command discovery and help output
-
-Do not run write/destructive E2E against standing live nodes. These belong to
-ephemeral E2E:
-
-- provisioning or bootstrap
-- `node:new`
-- destructive remove or prune flows
-- firewall, DNS, proxy, or host service mutations
-- app, workspace, process, or doctor repair/adoption flows that create, delete,
-  or mutate real artifacts
+- `orbit-ready-devapp` via `bin/e2e --prepare-devapp`
+- `orbit-ready-prodapp` planned
