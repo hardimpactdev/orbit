@@ -139,3 +139,16 @@ it('aligns orbit checkout ownership with the home parent so non-root users can w
         ->toContain('--no-same-owner')
         ->toContain('chown -R');
 });
+
+it('documents e2e topology timing event names', function (): void {
+    $testing = file_get_contents(base_path('TESTING.md'));
+
+    expect($testing)
+        ->toContain('batch.copy-start')
+        ->toContain('agent-ready.<role>')
+        ->toContain('ssh-authorize.<role>')
+        ->toContain('ssh-ready.<role>')
+        ->toContain('snapshot.<role>')
+        ->toContain('wireguard')
+        ->toContain('cleanup.<role>');
+});
