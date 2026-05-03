@@ -108,3 +108,44 @@ it('returns stale hcloud resources as json', function (): void {
         ], JSON_THROW_ON_ERROR))
         ->assertSuccessful();
 });
+
+it('never lists orbit-ready or orbit-template hcloud resources', function (): void {
+    Process::fake([
+        'hcloud server list --selector orbit-e2e=true -o json' => Process::result(output: json_encode([
+            ['id' => 101, 'name' => 'orbit-e2e-old-control', 'created' => '2026-05-03T05:00:00Z'],
+            ['id' => 102, 'name' => 'orbit-ready-control', 'created' => '2026-05-01T05:00:00Z'],
+            ['id' => 103, 'name' => 'orbit-template-gateway', 'created' => '2026-05-01T05:00:00Z'],
+        ], JSON_THROW_ON_ERROR)),
+        'hcloud ssh-key list --selector orbit-e2e=true -o json' => Process::result(output: json_encode([
+            ['id' => 201, 'name' => 'orbit-ready-key', 'created' => '2026-05-01T05:00:00Z'],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+
+    $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
+
+    $this->artisan('e2e:reap-hcloud', ['--json' => true])
+        ->expectsOutput(json_encode([
+            'success' => [
+                'data' => [
+                    'provider' => 'hcloud',
+                    'dry_run' => true,
+                    'older_than_minutes' => 60,
+                    'include_snapshots' => false,
+                    'resources' => [
+                        [
+                            'type' => 'server',
+                            'id' => '101',
+                            'name' => 'orbit-e2e-old-control',
+                            'created' => '2026-05-03T05:00:00Z',
+                            'deleted' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR))
+        ->assertSuccessful();
+
+    Process::assertDidntRun('hcloud server delete 102');
+    Process::assertDidntRun('hcloud server delete 103');
+    Process::assertDidntRun('hcloud ssh-key delete 201');
+});

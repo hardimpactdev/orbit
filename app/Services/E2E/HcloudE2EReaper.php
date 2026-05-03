@@ -84,15 +84,19 @@ final class HcloudE2EReaper
             throw new RuntimeException("Unexpected hcloud {$type} list response.");
         }
 
-        return array_values(array_map(
-            fn (array $item): array => [
-                'type' => $type,
-                'id' => (string) $item['id'],
-                'name' => (string) $item['name'],
-                'created' => (string) $item['created'],
-                'deleted' => false,
-            ],
-            $items,
+        return array_values(array_filter(
+            array_map(
+                fn (array $item): array => [
+                    'type' => $type,
+                    'id' => (string) $item['id'],
+                    'name' => (string) $item['name'],
+                    'created' => (string) $item['created'],
+                    'deleted' => false,
+                ],
+                $items,
+            ),
+            fn (array $resource): bool => ! str_starts_with($resource['name'], 'orbit-ready-')
+                && ! str_starts_with($resource['name'], 'orbit-template-'),
         ));
     }
 

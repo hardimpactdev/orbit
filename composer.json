@@ -69,6 +69,7 @@
             "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature"
         ],
         "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud",
+        "e2e:reap-incus": "@php artisan e2e:reap-incus",
         "e2e:prepare-hcloud-images": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-hcloud-images"

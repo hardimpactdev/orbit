@@ -20,7 +20,7 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --prepare-devapp | --lifecycle | --control | --node-new-gateway | --gateway-add | --node-new-devapp | --node-new-prodapp]
+usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --prepare-devapp | --lifecycle | --control | --node-new-gateway | --gateway-add | --node-new-devapp | --node-new-prodapp | --reap-incus]
 
 Modes:
   --preflight        Check that the ephemeral backend is reachable on the E2E host.
@@ -46,6 +46,8 @@ Modes:
                      registry state and app-node provisioning without a dev TLD.
   --dns-resolve-tld  Launch a control VM and verify orbit dns:resolve-tld behavior.
                      On Linux VMs this exercises the unsupported-platform path.
+  --reap-incus       Reap stale orbit-e2e-* Incus instances older than threshold.
+                     Passes remaining arguments to php artisan e2e:reap-incus.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
@@ -1899,6 +1901,11 @@ echo "orbit-e2e node:new ${node_environment} app passed: control=${control_ipv4}
 REMOTE
 }
 
+reap_incus() {
+    shift
+    php artisan e2e:reap-incus "$@"
+}
+
 dns_resolve_tld() {
     ssh "$E2E_HOST" "bash -s" -- \
         "$E2E_CONTROL_IMAGE" \
@@ -2204,6 +2211,9 @@ case "${1:---lifecycle}" in
         ;;
     --dns-resolve-tld)
         dns_resolve_tld
+        ;;
+    --reap-incus)
+        reap_incus "$@"
         ;;
     *)
         echo "error: unknown mode '$1'" >&2
