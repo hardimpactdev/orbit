@@ -8,7 +8,6 @@ use App\Services\OrbitUpdater;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Process\ProcessResult;
 
 #[Signature('update {--json : Output as JSON}')]
 #[Description('Update this Orbit checkout')]
@@ -23,9 +22,9 @@ class UpdateCommand extends Command
     public function handle(OrbitUpdater $updater): int
     {
         $steps = [
-            'pull_source' => fn (): ProcessResult => $updater->pullSource(),
-            'install_dependencies' => fn (): ProcessResult => $updater->installDependencies(),
-            'run_migrations' => fn (): ProcessResult => $updater->runMigrations(),
+            'pull_source' => $updater->pullSource(...),
+            'install_dependencies' => $updater->installDependencies(...),
+            'run_migrations' => $updater->runMigrations(...),
         ];
 
         $stepResults = [];

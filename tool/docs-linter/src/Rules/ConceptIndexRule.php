@@ -32,9 +32,11 @@ final class ConceptIndexRule implements CommandDocsLintRule
         $findings = [];
 
         foreach ($this->familyConceptFiles($context) as $familyDirectory => $conceptFile) {
-            $expectedTerms = $this->definedTerms($context->read($conceptFile));
+            $conceptContents = $context->read($conceptFile);
+            $expectedTerms = $this->definedTerms($conceptContents);
             $relativeConceptFile = $context->relativePath($conceptFile);
             $family = preg_replace('/^[1-9]\d*_/', '', basename($familyDirectory)) ?? basename($familyDirectory);
+            $sectionHeading = $this->sectionHeading($family, $conceptContents);
 
             if ($expectedTerms === []) {
                 $findings[] = new CommandDocsLintFinding(
@@ -46,13 +48,13 @@ final class ConceptIndexRule implements CommandDocsLintRule
                 continue;
             }
 
-            $section = $this->familySection($concepts, $family);
+            $section = $this->familySection($concepts, $sectionHeading);
 
             if ($section === null) {
                 $findings[] = new CommandDocsLintFinding(
                     path: 'docs/CONCEPTS.md',
                     ruleId: $this->id(),
-                    message: "Top-level concepts index must include a `## {$this->sectionHeading($family)}` section for {$relativeConceptFile}.",
+                    message: "Top-level concepts index must include a `## {$sectionHeading}` section for {$relativeConceptFile}.",
                 );
 
                 continue;
@@ -64,7 +66,7 @@ final class ConceptIndexRule implements CommandDocsLintRule
                 $findings[] = new CommandDocsLintFinding(
                     path: 'docs/CONCEPTS.md',
                     ruleId: $this->id(),
-                    message: "Top-level {$this->sectionHeading($family)} section must link its source as {$sourceLink}.",
+                    message: "Top-level {$sectionHeading} section must link its source as {$sourceLink}.",
                     line: $section['line'],
                 );
             }
@@ -75,7 +77,7 @@ final class ConceptIndexRule implements CommandDocsLintRule
                 $findings[] = new CommandDocsLintFinding(
                     path: 'docs/CONCEPTS.md',
                     ruleId: $this->id(),
-                    message: "Top-level {$this->sectionHeading($family)} section must contain a concept-index block for {$sourceLink}.",
+                    message: "Top-level {$sectionHeading} section must contain a concept-index block for {$sourceLink}.",
                     line: $section['line'],
                 );
 
@@ -88,7 +90,7 @@ final class ConceptIndexRule implements CommandDocsLintRule
                 $findings[] = new CommandDocsLintFinding(
                     path: 'docs/CONCEPTS.md',
                     ruleId: $this->id(),
-                    message: "Top-level {$this->sectionHeading($family)} index must match {$relativeConceptFile}. Expected: {$this->termList($expectedTerms)}. Found: {$this->termList($actualTerms)}.",
+                    message: "Top-level {$sectionHeading} index must match {$relativeConceptFile}. Expected: {$this->termList($expectedTerms)}. Found: {$this->termList($actualTerms)}.",
                     line: $section['line'],
                 );
             }
@@ -166,10 +168,8 @@ final class ConceptIndexRule implements CommandDocsLintRule
     /**
      * @return array{contents: string, line: int}|null
      */
-    private function familySection(string $contents, string $family): ?array
+    private function familySection(string $contents, string $heading): ?array
     {
-        $heading = $this->sectionHeading($family);
-
         if (preg_match('/^##\s+'.preg_quote($heading, '/').'\s*$/m', $contents, $match, PREG_OFFSET_CAPTURE) !== 1) {
             return null;
         }
@@ -187,8 +187,12 @@ final class ConceptIndexRule implements CommandDocsLintRule
         ];
     }
 
-    private function sectionHeading(string $family): string
+    private function sectionHeading(string $family, string $conceptContents): string
     {
+        if (preg_match('/^#\s+(?<heading>.+?)\s*$/m', $conceptContents, $matches) === 1) {
+            return trim($matches['heading']);
+        }
+
         return ucwords(str_replace('_', ' ', $family)).' Concepts';
     }
 
