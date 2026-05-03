@@ -188,7 +188,7 @@ yet satisfy the full product contracts.
     - `tests/Feature/Commands/NodeListCommandTest.php` (base contract, filters, validation, read-only)
     - `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` (JSON envelope and field contract)
     - `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` (human table and prose contract)
-  - Contract gaps: caller role, gateway forwarding, and `--doctor` remain tracked in the node workstream.
+  - Contract gaps: caller role and `--doctor` remain tracked in the node workstream.
 - [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
@@ -274,6 +274,18 @@ document the supported Orbit capability and ownership boundary.
 - [x] `docs/commands/9_schedule`
 - [x] `docs/commands/10_deploy`
 - [x] `docs/commands/12_cf`
+- [x] `docs/commands/13_vpn`
+  - [x] `vpn-client:list`
+  - [x] `vpn-client:new`
+  - [x] `vpn-client:enable`
+  - [x] `vpn-client:disable`
+  - [x] `vpn-client:remove`
+  - [x] `vpn-web-ui:change-password`
+- [x] `docs/commands/14_php`
+  - [x] `php:list`
+  - [x] `php:use`
+- [x] `docs/commands/15_agent-ide`
+  - [x] `agent-ide:message`
 - [x] `docs/commands/16_dns`
 
 Docs marked converted here mean the command contracts exist in the clean repo.
@@ -323,18 +335,7 @@ They do not imply the matching implementation has been ported.
 
 ### Legacy Command Docs Still To Port
 
-- [ ] VPN: `../orbit-old-may/docs/commands/12-vpn`
-  - [ ] `vpn:client-list`
-  - [ ] `vpn:client-new`
-  - [ ] `vpn:client-enable`
-  - [ ] `vpn:client-disable`
-  - [ ] `vpn:client-remove`
-  - [ ] `vpn:web-ui-change-password`
-- [ ] PHP runtime: `../orbit-old-may/docs/commands/13-php`
-  - [ ] `php:list`
-  - [ ] `php:use`
-- [ ] Agent IDE: `../orbit-old-may/docs/commands/14-agent-ide`
-  - [ ] `agent-ide:message`
+All legacy command docs have been converted. See individual family statuses above.
 
 ### Todo Pipeline Hints
 
@@ -628,7 +629,13 @@ A `GatewayClient` service class (or similar) that:
 - [x] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
-- [ ] Port node API controllers and typed client requests.
+- [~] Port node API controllers and typed client requests.
+  - Bootstrap slice implemented: `GET /api/nodes` and `GET /api/nodes/{node}` endpoints
+    with `NodeListController` and `NodeShowController`, `WireGuardIdentity` middleware
+    enforcement, `GatewayEnvelope` JSON response shape, and typed request classes
+    (`ListNodesRequest`, `ShowNodeRequest`) using the `GatewayRequestSender` convention.
+  - Tests: `NodeListControllerTest`, `NodeShowControllerTest`,
+    `ListNodesRequestTest`, `ShowNodeRequestTest`.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
 - [ ] Port process API controllers and typed client requests.
@@ -657,10 +664,9 @@ A `GatewayClient` service class (or similar) that:
 
 - [x] Clean unit/feature test baseline.
 - [x] Standing live smoke script exists.
-- [!] Standing live smoke is a known red gate until the mini update path is
-  fixed or removed from the live-smoke contract.
-  - Current behavior: local tests pass, beast updates, then gateway cannot
-    update mini because it is not authorized for `nckrtl@10.6.0.8`.
+- [x] Standing live smoke red gate resolved.
+  - `update:all` excludes control nodes via `where('role', '!=', 'control')`.
+  - Mini is no longer targeted as a remote update node.
 - [~] Restore ephemeral E2E.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle smoke.

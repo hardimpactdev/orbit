@@ -30,6 +30,22 @@ function nodeListHumanRow(array $overrides = []): array
 }
 
 describe('node:list human renderer contract', function (): void {
+    beforeEach(function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'local-gateway',
+            'role' => 'gateway',
+            'host' => '10.6.0.1',
+            'ssh_user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'environment' => null,
+            'platform' => 'ubuntu_24-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
     it('selects human renderer when --json is absent', function (): void {
         DB::table('nodes')->insert([
             nodeListHumanRow([

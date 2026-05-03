@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Node;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\ListNodesRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use RuntimeException;
 
 #[Signature('node:list
     {--role= : Filter by role (gateway|app|control)}
@@ -45,10 +48,14 @@ class NodeListCommand extends Command
             }
         }
 
-        $nodes = $this->fetchNodes(
-            role: is_string($role) && $role !== '' ? $role : null,
-            environment: is_string($environment) && $environment !== '' ? $environment : null,
-        );
+        try {
+            $nodes = $this->fetchNodes(
+                role: is_string($role) && $role !== '' ? $role : null,
+                environment: is_string($environment) && $environment !== '' ? $environment : null,
+            );
+        } catch (RuntimeException $e) {
+            return $this->failForwarding($e->getMessage());
+        }
 
         $payload = ['nodes' => $nodes];
 
@@ -65,6 +72,52 @@ class NodeListCommand extends Command
      * @return list<array<string, mixed>>
      */
     private function fetchNodes(?string $role, ?string $environment): array
+    {
+        if ($this->isGatewayCaller()) {
+            return $this->fetchLocalNodes($role, $environment);
+        }
+
+        $response = GatewayRequestSender::make()->send(new ListNodesRequest(
+            role: $role,
+            environment: $environment,
+        ));
+
+        if (! $response->isSuccess()) {
+            throw new RuntimeException($response->errorMessage() ?? 'Gateway request failed.');
+        }
+
+        $data = $response->data();
+
+        return $data['nodes'] ?? [];
+    }
+
+    private function isGatewayCaller(): bool
+    {
+        return $this->callerRole() === 'gateway';
+    }
+
+    private function callerRole(): string
+    {
+        $localRole = Node::query()
+            ->where('is_local', true)
+            ->where('status', 'active')
+            ->value('role');
+
+        if (! is_string($localRole) || $localRole === '') {
+            return 'control';
+        }
+
+        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
+            return 'unknown';
+        }
+
+        return $localRole;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLocalNodes(?string $role, ?string $environment): array
     {
         $query = Node::query()
             ->orderBy('role')
@@ -155,5 +208,23 @@ class NodeListCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function failForwarding(string $message): int
+    {
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'error' => [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to list nodes.',
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::FAILURE;
+        }
+
+        $this->error('Gateway connection is required to list nodes.');
+
+        return self::FAILURE;
     }
 }

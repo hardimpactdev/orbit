@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
@@ -35,7 +37,7 @@ describe('node:list base contract', function (): void {
         DB::table('nodes')->insert([
             nodeListRow(['name' => 'zebra-app', 'role' => 'app']),
             nodeListRow(['name' => 'alpha-app', 'role' => 'app']),
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
             nodeListRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
 
@@ -219,7 +221,7 @@ describe('node:list validation', function (): void {
 describe('node:list read-only guarantee', function (): void {
     it('makes no DB writes during base list', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
             nodeListRow(['name' => 'app-1', 'role' => 'app']),
         ]);
 
@@ -234,10 +236,136 @@ describe('node:list read-only guarantee', function (): void {
         Process::fake();
         Process::preventStrayProcesses();
 
-        DB::table('nodes')->insert(nodeListRow(['name' => 'app-1']));
+        DB::table('nodes')->insert([
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
+            nodeListRow(['name' => 'app-1']),
+        ]);
 
         $this->artisan('node:list')->assertSuccessful();
 
         Process::assertNothingRan();
+    });
+});
+
+describe('node:list control-caller forwarding', function (): void {
+    beforeEach(function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'local-control',
+            'role' => 'control',
+            'host' => '10.6.0.2',
+            'ssh_user' => 'nckrtl',
+            'orbit_path' => '/home/nckrtl/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'environment' => null,
+            'platform' => 'ubuntu_24-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+    });
+
+    it('forwards to gateway and renders gateway response', function (): void {
+        Http::fake([
+            '*' => Http::response([
+                'success' => [
+                    'data' => [
+                        'nodes' => [
+                            [
+                                'name' => 'gateway-1',
+                                'role' => 'gateway',
+                                'environment' => null,
+                                'platform' => 'ubuntu_24-04',
+                                'status' => 'active',
+                            ],
+                            [
+                                'name' => 'app-1',
+                                'role' => 'app',
+                                'environment' => 'development',
+                                'platform' => 'ubuntu_24-04',
+                                'status' => 'active',
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload)->toHaveKey('success')
+            ->and($payload['success']['data']['nodes'])->toHaveCount(2);
+    });
+
+    it('forwards role filter to gateway request', function (): void {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/nodes?role=app')) {
+                return Http::response([
+                    'success' => [
+                        'data' => [
+                            'nodes' => [
+                                [
+                                    'name' => 'app-1',
+                                    'role' => 'app',
+                                    'environment' => 'development',
+                                    'platform' => 'ubuntu_24-04',
+                                    'status' => 'active',
+                                ],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([
+                'success' => ['data' => ['nodes' => []]],
+            ], 200);
+        });
+
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['nodes'])->toHaveCount(1)
+            ->and($payload['success']['data']['nodes'][0]['name'])->toBe('app-1');
+    });
+
+    it('handles forwarding error with JSON envelope', function (): void {
+        Http::fake([
+            '*' => Http::response([
+                'error' => [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway is unreachable.',
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toHaveKey('error')
+            ->and($payload['error']['code'])->toBe('gateway_unavailable');
+    });
+
+    it('handles forwarding error with human message', function (): void {
+        Http::fake([
+            '*' => Http::response([
+                'error' => [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway is unreachable.',
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('node:list')
+            ->expectsOutputToContain('Gateway connection is required to list nodes.')
+            ->assertFailed();
     });
 });
