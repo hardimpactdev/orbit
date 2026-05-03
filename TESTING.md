@@ -38,9 +38,11 @@ composer test:e2e
 bin/e2e --preflight
 bin/e2e --prepare-blank
 bin/e2e --prepare-control
+bin/e2e --prepare-gateway
 bin/e2e --lifecycle
 bin/e2e --control
 bin/e2e --node-new-gateway
+bin/e2e --gateway-add
 ```
 
 The first ephemeral E2E harness uses Incus VMs on beast. Run
@@ -59,6 +61,13 @@ node prerequisites and CLI as the non-`orbit` control user, verifies
 `orbit --version`, then publishes the ready image. Run `bin/e2e --control` to
 launch from that image and verify the ready control node over SSH.
 
+Run `bin/e2e --prepare-gateway` to build or replace the reusable
+`orbit-ready-gateway` Incus image from the blank image. That lane ships the
+current Orbit source and `bin/install-orbit` into a disposable VM, installs the
+gateway node prerequisites and CLI as the `orbit` user, bootstraps gateway-local
+identity and root CA via `orbit:internal:bootstrap-gateway-local`, verifies
+`orbit --version`, then publishes the ready image.
+
 Run `bin/e2e --node-new-gateway` to exercise the first-gateway bootstrap path.
 This lane launches one disposable VM from the ready control image and one from
 the blank image, injects an ephemeral SSH key into both, runs
@@ -71,6 +80,17 @@ user; SSH access from the control VM to the gateway as `orbit` is not yet
 verified because runtime-user SSH key distribution is not yet implemented.
 The VMs are destroyed at the end unless `ORBIT_E2E_KEEP=1`.
 
+Run `bin/e2e --gateway-add` to exercise control-node onboarding against a
+prepared gateway VM. This lane launches one disposable VM from the ready control
+image and one from the ready gateway image, injects an ephemeral SSH key into
+both, configures a dummy network interface on the gateway VM with the expected
+WireGuard IP (10.6.0.2), seeds the control node identity into the gateway
+database, starts the gateway API server, and runs
+`orbit gateway:add 10.6.0.2 --json` from the control VM. It verifies that the
+command returns a success response. Full HTTPS verification depends on gateway
+web server infrastructure in the ephemeral harness. The VMs are destroyed at the
+end unless `ORBIT_E2E_KEEP=1`.
+
 These are backend and single-role smokes only; they do not yet validate a full
 gateway/control/development-app/production-app topology.
 
@@ -81,6 +101,7 @@ ORBIT_E2E_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
+ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
@@ -96,7 +117,7 @@ The next E2E step is to create the remaining ready Incus lanes:
 Ready image aliases:
 
 - `orbit-ready-control` via `bin/e2e --prepare-control`
-- `orbit-ready-gateway` planned
+- `orbit-ready-gateway` via `bin/e2e --prepare-gateway`
 - `orbit-ready-app-development` planned
 - `orbit-ready-app-production` planned
 
