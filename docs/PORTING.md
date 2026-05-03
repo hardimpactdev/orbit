@@ -622,7 +622,7 @@ A `GatewayClient` service class (or similar) that:
 - [x] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
 - [x] Port gateway API envelope conventions.
 - [x] Port request correlation header support.
-- [ ] Port typed gateway request sender.
+- [x] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
 - [ ] Port node API controllers and typed client requests.
@@ -658,25 +658,22 @@ A `GatewayClient` service class (or similar) that:
   fixed or removed from the live-smoke contract.
   - Current behavior: local tests pass, beast updates, then gateway cannot
     update mini because it is not authorized for `nckrtl@10.6.0.8`.
-  - [~] Restore ephemeral E2E.
-    - [x] Add Incus backend preflight on beast.
-    - [x] Add disposable blank Ubuntu VM lifecycle smoke.
-    - [x] Create a blank snapshot lane for provisioning tests.
-    - [x] Add reusable host installer needed by the ready control snapshot.
-    - [x] Create a ready control snapshot lane for fast command-porting tests.
-    - [x] Create a ready gateway snapshot lane (`bin/e2e --prepare-gateway`)
-      that builds a reusable `orbit-ready-gateway` image with bootstrapped
-      gateway identity and root CA.
-    - [x] Add first-gateway provisioning E2E lane (`bin/e2e --node-new-gateway`)
-      that exercises `node:new --role=gateway` from a ready control VM against a
-      blank gateway VM.
-    - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
-      exercises `gateway:add` from a ready control VM against a ready gateway VM.
-    - [x] Add gateway-trust E2E lane (`bin/e2e --gateway-trust`) that exercises
-      `gateway:trust` from a ready control VM against a ready gateway VM,
-      verifying CA fetch, local trust store installation, and idempotence.
-    - [ ] Create ready development app and production app snapshot lanes for
-      fast command-porting tests.
+- [~] Restore ephemeral E2E.
+  - [x] Add Incus backend preflight on beast.
+  - [x] Add disposable blank Ubuntu VM lifecycle smoke.
+  - [x] Create a blank snapshot lane for provisioning tests.
+  - [x] Add reusable host installer needed by the ready control snapshot.
+  - [x] Create a ready control snapshot lane for fast command-porting tests.
+  - [x] Create a ready gateway snapshot lane (`bin/e2e --prepare-gateway`)
+    that builds a reusable `orbit-ready-gateway` image with bootstrapped
+    gateway identity and root CA.
+  - [x] Add first-gateway provisioning E2E lane (`bin/e2e --node-new-gateway`)
+    that exercises `node:new --role=gateway` from a ready control VM against a
+    blank gateway VM.
+  - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
+    exercises `gateway:add` from a ready control VM against a ready gateway VM.
+  - [ ] Create ready development app and production app snapshot lanes for
+    fast command-porting tests.
 - [ ] Add E2E topology for gateway + control + development app + production
   app nodes.
 - [ ] Add safe read-only standing-node smoke coverage for registry reads.

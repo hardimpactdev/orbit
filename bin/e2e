@@ -19,7 +19,7 @@ E2E_KEEP="${ORBIT_E2E_KEEP:-0}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --lifecycle | --control | --node-new-gateway | --gateway-add | --gateway-trust]
+usage: bin/e2e [--preflight | --prepare-blank | --prepare-control | --prepare-gateway | --lifecycle | --control | --node-new-gateway | --gateway-add]
 
 Modes:
   --preflight        Check that the ephemeral backend is reachable on the E2E host.
@@ -34,9 +34,6 @@ Modes:
   --gateway-add      Launch a control VM and a gateway VM, then run orbit gateway:add
                      from the control VM to join the gateway. Verifies control-node
                      onboarding, CA trust, and gateway API reachability.
-  --gateway-trust    Launch a control VM and a ready gateway VM, then run orbit
-                     gateway:trust from the control VM. Verifies CA fetch, local
-                     trust store installation, and idempotent re-runs.
 
 Environment:
   ORBIT_E2E_HOST             SSH target that owns the Incus daemon. Defaults to "beast".
@@ -1276,10 +1273,12 @@ incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && p
 echo "orbit-e2e seeded control node into gateway database"
 
 # Start gateway API server on the dummy interface
-# NOTE: This starts Laravel's built-in development server for the CA endpoint.
-# HTTPS for /api/me requires a reverse proxy or web server (Caddy/nginx).
-# Until gateway web server infrastructure is ready in the ephemeral harness,
-# gateway:add may fail at the HTTPS verification step.
+# KNOWN BOOTSTRAP LIMITATION: This lane starts Laravel's dev server on plain
+# HTTP because the ephemeral harness does not yet set up real TLS (no cert
+# provisioning, no Caddy/nginx reverse proxy). gateway:add verifies /api/me
+# over HTTPS, so this lane cannot exercise the full HTTPS verification path.
+# This is an explicit bootstrap-partial gate; full HTTPS coverage is deferred
+# until the ephemeral harness gains TLS infrastructure.
 incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && nohup php artisan serve --host=10.6.0.2 --port=80 > /tmp/gateway-api.log 2>&1 &" </dev/null >/dev/null
 
 # Give the server a moment to start
@@ -1308,255 +1307,32 @@ fi
 echo "orbit-e2e gateway:add output:"
 echo "$gateway_add_output"
 
-# Verify the response contains expected success fields
+# Verify 1: response contains expected success fields
 if ! echo "$gateway_add_output" | grep -q '"success"'; then
     echo "orbit-e2e failed: gateway:add did not return a success response" >&2
     echo "$gateway_add_output" >&2
     exit 1
 fi
 
-echo "orbit-e2e gateway:add passed: control=${control_ipv4} gateway=${gateway_ipv4}"
-REMOTE
-}
-
-gateway_trust() {
-    ssh "$E2E_HOST" "bash -s" -- \
-        "$E2E_CONTROL_IMAGE" \
-        "$E2E_GATEWAY_IMAGE" \
-        "$E2E_CONTROL_USER" \
-        "$E2E_PREFIX" \
-        "$E2E_TIMEOUT_SECONDS" \
-        "$E2E_CPUS" \
-        "$E2E_MEMORY" \
-        "$E2E_KEEP" <<'REMOTE'
-set -euo pipefail
-
-control_image="$1"
-gateway_image="$2"
-control_user="$3"
-prefix="$4"
-timeout_seconds="$5"
-cpus="$6"
-memory="$7"
-keep="$8"
-
-run_id="$(date +%Y%m%d%H%M%S)-$$"
-control_name="${prefix}-${run_id}-control"
-gateway_name="${prefix}-${run_id}-gateway"
-run_dir="/tmp/${prefix}-${run_id}-gateway-trust"
-
-cleanup() {
-    status=$?
-    set +e
-
-    if [ "$status" -ne 0 ] && [ "$keep" = "1" ]; then
-        echo "orbit-e2e keeping instances ${control_name} and ${gateway_name} on $(hostname) because ORBIT_E2E_KEEP=1" >&2
-    else
-        incus delete --force "$control_name" >/dev/null 2>&1
-        incus delete --force "$gateway_name" >/dev/null 2>&1
-        rm -rf "$run_dir"
-    fi
-
-    return "$status"
-}
-
-extract_ipv4() {
-    incus list "$1" --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true
-}
-
-wait_for_agent() {
-    instance="$1"
-    deadline=$((SECONDS + timeout_seconds))
-
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        if incus exec "$instance" -- true </dev/null >/dev/null 2>&1; then
-            return 0
-        fi
-
-        sleep 2
-    done
-
-    echo "orbit-e2e failed: Incus agent never became ready on ${instance} within ${timeout_seconds}s" >&2
-    incus list "$instance" </dev/null >&2 || true
-    return 1
-}
-
-wait_for_ipv4() {
-    instance="$1"
-    deadline=$((SECONDS + timeout_seconds))
-
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        ipv4="$(extract_ipv4 "$instance")"
-
-        if [ -n "$ipv4" ]; then
-            echo "$ipv4"
-            return 0
-        fi
-
-        sleep 2
-    done
-
-    echo "orbit-e2e failed: ${instance} did not receive an IPv4 address within ${timeout_seconds}s" >&2
-    incus list "$instance" </dev/null >&2 || true
-    return 1
-}
-
-wait_for_ssh() {
-    ipv4="$1"
-    key="$2"
-    ssh_user="$3"
-    deadline=$((SECONDS + timeout_seconds))
-
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        if ssh \
-            -i "$key" \
-            -o BatchMode=yes \
-            -o ConnectTimeout=5 \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            "${ssh_user}@${ipv4}" \
-            "test \"\$(uname -s)\" = Linux && test -r /etc/os-release" </dev/null >/dev/null 2>&1; then
-            return 0
-        fi
-
-        sleep 3
-    done
-
-    echo "orbit-e2e failed: SSH never became ready on ${ipv4} within ${timeout_seconds}s" >&2
-    return 1
-}
-
-trap cleanup EXIT
-
-command -v incus >/dev/null
-command -v ssh-keygen >/dev/null
-command -v ssh >/dev/null
-
-if ! incus image info "$control_image" >/dev/null 2>&1; then
-    echo "orbit-e2e missing control image: ${control_image}; run bin/e2e --prepare-control first" >&2
-    exit 2
-fi
-
-if ! incus image info "$gateway_image" >/dev/null 2>&1; then
-    echo "orbit-e2e missing gateway image: ${gateway_image}; run bin/e2e --prepare-gateway first" >&2
-    exit 2
-fi
-
-rm -rf "$run_dir"
-mkdir -p "$run_dir"
-
-ssh-keygen -t ed25519 -N '' -f "$run_dir/id_ed25519" -C "orbit-e2e-${run_id}" >/dev/null
-
-echo "orbit-e2e launching ${control_name} from ${control_image} and ${gateway_name} from ${gateway_image} on $(hostname)"
-
-incus launch "$control_image" "$control_name" --vm \
-    --config=limits.cpu="$cpus" \
-    --config=limits.memory="$memory" </dev/null >/dev/null
-
-sleep 3
-
-incus launch "$gateway_image" "$gateway_name" --vm \
-    --config=limits.cpu="$cpus" \
-    --config=limits.memory="$memory" </dev/null >/dev/null
-
-wait_for_agent "$control_name"
-wait_for_agent "$gateway_name"
-
-# Set up SSH access on control VM
-incus exec "$control_name" -- sh -lc "install -d -m 700 -o ${control_user} -g ${control_user} /home/${control_user}/.ssh" </dev/null >/dev/null
-incus file push "$run_dir/id_ed25519.pub" "$control_name/home/${control_user}/.ssh/authorized_keys" </dev/null >/dev/null
-incus exec "$control_name" -- sh -lc "chown ${control_user}:${control_user} /home/${control_user}/.ssh/authorized_keys && chmod 600 /home/${control_user}/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
-
-# Set up SSH access on gateway VM for orbit user
-incus exec "$gateway_name" -- sh -lc "install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" </dev/null >/dev/null
-incus file push "$run_dir/id_ed25519.pub" "$gateway_name/home/orbit/.ssh/authorized_keys" </dev/null >/dev/null
-incus exec "$gateway_name" -- sh -lc "chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && systemctl start ssh || systemctl start sshd || true" </dev/null >/dev/null
-
-control_ipv4="$(wait_for_ipv4 "$control_name")"
-gateway_ipv4="$(wait_for_ipv4 "$gateway_name")"
-
-# Ensure VMs have distinct IPs; retry briefly if they collide
-ip_check_deadline=$((SECONDS + 30))
-while [ "$SECONDS" -lt "$ip_check_deadline" ] && [ "$control_ipv4" = "$gateway_ipv4" ]; do
-    sleep 2
-    control_ipv4="$(extract_ipv4 "$control_name")"
-    gateway_ipv4="$(extract_ipv4 "$gateway_name")"
-done
-
-if [ "$control_ipv4" = "$gateway_ipv4" ]; then
-    echo "orbit-e2e failed: control and gateway VMs have the same IP (${control_ipv4})" >&2
-    exit 1
-fi
-
-wait_for_ssh "$control_ipv4" "$run_dir/id_ed25519" "$control_user"
-wait_for_ssh "$gateway_ipv4" "$run_dir/id_ed25519" "orbit"
-
-echo "orbit-e2e control VM ready at ${control_ipv4}"
-echo "orbit-e2e gateway VM ready at ${gateway_ipv4}"
-
-# Configure gateway VM with a dummy interface at the expected gateway WireGuard IP
-# so the gateway API is reachable at 10.6.0.2 from the control VM
-incus exec "$gateway_name" -- sh -lc "ip link add dummy0 type dummy 2>/dev/null || true && ip addr add 10.6.0.2/16 dev dummy0 2>/dev/null || true && ip link set dummy0 up 2>/dev/null || true" </dev/null >/dev/null
-
-# Start gateway API server on the dummy interface
-incus exec "$gateway_name" -- sudo -iu orbit bash -lc "cd /home/orbit/orbit && nohup php artisan serve --host=10.6.0.2 --port=80 > /tmp/gateway-api.log 2>&1 &" </dev/null >/dev/null
-
-# Give the server a moment to start
-sleep 3
-
-# Verify the gateway CA endpoint is responding
-if ! incus exec "$gateway_name" -- sh -lc "curl -s http://10.6.0.2/api/ca/root | grep -q 'BEGIN CERTIFICATE'" </dev/null >/dev/null 2>&1; then
-    echo "orbit-e2e failed: Gateway CA endpoint is not responding" >&2
-    exit 1
-fi
-
-echo "orbit-e2e gateway CA endpoint verified"
-
-# Seed gateway node into control database so gateway:trust can resolve it
-ssh \
+# Verify 2: LocalGatewaySettings row was persisted in control node database
+local_gateway_settings_count="$(ssh \
     -i "$run_dir/id_ed25519" \
     -o BatchMode=yes \
     -o ConnectTimeout=5 \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     "${control_user}@${control_ipv4}" \
-    "sqlite3 /home/${control_user}/orbit/database/database.sqlite \"INSERT INTO nodes (name, role, environment, platform, host, wireguard_address, gateway_endpoint, ssh_user, user, orbit_path, status, is_local, created_at, updated_at) VALUES ('gateway-1', 'gateway', NULL, 'unknown', '${gateway_ipv4}', '10.6.0.2', '${gateway_ipv4}', 'orbit', 'orbit', '/home/orbit/orbit', 'active', 0, datetime('now'), datetime('now'));\"" </dev/null >/dev/null
+    "sqlite3 /home/${control_user}/orbit/database/database.sqlite \"SELECT COUNT(*) FROM local_gateway_settings;\"" </dev/null 2>&1)"
 
-echo "orbit-e2e seeded gateway node into control database"
-
-# Run gateway:trust from the control VM
-# NOTE: gateway:trust needs root to write to the OS trust store.
-echo "orbit-e2e running 'orbit gateway:trust --json' from control VM"
-
-set +e
-trust_output="$(ssh \
-    -i "$run_dir/id_ed25519" \
-    -o BatchMode=yes \
-    -o ConnectTimeout=5 \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    "${control_user}@${control_ipv4}" \
-    "cd /home/${control_user}/orbit && sudo orbit gateway:trust --json" </dev/null 2>&1)"
-trust_exit_code=$?
-set -e
-
-if [ "$trust_exit_code" -ne 0 ]; then
-    echo "orbit-e2e gateway:trust failed with exit code ${trust_exit_code}" >&2
-    echo "$trust_output" >&2
+if [ "$local_gateway_settings_count" != "1" ]; then
+    echo "orbit-e2e failed: LocalGatewaySettings not populated in control node database (count=${local_gateway_settings_count})" >&2
     exit 1
 fi
 
-echo "orbit-e2e gateway:trust output:"
-echo "$trust_output"
+echo "orbit-e2e LocalGatewaySettings verified"
 
-# Verify 1: JSON response indicates success
-if ! echo "$trust_output" | grep -q '"trusted":true'; then
-    echo "orbit-e2e failed: gateway:trust did not report trusted=true" >&2
-    echo "$trust_output" >&2
-    exit 1
-fi
-
-# Verify 2: CA file is installed in the local trust store
+# Verify 3: CA certificate was installed in the local OS trust store
+trust_store_file="/usr/local/share/ca-certificates/orbit-gateway-ca-orbit.crt"
 if ! ssh \
     -i "$run_dir/id_ed25519" \
     -o BatchMode=yes \
@@ -1564,43 +1340,20 @@ if ! ssh \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     "${control_user}@${control_ipv4}" \
-    "test -f /usr/local/share/ca-certificates/orbit-gateway-ca-orbit.crt" </dev/null >/dev/null 2>&1; then
-    echo "orbit-e2e failed: Gateway CA was not installed in local trust store" >&2
+    "test -f ${trust_store_file}" </dev/null >/dev/null 2>&1; then
+    echo "orbit-e2e failed: Gateway CA was not installed in local trust store (${trust_store_file})" >&2
     exit 1
 fi
 
-echo "orbit-e2e local trust store verified"
+echo "orbit-e2e CA trust store verified"
 
-# Verify 3: idempotence — re-run gateway:trust and expect already_trusted
-echo "orbit-e2e re-running gateway:trust for idempotence check"
+# TODO: Idempotent rerun verifying result.action: "converged" is deferred
+# until the ephemeral harness can provide a reliable HTTPS gateway endpoint.
+# The current HTTP-only bootstrap limitation means a re-run may fail at the
+# HTTPS /api/me verification step. This check belongs to the full E2E gate
+# once TLS infrastructure is in place.
 
-set +e
-trust_output2="$(ssh \
-    -i "$run_dir/id_ed25519" \
-    -o BatchMode=yes \
-    -o ConnectTimeout=5 \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    "${control_user}@${control_ipv4}" \
-    "cd /home/${control_user}/orbit && sudo orbit gateway:trust --json" </dev/null 2>&1)"
-trust_exit_code2=$?
-set -e
-
-if [ "$trust_exit_code2" -ne 0 ]; then
-    echo "orbit-e2e gateway:trust idempotence run failed with exit code ${trust_exit_code2}" >&2
-    echo "$trust_output2" >&2
-    exit 1
-fi
-
-if ! echo "$trust_output2" | grep -q '"status":"already_trusted"'; then
-    echo "orbit-e2e failed: gateway:trust idempotence check did not return already_trusted" >&2
-    echo "$trust_output2" >&2
-    exit 1
-fi
-
-echo "orbit-e2e gateway:trust idempotence verified"
-
-echo "orbit-e2e gateway:trust passed: control=${control_ipv4} gateway=${gateway_ipv4}"
+echo "orbit-e2e gateway:add bootstrap-partial passed: control=${control_ipv4} gateway=${gateway_ipv4}"
 REMOTE
 }
 
@@ -1638,9 +1391,6 @@ case "${1:---lifecycle}" in
         ;;
     --gateway-add)
         gateway_add
-        ;;
-    --gateway-trust)
-        gateway_trust
         ;;
     *)
         echo "error: unknown mode '$1'" >&2
