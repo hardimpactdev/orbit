@@ -161,19 +161,22 @@ yet satisfy the full product contracts.
 - [~] `update:all`
   - Current implementation: `app/Console/Commands/UpdateAllCommand.php`
   - Current docs: `docs/commands/11_operation/2_update-all`
-  - Current tests: `tests/Feature/Commands/UpdateAllCommandTest.php`
-  - Contract gaps:
+  - Current tests:
+    - `tests/Feature/Commands/UpdateAllCommandTest.php`
+    - `tests/Feature/Commands/Operations/UpdateAllJsonRendererTest.php`
+    - `tests/Feature/Commands/Operations/UpdateAllHumanRendererTest.php`
+  - Contract gaps resolved:
+    - [x] JSON renderer implementation.
+    - [x] tree-style per-installation human progress output.
+    - [x] control-node exclusion: control nodes are never remote update targets.
+    - [x] split operation contract tests mapped by the current docs.
+  - Contract gaps remaining:
     - caller-role and gateway authorization contract.
-    - JSON renderer implementation.
-    - tree-style per-installation human progress output.
     - intent source split: control caller must read node intent from the
       Gateway API, not from any local node table. Gateway caller reads local
       gateway state.
     - execution topology: gateway-owned `RemoteShell` is the only legal SSH
       edge. Control caller must not SSH to other nodes.
-    - control-node exclusion: control nodes are never remote update targets in
-      either path; they update via `orbit update` per workstation.
-    - split operation contract tests mapped by the current docs.
   - Live smoke note: gateway-to-beast updates work. The earlier
     gateway-to-mini `Permission denied (publickey)` symptom reflected an
     implementation that targeted the mini control node; under the clarified
