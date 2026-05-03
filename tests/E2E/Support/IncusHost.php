@@ -7,10 +7,10 @@ namespace Tests\E2E\Support;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
-readonly class IncusHost
+class IncusHost
 {
     public function __construct(
-        public E2EConfig $config,
+        public readonly E2EConfig $config,
     ) {}
 
     public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
