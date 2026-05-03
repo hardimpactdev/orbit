@@ -9,7 +9,9 @@ use Tests\E2E\Support\E2ETopologyKind;
 pest()->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
 
 it('lists nodes from a prepared full topology', function (): void {
-    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDevProd);
+    $topology = E2ETopologyFactory::fromEnvironment()
+        ->withSshUsers(['control' => 'control'])
+        ->require(E2ETopologyKind::ControlGatewayDevProd);
 
     try {
         $control = $topology->control();

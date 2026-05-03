@@ -87,6 +87,17 @@ it('lease cleanup is idempotent', function (): void {
     $lease->cleanup();
 });
 
+it('stores requested SSH users immutably', function (): void {
+    $factory = E2ETopologyFactory::fromEnvironment();
+    $controlOnly = $factory->withSshUsers(['control' => 'control']);
+
+    expect($controlOnly)->not->toBe($factory)
+        ->and((new ReflectionClass($controlOnly))->getProperty('sshUsers')->getValue($controlOnly))
+        ->toBe(['control' => 'control'])
+        ->and((new ReflectionClass($factory))->getProperty('sshUsers')->getValue($factory))
+        ->toBeNull();
+});
+
 it('cleans up all instances', function (): void {
     $control = m::mock(E2EInstance::class);
     $gateway = m::mock(E2EInstance::class);

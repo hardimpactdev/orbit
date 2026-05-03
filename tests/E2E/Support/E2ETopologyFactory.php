@@ -6,9 +6,13 @@ namespace Tests\E2E\Support;
 
 final class E2ETopologyFactory
 {
+    /**
+     * @param  array<string, string>|null  $sshUsers
+     */
     private function __construct(
         private readonly string $provider,
         private readonly string $strategy,
+        private readonly ?array $sshUsers = null,
     ) {}
 
     public static function fromEnvironment(): self
@@ -17,8 +21,21 @@ final class E2ETopologyFactory
         $strategy = getenv('ORBIT_E2E_TOPOLOGY_STRATEGY');
 
         return new self(
-            is_string($provider) && $provider !== '' ? $provider : 'incus',
-            is_string($strategy) && $strategy !== '' ? $strategy : 'minimal',
+            provider: is_string($provider) && $provider !== '' ? $provider : 'incus',
+            strategy: is_string($strategy) && $strategy !== '' ? $strategy : 'minimal',
+            sshUsers: null,
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $sshUsers
+     */
+    public function withSshUsers(array $sshUsers): self
+    {
+        return new self(
+            provider: $this->provider,
+            strategy: $this->strategy,
+            sshUsers: $sshUsers,
         );
     }
 
@@ -93,13 +110,15 @@ final class E2ETopologyFactory
      */
     private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer): array
     {
+        $sshUsers = $this->sshUsersFor($instances, $config);
         $primaryUsers = [];
 
-        foreach ($instances as $role => $instance) {
-            $primaryUser = match ($role) {
-                'control' => $config->controlUser,
-                default => 'orbit',
-            };
+        foreach ($sshUsers as $role => $primaryUser) {
+            $instance = $instances[$role] ?? null;
+
+            if ($instance === null) {
+                continue;
+            }
 
             $primaryUsers[$role] = $primaryUser;
 
@@ -112,12 +131,37 @@ final class E2ETopologyFactory
             });
 
             $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+        }
+
+        foreach ($instances as $role => $instance) {
             $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
         }
 
         $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
 
         return $primaryUsers;
+    }
+
+    /**
+     * @param  array<string, E2EInstance>  $instances
+     * @return array<string, string>
+     */
+    private function sshUsersFor(array $instances, E2EConfig $config): array
+    {
+        if ($this->sshUsers !== null) {
+            return $this->sshUsers;
+        }
+
+        $users = [];
+
+        foreach (array_keys($instances) as $role) {
+            $users[$role] = match ($role) {
+                'control' => $config->controlUser,
+                default => 'orbit',
+            };
+        }
+
+        return $users;
     }
 
     /**
@@ -139,8 +183,14 @@ final class E2ETopologyFactory
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuard($instances));
 
-            foreach ($instances as $role => $instance) {
-                $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUsers[$role], $sshKeyPair));
+            foreach ($primaryUsers as $role => $primaryUser) {
+                $instance = $instances[$role] ?? null;
+
+                if ($instance === null) {
+                    continue;
+                }
+
+                $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
             }
         };
     }
