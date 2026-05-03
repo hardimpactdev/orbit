@@ -18,15 +18,11 @@ it('lists nodes from a prepared full topology', function (): void {
         $result = E2ECommand::ssh($control, 'control', $key, 'cd /home/control/orbit && orbit node:list --json');
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['success']['data']['nodes'])->toContain(
-            fn (array $node): bool => $node['name'] === 'gateway'
-        );
-        expect($payload['success']['data']['nodes'])->toContain(
-            fn (array $node): bool => $node['name'] === 'app-dev-1'
-        );
-        expect($payload['success']['data']['nodes'])->toContain(
-            fn (array $node): bool => $node['name'] === 'app-prod-1'
-        );
+        $names = array_column($payload['success']['data']['nodes'], 'name');
+
+        expect($names)->toContain('gateway');
+        expect($names)->toContain('app-dev-1');
+        expect($names)->toContain('app-prod-1');
     } finally {
         $topology->cleanup();
     }

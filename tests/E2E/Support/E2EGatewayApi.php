@@ -255,6 +255,16 @@ while ($connection = @stream_socket_accept($server, -1)) {
         continue;
     }
 
+    if (str_starts_with($requestLine, 'GET /api/nodes ') || str_starts_with($requestLine, 'GET /api/nodes?')) {
+        $output = [];
+        $exitCode = 0;
+        exec('cd /home/orbit/orbit && php artisan node:list --json 2>&1', $output, $exitCode);
+        respond($connection, $exitCode === 0 ? 200 : 422, implode("\n", $output));
+        fclose($connection);
+
+        continue;
+    }
+
     if (str_starts_with($requestLine, 'POST /api/nodes ')) {
         $input = json_decode(read_request_body($connection, $headers), true);
 
