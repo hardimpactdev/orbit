@@ -27,8 +27,8 @@ composer test:live
 bin/live-smoke --control
 ```
 
-The live smoke path runs local tests, SSHes to the control node, runs `update:all`,
-runs control-side tests, and prints `node:list`.
+The live smoke path must run ON the control node (mini). It runs local tests,
+then runs `update:all` (which SSHes to gateway and beast) and prints `node:list`.
 
 Use ephemeral E2E only for full lifecycle, provisioning, destructive, or host
 mutation checks:
@@ -77,9 +77,6 @@ gateway/control/development-app/production-app topology.
 Environment overrides:
 
 ```bash
-ORBIT_LIVE_CONTROL_SSH=mini
-ORBIT_LIVE_CONTROL_PATH=~/orbit
-
 ORBIT_E2E_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04

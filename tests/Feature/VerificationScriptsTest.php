@@ -22,9 +22,9 @@ it('documents the standing live smoke mode', function (): void {
 
     expect($script)->toBeFile()
         ->and(is_executable($script))->toBeTrue()
-        ->and($contents)->toContain('ORBIT_LIVE_CONTROL_SSH')
-        ->and($contents)->toContain('ORBIT_LIVE_CONTROL_PATH')
-        ->and($contents)->toContain('update:all');
+        ->and($contents)->toContain('update:all')
+        ->and($contents)->toContain('node:list')
+        ->and($contents)->toContain('Must be run ON the control node');
 });
 
 it('fails command docs lint when warnings are present', function (): void {

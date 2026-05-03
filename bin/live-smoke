@@ -4,30 +4,26 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CONTROL_SSH="${ORBIT_LIVE_CONTROL_SSH:-mini}"
-CONTROL_PATH="${ORBIT_LIVE_CONTROL_PATH:-~/orbit}"
-
 case "${1:---control}" in
     --local)
         php artisan test --compact
         ;;
     --control)
+        # This script runs ON the control node (mini). update:all is a control-node
+        # operation — run it directly, then verify node:list is reachable.
         php artisan test --compact
-        ssh "$CONTROL_SSH" "cd $CONTROL_PATH && php artisan update:all && php artisan test --compact && php artisan node:list"
+        php artisan update:all
+        php artisan node:list
         ;;
     -h|--help)
         cat <<'HELP'
 usage: bin/live-smoke [--local | --control]
 
 Modes:
-  --local    Run the local test suite.
-  --control  Run local tests, then ask the standing control node to run the
-             idempotent live smoke path: update:all, control-side tests,
-             and node:list.
-
-Environment:
-  ORBIT_LIVE_CONTROL_SSH   SSH target for the control node. Defaults to "mini".
-  ORBIT_LIVE_CONTROL_PATH  Orbit checkout path on the control node. Defaults to "~/orbit".
+  --local    Run the local test suite only.
+  --control  Run local tests, then run the idempotent live smoke path:
+             update:all (pushes to gateway and beast) and node:list.
+             Must be run ON the control node (mini).
 HELP
         ;;
     *)
