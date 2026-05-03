@@ -32,7 +32,7 @@ function nodeGrantRow(array $overrides = []): array
     ], $overrides);
 }
 
-function setupGatewayCaller(): void
+function setupGrantGatewayCaller(): void
 {
     DB::table('nodes')->insert(nodeGrantRow([
         'name' => 'gateway-1',
@@ -44,7 +44,7 @@ function setupGatewayCaller(): void
 
 describe('node:grant base contract', function (): void {
     it('creates a new grant and returns successfully', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -62,7 +62,7 @@ describe('node:grant base contract', function (): void {
     });
 
     it('returns idempotent success when grant already exists', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -89,7 +89,7 @@ describe('node:grant base contract', function (): void {
     });
 
     it('fails with node.not_found for missing consuming node', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow());
 
         $exitCode = Artisan::call('node:grant', [
@@ -106,7 +106,7 @@ describe('node:grant base contract', function (): void {
     });
 
     it('fails with node.not_found for missing serving node', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -127,7 +127,7 @@ describe('node:grant base contract', function (): void {
     });
 
     it('fails with node.grant_policy_violation for self-grant', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -216,7 +216,7 @@ describe('node:grant base contract', function (): void {
 
 describe('node:grant safety', function (): void {
     it('does not invoke ssh or external processes during grant', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         Process::fake();
         Process::preventStrayProcesses();
 
@@ -236,7 +236,7 @@ describe('node:grant safety', function (): void {
     });
 
     it('makes only targeted registry mutations', function (): void {
-        setupGatewayCaller();
+        setupGrantGatewayCaller();
         DB::table('nodes')->insert(nodeGrantRow([
             'name' => 'control-1',
             'role' => 'control',
