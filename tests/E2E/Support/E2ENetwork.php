@@ -1,0 +1,34 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\E2E\Support;
+
+final readonly class E2ENetwork
+{
+    public static function assignWireGuardIp(E2EInstance $instance, string $wireGuardIp): void
+    {
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; ip addr add %s dev "$iface" 2>/dev/null || true; ip link set "$iface" up',
+                escapeshellarg("{$wireGuardIp}/16"),
+            ),
+            "Could not assign {$wireGuardIp} to {$instance->name()}",
+        );
+    }
+
+    public static function routeWireGuardPeer(E2EInstance $instance, string $wireGuardIp, string $providerIp, string $sourceWireGuardIp): void
+    {
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; ip route replace %s via %s dev "$iface" src %s',
+                escapeshellarg("{$wireGuardIp}/32"),
+                escapeshellarg($providerIp),
+                escapeshellarg($sourceWireGuardIp),
+            ),
+            "Could not route {$wireGuardIp} via {$providerIp} from {$instance->name()}",
+        );
+    }
+}
