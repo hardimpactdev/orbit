@@ -75,7 +75,7 @@ function invokeNodeGrantFailCommand(bool $json, string $code, string $message, a
     ];
 }
 
-function setupGatewayCallerJson(): void
+function setupGrantGatewayCallerJson(): void
 {
     DB::table('nodes')->insert(nodeGrantJsonRow([
         'name' => 'gateway-1',
@@ -87,7 +87,7 @@ function setupGatewayCallerJson(): void
 
 describe('node:grant JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -110,7 +110,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('returns success with action granted and already_granted false for new grant', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -139,7 +139,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('returns success with action granted and already_granted true for idempotent grant', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -173,7 +173,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('returns node.not_found error for consuming node with correct metadata', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow());
 
         $exitCode = Artisan::call('node:grant', [
@@ -195,7 +195,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('returns node.not_found error for serving node with correct metadata', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -221,7 +221,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('returns node.grant_policy_violation error with reason self_grant', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -362,7 +362,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('uses correct enum value for action', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -382,7 +382,7 @@ describe('node:grant JSON renderer contract', function (): void {
     });
 
     it('uses correct enum value for already_granted', function (): void {
-        setupGatewayCallerJson();
+        setupGrantGatewayCallerJson();
         DB::table('nodes')->insert(nodeGrantJsonRow([
             'name' => 'control-1',
             'role' => 'control',

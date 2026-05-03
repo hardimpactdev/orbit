@@ -75,7 +75,7 @@ function invokeNodeGrantFailCommandHuman(string $code, string $message, array $m
     ];
 }
 
-function setupGatewayCallerHuman(): void
+function setupGrantGatewayCallerHuman(): void
 {
     DB::table('nodes')->insert(nodeGrantHumanRow([
         'name' => 'gateway-1',
@@ -87,7 +87,7 @@ function setupGatewayCallerHuman(): void
 
 describe('node:grant human renderer contract', function (): void {
     it('selects human renderer when --json is absent', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -107,7 +107,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('does not render a progress tree', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -129,7 +129,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('renders new grant success prose', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -148,7 +148,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('renders already-granted success prose', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -172,7 +172,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('renders consuming-node-not-found prose error', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow());
 
         $exitCode = Artisan::call('node:grant', [
@@ -186,7 +186,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('renders serving-node-not-found prose error', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -204,7 +204,7 @@ describe('node:grant human renderer contract', function (): void {
     });
 
     it('renders grant policy violation prose error for self-grant', function (): void {
-        setupGatewayCallerHuman();
+        setupGrantGatewayCallerHuman();
         DB::table('nodes')->insert(nodeGrantHumanRow([
             'name' => 'control-1',
             'role' => 'control',
