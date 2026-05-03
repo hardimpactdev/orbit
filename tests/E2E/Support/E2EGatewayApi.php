@@ -256,9 +256,27 @@ while ($connection = @stream_socket_accept($server, -1)) {
     }
 
     if (str_starts_with($requestLine, 'GET /api/nodes ') || str_starts_with($requestLine, 'GET /api/nodes?')) {
+        $path = explode(' ', $requestLine)[1] ?? '/api/nodes';
+        $queryString = parse_url($path, PHP_URL_QUERY);
+        $query = [];
+
+        if (is_string($queryString)) {
+            parse_str($queryString, $query);
+        }
+
+        $parts = ['cd /home/orbit/orbit && php artisan node:list --json'];
+
+        foreach (['role', 'environment'] as $option) {
+            $value = $query[$option] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                $parts[] = "--{$option}=".escapeshellarg($value);
+            }
+        }
+
         $output = [];
         $exitCode = 0;
-        exec('cd /home/orbit/orbit && php artisan node:list --json 2>&1', $output, $exitCode);
+        exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
         respond($connection, $exitCode === 0 ? 200 : 422, implode("\n", $output));
         fclose($connection);
 
