@@ -117,7 +117,7 @@ it('outputs json error for invalid role', function (): void {
 
 it('--force fails with not yet implemented message', function (): void {
     $this->artisan('e2e:prepare-incus-images', ['--force' => true])
-        ->expectsOutputToContain('Building Incus images via artisan is not yet implemented. Use bin/e2e --prepare-<role> for now.')
+        ->expectsOutputToContain('Building Incus images via artisan is not yet implemented.')
         ->assertFailed();
 });
 
@@ -125,7 +125,7 @@ it('--force --json fails with error envelope', function (): void {
     $expected = json_encode([
         'error' => [
             'code' => 'incus_e2e_image_prepare_failed',
-            'message' => 'Building Incus images via artisan is not yet implemented. Use bin/e2e --prepare-<role> for now.',
+            'message' => 'Building Incus images via artisan is not yet implemented.',
         ],
     ], JSON_THROW_ON_ERROR);
 

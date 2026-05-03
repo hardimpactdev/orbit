@@ -28,7 +28,7 @@ class E2EPrepareIncusImagesCommand extends Command
         }
 
         if ((bool) $this->option('force')) {
-            return $this->failCommand('Building Incus images via artisan is not yet implemented. Use bin/e2e --prepare-<role> for now.');
+            return $this->failCommand('Building Incus images via artisan is not yet implemented.');
         }
 
         $config = E2EConfig::fromEnvironment();

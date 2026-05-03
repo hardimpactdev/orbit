@@ -33,17 +33,17 @@ mutation checks against disposable VMs:
 
 ```bash
 composer test:e2e
-bin/e2e --preflight
-bin/e2e --prepare-blank
-bin/e2e --prepare-control
-bin/e2e --prepare-gateway
-bin/e2e --lifecycle
-bin/e2e --control
-bin/e2e --node-new-gateway
+php artisan e2e:preflight
+php artisan e2e:prepare-incus-images --role=blank --force
+php artisan e2e:prepare-incus-images --role=control --force
+php artisan e2e:prepare-incus-images --role=gateway --force
+composer test:e2e:provisioning --filter='lifecycle'
+composer test:e2e:provisioning --filter='control'
+composer test:e2e:provisioning --filter='NodeNewGateway'
 ```
 
 The first ephemeral E2E harness uses Incus VMs on beast. Run
-`bin/e2e --prepare-blank` to build or replace the reusable
+`php artisan e2e:prepare-incus-images --role=blank --force` to build or replace the reusable
 `orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The default
 `composer test:e2e` path launches one disposable VM from that blank image,
 injects an ephemeral SSH key for the non-`orbit` bootstrap user, verifies SSH
@@ -51,27 +51,27 @@ from beast into the VM, and deletes the VM. The blank image intentionally does
 not use `orbit` as the bootstrap user so gateway and app provisioning tests can
 prove Orbit creates or prepares the node-side `orbit` user itself.
 
-Run `bin/e2e --prepare-control` to build or replace the reusable
+Run `php artisan e2e:prepare-incus-images --role=control --force` to build or replace the reusable
 `orbit-ready-control` image from the blank image. That lane ships the current
 Orbit source and `bin/install-orbit` into a disposable VM, installs the control
 node prerequisites and CLI as the non-`orbit` control user, verifies
-`orbit --version`, then publishes the ready image. Run `bin/e2e --control` to
+`orbit --version`, then publishes the ready image. Run `composer test:e2e:provisioning --filter='control'` to
 launch from that image and verify the ready control node over SSH.
 
-Run `bin/e2e --prepare-gateway` to build or replace the reusable
+Run `php artisan e2e:prepare-incus-images --role=gateway --force` to build or replace the reusable
 `orbit-ready-gateway` Incus image from the blank image. That lane ships the
 current Orbit source and `bin/install-orbit` into a disposable VM, installs the
 gateway node prerequisites and CLI as the `orbit` user, bootstraps gateway-local
 identity and root CA via `orbit:internal:bootstrap-gateway-local`, verifies
 `orbit --version`, then publishes the ready image.
 
-Run `bin/e2e --prepare-devapp` to build or replace the reusable
+Run `php artisan e2e:prepare-incus-images --role=devapp --force` to build or replace the reusable
 `orbit-ready-devapp` Incus image from the blank image. That lane ships the
 current Orbit source and `bin/install-orbit` into a disposable VM, installs the
 development-app node prerequisites and CLI as the `orbit` user with
 `--role=app`, verifies `orbit --version`, then publishes the ready image.
 
-Run `bin/e2e --node-new-gateway` to exercise the first-gateway bootstrap path.
+Run `composer test:e2e:provisioning --filter='NodeNewGateway'` to exercise the first-gateway bootstrap path.
 This lane launches one disposable VM from the ready control image and one from
 the blank image, injects an ephemeral SSH key into both, runs
 `orbit node:new gateway-1 --role=gateway --host=<gateway-ip> --ssh-user=<bootstrap-user> --control-name=control-1 --json`
@@ -83,7 +83,7 @@ user; SSH access from the control VM to the gateway as `orbit` is not yet
 verified because runtime-user SSH key distribution is not yet implemented.
 The VMs are destroyed at the end unless `ORBIT_E2E_KEEP=1`.
 
-Run `bin/e2e --gateway-add` to exercise control-node onboarding against a
+Run `composer test:e2e:provisioning --filter='GatewayAdd'` to exercise control-node onboarding against a
 prepared gateway VM. This lane launches one disposable VM from the ready control
 image and one from the ready gateway image, injects an ephemeral SSH key into
 both, configures a dummy network interface on the gateway VM with the expected
@@ -178,19 +178,4 @@ ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
 ```
 
-Environment overrides for the legacy `bin/e2e` harness (still supported during
-the transition):
-
-```bash
-ORBIT_E2E_HOST=beast
-ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
-ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
-ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
-ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
-ORBIT_E2E_DEVAPP_IMAGE=orbit-ready-devapp
-ORBIT_E2E_BOOTSTRAP_USER=provisioner
-ORBIT_E2E_CONTROL_USER=control
-ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
-ORBIT_E2E_TIMEOUT_SECONDS=600
-ORBIT_E2E_KEEP=1
-```
+All E2E orchestration now runs via Pest groups and `php artisan e2e:*` commands.

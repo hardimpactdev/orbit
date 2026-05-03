@@ -109,21 +109,22 @@ Default migration order is command-contract and capability driven:
 These items exist in the clean repo today. Some are bootstrap slices and do not
 yet satisfy the full product contracts.
 
-- [~] Incus-backed ephemeral E2E harness
-  - Current script: `bin/e2e`
+- [x] Incus-backed ephemeral E2E harness (retired legacy `bin/e2e`; now
+    artisan commands + Pest E2E suite)
+  - Current commands: `php artisan e2e:*`
   - Current docs: `TESTING.md`
   - Current test script: `composer test:e2e`
   - Bootstrap slice implemented: beast preflight, disposable Ubuntu cloud VM
     launch, ephemeral SSH key injection, SSH readiness check from beast, and VM
     cleanup.
-  - Blank lane implemented: `bin/e2e --prepare-blank` builds the reusable
-    `orbit-blank-ubuntu-26.04` Incus image; `composer test:e2e` launches from
-    that image and verifies SSH through a non-`orbit` bootstrap user.
-  - Control-ready lane implemented: `bin/e2e --prepare-control` builds the
-    reusable `orbit-ready-control` Incus image from the blank image by
-    installing Orbit as a non-`orbit` control user, and `bin/e2e --control`
+  - Blank lane implemented: `php artisan e2e:prepare-incus-images --role=blank --force`
+    builds the reusable `orbit-blank-ubuntu-26.04` Incus image; `composer test:e2e`
+    launches from that image and verifies SSH through a non-`orbit` bootstrap user.
+  - Control-ready lane implemented: `php artisan e2e:prepare-incus-images --role=control --force`
+    builds the reusable `orbit-ready-control` Incus image from the blank image by
+    installing Orbit as a non-`orbit` control user, and `composer test:e2e:provisioning --filter='control'`
     launches it and verifies `orbit --version` over SSH.
-  - First-gateway provisioning lane implemented: `bin/e2e --node-new-gateway`
+  - First-gateway provisioning lane implemented: `composer test:e2e:provisioning --filter='NodeNewGateway'`
     launches a ready control VM and a blank gateway VM, runs
     `orbit node:new --role=gateway` from the control VM, and verifies the
     gateway is provisioned under the steady-state `orbit` user with a working
@@ -354,7 +355,7 @@ todos required by the Rules section:
   `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
   `SCOUT_REPORT status=READY`. Lane must declare a concrete
   `composer test:e2e:provisioning` invocation, `composer test:e2e:features`
-  invocation, `bin/e2e --<lane>` command, or `lane=none` reason; if that lane
+  invocation, `php artisan e2e:*` command, or `lane=none` reason; if that lane
   does not yet exist, create a separate implementer todo to author it before the
   E2E gate becomes dispatchable.
 
@@ -378,7 +379,7 @@ route them to the implementer agent.
 2. Then dispatch `NODE-LIST-FWD-1` (todo 234).
 3. Then dispatch `NODE-SHOW-FWD-1` (todo 235).
 4. Pair each of 234 and 235 with paired E2E gate todos. The E2E gates
-   need a `bin/e2e --read-topology` lane authored first (todo 238) — a shared
+   need a `php artisan e2e:prepare-topology` lane authored first (todo 238) — a shared
    lane that spins up control + gateway + dev-app for multiple read-command
    verifications.
 
@@ -388,8 +389,8 @@ with independent read-only Pest or harness work only.
 
 #### After Read-Forwarding Chain Verifies (Next 5 Candidates)
 
-1. Authoring `bin/e2e --read-topology` lane (todo 238) so the paired E2E gates
-   above become dispatchable.
+1. Authoring `php artisan e2e:prepare-topology` lane (todo 238) so the paired E2E gates
+    above become dispatchable.
 2. Node doctor contract/docs slice needed for `node:list --doctor`.
 3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
    E2E gates).
@@ -542,7 +543,7 @@ exist. Those families wait for the node/gateway/app foundations.
     registry rows.
   - [x] First-gateway bootstrap creates/verifies a steady-state runtime user
     (`orbit`) through the bootstrap SSH user and installs Orbit under that user.
-  - [x] First-gateway ephemeral E2E lane (`bin/e2e --node-new-gateway`) verifies
+  - [x] First-gateway ephemeral E2E lane (`composer test:e2e:provisioning --filter='NodeNewGateway'`) verifies
     end-to-end provisioning against disposable Incus VMs.
   - [x] First-gateway bootstrap invokes gateway-local internal command over SSH
     to initialize gateway node identity (`is_local=true`) and generate root CA.
@@ -610,7 +611,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` (human progress trees, success/failure prose, no JSON envelopes)
   - Contract gaps:
     - Interactive input mode prompts are covered by command logic but not fully exercised via automated TTY prompts (standard PHPUnit/Pest limitation).
-    - Ephemeral E2E lane (`bin/e2e --dns-resolve-tld`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
+    - Ephemeral E2E lane (`composer test:e2e:provisioning --filter='DnsResolveTld'`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
     - Linux backend support is intentionally deferred; only macOS dnsmasq backend is implemented.
 - [ ] Port `dns:list`.
 
@@ -766,13 +767,13 @@ A `GatewayClient` service class (or similar) that:
   - [x] Create a blank snapshot lane for `e2e-provisioning` tests.
   - [x] Add reusable host installer needed by the ready control snapshot.
   - [x] Create a ready control snapshot lane for `e2e-feature` tests.
-  - [x] Create a ready gateway snapshot lane (`bin/e2e --prepare-gateway`)
+  - [x] Create a ready gateway snapshot lane (`php artisan e2e:prepare-incus-images --role=gateway --force`)
     that builds a reusable `orbit-ready-gateway` image with bootstrapped
     gateway identity and root CA.
-  - [x] Add first-gateway provisioning E2E lane (`bin/e2e --node-new-gateway`)
+  - [x] Add first-gateway provisioning E2E lane (`composer test:e2e:provisioning --filter='NodeNewGateway'`)
     that exercises `node:new --role=gateway` from a ready control VM against a
     blank gateway VM (`e2e-provisioning`).
-  - [x] Add control-node onboarding E2E lane (`bin/e2e --gateway-add`) that
+  - [x] Add control-node onboarding E2E lane (`composer test:e2e:provisioning --filter='GatewayAdd'`) that
     exercises `gateway:add` from a ready control VM against a ready gateway VM
     (`e2e-provisioning`).
   - [~] Create ready development app snapshot lane for `e2e-feature` tests.

@@ -2,19 +2,15 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Process;
+use App\Console\Commands\E2EPreflightCommand;
+use App\Console\Commands\E2EPrepareHcloudImagesCommand;
+use App\Console\Commands\E2EPrepareIncusImagesCommand;
+use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\Console\Commands\E2EReapHcloudCommand;
+use App\Console\Commands\E2EReapIncusCommand;
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
-    $script = base_path('bin/e2e');
-    $contents = file_get_contents($script);
-
-    expect($script)->toBeFile()
-        ->and(is_executable($script))->toBeTrue()
-        ->and($contents)->toContain('ORBIT_E2E_HOST')
-        ->and($contents)->toContain('incus launch')
-        ->and($contents)->toContain('orbit-e2e')
-        ->and($contents)->toContain('Use Pest for in-memory command and contract tests')
-        ->and($contents)->toContain('Use E2E for provisioning or host-mutating workflows');
+    expect(base_path('bin/e2e'))->not->toBeFile();
 });
 
 it('does not expose a standing live smoke test lane', function (): void {
@@ -97,71 +93,23 @@ it('registers ephemeral e2e as a guarded Pest group', function (): void {
         ->toContain("->in('E2E')");
 });
 
-it('documents and prepares the reusable blank e2e image', function (): void {
-    $script = file_get_contents(base_path('bin/e2e'));
+it('registers the e2e artisan commands', function (): void {
+    $commands = [
+        E2EPreflightCommand::class,
+        E2EPrepareIncusImagesCommand::class,
+        E2EPrepareHcloudImagesCommand::class,
+        E2EPrepareTopologyCommand::class,
+        E2EReapIncusCommand::class,
+        E2EReapHcloudCommand::class,
+    ];
 
-    expect($script)
-        ->toContain('--prepare-blank')
-        ->toContain('ORBIT_E2E_BLANK_IMAGE')
-        ->toContain('ORBIT_E2E_BOOTSTRAP_USER')
-        ->toContain('orbit-blank-ubuntu-26.04')
-        ->toContain('provisioner')
-        ->toContain('ORBIT_E2E_BOOTSTRAP_USER must be a non-orbit Linux username')
-        ->toContain('incus publish "$name" --force --reuse --alias "$blank_image"')
-        ->toContain('source_image="$1"')
-        ->toContain('blank_image="$2"');
-});
+    foreach ($commands as $class) {
+        expect(class_exists($class))->toBeTrue("{$class} does not exist");
 
-it('documents and prepares the reusable ready control e2e image', function (): void {
-    $script = file_get_contents(base_path('bin/e2e'));
-
-    expect($script)
-        ->toContain('--prepare-control')
-        ->toContain('--control')
-        ->toContain('ORBIT_E2E_CONTROL_IMAGE')
-        ->toContain('ORBIT_E2E_CONTROL_USER')
-        ->toContain('orbit-ready-control')
-        ->toContain('control')
-        ->toContain('ORBIT_E2E_CONTROL_USER must be a non-orbit Linux username')
-        ->toContain('bin/install-orbit')
-        ->toContain("usermod -p '*'")
-        ->toContain('--role=control')
-        ->toContain('--path=/home/${control_user}/orbit')
-        ->toContain('orbit --version');
-});
-
-it('documents the node:new first-gateway ephemeral e2e lane', function (): void {
-    $script = file_get_contents(base_path('bin/e2e'));
-
-    expect($script)
-        ->toContain('--node-new-gateway')
-        ->toContain('node:new gateway-1')
-        ->toContain('--role=gateway')
-        ->toContain('--ssh-user=${bootstrap_user}')
-        ->toContain('--control-name=control-1')
-        ->toContain('gateway-1 not found in registry')
-        ->toContain('control-1 not found in registry')
-        ->toContain('Orbit not installed under /home/orbit/orbit on gateway')
-        ->toContain('orbit --version did not work on gateway as orbit user')
-        ->toContain('orbit node:list')
-        ->toContain('node:new gateway passed');
-});
-
-it('documents node:new app-node ephemeral e2e lanes', function (): void {
-    $script = file_get_contents(base_path('bin/e2e'));
-
-    expect($script)
-        ->toContain('--node-new-devapp')
-        ->toContain('--node-new-prodapp')
-        ->toContain('node_new_app development')
-        ->toContain('node_new_app production')
-        ->toContain('orbit node:new ${orbit_node_name} --role=app')
-        ->toContain('--environment=${node_environment}')
-        ->toContain('--tld=${node_tld}')
-        ->toContain('development_tld')
-        ->toContain('production app-node response included development_tld')
-        ->toContain('Orbit not installed under /home/orbit/orbit on app node')
-        ->toContain('node:new ${node_environment} app passed');
+        $command = app($class);
+        expect($command->isHidden())->toBeTrue("{$class} should be hidden");
+        expect($command->getDefinition()->hasOption('json'))->toBeTrue("{$class} should accept --json");
+    }
 });
 
 it('installs the PHP toolchain via the reachable sury.org repo on Ubuntu', function (): void {
@@ -189,16 +137,4 @@ it('aligns orbit checkout ownership with the home parent so non-root users can w
         ->toContain('finalize_target_ownership')
         ->toContain('--no-same-owner')
         ->toContain('chown -R');
-});
-
-it('rejects orbit as an ephemeral e2e bootstrap or control user', function (): void {
-    $script = escapeshellarg(base_path('bin/e2e'));
-
-    $bootstrapUser = Process::run("ORBIT_E2E_BOOTSTRAP_USER=orbit {$script} --preflight");
-    $controlUser = Process::run("ORBIT_E2E_CONTROL_USER=orbit {$script} --preflight");
-
-    expect($bootstrapUser->exitCode())->toBe(2)
-        ->and($bootstrapUser->errorOutput())->toContain('ORBIT_E2E_BOOTSTRAP_USER must be a non-orbit Linux username')
-        ->and($controlUser->exitCode())->toBe(2)
-        ->and($controlUser->errorOutput())->toContain('ORBIT_E2E_CONTROL_USER must be a non-orbit Linux username');
 });
