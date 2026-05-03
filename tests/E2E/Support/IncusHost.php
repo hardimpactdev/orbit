@@ -66,6 +66,16 @@ class IncusHost
         return $this->run(sprintf('incus start %s', escapeshellarg($name)));
     }
 
+    public function setInstanceLimits(string $name, string $cpus, string $memory): ProcessResult
+    {
+        return $this->run(sprintf(
+            'incus config set %s limits.cpu=%s limits.memory=%s',
+            escapeshellarg($name),
+            escapeshellarg($cpus),
+            escapeshellarg($memory),
+        ));
+    }
+
     public function stopInstance(string $name): ProcessResult
     {
         return $this->run(sprintf('incus stop --force %s', escapeshellarg($name)));

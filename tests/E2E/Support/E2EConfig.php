@@ -25,6 +25,8 @@ final readonly class E2EConfig
         public int $timeoutSeconds,
         public string $cpus,
         public string $memory,
+        public string $topologyCpus,
+        public string $topologyMemory,
         public bool $keep,
     ) {}
 
@@ -48,6 +50,8 @@ final readonly class E2EConfig
             timeoutSeconds: self::envInt('ORBIT_E2E_TIMEOUT_SECONDS', 600),
             cpus: self::envString('ORBIT_E2E_CPUS', '2'),
             memory: self::envString('ORBIT_E2E_MEMORY', '2GiB'),
+            topologyCpus: self::envString('ORBIT_E2E_TOPOLOGY_CPUS', '1'),
+            topologyMemory: self::envString('ORBIT_E2E_TOPOLOGY_MEMORY', '2GiB'),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
         );
     }
@@ -126,6 +130,8 @@ final readonly class E2EConfig
             timeoutSeconds: $this->timeoutSeconds,
             cpus: $this->cpus,
             memory: $this->memory,
+            topologyCpus: $this->topologyCpus,
+            topologyMemory: $this->topologyMemory,
             keep: $this->keep,
         );
     }

@@ -58,6 +58,16 @@ final readonly class IncusTopologyTemplate
                 throw new \RuntimeException("Could not copy {$template} to {$clone}: {$result->errorOutput()}");
             }
 
+            $result = $timer->measure("limits.{$role}", fn () => $host->setInstanceLimits(
+                $clone,
+                $host->config->topologyCpus,
+                $host->config->topologyMemory,
+            ));
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not apply topology limits to {$clone}: {$result->errorOutput()}");
+            }
+
             $result = $timer->measure("start.{$role}", fn () => $host->startInstance($clone));
 
             if (! $result->successful()) {

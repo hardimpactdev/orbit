@@ -259,7 +259,17 @@ ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
 ORBIT_E2E_TIMINGS=1                   # Print phase timings to STDERR (acquire / reset)
+ORBIT_E2E_CPUS=2                      # vCPUs for image-prep / provisioning VMs
+ORBIT_E2E_MEMORY=2GiB                 # Memory for image-prep / provisioning VMs
+ORBIT_E2E_TOPOLOGY_CPUS=1             # vCPUs for disposable topology clones
+ORBIT_E2E_TOPOLOGY_MEMORY=2GiB        # Memory for disposable topology clones
 ```
+
+Provisioning and topology clones use independent resource budgets. Image
+preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work
+is CPU- and package-manager-bound. Topology feature clones default to 1 vCPU
+because the work is mostly SSH, SQLite, command execution, small API calls, and
+readiness polling — more 1-vCPU clones in parallel beats fewer 2-vCPU clones.
 
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
 factory and lease (`availability`, `copy.*`, `start.*`, `agent-ready.*`,

@@ -38,6 +38,8 @@ function e2eConfig(string $host = 'beast'): E2EConfig
         timeoutSeconds: 600,
         cpus: '2',
         memory: '2GiB',
+        topologyCpus: '1',
+        topologyMemory: '2GiB',
         keep: false,
     );
 }

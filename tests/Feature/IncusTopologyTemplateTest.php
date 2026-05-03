@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2ETopologyKind;
@@ -12,6 +13,42 @@ use Tests\E2E\Support\IncusTopologyTemplate;
 afterEach(function (): void {
     m::close();
 });
+
+function successfulProcessResult(): ProcessResult
+{
+    $result = m::mock(ProcessResult::class);
+    $result->shouldReceive('successful')->andReturn(true);
+    $result->shouldReceive('errorOutput')->andReturn('');
+    $result->shouldReceive('output')->andReturn('');
+
+    return $result;
+}
+
+function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB'): E2EConfig
+{
+    return new E2EConfig(
+        providerNames: ['incus'],
+        host: 'beast',
+        sourceImage: '',
+        blankImage: '',
+        controlImage: '',
+        gatewayImage: '',
+        hcloudServerType: '',
+        hcloudLocation: '',
+        hcloudBlankImage: '',
+        hcloudControlImage: '',
+        hcloudGatewayImage: '',
+        bootstrapUser: 'provisioner',
+        controlUser: 'control',
+        instancePrefix: 'orbit-e2e',
+        timeoutSeconds: 60,
+        cpus: '2',
+        memory: '2GiB',
+        topologyCpus: $topologyCpus,
+        topologyMemory: $topologyMemory,
+        keep: false,
+    );
+}
 
 it('maps each topology kind to expected roles', function (): void {
     expect(IncusTopologyTemplate::rolesFor(E2ETopologyKind::Control))->toBe(['control'])
@@ -120,4 +157,60 @@ it('returns null when no host has required templates', function (): void {
     $pool = new IncusHostPool([$host1, $host2]);
 
     expect($pool->firstAvailableFor(E2ETopologyKind::ControlGateway))->toBeNull();
+});
+
+it('clones with limits applied between copy and start', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig('1', '2GiB');
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('copyInstance')
+        ->with('orbit-template-control-control', 'orbit-e2e-runX-control')
+        ->ordered()
+        ->andReturn(successfulProcessResult());
+    $host->shouldReceive('setInstanceLimits')
+        ->with('orbit-e2e-runX-control', '1', '2GiB')
+        ->ordered()
+        ->andReturn(successfulProcessResult());
+    $host->shouldReceive('startInstance')
+        ->with('orbit-e2e-runX-control')
+        ->ordered()
+        ->andReturn(successfulProcessResult());
+    // waitForAgent uses host->run('incus exec ... -- true').
+    $host->shouldReceive('run')->andReturn(successfulProcessResult());
+
+    $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runX');
+
+    expect($instances)->toHaveKey('control');
+});
+
+it('passes configured topology cpus and memory to setInstanceLimits', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig('2', '4GiB');
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('copyInstance')->andReturn(successfulProcessResult());
+    $host->shouldReceive('setInstanceLimits')
+        ->once()
+        ->with('orbit-e2e-runY-control', '2', '4GiB')
+        ->andReturn(successfulProcessResult());
+    $host->shouldReceive('startInstance')->andReturn(successfulProcessResult());
+    $host->shouldReceive('run')->andReturn(successfulProcessResult());
+
+    $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runY');
+
+    expect($instances)->toHaveKey('control');
+});
+
+it('throws when setInstanceLimits fails', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $failure = m::mock(ProcessResult::class);
+    $failure->shouldReceive('successful')->andReturn(false);
+    $failure->shouldReceive('errorOutput')->andReturn('config set failed');
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('copyInstance')->andReturn(successfulProcessResult());
+    $host->shouldReceive('setInstanceLimits')->andReturn($failure);
+
+    expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::Control, 'runZ'))
+        ->toThrow(RuntimeException::class, 'Could not apply topology limits');
 });
