@@ -48,6 +48,10 @@ final class E2ETopologyFactory
             $instance->waitForSsh($config->bootstrapUser, $sshKeyPair);
         }
 
+        $rebuild = function () use ($host, $resolved, $runId): array {
+            return IncusTopologyTemplate::clone($host, $resolved, $runId);
+        };
+
         return new E2ETopologyLease(
             kind: $resolved,
             control: $instances['control'],
@@ -55,6 +59,7 @@ final class E2ETopologyFactory
             dev: $instances['dev'] ?? null,
             prod: $instances['prod'] ?? null,
             sshKeyPair: $sshKeyPair,
+            rebuild: $rebuild,
         );
     }
 

@@ -78,6 +78,7 @@ it('lease cleanup is idempotent', function (): void {
         dev: null,
         prod: null,
         sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: fn () => [],
     );
 
     $lease->cleanup();
@@ -102,6 +103,7 @@ it('cleans up all instances', function (): void {
         dev: $dev,
         prod: $prod,
         sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: fn () => [],
     );
 
     $lease->cleanup();
