@@ -42,4 +42,15 @@ final class GatewayRequestSender
 
         return $this->parser->parse($response);
     }
+
+    public function send(GatewayRequest $request): GatewayResponse
+    {
+        return match ($request->method()) {
+            'GET' => $this->get($request->path(), $request->query()),
+            'POST' => $this->post($request->path(), $request->data()),
+            'PUT' => $this->put($request->path(), $request->data()),
+            'DELETE' => $this->delete($request->path(), $request->data()),
+            default => throw new \InvalidArgumentException("Unsupported HTTP method: {$request->method()}"),
+        };
+    }
 }
