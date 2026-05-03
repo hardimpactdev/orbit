@@ -9,7 +9,10 @@ final class E2ETopologyLease
     private bool $cleaned = false;
 
     /**
-     * @param  \Closure(E2EPhaseTimer): array<string, E2EInstance>  $rebuild
+     * @param  \Closure(E2EPhaseTimer): array{
+     *     instances: array<string, E2EInstance>,
+     *     snapshotReset: \Closure(E2EPhaseTimer): void|null
+     * }  $rebuild
      * @param  \Closure(E2EPhaseTimer): void|null  $snapshotReset
      */
     public function __construct(
@@ -20,7 +23,7 @@ final class E2ETopologyLease
         private ?E2EInstance $prod,
         private readonly SshKeyPair $sshKeyPair,
         private readonly \Closure $rebuild,
-        private readonly ?\Closure $snapshotReset = null,
+        private ?\Closure $snapshotReset = null,
     ) {}
 
     public function kind(): E2ETopologyKind

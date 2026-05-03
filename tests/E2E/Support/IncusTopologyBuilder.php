@@ -172,6 +172,13 @@ class IncusTopologyBuilder
             );
         }
 
+        if (isset($instances['gateway'])) {
+            $log = $instances['gateway']->exec('cat /tmp/orbit-gateway-tls.log 2>&1; echo ---; cd /home/orbit/orbit && php artisan tinker --execute=\'echo App\\Models\\Node::pluck("name")->implode(",");\' 2>&1', timeoutSeconds: 30);
+            @file_put_contents('/tmp/e2e-ssh-trace.log',
+                "[GATEWAY-TLS-LOG]\n".$log->output()."\n",
+                FILE_APPEND);
+        }
+
         return $instances;
     }
 

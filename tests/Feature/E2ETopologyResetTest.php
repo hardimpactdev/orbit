@@ -171,6 +171,40 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
     }
 });
 
+it('fresh-clone reset uses a prepared rebuild state', function (): void {
+    $oldControl = m::mock(E2EInstance::class);
+    $oldControl->shouldReceive('delete')->once();
+
+    $newControl = m::mock(E2EInstance::class);
+
+    $prepared = false;
+    $rebuild = function () use ($newControl, &$prepared): array {
+        $prepared = true;
+
+        return [
+            'instances' => [
+                'control' => $newControl,
+            ],
+            'snapshotReset' => null,
+        ];
+    };
+
+    $lease = new E2ETopologyLease(
+        kind: E2ETopologyKind::Control,
+        control: $oldControl,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: $rebuild,
+    );
+
+    $lease->reset();
+
+    expect($prepared)->toBeTrue()
+        ->and($lease->control())->toBe($newControl);
+});
+
 it('falls back to fresh-clone for unknown strategy values', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
     putenv('ORBIT_E2E_TOPOLOGY_RESET=unknown-strategy');
