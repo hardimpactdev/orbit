@@ -43,6 +43,42 @@ class IncusHost
         return $this->run(sprintf('incus info %s >/dev/null 2>&1', escapeshellarg($name)))->successful();
     }
 
+    public function runningE2EInstanceCount(): int
+    {
+        $result = $this->run('incus list --format json');
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not list Incus instances on {$this->config->host}: {$result->errorOutput()}");
+        }
+
+        $instances = json_decode($result->output(), associative: true);
+
+        if (! is_array($instances)) {
+            return 0;
+        }
+
+        $prefix = $this->config->instancePrefix;
+        $count = 0;
+
+        foreach ($instances as $instance) {
+            if (! is_array($instance)) {
+                continue;
+            }
+
+            $name = $instance['name'] ?? null;
+            $status = $instance['status'] ?? null;
+
+            if (is_string($name) && is_string($status)
+                && str_starts_with($name, $prefix)
+                && $status === 'Running'
+            ) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
     public function snapshotExists(string $instance, string $snapshot): bool
     {
         return $this->run(sprintf(

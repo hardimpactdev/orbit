@@ -40,6 +40,7 @@ function e2eConfig(string $host = 'beast'): E2EConfig
         memory: '2GiB',
         topologyCpus: '1',
         topologyMemory: '2GiB',
+        incusMaxVmsPerHost: 4,
         keep: false,
     );
 }

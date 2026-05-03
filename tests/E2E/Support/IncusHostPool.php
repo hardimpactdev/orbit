@@ -29,8 +29,16 @@ final readonly class IncusHostPool
 
     public function firstAvailableFor(E2ETopologyKind $kind): ?IncusHost
     {
+        $requiredSlots = count(IncusTopologyTemplate::rolesFor($kind));
+
         foreach ($this->hosts as $host) {
-            if (IncusTopologyTemplate::availableOn($host, $kind)) {
+            if (! IncusTopologyTemplate::availableOn($host, $kind)) {
+                continue;
+            }
+
+            $freeSlots = $host->config->incusMaxVmsPerHost - $host->runningE2EInstanceCount();
+
+            if ($freeSlots >= $requiredSlots) {
                 return $host;
             }
         }

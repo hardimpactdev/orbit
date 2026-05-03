@@ -271,6 +271,18 @@ is CPU- and package-manager-bound. Topology feature clones default to 1 vCPU
 because the work is mostly SSH, SQLite, command execution, small API calls, and
 readiness polling — more 1-vCPU clones in parallel beats fewer 2-vCPU clones.
 
+`ORBIT_E2E_INCUS_MAX_VMS_PER_HOST` is enforced by the host pool. When a feature
+test asks for a topology, the pool walks the configured hosts and picks the
+first one that has both the prepared templates *and* enough free Orbit-owned
+slots (`max - runningE2EInstanceCount() >= roles required`). User-owned VMs are
+ignored — only instances whose name starts with `ORBIT_E2E_INSTANCE_PREFIX` are
+counted. Recommended baseline:
+
+```bash
+ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2
+ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
+```
+
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
 factory and lease (`availability`, `copy.*`, `start.*`, `agent-ready.*`,
 `ssh-authorize.*`, `ssh-ready.*`, `cleanup.*`). Output goes to STDERR with the

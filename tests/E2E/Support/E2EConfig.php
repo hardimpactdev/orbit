@@ -27,6 +27,7 @@ final readonly class E2EConfig
         public string $memory,
         public string $topologyCpus,
         public string $topologyMemory,
+        public int $incusMaxVmsPerHost,
         public bool $keep,
     ) {}
 
@@ -52,6 +53,7 @@ final readonly class E2EConfig
             memory: self::envString('ORBIT_E2E_MEMORY', '2GiB'),
             topologyCpus: self::envString('ORBIT_E2E_TOPOLOGY_CPUS', '1'),
             topologyMemory: self::envString('ORBIT_E2E_TOPOLOGY_MEMORY', '2GiB'),
+            incusMaxVmsPerHost: self::envInt('ORBIT_E2E_INCUS_MAX_VMS_PER_HOST', 4),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
         );
     }
@@ -132,6 +134,7 @@ final readonly class E2EConfig
             memory: $this->memory,
             topologyCpus: $this->topologyCpus,
             topologyMemory: $this->topologyMemory,
+            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
             keep: $this->keep,
         );
     }

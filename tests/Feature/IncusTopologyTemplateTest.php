@@ -46,6 +46,7 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
         memory: '2GiB',
         topologyCpus: $topologyCpus,
         topologyMemory: $topologyMemory,
+        incusMaxVmsPerHost: 4,
         keep: false,
     );
 }
@@ -135,12 +136,15 @@ it('returns single host when ORBIT_E2E_INCUS_HOSTS is unset', function (): void 
     }
 });
 
-it('returns first host with required templates', function (): void {
-    $hostWithout = m::mock(IncusHost::class);
+it('returns first host with required templates and capacity', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $hostWithout = m::mock(IncusHost::class, [$config])->makePartial();
     $hostWithout->shouldReceive('instanceExists')->andReturn(false);
 
-    $hostWith = m::mock(IncusHost::class);
+    $hostWith = m::mock(IncusHost::class, [$config])->makePartial();
     $hostWith->shouldReceive('instanceExists')->andReturn(true);
+    $hostWith->shouldReceive('runningE2EInstanceCount')->andReturn(0);
 
     $pool = new IncusHostPool([$hostWithout, $hostWith]);
 
@@ -148,15 +152,50 @@ it('returns first host with required templates', function (): void {
 });
 
 it('returns null when no host has required templates', function (): void {
-    $host1 = m::mock(IncusHost::class);
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $host1 = m::mock(IncusHost::class, [$config])->makePartial();
     $host1->shouldReceive('instanceExists')->andReturn(false);
 
-    $host2 = m::mock(IncusHost::class);
+    $host2 = m::mock(IncusHost::class, [$config])->makePartial();
     $host2->shouldReceive('instanceExists')->andReturn(false);
 
     $pool = new IncusHostPool([$host1, $host2]);
 
     expect($pool->firstAvailableFor(E2ETopologyKind::ControlGateway))->toBeNull();
+});
+
+it('skips host when capacity is insufficient and selects the next', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $tightHost = m::mock(IncusHost::class, [$config])->makePartial();
+    $tightHost->shouldReceive('instanceExists')->andReturn(true);
+    // 4 max - 3 running = 1 free slot, but we need 4 slots for ControlGatewayDevProd.
+    $tightHost->shouldReceive('runningE2EInstanceCount')->andReturn(3);
+
+    $freeHost = m::mock(IncusHost::class, [$config])->makePartial();
+    $freeHost->shouldReceive('instanceExists')->andReturn(true);
+    $freeHost->shouldReceive('runningE2EInstanceCount')->andReturn(0);
+
+    $pool = new IncusHostPool([$tightHost, $freeHost]);
+
+    expect($pool->firstAvailableFor(E2ETopologyKind::ControlGatewayDevProd))->toBe($freeHost);
+});
+
+it('returns null when every host with templates is at capacity', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig();
+
+    $host1 = m::mock(IncusHost::class, [$config])->makePartial();
+    $host1->shouldReceive('instanceExists')->andReturn(true);
+    $host1->shouldReceive('runningE2EInstanceCount')->andReturn(4);
+
+    $host2 = m::mock(IncusHost::class, [$config])->makePartial();
+    $host2->shouldReceive('instanceExists')->andReturn(true);
+    $host2->shouldReceive('runningE2EInstanceCount')->andReturn(4);
+
+    $pool = new IncusHostPool([$host1, $host2]);
+
+    expect($pool->firstAvailableFor(E2ETopologyKind::Control))->toBeNull();
 });
 
 it('clones with limits applied between copy and start', function (): void {
