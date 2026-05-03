@@ -48,7 +48,8 @@ it('runs ephemeral e2e through the opt-in Pest suite', function (): void {
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e',
+        '@test:e2e:provisioning',
+        '@test:e2e:features',
     ]);
 });
 
