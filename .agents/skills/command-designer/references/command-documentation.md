@@ -32,6 +32,13 @@ page, canonical technical contract, and renderer contracts. Add input-mode,
 caller-role, topology, destructive-consent, cross-node, or E2E companion files
 when those contracts need separate ownership.
 
+Command names use the longest command prefix before the colon. For compound
+command groups, keep the compound prefix intact and put only the action after
+the colon: `workspace-setup-step:add`, `workspace-teardown-step:add`,
+`cf-dns:list`, `cf-cache-rule:add`, `vpn-client:list`, and
+`vpn-web-ui:change-password`. Do not rewrite these as
+`workspace:setup-step-add`, `cf:dns-list`, or `vpn:client-list`.
+
 Run `composer docs-lint` after changing converted command documentation. The
 docs linter is the executable structure contract for converted command docs; if
 the command documentation structure changes, update the linter first and then
@@ -135,6 +142,16 @@ families, such as operations, deployments, VPN administration, PHP runtime, and
 agent IDE commands. Those domains may call or affect state families, but they
 must not invent new doctor family names unless the blueprint defines a product
 family for them.
+
+Tool-specific and capability-specific command families are explicitly admitted
+product surfaces, not generated from tool catalog slugs. Generic lifecycle,
+inventory, logs, credentials, update, reload, and reconfiguration stay under
+`tool:*`. A separate family is valid only when it owns a distinct Orbit
+workflow whose natural operator vocabulary is the tool or capability name:
+`php:*` for PHP runtime selection, future `redis:*` for Redis-native
+data-plane operations, and future `db:*` for database backup and restore
+drivers. Do not create `mysql:*`, `postgres:*`, or other per-tool families just
+because a catalog entry exists.
 
 When converting a command, state both:
 

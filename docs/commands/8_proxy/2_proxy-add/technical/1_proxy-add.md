@@ -1,4 +1,4 @@
-# Technical Contract: `orbit proxy:add <domain> (--upstream=<url>|--redirect=<url>) [--code=<code>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit proxy:add <domain> (--upstream=<url>|--redirect=<url>) [--node=<node>] [--code=<code>] [--force] [--json]`
 
 [Back to public `proxy:add` documentation.](../proxy-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit proxy:add <domain> (--upstream=<url>|--redirect=<url>) [--code=<code>] [--node=<node>] [--force] [--json]
+orbit proxy:add <domain> (--upstream=<url>|--redirect=<url>) [--node=<node>] [--code=<code>] [--force] [--json]
 ```
 
 ## Input Contract

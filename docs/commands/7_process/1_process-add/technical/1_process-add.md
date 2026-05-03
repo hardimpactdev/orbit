@@ -66,8 +66,8 @@ app-owned process intent, so only `control` and `gateway` callers are valid.
    effects.
 2. Resolve caller authorization and target app.
 3. Validate process name uniqueness within the app.
-4. Create gateway-owned process intent with command, restart policy, and crash
-   notification policy.
+4. Append gateway-owned process intent after existing definitions for the app,
+   with command, restart policy, and crash notification policy.
 5. Derive runtime-unit identities for the main app instance and all active
    workspaces.
 6. Render the derived runtime units on the owning app node.
@@ -122,7 +122,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Command contract for process creation, caller-role denial before prompts or side effects, app resolution, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings after post-intent enactment failure, and no intent write on validation failure. |
+| `tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Command contract for process creation, caller-role denial before prompts or side effects, app resolution, default process-order append behavior, defaults, duplicate-name failure, runtime-unit rendering, optional start behavior, repairable warnings after post-intent enactment failure, and no intent write on validation failure. |
 | `tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

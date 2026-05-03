@@ -153,7 +153,7 @@ Node transport has different rules before and after bootstrap:
   without owning fleet state.
 - Gateway VPN administration is the exception: `vpn-client:*` and
   `vpn-web-ui:*` commands run on the gateway host, so a control node initiating
-  them needs SSH access to the gateway.
+  them needs SSH access to the gateway over Orbit/WireGuard.
 - The gateway uses SSH to communicate with app nodes. On-node work such as file
   writes, service control, log access, package installation, and shell execution
   is simpler and more explicit over SSH than through an app-node HTTP control

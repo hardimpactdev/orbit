@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:start <tool> [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-start` documentation.](../tool-start.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:start <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -43,6 +43,9 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 - Verifies the registered tool is managed and startable.
 - Updates expected lifecycle state to running.
 - Starts the tool through its lifecycle backend.
+- If start enactment fails after the lifecycle intent changes, Orbit keeps the
+  new expected running state and reports the tool as not yet converged; doctor
+  owns later repair when the tool definition supports safe lifecycle repair.
 
 ### Scope Boundaries
 

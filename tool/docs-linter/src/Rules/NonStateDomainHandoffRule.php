@@ -28,10 +28,12 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
      * @var array<string, list<string>>
      */
     private const array REQUIRED_DOCTOR_HANDOFFS = [
+        'agent-ide' => ['node', 'app', 'workspace', 'process', 'tool'],
         'cf' => ['proxy', 'app'],
         'deploy' => ['app'],
         'dns' => ['node'],
         'gateway' => ['node'],
+        'php' => ['tool', 'app', 'workspace', 'proxy', 'node'],
         'operation' => [
             'node',
             'app',
@@ -42,6 +44,7 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
             'tool',
             'firewall_rule',
         ],
+        'vpn' => ['node'],
     ];
 
     public function id(): string

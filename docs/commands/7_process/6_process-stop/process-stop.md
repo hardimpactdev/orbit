@@ -2,10 +2,11 @@
 
 [Back to Process commands.](../README.md)
 
-**Purpose:** Stop a process in an app or workspace runtime context.
+**Purpose:** Stop one process, or all processes, in an app or workspace runtime
+context.
 
-**Description:** Stops one derived runtime unit through the gateway on the
-owning app node and records a durable `stopped` event.
+**Description:** Stops derived runtime units through the gateway on the owning
+app node and records durable `stopped` events.
 
 **Technical contract:** [`technical/1_process-stop.md`](technical/1_process-stop.md)
 
@@ -15,13 +16,16 @@ owning app node and records a durable `stopped` event.
 orbit process:stop vite --app=docs
 orbit process:stop vite --app=docs --workspace=feature-docs
 orbit process:stop vite --app=docs --json
+orbit process:stop --app=docs --workspace=feature-docs
 ```
 
 ## Behavior
 
-- Resolves the process and app/workspace runtime context.
-- Stops the derived runtime unit through the gateway.
-- Records and publishes a `stopped` process event after successful stop.
+- Resolves the app or workspace runtime context.
+- When `[name]` is supplied, stops that process only.
+- When `[name]` is omitted, stops all process definitions for the selected
+  context in process order.
+- Records and publishes a `stopped` process event after each successful stop.
 - Does not change process intent and does not remove the runtime unit.
 
 ## Related

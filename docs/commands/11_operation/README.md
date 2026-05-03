@@ -46,11 +46,4 @@ operation-family drift.
 3. [`orbit doctor`](3_doctor/doctor.md)
 4. [`orbit activity:list`](4_activity-list/activity-list.md)
 5. [`orbit activity:show [id]`](5_activity-show/activity-show.md)
-
-## Not Yet Converted
-
-The legacy operation commands below are tracked in
-[`docs/PORTING.md`](../../PORTING.md) and are not part of this converted domain
-until their current contracts are added here:
-
-- `profile`
+6. [`orbit profile [target]`](6_profile/profile.md)

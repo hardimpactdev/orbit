@@ -8,7 +8,7 @@ Register or re-apply Orbit management for an app.
 
 ```bash
 orbit app:register [name]
-orbit app:register [name] --path=/home/orbit/apps/my-app --node=app-1
+orbit app:register [name] --node=app-1 --path=/home/orbit/apps/my-app
 orbit app:register [name] --domain=example.com --json
 ```
 
@@ -16,7 +16,7 @@ orbit app:register [name] --domain=example.com --json
 
 ```bash
 # Register a manually cloned app
-orbit app:register my-app --path=/home/orbit/apps/my-app --node=app-1
+orbit app:register my-app --node=app-1 --path=/home/orbit/apps/my-app
 
 # Re-apply Orbit management (e.g., after manual node changes)
 orbit app:register my-app

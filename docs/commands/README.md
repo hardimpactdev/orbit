@@ -36,11 +36,26 @@ then migrate docs until it passes.
   commands, and `5_app` contains `app:*` commands. `11_operation` is the
   exception for miscellaneous operational commands such as `doctor`, `update`,
   and `activity:*`.
+- When a domain has compound command prefixes, use the longest compound prefix
+  before the colon and put only the action after the colon. Examples:
+  `workspace-setup-step:add`, `workspace-teardown-step:add`, `cf-dns:list`,
+  `cf-cache-rule:add`, and `vpn-client:list`. Do not collapse these into
+  split `family:compound-action` spellings.
 - Documentation domains and doctor state families are related but not
   interchangeable. A command belongs to a documentation domain; drift
   convergence belongs to a stable state family such as `node`, `app`,
   `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or
   `schedule`.
+- Tool and capability command families are explicitly admitted product
+  surfaces, not generated from the tool catalog. Generic lifecycle, inventory,
+  logs, credentials, update, reload, and reconfiguration stay under `tool:*`.
+  A tool-specific or capability-specific family is valid only when it owns a
+  distinct Orbit workflow whose natural operator vocabulary is the tool or
+  capability name. `php:*` owns PHP runtime selection across apps, workspaces,
+  and node CLI defaults; future Redis data-plane operations may use
+  `redis:*`. Database backup and restore should use a future `db:*` family
+  with SQLite, MySQL, and PostgreSQL drivers instead of `mysql:*` or
+  `postgres:*` command families.
 - Commands must state whether they mutate gateway intent, enact node artifacts,
   stream runtime data, or only read state.
 - Commands may be invoked from a control node, the gateway, or an app node. A
@@ -541,7 +556,7 @@ build on top of that foundation.
 10. [Deployments](10_deploy/README.md)
 11. [Operations](11_operation/README.md)
 12. [Cloudflare](12_cf/README.md)
-13. VPN Administration (not yet converted)
-14. PHP Runtime (not yet converted)
-15. Agent IDE (not yet converted)
+13. [VPN Administration](13_vpn/README.md)
+14. [PHP Runtime](14_php/README.md)
+15. [Agent IDE](15_agent-ide/README.md)
 16. [DNS](16_dns/README.md)

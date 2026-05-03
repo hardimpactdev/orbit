@@ -11,7 +11,7 @@ through the gateway.
 ## Usage
 
 ```bash
-orbit firewall:allow [name] [--node=<node>] --port=<port> [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
+orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
 ```
 
 ## Examples

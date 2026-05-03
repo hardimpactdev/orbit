@@ -61,6 +61,20 @@ it('allows operation commands with arbitrary prefixes', function (): void {
     expect($rule->check($context))->toBe([]);
 });
 
+it('requires compound family slugs to keep their full family prefix', function (): void {
+    $rule = new FamilyCommandPrefixRule;
+    $context = familyCommandPrefixContext([
+        '15_agent-ide/1_agent-ide-message',
+        '15_agent-ide/2_agent-message',
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->path)->toEndWith('docs/commands/15_agent-ide/2_agent-message')
+        ->and($findings[0]->ruleId)->toBe('command_docs.family_command_prefix');
+});
+
 it('checks flat command files in family roots', function (): void {
     $rule = new FamilyCommandPrefixRule;
     $context = familyCommandPrefixContext(files: [

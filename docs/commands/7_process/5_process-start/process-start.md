@@ -2,10 +2,11 @@
 
 [Back to Process commands.](../README.md)
 
-**Purpose:** Start a process in an app or workspace runtime context.
+**Purpose:** Start one process, or all processes, in an app or workspace runtime
+context.
 
-**Description:** Starts one derived runtime unit through the gateway on the
-owning app node and records a durable `started` event.
+**Description:** Starts derived runtime units through the gateway on the owning
+app node and records durable `started` events.
 
 **Technical contract:** [`technical/1_process-start.md`](technical/1_process-start.md)
 
@@ -15,13 +16,16 @@ owning app node and records a durable `started` event.
 orbit process:start vite --app=docs
 orbit process:start vite --app=docs --workspace=feature-docs
 orbit process:start vite --app=docs --json
+orbit process:start --app=docs --workspace=feature-docs
 ```
 
 ## Behavior
 
-- Resolves the process and app/workspace runtime context.
-- Starts the derived runtime unit through the gateway.
-- Records and publishes a `started` process event after successful start.
+- Resolves the app or workspace runtime context.
+- When `[name]` is supplied, starts that process only.
+- When `[name]` is omitted, starts all process definitions for the selected
+  context in process order.
+- Records and publishes a `started` process event after each successful start.
 - Does not change process intent.
 
 ## Related

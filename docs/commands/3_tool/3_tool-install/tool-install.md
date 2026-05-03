@@ -11,7 +11,7 @@ missing managed tool, not for changing an already managed version.
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--node=<node>] [--app=<app>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]
 ```
 
 ## Examples

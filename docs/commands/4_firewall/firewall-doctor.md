@@ -40,6 +40,10 @@ Observed backend firewall rules without gateway firewall intent are unmanaged
 node reality by default. They are not reported as drift unless the operator
 requested an explicit adoption scope.
 
+Backend rows that cannot be represented in Orbit firewall-rule fields are
+reported as unverifiable or skipped according to the probe result. They are not
+deleted by `--fix` and are not adopted by `--adopt`.
+
 ## Firewall Issue Codes
 
 | Code | Detected when |
@@ -61,6 +65,10 @@ requested an explicit adoption scope.
 `--fix` does not handle `firewall_rule.record_incomplete`,
 `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or
 `firewall_rule.rule_extra`.
+
+`--fix` re-applies or replaces only gateway-intended managed rules. It does not
+delete unmanaged backend rules, role bootstrap policy, WireGuard interface
+policy, or public-ingress policy owned by the node/proxy/app domains.
 
 ## Firewall Adopt Map
 

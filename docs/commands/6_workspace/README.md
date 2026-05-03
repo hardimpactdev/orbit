@@ -110,6 +110,10 @@ Workspace setup and teardown steps run in the workspace path on the owning app
 node. They receive a lifecycle environment that is separate from process runtime
 environment.
 
+Lifecycle step command text is stored as supplied and is not a template. Scripts
+that need Orbit context should read the environment variables below instead of
+depending on command-string substitution.
+
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
 | `ORBIT_APP` | Parent app slug | Lets scripts identify the app that owns the workspace. |

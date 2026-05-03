@@ -11,7 +11,7 @@ intent.
 ## Usage
 
 ```bash
-orbit tool:logs <tool> [--node=<node>] [--app=<app>] [--lines=<count>] [--follow] [--json]
+orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<count>] [--follow] [--json]
 ```
 
 ## Examples

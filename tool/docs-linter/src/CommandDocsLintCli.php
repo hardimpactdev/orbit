@@ -11,6 +11,7 @@ use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
 use OrbitDocsLinter\Rules\CanonicalTechnicalContractRule;
 use OrbitDocsLinter\Rules\CommandContractComplexityRule;
 use OrbitDocsLinter\Rules\CommandDirectoryStructureRule;
+use OrbitDocsLinter\Rules\CompoundCommandPrefixRule;
 use OrbitDocsLinter\Rules\ConceptIndexRule;
 use OrbitDocsLinter\Rules\ConvertedFamilyStructureRule;
 use OrbitDocsLinter\Rules\DestructiveConsentRule;
@@ -37,6 +38,7 @@ use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
 use OrbitDocsLinter\Rules\RequirementSmellRule;
 use OrbitDocsLinter\Rules\RoleCompanionCoverageRule;
 use OrbitDocsLinter\Rules\SharedFailureVocabularyRule;
+use OrbitDocsLinter\Rules\SignatureArgumentOrderRule;
 use OrbitDocsLinter\Rules\SignatureOptionConsistencyRule;
 use OrbitDocsLinter\Rules\TechnicalSlotSemanticsRule;
 use OrbitDocsLinter\Rules\TechnicalTestMappingRule;
@@ -188,6 +190,7 @@ final class CommandDocsLintCli
                 new ConvertedFamilyStructureRule,
                 new CommandDirectoryStructureRule,
                 new FamilyCommandPrefixRule,
+                new CompoundCommandPrefixRule,
                 new NoCommandAmbiguityFilesRule,
                 new TechnicalSlotSemanticsRule,
                 new MarkdownLinkIntegrityRule,
@@ -215,6 +218,7 @@ final class CommandDocsLintCli
                 new JsonRendererExampleRule,
                 new JsonWarningShapeRule,
                 new NextActionContractRule,
+                new SignatureArgumentOrderRule,
                 new SignatureOptionConsistencyRule,
                 new TechnicalTestMappingRule,
                 new TestMappingFormatRule,

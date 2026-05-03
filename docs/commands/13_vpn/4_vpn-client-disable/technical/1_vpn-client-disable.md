@@ -1,0 +1,91 @@
+# Technical Contract: `orbit vpn-client:disable <name> [--json]`
+
+[Back to public `vpn-client:disable` documentation.](../vpn-client-disable.md)
+
+**Owner:** `vpn`.
+
+**Effects:** `write`, `gateway-admin`.
+
+**Prerequisites:**
+- The local caller role can be resolved according to the foundation
+  `general.local_node_role` contract.
+- The caller is a gateway node, or an authorized control node with SSH access
+  to the gateway over Orbit/WireGuard.
+- The gateway VPN backend is installed and reachable on the gateway host.
+- The operator can authenticate to the gateway VPN backend when TOTP is
+  required.
+
+## Signature
+
+```bash
+orbit vpn-client:disable <name> [--totp=<code>] [--json]
+```
+
+## Input Contract
+
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `<name>` | Always. | Never. | None. | Existing non-node VPN client name. |
+| `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
+| `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
+
+## Caller Role Behavior
+
+Gateway callers disable the backend client locally. Control callers open the
+gateway-local execution path over SSH through Orbit/WireGuard, then disable the
+client on the gateway. App-node and unknown callers are denied before backend
+authentication or side effects.
+
+## Input Mode Contracts
+
+No input-mode-specific contracts are required. `name` is a required command
+argument and the command does not prompt.
+
+## Behavior Contract
+
+### Client Disablement Rules
+
+- Resolve `name` against gateway VPN backend clients.
+- Fail when the client does not exist.
+- Fail when the resolved backend peer matches an active Orbit node identity.
+- Disable the backend peer when it is enabled.
+- Return success when the backend peer is already disabled.
+- Preserve the backend peer and generated config so it can be enabled later.
+
+### Node Identity Boundary
+
+`vpn-client:disable` must not disable Orbit node peers. Disabling an active node
+peer would break node identity and reachability; node peer drift belongs to
+`doctor --family=node`.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_vpn-client-disable_output-render_human.md)
+- [JSON renderer](6.2_vpn-client-disable_output-render_json.md)
+
+## Failure Semantics
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
+| Validation failed | `name` is missing, does not exist, or resolves to an active Orbit node peer. | `error.code=validation_failed` |
+| Gateway SSH unavailable | A control caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
+| Authorization failed | The caller is not authorized for gateway VPN administration. | `error.code=authorization_failed` |
+| VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
+| VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
+
+## Doctor Relationship
+
+`vpn-client:disable` mutates gateway VPN backend state for non-node clients. It
+does not create doctor issues, fix drift, or adopt backend state.
+[`doctor --family=node`](../../../1_node/node-doctor.md) owns Orbit node
+WireGuard identity and gateway-managed node peer drift.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, existing enabled client disablement, already-disabled success, missing client failure, active node peer protection, and no node intent writes. |
+| `tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

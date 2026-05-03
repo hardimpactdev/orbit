@@ -24,6 +24,10 @@ valid app targets.
   Orbit management for an existing app, or retry production domain activation.
 - Apps may configure an agent IDE adapter through `app:agent-ide`. This
   overrides the owning node default for app and workspace workflows.
+- Development-server behavior for app and workspace processes is owned by the
+  `process` family. App commands record the app URL, document root, and runtime
+  policy; they do not create Vite-specific proxy routes or rewrite app-side
+  frontend configuration.
 - Production deployment pipeline definitions belong to apps. Deployments and
   releases are not standalone state families.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks

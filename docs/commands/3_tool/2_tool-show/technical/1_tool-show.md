@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:show <tool> [--node=<node>] [--app=<app>] [--live] [--json]`
+# Technical Contract: `orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]`
 
 [Back to public `tool-show` documentation.](../tool-show.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:show <tool> [--node=<node>] [--app=<app>] [--live] [--json]
+orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
 ```
 
 ## Input Contract

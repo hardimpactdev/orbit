@@ -22,7 +22,8 @@ The node family owns these facts:
 - node-related defaults: development app-node TLDs, gateway development DNS
   mappings for those TLDs, gateway development DNS resolver safety, local
   `node:default` preferences when `--self` inspects the current control node,
-  and gateway-owned node-level agent IDE defaults.
+  gateway-owned node-level PHP CLI defaults, and gateway-owned node-level agent
+  IDE defaults.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -77,7 +78,8 @@ The node probe reads gateway node records and checks these layers:
    no development TLD mapping.
 12. **Node-related defaults:** local `node:default` preferences point at
    active, authorized development app nodes when `--self` inspects a control
-   node, and node-level agent IDE defaults point at supported adapters.
+   node, node-level PHP CLI defaults point at installed supported PHP
+   runtimes, and node-level agent IDE defaults point at supported adapters.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a provider-specific
@@ -114,6 +116,7 @@ endpoint.
 | `node.development_dns_mapping_mismatch` | The gateway development DNS mapping for `*.nodes.tld` is absent or points anywhere other than the app node's WireGuard address. |
 | `node.development_dns_public_exposure` | Gateway-provisioned development DNS is exposed as a public resolver instead of being reachable only through the Orbit network. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-development app node. |
+| `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway intent is absent on the selected node or the target node's default `php` binary differs from gateway intent. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
 ## Node Fix Map
@@ -136,6 +139,7 @@ endpoint.
 | `node.development_tld_mismatch` | Rewrite the app node's local TLD default to the value in the gateway node record. |
 | `node.development_dns_mapping_mismatch` | Rewrite the gateway development DNS mapping to the app node's WireGuard address. |
 | `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network. |
+| `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
 `--fix` does not handle `node.record_incomplete`,
 `node.identity_unresolved`, `node.platform_unsupported`,
@@ -172,7 +176,7 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/NodesFamilyDoctorContractTest.php` | Nodes-family dispatch, probe-layer selection, node issue codes, node fix map, node adopt map, denied node fix/adopt cases, and scope filtering as it affects node probes. |
-| `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior for registry intent, access grant integrity, WireGuard identity, local caller role setting including absent/null defaulting to control, resolved local caller role matching a verified active node record, absent/null being divergent for verified gateway or app records, platform reality, SSH reachability, public IP metadata exclusion from probe/fix/adopt behavior, gateway runtime readiness, app-node bootstrap readiness, development TLD mapping readiness, `node.local_default_invalid`, and `node.agent_ide_default_invalid`. |
+| `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior for registry intent, access grant integrity, WireGuard identity, local caller role setting including absent/null defaulting to control, resolved local caller role matching a verified active node record, absent/null being divergent for verified gateway or app records, platform reality, SSH reachability, public IP metadata exclusion from probe/fix/adopt behavior, gateway runtime readiness, app-node bootstrap readiness, development TLD mapping readiness, `node.local_default_invalid`, `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`. |
 | `tests/E2E/Read/DoctorTest.php` | Real read-only `doctor --family=node --json` from a control node against an active fleet. |
 | `tests/E2E/Ephemeral/NodesDoctorFixTest.php` | Real `doctor --family=node --fix` repair of safe node drift. |
 | `tests/E2E/Ephemeral/NodesDoctorAdoptTest.php` | Real `doctor --family=node --adopt` for compatible node identity or host adoption. |

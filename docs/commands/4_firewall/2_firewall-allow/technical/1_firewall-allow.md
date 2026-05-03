@@ -1,4 +1,4 @@
-# Technical Contract: `orbit firewall:allow [name] [--node=<node>] --port=<port> [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
+# Technical Contract: `orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
 
 [Back to public `firewall-allow` documentation.](../firewall-allow.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit firewall:allow [name] [--node=<node>] --port=<port> [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
+orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
 ```
 
 ## Input Contract
@@ -51,9 +51,13 @@ remains gateway-owned and enacted through gateway-to-node transport.
 
 - Resolves a firewall-eligible target node.
 - Validates the rule shape and baseline policy boundary before side effects.
+- Treats an existing same-node, same-name rule with the same policy shape as
+  idempotent. Reusing the name for a different policy fails before mutation.
 - Writes gateway firewall-rule intent with action `allow`.
 - Enacts the backend firewall rule through the gateway.
 - Reports intent and backend enactment as one command outcome.
+- If backend enactment fails after intent is written, Orbit keeps the rule as
+  expected gateway intent and reports doctor recovery.
 
 ### Scope Boundaries
 

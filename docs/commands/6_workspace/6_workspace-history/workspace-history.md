@@ -4,7 +4,7 @@ Show workspace setup and lifecycle history.
 
 ## Usage
 
-`orbit workspace:history [name] [--app=<slug>] [--json] [--limit=<int>] [--since=<date>] [--until=<date>]`
+`orbit workspace:history [name] [--app=<slug>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
 
 ## Arguments And Options
 

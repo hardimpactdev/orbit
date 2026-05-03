@@ -78,7 +78,7 @@ final class FamilyCommandPrefixRule implements CommandDocsLintRule
 
     private function commandPrefix(string $familySlug): string
     {
-        return explode('-', $familySlug, 2)[0];
+        return $familySlug;
     }
 
     private function startsWithFamilyPrefix(string $commandSlug, string $expectedPrefix): bool

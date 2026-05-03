@@ -17,7 +17,7 @@ final readonly class CaRootController
     {
         try {
             $rootCa = $this->caService->rootCert();
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException) {
             return response()->json([
                 'error' => [
                     'code' => 'gateway_unavailable',

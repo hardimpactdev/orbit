@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:stop <tool> [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-stop` documentation.](../tool-stop.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:stop <tool> [--node=<node>] [--app=<app>] [--json]
+orbit tool:stop <tool> [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -43,6 +43,9 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 - Verifies the registered tool is managed and stoppable.
 - Updates expected lifecycle state to installed.
 - Stops the tool through its lifecycle backend.
+- If stop enactment fails after the lifecycle intent changes, Orbit keeps the
+  new expected installed state and reports the tool as not yet converged; doctor
+  owns later repair when the tool definition supports safe lifecycle repair.
 
 ### Scope Boundaries
 

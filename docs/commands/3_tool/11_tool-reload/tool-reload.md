@@ -11,7 +11,7 @@ definition supports it.
 ## Usage
 
 ```bash
-orbit tool:reload [tool] [--node=<node>] [--app=<app>] [--json]
+orbit tool:reload [tool] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples

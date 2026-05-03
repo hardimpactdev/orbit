@@ -29,6 +29,11 @@ Polyscope Server is an agent IDE server capability. Agent IDE workspace and
 provider behavior remain owned by the agent IDE domain when that domain is
 ported.
 
+Provider authentication remains provider-owned. When provider login cannot be
+completed remotely, `tool:install polyscope-server` may report a manual
+`polyscope-server login` recovery step, but that login state is not exposed as
+`tool:credentials`.
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the managed user service, expected lifecycle

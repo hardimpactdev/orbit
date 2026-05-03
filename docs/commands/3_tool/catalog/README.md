@@ -32,6 +32,23 @@ node record. HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 node service host, such as `orbit.<node-tld>:5432`, and must not be represented
 as HTTP proxy routes.
 
+## Tool-Specific Command Families
+
+Catalog membership does not create a top-level command family. Most tool
+operations use the generic `tool:*` surface. A tool-specific or
+capability-specific command family must be admitted by the command contracts
+when it owns a distinct Orbit workflow.
+
+Admitted examples:
+
+- `php:*` owns PHP runtime selection across app intent, workspace overrides,
+  and node CLI defaults.
+- Future Redis data-plane operations may use `redis:*`, such as a
+  Redis-specific flush command.
+- Future database backup and restore workflows should use `db:*` with
+  SQLite, MySQL, and PostgreSQL drivers, not separate `mysql:*` and
+  `postgres:*` families.
+
 ## Required Baseline Tools
 
 These tools are expected to exist through node provisioning or host bootstrap.

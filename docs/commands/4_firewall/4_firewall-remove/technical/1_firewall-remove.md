@@ -49,6 +49,9 @@ remains gateway-owned and enacted through gateway-to-node transport.
 - Requires destructive consent before side effects.
 - Removes the managed backend firewall rule through the gateway when intent exists.
 - Removes gateway firewall-rule intent after backend cleanup succeeds.
+- If backend cleanup fails, Orbit keeps gateway firewall-rule intent and reports
+  doctor/manual recovery instead of forgetting an expected rule while node
+  reality may still contain it.
 - Succeeds idempotently when the rule is already absent from gateway intent.
 
 ### Scope Boundaries

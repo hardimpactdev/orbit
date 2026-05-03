@@ -16,9 +16,9 @@ use Illuminate\Console\Command;
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
 {
-    private const VALID_ROLES = ['gateway', 'app', 'control'];
+    private const array VALID_ROLES = ['gateway', 'app', 'control'];
 
-    private const VALID_ENVIRONMENTS = ['development', 'production'];
+    private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
     public function handle(): int
     {

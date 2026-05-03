@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:credentials [tool] [--node=<node>] [--app=<app>] [--json]`
+# Technical Contract: `orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-credentials` documentation.](../tool-credentials.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:credentials [tool] [--node=<node>] [--app=<app>] [--json]
+orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

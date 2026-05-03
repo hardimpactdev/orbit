@@ -55,6 +55,10 @@ Observed node capabilities without gateway tool rows are unmanaged inventory by
 default. They are not reported as drift unless the operator requested an
 explicit adoption scope.
 
+Probe failures mark the selected tool unverifiable for that run. Tool doctor
+does not guess observed state, adopt unknown probe output, or run fixes that
+depend on facts the probe could not establish.
+
 ## Tool Issue Codes
 
 | Code | Detected when |
@@ -94,6 +98,10 @@ routes, non-tool firewall rules, node identities, or node grants. It may repair
 tool-owned endpoint intent only when the selected tool definition owns that
 intent; live proxy and firewall artifact drift remains in the `proxy` and
 `firewall_rule` families.
+
+Tool fixes apply existing gateway intent to node reality. They do not change
+`expected_version`, lifecycle intent, generated config intent, or credential
+intent to match observed node state; adoption owns those intent changes.
 
 ## Tool Adopt Map
 

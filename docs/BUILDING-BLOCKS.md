@@ -135,9 +135,10 @@ the gateway and do not mutate local Orbit state.
 VPN administration is the gateway-local exception. Commands that administer VPN
 clients (`vpn-client:*`) or the VPN web UI (`vpn-web-ui:*`) execute on the
 gateway host. When initiated from a control node, Orbit reaches the gateway over
-SSH and runs the gateway-local command there. This exception is for gateway
-infrastructure administration only; it is not an app-node orchestration path and
-it does not replace the normal CLI-to-gateway HTTPS API.
+SSH on the Orbit/WireGuard path and runs the gateway-local command there. This
+exception is for gateway infrastructure administration only; it is not an
+app-node orchestration path and it does not replace the normal CLI-to-gateway
+HTTPS API.
 
 The gateway-to-app-node primitive is the `RemoteShell` contract. All
 gateway-to-node enactment goes through this contract:

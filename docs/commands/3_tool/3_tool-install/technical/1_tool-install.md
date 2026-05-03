@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--node=<node>] [--app=<app>] [--status=<installed|running>] [--json]`
+# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--node=<node>] [--app=<app>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--status=<installed|running>] [--json]
 ```
 
 ## Input Contract
@@ -49,6 +49,10 @@ No input-mode-specific contracts are required. The command does not prompt; miss
   definition declares an endpoint.
 - Enacts install and configuration through the gateway.
 - Starts the tool when expected status is running.
+- If remote installation, configuration, or start fails after gateway intent is
+  written, Orbit keeps the intended tool row and reports the node as not yet
+  converged; `doctor --family=tool --fix` owns later convergence when the tool
+  definition declares a safe repair path.
 
 ### Scope Boundaries
 

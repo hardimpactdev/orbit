@@ -96,6 +96,68 @@ MD,
         ->and($findings[0]->message)->toContain('doctor --family=app');
 });
 
+it('requires VPN administration docs to hand off to node doctor', function (): void {
+    $rule = new NonStateDomainHandoffRule;
+    $context = nonStateDomainHandoffContext([
+        '13_vpn/README.md' => <<<'MD'
+# VPN Commands
+
+## State Ownership
+
+The vpn command domain does not own a state family.
+MD,
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->message)->toContain('doctor --family=node');
+});
+
+it('requires PHP runtime docs to hand off to runtime-owning state doctors', function (): void {
+    $rule = new NonStateDomainHandoffRule;
+    $context = nonStateDomainHandoffContext([
+        '14_php/README.md' => <<<'MD'
+# PHP Runtime Commands
+
+## State Ownership
+
+The php command domain does not own a state family.
+`doctor --family=tool` owns PHP runtime installation.
+`doctor --family=app` owns app PHP-FPM health.
+`doctor --family=workspace` owns workspace PHP-FPM health.
+`doctor --family=node` owns node CLI PHP defaults.
+MD,
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->message)->toContain('doctor --family=proxy');
+});
+
+it('requires Agent IDE docs to hand off to adapter-consuming state doctors', function (): void {
+    $rule = new NonStateDomainHandoffRule;
+    $context = nonStateDomainHandoffContext([
+        '15_agent-ide/README.md' => <<<'MD'
+# Agent IDE Commands
+
+## State Ownership
+
+The agent-ide command domain does not own a state family.
+`doctor --family=node` owns node defaults.
+`doctor --family=app` owns app settings.
+`doctor --family=workspace` owns workspace state.
+`doctor --family=process` owns crash events.
+MD,
+    ]);
+
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(1)
+        ->and($findings[0]->message)->toContain('doctor --family=tool');
+});
+
 it('ignores state-family command domains', function (): void {
     $rule = new NonStateDomainHandoffRule;
     $context = nonStateDomainHandoffContext([

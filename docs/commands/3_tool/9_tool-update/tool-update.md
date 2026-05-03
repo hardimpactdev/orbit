@@ -11,7 +11,7 @@ not for configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--version=<version>] [--node=<node>] [--app=<app>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]
 ```
 
 ## Examples
