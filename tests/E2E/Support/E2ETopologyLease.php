@@ -89,12 +89,14 @@ final class E2ETopologyLease
             }
 
             $this->cleanup($timer);
-            $instances = ($this->rebuild)($timer);
+            $payload = ($this->rebuild)($timer);
+            $instances = $payload['instances'];
 
             $this->control = $instances['control'];
             $this->gateway = $instances['gateway'] ?? null;
             $this->dev = $instances['dev'] ?? null;
             $this->prod = $instances['prod'] ?? null;
+            $this->snapshotReset = $payload['snapshotReset'];
             $this->cleaned = false;
         } finally {
             $timer->flush('reset');

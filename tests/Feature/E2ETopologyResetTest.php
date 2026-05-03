@@ -40,7 +40,10 @@ it('reset calls cleanup and acquires fresh instances', function (): void {
     $rebuild = function () use ($newControl, &$callCount): array {
         $callCount++;
 
-        return ['control' => $newControl];
+        return [
+            'instances' => ['control' => $newControl],
+            'snapshotReset' => null,
+        ];
     };
 
     $lease = new E2ETopologyLease(
@@ -75,10 +78,13 @@ it('returns new instances after reset', function (): void {
     $newProd = m::mock(E2EInstance::class);
 
     $rebuild = fn (): array => [
-        'control' => $newControl,
-        'gateway' => $newGateway,
-        'dev' => $newDev,
-        'prod' => $newProd,
+        'instances' => [
+            'control' => $newControl,
+            'gateway' => $newGateway,
+            'dev' => $newDev,
+            'prod' => $newProd,
+        ],
+        'snapshotReset' => null,
     ];
 
     $lease = new E2ETopologyLease(
@@ -156,7 +162,10 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
             dev: null,
             prod: null,
             sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
-            rebuild: fn () => ['control' => $newControl],
+            rebuild: fn (): array => [
+                'instances' => ['control' => $newControl],
+                'snapshotReset' => null,
+            ],
         );
 
         $lease->reset();
@@ -215,7 +224,10 @@ it('falls back to fresh-clone for unknown strategy values', function (): void {
 
         $newControl = m::mock(E2EInstance::class);
 
-        $rebuild = fn (): array => ['control' => $newControl];
+        $rebuild = fn (): array => [
+            'instances' => ['control' => $newControl],
+            'snapshotReset' => null,
+        ];
 
         $lease = new E2ETopologyLease(
             kind: E2ETopologyKind::Control,

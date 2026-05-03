@@ -45,57 +45,17 @@ final class E2ETopologyFactory
             $instances = IncusTopologyTemplate::clone($host, $resolved, $runId, $timer);
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
-            $primaryUsers = [];
+            $primaryUsers = $this->prepareInstances($instances, $config, $sshKeyPair, $timer);
+            $snapshotReset = $this->snapshotResetFor($instances, $primaryUsers, $sshKeyPair);
 
-            foreach ($instances as $role => $instance) {
-                $primaryUser = match ($role) {
-                    'control' => $config->controlUser,
-                    default => 'orbit',
-                };
-                $primaryUsers[$role] = $primaryUser;
-
-                $timer->measure("ssh-authorize.{$role}", function () use ($instance, $config, $primaryUser, $sshKeyPair): void {
-                    $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
-
-                    if ($primaryUser !== $config->bootstrapUser) {
-                        $instance->authorizeSsh($primaryUser, $sshKeyPair);
-                    }
-                });
-                $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
-                $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
-            }
-
-            $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
-
-            $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $resolved, $runId): array {
+            $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $resolved, $runId, $config, $sshKeyPair): array {
                 $newInstances = IncusTopologyTemplate::clone($host, $resolved, $runId, $cycleTimer);
-                $cycleTimer->measure('wireguard', fn () => $this->reestablishWireGuard($newInstances));
+                $newPrimaryUsers = $this->prepareInstances($newInstances, $config, $sshKeyPair, $cycleTimer);
 
-                return $newInstances;
-            };
-
-            $snapshotReset = function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair): void {
-                foreach ($instances as $role => $instance) {
-                    $cycleTimer->measure("reset.stop.{$role}", fn () => $instance->stop());
-                    $cycleTimer->measure("reset.restore.{$role}", fn () => $instance->restoreSnapshot('lease-clean'));
-                    $cycleTimer->measure("reset.start.{$role}", fn () => $instance->start());
-                }
-
-                foreach ($instances as $role => $instance) {
-                    $cycleTimer->measure("reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
-                }
-
-                $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuard($instances));
-
-                foreach ($primaryUsers as $role => $primaryUser) {
-                    $instance = $instances[$role] ?? null;
-
-                    if ($instance === null) {
-                        continue;
-                    }
-
-                    $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
-                }
+                return [
+                    'instances' => $newInstances,
+                    'snapshotReset' => $this->snapshotResetFor($newInstances, $newPrimaryUsers, $sshKeyPair),
+                ];
             };
 
             return new E2ETopologyLease(
@@ -124,6 +84,64 @@ final class E2ETopologyFactory
             E2ETopologyKind::ControlGateway,
             E2ETopologyKind::ControlGatewayDev => E2ETopologyKind::ControlGatewayDevProd,
             default => $kind,
+        };
+    }
+
+    /**
+     * @param  array<string, E2EInstance>  $instances
+     * @return array<string, string>
+     */
+    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer): array
+    {
+        $primaryUsers = [];
+
+        foreach ($instances as $role => $instance) {
+            $primaryUser = match ($role) {
+                'control' => $config->controlUser,
+                default => 'orbit',
+            };
+
+            $primaryUsers[$role] = $primaryUser;
+
+            $timer->measure("ssh-authorize.{$role}", function () use ($instance, $config, $primaryUser, $sshKeyPair): void {
+                $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
+
+                if ($primaryUser !== $config->bootstrapUser) {
+                    $instance->authorizeSsh($primaryUser, $sshKeyPair);
+                }
+            });
+
+            $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
+        }
+
+        $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
+
+        return $primaryUsers;
+    }
+
+    /**
+     * @param  array<string, E2EInstance>  $instances
+     * @param  array<string, string>  $primaryUsers
+     */
+    private function snapshotResetFor(array $instances, array $primaryUsers, SshKeyPair $sshKeyPair): \Closure
+    {
+        return function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair): void {
+            foreach ($instances as $role => $instance) {
+                $cycleTimer->measure("reset.stop.{$role}", fn () => $instance->stop());
+                $cycleTimer->measure("reset.restore.{$role}", fn () => $instance->restoreSnapshot('lease-clean'));
+                $cycleTimer->measure("reset.start.{$role}", fn () => $instance->start());
+            }
+
+            foreach ($instances as $role => $instance) {
+                $cycleTimer->measure("reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
+            }
+
+            $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuard($instances));
+
+            foreach ($instances as $role => $instance) {
+                $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUsers[$role], $sshKeyPair));
+            }
         };
     }
 
