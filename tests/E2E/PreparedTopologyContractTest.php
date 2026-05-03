@@ -8,69 +8,146 @@ use Tests\E2E\Support\E2EGatewayApi;
 use Tests\E2E\Support\E2EInstance;
 use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
+use Tests\E2E\Support\E2ETopologyLease;
 use Tests\E2E\Support\SshKeyPair;
 
-pest()->group('e2e-feature', 'e2e-topology-contract');
+pest()->group('e2e-topology-contract');
 
-it('satisfies the prepared full topology contract', function (): void {
+it('satisfies the prepared control topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::Control);
+
+    try {
+        expectPreparedControlTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-control');
+
+it('satisfies the prepared control-gateway topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGateway);
+
+    try {
+        expectPreparedGatewayTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-control-gateway');
+
+it('satisfies the prepared control-gateway-dev topology contract', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDev);
+
+    try {
+        expectPreparedDevTopology($topology, $config);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-topology-contract-control-gateway-dev');
+
+it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDevProd);
 
     try {
-        $control = $topology->control();
-        $gateway = $topology->gateway();
-        $dev = $topology->devApp();
-        $prod = $topology->prodApp();
-        $key = $topology->sshKeyPair();
-
-        if ($gateway === null || $dev === null || $prod === null) {
-            throw new RuntimeException('Full prepared topology did not return gateway, dev, and prod handles.');
-        }
-
-        expectPreparedOrbitCli($control, $config->controlUser, $key);
-        expectPreparedOrbitCli($gateway, 'orbit', $key);
-        expectPreparedOrbitCli($dev, 'orbit', $key);
-        expectPreparedOrbitCli($prod, 'orbit', $key);
-
-        $controlNode = readPreparedNodeFromControl($control, $config->controlUser, $key, 'control-1');
-
-        expect($controlNode)->not->toBeNull()
-            ->and($controlNode['role'])->toBe('control')
-            ->and($controlNode['is_local'])->toBeTrue();
-
-        $gatewaySettings = readPreparedGatewaySettings($control, $config->controlUser, $key);
-
-        expect($gatewaySettings['gateway_url'])->toBe('https://10.6.0.2')
-            ->and($gatewaySettings['gateway_wg_ip'])->toBe('10.6.0.2')
-            ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
-
-        E2ECommand::ssh(
-            $control,
-            $config->controlUser,
-            $key,
-            'curl --connect-timeout 2 --max-time 5 -fsS http://10.6.0.2/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://10.6.0.2/api/me >/dev/null',
-            timeoutSeconds: 15,
-        );
-
-        $gatewayNode = E2EGatewayApi::getNode($gateway, 'gateway');
-        $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
-        $devNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
-        $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
-
-        expect($gatewayNode['role'])->toBe('gateway')
-            ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2')
-            ->and((bool) $gatewayNode['is_local'])->toBeTrue();
-
-        expect($controlOnGateway['role'])->toBe('control')
-            ->and($controlOnGateway['wireguard_address'])->toBe('10.6.0.3')
-            ->and((bool) $controlOnGateway['is_local'])->toBeFalse();
-
-        expectPreparedAppNode($devNode, 'development', 'test');
-        expectPreparedAppNode($prodNode, 'production', null);
+        expectPreparedProdTopology($topology, $config);
     } finally {
         $topology->cleanup();
     }
-});
+})->group('e2e-topology-contract-control-gateway-dev-prod');
+
+function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    $control = $topology->control();
+    $key = $topology->sshKeyPair();
+
+    expectPreparedOrbitCli($control, $config->controlUser, $key);
+
+    $controlNode = readPreparedNodeFromControl($control, $config->controlUser, $key, 'control-1');
+
+    expect($controlNode)->not->toBeNull()
+        ->and($controlNode['role'])->toBe('control')
+        ->and($controlNode['is_local'])->toBeTrue();
+}
+
+function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    expectPreparedControlTopology($topology, $config);
+
+    $control = $topology->control();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($gateway === null) {
+        throw new RuntimeException('Prepared control-gateway topology did not return a gateway handle.');
+    }
+
+    expectPreparedOrbitCli($gateway, 'orbit', $key);
+
+    $gatewaySettings = readPreparedGatewaySettings($control, $config->controlUser, $key);
+
+    expect($gatewaySettings['gateway_url'])->toBe('https://10.6.0.2')
+        ->and($gatewaySettings['gateway_wg_ip'])->toBe('10.6.0.2')
+        ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
+
+    E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        'curl --connect-timeout 2 --max-time 5 -fsS http://10.6.0.2/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://10.6.0.2/api/me >/dev/null',
+        timeoutSeconds: 15,
+    );
+
+    $gatewayNode = E2EGatewayApi::getNode($gateway, 'gateway');
+    $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
+
+    expect($gatewayNode['role'])->toBe('gateway')
+        ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2')
+        ->and((bool) $gatewayNode['is_local'])->toBeTrue();
+
+    expect($controlOnGateway['role'])->toBe('control')
+        ->and($controlOnGateway['wireguard_address'])->toBe('10.6.0.3')
+        ->and((bool) $controlOnGateway['is_local'])->toBeFalse();
+}
+
+function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    expectPreparedGatewayTopology($topology, $config);
+
+    $dev = $topology->devApp();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($dev === null || $gateway === null) {
+        throw new RuntimeException('Prepared control-gateway-dev topology did not return gateway and dev handles.');
+    }
+
+    expectPreparedOrbitCli($dev, 'orbit', $key);
+
+    $devNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
+
+    expectPreparedAppNode($devNode, 'development', 'test');
+}
+
+function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $config): void
+{
+    expectPreparedDevTopology($topology, $config);
+
+    $prod = $topology->prodApp();
+    $gateway = $topology->gateway();
+    $key = $topology->sshKeyPair();
+
+    if ($prod === null || $gateway === null) {
+        throw new RuntimeException('Prepared control-gateway-dev-prod topology did not return gateway and prod handles.');
+    }
+
+    expectPreparedOrbitCli($prod, 'orbit', $key);
+
+    $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
+
+    expectPreparedAppNode($prodNode, 'production', null);
+}
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {

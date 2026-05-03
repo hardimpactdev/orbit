@@ -6,7 +6,7 @@ use Tests\E2E\Support\E2ECommand;
 use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature');
+pest()->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
 
 it('lists nodes from a prepared full topology', function (): void {
     $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDevProd);

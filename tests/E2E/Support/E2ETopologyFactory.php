@@ -56,6 +56,8 @@ final class E2ETopologyFactory
             $instance->waitForSsh($primaryUser, $sshKeyPair);
         }
 
+        $this->reestablishWireGuard($instances);
+
         $rebuild = function () use ($host, $resolved, $runId): array {
             return IncusTopologyTemplate::clone($host, $resolved, $runId);
         };
@@ -83,6 +85,34 @@ final class E2ETopologyFactory
             E2ETopologyKind::ControlGatewayDev => E2ETopologyKind::ControlGatewayDevProd,
             default => $kind,
         };
+    }
+
+    /**
+     * Re-apply the synthetic WireGuard topology that was set up during
+     * template build. The 10.6.0.x addresses are not persistent in the
+     * snapshots, so each clone needs the IP+routes re-applied before
+     * gateway forwarding can work.
+     *
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function reestablishWireGuard(array $instances): void
+    {
+        $control = $instances['control'] ?? null;
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($control === null || $gateway === null) {
+            return;
+        }
+
+        $controlIp = $control->waitForIpv4();
+        $gatewayIp = $gateway->waitForIpv4();
+
+        E2ENetwork::assignWireGuardIp($control, '10.6.0.3');
+        E2ENetwork::assignWireGuardIp($gateway, '10.6.0.2');
+        E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
+        E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
+
+        E2EGatewayApi::start($gateway, 'topology-lease');
     }
 
     private function createSshKeyPair(IncusHost $host, string $runId): SshKeyPair

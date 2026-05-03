@@ -132,11 +132,21 @@ The ephemeral E2E suite is split into two explicit lanes at the Pest group level
   requires it. These tests are grouped with `pest()->group('e2e-feature')` at the
   file level and run via `composer test:e2e:features`.
 
-`composer test:e2e:features` always runs the `e2e-topology-contract` group first,
-then runs the remaining `e2e-feature` tests. If the prepared topology contract
+Each prepared topology has its own contract group:
+
+| Topology | Contract group | Feature group |
+| --- | --- | --- |
+| `control` | `e2e-topology-contract-control` | `e2e-feature-control` |
+| `control-gateway` | `e2e-topology-contract-control-gateway` | `e2e-feature-control-gateway` |
+| `control-gateway-dev` | `e2e-topology-contract-control-gateway-dev` | `e2e-feature-control-gateway-dev` |
+| `control-gateway-dev-prod` | `e2e-topology-contract-control-gateway-dev-prod` | `e2e-feature-control-gateway-dev-prod` |
+
+A feature lane must run the contract for the smallest topology it needs before
+running that topology's feature assertions. If the relevant topology contract
 fails, the feature lane stops before command assertions can produce misleading
-results. Additional Pest arguments passed to `composer test:e2e:features` are
-applied only to the post-contract feature assertions.
+results. Additional Pest arguments passed to a feature-lane Composer script are
+applied only to the post-contract feature assertions. Add a Composer feature
+script for a topology when the first feature test for that topology lands.
 
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, so
 `composer test:e2e` continues to run all ephemeral tests together through the
@@ -230,6 +240,7 @@ composer test
 composer test:e2e:provisioning
 composer test:e2e:topology-contract
 composer test:e2e:features
+composer test:e2e:features:control-gateway-dev-prod
 
 # Prepare or replace a topology clone for the feature lane
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
