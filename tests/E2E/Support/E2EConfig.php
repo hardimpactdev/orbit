@@ -105,4 +105,28 @@ final readonly class E2EConfig
 
         return (int) $value;
     }
+
+    public function forHost(string $host): self
+    {
+        return new self(
+            providerNames: $this->providerNames,
+            host: $host,
+            sourceImage: $this->sourceImage,
+            blankImage: $this->blankImage,
+            controlImage: $this->controlImage,
+            gatewayImage: $this->gatewayImage,
+            hcloudServerType: $this->hcloudServerType,
+            hcloudLocation: $this->hcloudLocation,
+            hcloudBlankImage: $this->hcloudBlankImage,
+            hcloudControlImage: $this->hcloudControlImage,
+            hcloudGatewayImage: $this->hcloudGatewayImage,
+            bootstrapUser: $this->bootstrapUser,
+            controlUser: $this->controlUser,
+            instancePrefix: $this->instancePrefix,
+            timeoutSeconds: $this->timeoutSeconds,
+            cpus: $this->cpus,
+            memory: $this->memory,
+            keep: $this->keep,
+        );
+    }
 }

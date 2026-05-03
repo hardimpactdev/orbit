@@ -1,0 +1,40 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\E2E\Support;
+
+final readonly class IncusHostPool
+{
+    /**
+     * @param  list<IncusHost>  $hosts
+     */
+    public function __construct(private array $hosts) {}
+
+    public static function fromEnvironment(E2EConfig $config): self
+    {
+        $hostsEnv = getenv('ORBIT_E2E_INCUS_HOSTS');
+
+        if (! is_string($hostsEnv) || $hostsEnv === '') {
+            return new self([new IncusHost($config)]);
+        }
+
+        $hosts = [];
+        foreach (array_filter(array_map('trim', explode(',', $hostsEnv))) as $host) {
+            $hosts[] = new IncusHost($config->forHost($host));
+        }
+
+        return new self($hosts);
+    }
+
+    public function firstAvailableFor(E2ETopologyKind $kind): ?IncusHost
+    {
+        foreach ($this->hosts as $host) {
+            if (IncusTopologyTemplate::availableOn($host, $kind)) {
+                return $host;
+            }
+        }
+
+        return null;
+    }
+}

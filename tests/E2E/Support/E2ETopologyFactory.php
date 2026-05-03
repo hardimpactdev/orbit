@@ -26,7 +26,36 @@ final class E2ETopologyFactory
     {
         $resolved = $this->resolveKind($kind);
 
-        test()->markTestSkipped('Prepared topology not available: '.$resolved->value);
+        if ($this->provider !== 'incus') {
+            test()->markTestSkipped('Prepared topology not available for provider: '.$this->provider);
+        }
+
+        $config = E2EConfig::fromEnvironment();
+        $pool = IncusHostPool::fromEnvironment($config);
+        $host = $pool->firstAvailableFor($resolved);
+
+        if ($host === null) {
+            test()->markTestSkipped('Prepared topology not available: '.$resolved->value);
+        }
+
+        $runId = E2ERun::id();
+        $instances = IncusTopologyTemplate::clone($host, $resolved, $runId);
+
+        $sshKeyPair = $this->createSshKeyPair($host, $runId);
+
+        foreach ($instances as $instance) {
+            $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
+            $instance->waitForSsh($config->bootstrapUser, $sshKeyPair);
+        }
+
+        return new E2ETopologyLease(
+            kind: $resolved,
+            control: $instances['control'],
+            gateway: $instances['gateway'] ?? null,
+            dev: $instances['dev'] ?? null,
+            prod: $instances['prod'] ?? null,
+            sshKeyPair: $sshKeyPair,
+        );
     }
 
     public function resolveKind(E2ETopologyKind $kind): E2ETopologyKind
@@ -41,5 +70,36 @@ final class E2ETopologyFactory
             E2ETopologyKind::ControlGatewayDev => E2ETopologyKind::ControlGatewayDevProd,
             default => $kind,
         };
+    }
+
+    private function createSshKeyPair(IncusHost $host, string $runId): SshKeyPair
+    {
+        $workDirectory = "/tmp/orbit-e2e-topology-{$runId}";
+
+        $result = $host->run(sprintf(
+            'rm -rf %s && mkdir -p %s',
+            escapeshellarg($workDirectory),
+            escapeshellarg($workDirectory),
+        ));
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not create topology work directory: {$result->errorOutput()}");
+        }
+
+        $privateKeyPath = "{$workDirectory}/id_ed25519";
+        $publicKeyPath = "{$privateKeyPath}.pub";
+
+        $result = $host->run(sprintf(
+            'ssh-keygen -t ed25519 -N %s -f %s -C %s >/dev/null',
+            escapeshellarg(''),
+            escapeshellarg($privateKeyPath),
+            escapeshellarg("orbit-e2e-{$runId}"),
+        ));
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not create E2E SSH key pair: {$result->errorOutput()}");
+        }
+
+        return new SshKeyPair($privateKeyPath, $publicKeyPath);
     }
 }
