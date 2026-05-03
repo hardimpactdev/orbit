@@ -120,10 +120,11 @@ ORBIT_E2E_KEEP=1
 
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
 
-- **`e2e-provisioning`** — tests that mutate disposable VMs and exercise setup
-  flows such as blank VM lifecycle, control node smoke, gateway onboarding, and
-  node provisioning. These tests are grouped with `pest()->group('e2e-provisioning')`
-  at the file level and run via `composer test:e2e:provisioning`.
+- **`e2e-provisioning`** — tests that mutate disposable VMs from blank or ready
+  images and exercise setup flows such as blank VM lifecycle, control node smoke,
+  gateway onboarding, and node provisioning. These tests are grouped with
+  `pest()->group('e2e-provisioning')` at the file level and run via
+  `composer test:e2e:provisioning`.
 
 - **`e2e-feature`** — tests that start from prepared topology clones and verify
   ported commands, forwarding chains, or read-only behavior. They must not run
@@ -137,14 +138,59 @@ Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, so
 Live or standing infrastructure smoke tests are sunset. Do not use persistent
  gateway, control, or app nodes as verification targets.
 
-The next E2E step is to create the remaining ready Incus lanes:
+## Topology Kinds
 
-- ready snapshots for fast command-porting tests against prepared gateway,
-  development app, and production app nodes.
+The `e2e-feature` lane uses prepared topology clones. Choose the smallest topology
+that covers the behavior under test:
 
-Ready image aliases:
+| Kind | Nodes | Use when |
+| --- | --- | --- |
+| `control` | 1 control | Fastest. Use for control-node-only commands. |
+| `control-gateway` | control + 1 gateway | Use for gateway trust, onboarding, or node-registry flows. |
+| `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
+| `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
 
-- `orbit-ready-control` via `bin/e2e --prepare-control`
-- `orbit-ready-gateway` via `bin/e2e --prepare-gateway`
-- `orbit-ready-devapp` via `bin/e2e --prepare-devapp`
-- `orbit-ready-prodapp` planned
+## Commands
+
+```bash
+# Default in-memory Pest (excludes E2E)
+composer test
+
+# Ephemeral E2E lanes (requires ORBIT_E2E=1)
+composer test:e2e:provisioning
+composer test:e2e:features
+
+# Prepare or replace a topology clone for the feature lane
+composer e2e:prepare-topology -- --force control-gateway-dev-prod
+
+# Reap stale Incus VMs and images created by E2E tests
+composer e2e:reap-incus
+```
+
+## Environment
+
+```bash
+ORBIT_E2E=1                           # Enable ephemeral E2E tests
+ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
+ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2  # Comma-separated Incus host pool
+ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
+ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
+ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
+```
+
+Environment overrides for the legacy `bin/e2e` harness (still supported during
+the transition):
+
+```bash
+ORBIT_E2E_HOST=beast
+ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
+ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
+ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
+ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
+ORBIT_E2E_DEVAPP_IMAGE=orbit-ready-devapp
+ORBIT_E2E_BOOTSTRAP_USER=provisioner
+ORBIT_E2E_CONTROL_USER=control
+ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
+ORBIT_E2E_TIMEOUT_SECONDS=600
+ORBIT_E2E_KEEP=1
+```
