@@ -154,8 +154,17 @@ yet satisfy the full product contracts.
     `orbit node:new --role=gateway` from the control VM, and verifies the
     gateway is provisioned under the steady-state `orbit` user with a working
     Orbit installation.
-  - Contract gap: development-app/production-app role provisioning and full
-    topology coverage still need ready Incus snapshot lanes.
+  - Prepared topology lanes implemented: `composer e2e:prepare-topology -- --force control-gateway-dev-prod`
+    builds reusable Incus templates for control, gateway, development app, and
+    production app roles; `composer test:e2e:features:control-gateway-dev-prod`
+    verifies the prepared full topology before running feature tests.
+  - Docker feature topology lane implemented for container-safe E2E:
+    `composer e2e:prepare-docker-runtime -- --force`,
+    `composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod`,
+    and `composer test:e2e:features:docker`. Docker can offload containers to a
+    remote daemon with `ORBIT_E2E_DOCKER_HOSTS=beast`, but Incus remains the
+    default topology provider because Task 8 measured only a small Docker speed
+    improvement and Docker does not exercise WireGuard or VM semantics.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
@@ -804,10 +813,14 @@ decision evidence and tracker status only.
   - [x] Add control-node onboarding E2E lane (`composer test:e2e:provisioning --filter='GatewayAdd'`) that
     exercises `gateway:add` from a ready control VM against a ready gateway VM
     (`e2e-provisioning`).
-  - [~] Create ready development app snapshot lane for `e2e-feature` tests.
-  - [ ] Create ready production app snapshot lane for `e2e-feature` tests.
-- [ ] Add E2E topology for gateway + control + development app + production
+  - [x] Create ready development app topology lane for `e2e-feature` tests.
+  - [x] Create ready production app topology lane for `e2e-feature` tests.
+- [x] Add E2E topology for gateway + control + development app + production
   app nodes.
+  - Incus-backed authoritative lane:
+    `composer test:e2e:features:control-gateway-dev-prod`.
+  - Docker-backed container-safe offload lane:
+    `ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker`.
 - [ ] Add provisioning/destructive coverage only in the `e2e-provisioning` lane.
 
 ## Next Priorities
