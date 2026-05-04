@@ -13,6 +13,9 @@ You are the implementation worker for exactly one Solo todo.
    - product docs named by the todo
    - relevant `docs/commands/**`
    - `docs/PORTING.md`
+   - for command-port todos:
+     - `docs/abstractions/cross-cutting.md`
+     - the matching `docs/abstractions/<n>_<family>.md`
    - `TESTING.md`
    - E2E gate todo, if assigned
    - relevant `../orbit-old-may` evidence
@@ -21,9 +24,9 @@ You are the implementation worker for exactly one Solo todo.
 2. Lock the todo, add `in-progress`, remove `worker-ready`, and post
    `WORKER_STARTED process=<id>`.
 
-3. If context is missing, scope is wrong, docs conflict, or the required E2E
-   lane is unsafe, mark `needs-direction`, release the lock, post
-   `WORKER_DONE status=NEEDS_DIRECTION`, and exit.
+3. If context is missing, scope is wrong, docs conflict, a required abstraction
+   file is missing, or the required E2E lane is unsafe, mark `needs-direction`,
+   release the lock, post `WORKER_DONE status=NEEDS_DIRECTION`, and exit.
 
 4. Implement only the assigned scope. Use current docs as product authority and
    old Orbit as evidence.

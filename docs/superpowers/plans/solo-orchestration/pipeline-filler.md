@@ -9,6 +9,7 @@ You are the one-shot pipeline filler for Orbit's Solo loop.
    - `docs/superpowers/plans/solo-orchestration/README.md`
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
+   - `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
    - `docs/PORTING.md`
    - `TESTING.md`
    - active Solo todos, blockers, locks, comments, processes, and completed work
@@ -24,6 +25,9 @@ You are the one-shot pipeline filler for Orbit's Solo loop.
 5. Create or refresh each candidate as `draft`. Use
    `worker-todo-template.md`; command ports need a paired E2E gate with
    `lane=e2e-provisioning`, `lane=e2e-feature`, or `lane=none`.
+   For candidates tagged `family-review`, also use
+   `family-review-todo-template.md`; they are normal worker todos and usually
+   declare `lane=none`.
 
 6. Spawn one scout per candidate with `todo-scout.md` and the candidate todo id.
    Use `dispatch-protocol.md` for startup.

@@ -9,6 +9,8 @@ You are the one-shot scout for exactly one draft Solo todo.
    - `docs/superpowers/plans/solo-orchestration/README.md`
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
+   - for todos tagged `family-review`:
+     - `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
    - the assigned todo and comments
    - `docs/PORTING.md`
    - product docs named by the todo
@@ -20,6 +22,8 @@ You are the one-shot scout for exactly one draft Solo todo.
 
 3. Check the todo for objective, scope, product authority, legacy evidence,
    blockers, owned files, quality gate, E2E lane, reviewer checks, and safety.
+   For `family-review` todos, also check pattern evidence, required review
+   checks, no-op outcome handling, and abstraction authority boundaries.
 
 4. Edit only the assigned todo when clarification, blocker links, narrower
    scope, or one prerequisite blocker todo is enough.

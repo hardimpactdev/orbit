@@ -16,6 +16,9 @@ Source of truth for Orbit's Solo orchestration loop.
 - Worker todo shape lives in
   `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
   Read that file when creating or validating worker todos.
+- Family-review todo shape extends the worker template in
+  `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`.
+  Read it when creating or validating todos tagged `family-review`.
 - Dispatch KV is deprecated. Use tags, locks, blockers, process state, timers,
   and lifecycle comments.
 - There is no kickstarter role, long-running orchestrator, or loop improver.
@@ -44,9 +47,11 @@ Use this section when the user asks to start or resume the loop.
 1. Read `docs/superpowers/plans/solo-orchestration/control-config.md`.
 2. Read `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`.
 3. Read `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
-4. Ensure `coordination_todo` in `control-config.md` points at a new fresh open Solo todo. 
-5. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
-6. Send it only this prompt:
+4. Read `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
+   when family-review todos are in scope.
+5. Ensure `coordination_todo` in `control-config.md` points at a new fresh open Solo todo.
+6. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
+7. Send it only this prompt:
 
    ```text
    You are the Orbit Solo loop clock. Read docs/superpowers/plans/solo-orchestration/loop-clock.md before any other action.

@@ -3,13 +3,34 @@
 This file tracks the clean rebuild work still needed to recreate useful Orbit
 behavior from `../orbit-old-may`.
 
+Implementation-pattern guidance for command porting lives in
+`docs/abstractions/`. Before porting a command, workers read
+`docs/abstractions/cross-cutting.md` plus the matching family file.
+
 ## Rules
 
 - Current `docs/` are product authority.
+- `docs/abstractions/` is implementation guidance, not product authority. When
+  abstraction guidance and command docs conflict, update the abstraction docs or
+  ask for direction; do not override the command contract.
 - `../orbit-old-may` is implementation evidence, not product authority.
 - Old features should be treated as reference material, not a mandate to copy
   their structure. Before porting behavior, verify whether the clean rebuild can
   implement it more simply, safely, or directly against the current contracts.
+- Before the first implementation todo for a family is promoted to
+  `worker-ready`, `docs/abstractions/<n>_<family>.md` must exist.
+- Command-port implementer todos must read
+  `docs/abstractions/cross-cutting.md` and the relevant family abstraction file
+  before code edits. If the family abstraction file is missing, the worker marks
+  the todo `needs-direction` instead of inventing patterns.
+- When all read commands in a family are ported, or when a deliberate subset
+  proves the implementation shape, add a concrete family-review candidate under
+  `Todo Pipeline Hints`. The pipeline filler turns that entry into a normal
+  worker todo tagged `family-review`.
+- The next family's abstraction seed may be authored while the previous family
+  review is open. The next family's implementation todos must not be promoted
+  to `worker-ready` until the previous `family-review` todo is merged or
+  explicitly deferred here with a reason.
 - If we decide to keep a feature or command that exists only in
   `../orbit-old-may/docs`, port its documentation into this repo before
   implementing it.
@@ -49,18 +70,20 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
    run the command-designer semantic check for each ported command before
    marking the command or family done.
 4. Run `composer docs-lint` when command docs changed.
-5. Inspect the old implementation in `../orbit-old-may/app`,
+5. Before implementation, read `docs/abstractions/cross-cutting.md` and the
+   relevant `docs/abstractions/<n>_<family>.md` file.
+6. Inspect the old implementation in `../orbit-old-may/app`,
    `../orbit-old-may/config`, `../orbit-old-may/database`, and
    `../orbit-old-may/tests`.
-6. Decide whether the old implementation should be ported directly or replaced
+7. Decide whether the old implementation should be ported directly or replaced
    with a simpler clean-rebuild approach that better fits the current docs.
-7. Respect the implementation order below unless a verification-helper command
+8. Respect the implementation order below unless a verification-helper command
    unlocks better testing for the next slice.
-8. Implement the smallest useful vertical slice in the clean repo.
-9. Add focused Pest tests that assert the current docs contract, not legacy
+9. Implement the smallest useful vertical slice in the clean repo.
+10. Add focused Pest tests that assert the current docs contract, not legacy
    internals.
-10. Run the narrow test, then `composer quality-check`.
-11. Update this tracker in the same commit as the ported slice.
+11. Run the narrow test, then `composer quality-check`.
+12. Update this tracker in the same commit as the ported slice.
 
 ## Implementation Order
 
@@ -73,6 +96,8 @@ Default migration order is command-contract and capability driven:
     - Use blank Incus VM snapshots for the `e2e-provisioning` lane and ready
       Incus VM snapshots for the `e2e-feature` lane.
    - Convert docs for the next implementation slice before writing code.
+   - Create or refresh the matching `docs/abstractions/<n>_<family>.md` before
+     the first implementation todo for a family is promoted to `worker-ready`.
 2. **Nodes first.**
    - Finish node registry read and metadata commands before app/workspace
      commands depend on them.
@@ -346,6 +371,16 @@ All legacy command docs have been converted. See individual family statuses abov
 These hints are for the Solo pipeline filler. They describe todo sequencing
 only; `docs/PORTING.md` workstream statuses remain the authority for completion.
 
+#### Family Review Todos
+
+Family-review candidates are normal worker todos tagged `family-review`. They
+use the standard worker lifecycle and do not require a new Solo phase tag or
+dispatcher path.
+
+When the pipeline filler creates or refreshes a `family-review` todo, it uses
+`docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
+in addition to the base worker todo template.
+
 #### Pairing Rule (Pest + E2E Per Port)
 
 For every implementation todo the filler creates, also create the paired gate
@@ -394,11 +429,16 @@ with independent read-only Pest, documentation, or E2E support work only.
    paired Pest and E2E gates).
 4. Ready development-app and production-app Incus snapshot coverage if still
    unchecked in the Testing Infrastructure section.
-5. The first gateway write-forwarding pair from the Gateway Forwarding Chain.
+5. `FAMILY-REVIEW-NODE-READ-1` — review the node read-forwarding shape once
+   `node:list` and `node:show` prove the shared caller-role branch, typed
+   gateway request, API envelope, renderer, and test mapping shape. This review
+   must evaluate caller-role resolution as the first shared-service promotion
+   candidate, but extraction is not automatic.
 
 #### Gateway Forwarding Chain (Unlocks After Read-Forwarding Chain)
 
-Once `NODE-READ-FWD-1` and `E2E-NODE-READ-1` are verified, the same
+Once `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and
+`FAMILY-REVIEW-NODE-READ-1` are verified or explicitly deferred here, the same
 caller-role-branch + typed-request pattern can be applied to the write
 commands. Order matters because each adds a new write API endpoint:
 
@@ -419,11 +459,14 @@ not create more than 2 of these chains in flight at once.
 App work begins only after the node/gateway foundations are solid. The first
 slice candidates, in order:
 
-1. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
-2. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
-3. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
-4. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
-5. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
+1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
+   docs, old app evidence, and cross-cutting patterns before any app
+   implementation todo is promoted.
+2. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
+3. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
+4. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
+5. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
+6. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until
 the read pair is verified. Do not create workspace, process, tool, proxy,
@@ -694,25 +737,11 @@ exist. Those families wait for the node/gateway/app foundations.
    calls, making testing and isolation harder. A service-class wrapper is
    explicit and injectable.
 
-**Recommended abstraction:**
+**Reusable implementation guidance:**
 
-A `GatewayClient` service class (or similar) that:
-- Resolves the gateway base URL from `LocalGatewaySettings::current()`.
-- Configures `verify` with the stored CA PEM path.
-- Sets `allow_redirects => false` and `acceptJson()`.
-- Adds the `X-Orbit-Request-Id` correlation header when available.
-- Returns a Laravel `PendingRequest` so callers chain methods naturally
-  (e.g., `GatewayClient::withGateway()->get('/api/me')`).
-- Does NOT yet implement envelope parsing; envelope handling should be added
-  incrementally as typed gateway API calls are ported (see downstream workstream
-  items).
-
-**Downstream impact:**
-- The wrapper should be created before porting the first typed gateway API call
-  (e.g., `node:list` with gateway forwarding or `app:list`).
-- The old `GatewayRequestSender` envelope parser is reference material for how
-  to parse the `success`/`error` discriminated envelope, but should be ported
-  as a focused helper only when the first typed caller needs it.
+The reusable Gateway API transport and envelope pattern now lives in
+`docs/abstractions/cross-cutting.md`. Keep this workstream as historical
+decision evidence and tracker status only.
 
 ### Remaining Workstream Items
 
@@ -725,9 +754,10 @@ A `GatewayClient` service class (or similar) that:
 - [x] Port `/api/me`.
 - [~] Port node API controllers and typed client requests.
   - Bootstrap slice implemented: `GET /api/nodes` and `GET /api/nodes/{node}` endpoints
-    with `NodeListController` and `NodeShowController`, `WireGuardIdentity` middleware
-    enforcement, `GatewayEnvelope` JSON response shape, and typed request classes
-    (`ListNodesRequest`, `ShowNodeRequest`) using the `GatewayRequestSender` convention.
+    with `NodeListController` and `NodeShowController`, `WireGuardIdentity`
+    middleware enforcement, the success/error gateway JSON envelope, and typed
+    request classes (`ListNodesRequest`, `ShowNodeRequest`) using the
+    `GatewayRequestSender` convention.
   - Tests: `NodeListControllerTest`, `NodeShowControllerTest`,
     `ListNodesRequestTest`, `ShowNodeRequestTest`.
 - [ ] Port app API controllers and typed client requests.
