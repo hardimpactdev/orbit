@@ -825,14 +825,25 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Extend `node:new --role=gateway` to finish WireGuard, gateway API, gateway
-   CA trust, and `/api/me` verification before treating first-gateway bootstrap
-   as contract-complete.
-2. Build ready Incus E2E snapshot lanes for fast command-porting tests:
-   gateway, development app, and production app VMs.
-3. Finish node registry and metadata slices first: `node:update`,
-   `node:default`, and the missing `node:list` / `node:show` contract gaps.
-4. Convert `profile` docs once its node/app prerequisites are present, then
+1. Resume the current short queue in the Solo pipeline hints:
+   `NODE-SHOW-CONTRACT-1` (todo 251), then `NODE-READ-FWD-1` (todo 253), then
+   `E2E-NODE-READ-1` (todo 254). Do not create downstream node-forwarding
+   todos until that chain is verified.
+2. Use the full prepared Incus topology lane for node read-forwarding E2E:
+   `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
+   only for container-safe feature checks that do not depend on WireGuard,
+   systemd, SSH provisioning, or VM networking semantics.
+3. Finish node registry and metadata slices before app work: `node:list
+   --doctor`, `node:show` authorization/grant visibility, and the
+   `FAMILY-REVIEW-NODE-READ-1` review candidate once `node:list` and
+   `node:show` prove the shared read-forwarding shape.
+4. Continue gateway forwarding in the documented order after the
+   read-forwarding family review: `node:update`, `node:default`, `node:grant`,
+   `node:revoke`, and `node:remove`.
+5. Extend `node:new --role=gateway` WireGuard/API/vhost/FPM provisioning only
+   when a porting slice explicitly targets provisioning or host mutation; keep
+   those checks in the `e2e-provisioning` lane.
+6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
-5. Complete the documented `update` and `update:all` implementation gaps once
+7. Complete the documented `update` and `update:all` implementation gaps once
    the current node access path is stable enough to enforce them.
