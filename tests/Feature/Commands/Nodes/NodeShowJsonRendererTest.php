@@ -35,6 +35,16 @@ function nodeShowJsonRow(array $overrides = []): array
     ], $overrides);
 }
 
+function setupNodeShowJsonGatewayCaller(): void
+{
+    DB::table('nodes')->insert(nodeShowJsonRow([
+        'name' => 'local-gateway',
+        'role' => 'gateway',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+}
+
 function invokeNodeShowFailCommand(bool $json, string $code, string $message, array $meta): array
 {
     $command = new NodeShowCommand;
@@ -73,6 +83,9 @@ function invokeNodeShowFailCommand(bool $json, string $code, string $message, ar
 }
 
 describe('node:show JSON renderer contract', function (): void {
+    beforeEach(function (): void {
+        setupNodeShowJsonGatewayCaller();
+    });
     it('selects JSON renderer with --json and returns discriminated success envelope', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow());
 
@@ -225,6 +238,8 @@ describe('node:show JSON renderer contract', function (): void {
     });
 
     it('returns validation_failed error when name is missing and no local node exists', function (): void {
+        DB::table('nodes')->delete();
+
         $exitCode = Artisan::call('node:show', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 

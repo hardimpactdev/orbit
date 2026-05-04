@@ -226,18 +226,25 @@ yet satisfy the full product contracts.
   - Current docs: `docs/commands/1_node/3_node-list`
   - Current tests:
     - `tests/Feature/Commands/NodeListCommandTest.php` (base contract, filters, validation, read-only)
+    - `tests/Feature/Commands/Nodes/NodeListRolePathTest.php` (gateway-local vs control/app forwarding paths)
     - `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` (JSON envelope and field contract)
     - `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` (human table and prose contract)
-  - Contract gaps: caller role and `--doctor` remain tracked in the node workstream.
+  - Contract gaps: access-policy visibility, `--doctor`, and E2E verification
+    remain tracked in the node workstream.
 - [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
   - Current tests:
     - `tests/Feature/Commands/NodeShowCommandTest.php` (base contract, lookup, fallback, read-only)
+    - `tests/Feature/Commands/Nodes/NodeShowCommandTest.php` (split command contract)
     - `tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php` (JSON envelope and field contract)
     - `tests/Feature/Commands/Nodes/NodeShowHumanRendererTest.php` (human output and prose contract)
+    - `tests/Feature/Commands/Nodes/NodeShowInteractiveInputModeTest.php` (interactive input mode contract)
+    - `tests/Feature/Commands/Nodes/NodeShowNonInteractiveInputModeTest.php` (non-interactive input mode contract)
+    - `tests/Feature/Commands/Nodes/NodeShowRolePathTest.php` (gateway-local vs control/app forwarding paths)
   - Bootstrap slice implemented: active registry lookup, human output, JSON
-    envelope, not-found error, local-node fallback, and read-only behavior.
+    envelope, not-found error, local-node fallback, caller-role resolution, and
+    read-only behavior.
   - Renderer contracts aligned with 6.1/6.2: `environment`, `platform`, and node
     agent IDE metadata are modeled; grants section always renders in human mode
     with `(none)` sentinel when empty.
@@ -421,31 +428,55 @@ route them to the implementer agent.
 
 #### Current Short Queue (Node Read-Forwarding Chain)
 
-1. Finish and review `NODE-SHOW-CONTRACT-1` (todo 251).
-2. Then promote and dispatch `NODE-READ-FWD-1` (todo 253).
+1. `NODE-SHOW-CONTRACT-1` (todo 251) is complete.
+2. Finish review and fixes for `NODE-READ-FWD-1` (todo 253). This slice must
+   preserve the documented role split: gateway callers execute locally; control
+   and app callers forward through the gateway API and are scoped by
+   gateway-owned access policy.
 3. Then promote and dispatch `E2E-NODE-READ-1` (todo 254) after todo 253 is
-   verified. The earlier topology-matrix prerequisite (todo 250) is already
-   complete.
+   verified and committed. The earlier topology-matrix prerequisite (todo 250)
+   is already complete.
 
-Do not create more downstream node-forwarding todos while todos 251, 253, or
-254 are still open. If the ready queue is below target during that chain, fill
-with independent read-only Pest, documentation, or E2E support work only.
+Do not create more downstream node-forwarding todos while todos 253 or 254 are
+still open. If the ready queue is below target during that chain, fill with
+independent read-only Pest, documentation, or E2E support work only.
 
 #### After Read-Forwarding Chain Verifies (Next 5 Candidates)
 
-1. Node doctor contract/docs slice needed for `node:list --doctor` (todo 252 is
-   the current draft candidate).
-2. `node:list --doctor` and doctor handoff implementation (with paired Pest and
+1. `FAMILY-REVIEW-NODE-READ-1` — review the node read-forwarding shape once
+   `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and the caller-role parity chain
+   verify. Scope: caller-role branch, typed gateway request, API envelope,
+   renderer, and Pest/E2E mapping shape. Evaluate caller-role resolution as the
+   first shared-service promotion candidate, but extraction is not automatic.
+2. Node doctor contract/docs slice needed for `node:list --doctor` (todo 252 is
+   the current draft candidate; refresh or split it only after the read chain
+   verifies).
+3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
    E2E gates).
-3. `node:show` real grant metadata / authorization visibility slice (with
+4. `node:show` real grant metadata / authorization visibility slice (with
    paired Pest and E2E gates).
-4. Ready development-app and production-app Incus snapshot coverage if still
-   unchecked in the Testing Infrastructure section.
-5. `FAMILY-REVIEW-NODE-READ-1` — review the node read-forwarding shape once
-   `node:list` and `node:show` prove the shared caller-role branch, typed
-   gateway request, API envelope, renderer, and test mapping shape. This review
-   must evaluate caller-role resolution as the first shared-service promotion
-   candidate, but extraction is not automatic.
+5. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
+   first-gateway provisioning split below instead of promoting todo 255 as-is.
+
+#### First-Gateway Provisioning Split Candidates
+
+Todo 255 is intentionally broad and should be refreshed or replaced by bounded
+worker todos before dispatch. Use these candidates in order when provisioning
+work becomes the active lane:
+
+1. `NODENEW-WIREGUARD-ENROLL-1` — enroll the first gateway in WireGuard and
+   prove the resulting registry and config state with focused Pest coverage;
+   pair with an `e2e-provisioning` gate.
+2. `NODENEW-GATEWAY-API-VERIFY-1` — verify the gateway API over WireGuard,
+   including `/api/me`, after first-gateway bootstrap; pair with an
+   `e2e-provisioning` gate.
+3. `NODENEW-GATEWAY-CA-VERIFY-1` — make gateway CA trust verification explicit
+   in the command result and focused tests; pair with provisioning E2E only if
+   the behavior mutates a host.
+4. `NODENEW-PLATFORM-DETECT-1` — replace optimistic platform placeholders with
+   real platform detection for the gateway bootstrap path.
+5. `NODENEW-JSON-SUCCESS-1` — finalize the documented JSON success state only
+   after the WireGuard, API, CA, and platform slices are real.
 
 #### Gateway Forwarding Chain (Unlocks After Read-Forwarding Chain)
 
@@ -502,15 +533,17 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] `--role` and `--environment` filters.
   - [ ] `--doctor` secondary operation.
   - [ ] caller visibility/access-policy behavior.
-  - [ ] gateway forwarding.
+  - [~] gateway forwarding (control/app CLI callers use typed GatewayClient;
+    E2E gate todo 254 pending).
   - [ ] doctor handoff behavior.
 - [~] Complete `node:show` contract gaps:
   - [x] modeled `environment`, `platform`, and node agent IDE metadata.
   - [x] JSON renderer contract (envelope shape, field contract, all error codes and metadata).
   - [x] Human renderer contract (field order, grants section, failure prose).
-  - [ ] caller-role resolution.
+  - [x] caller-role resolution.
   - [ ] access-policy authorization.
-  - [ ] gateway forwarding.
+  - [~] gateway forwarding (control/app CLI callers use typed GatewayClient;
+    E2E gate todo 254 pending).
   - [ ] interactive prompting.
   - [ ] default development app-node resolution.
   - [ ] real grant metadata.

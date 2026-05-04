@@ -458,7 +458,15 @@ class NodeNewCommand extends Command
             ->where('status', 'active')
             ->value('role');
 
-        return is_string($localRole) && $localRole !== '' ? $localRole : 'control';
+        if (! is_string($localRole) || $localRole === '') {
+            return 'control';
+        }
+
+        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
+            return 'unknown';
+        }
+
+        return $localRole;
     }
 
     private function gatewayConfigured(): bool

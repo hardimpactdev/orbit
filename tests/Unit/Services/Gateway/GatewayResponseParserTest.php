@@ -152,6 +152,69 @@ describe('GatewayResponseParser', function (): void {
         expect($result->isSuccess())->toBeTrue();
         expect($result->data())->toBe(['foo' => 'bar']);
     });
+
+    it('preserves unknown error codes in error envelopes', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(200, [
+            'error' => [
+                'code' => 'totally_unknown_error_code_123',
+                'message' => 'Something mysterious happened',
+            ],
+        ]);
+        $result = $parser->parse($response);
+
+        expect($result->isSuccess())->toBeFalse();
+        expect($result->errorCode())->toBe('totally_unknown_error_code_123');
+        expect($result->errorMessage())->toBe('Something mysterious happened');
+    });
+
+    it('parses error envelope even when HTTP status is 200', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(200, [
+            'error' => [
+                'code' => 'status_mismatch',
+                'message' => 'HTTP 200 but envelope says error',
+            ],
+        ]);
+        $result = $parser->parse($response);
+
+        expect($result->isSuccess())->toBeFalse();
+        expect($result->errorCode())->toBe('status_mismatch');
+        expect($result->errorMessage())->toBe('HTTP 200 but envelope says error');
+    });
+
+    it('throws on HTTP failure with non-JSON body', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(503, '<html><body>Service Unavailable</body></html>');
+
+        expect(fn () => $parser->parse($response))
+            ->toThrow(RuntimeException::class, 'Gateway request failed with HTTP status 503');
+    });
+
+    it('throws when error envelope has missing message', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(200, ['error' => ['code' => 'no_message']]);
+
+        expect(fn () => $parser->parse($response))
+            ->toThrow(RuntimeException::class, 'Gateway error response has no message.');
+    });
+
+    it('throws when error envelope has empty message', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(200, ['error' => ['code' => 'empty_message', 'message' => '']]);
+
+        expect(fn () => $parser->parse($response))
+            ->toThrow(RuntimeException::class, 'Gateway error response has no message.');
+    });
+
+    it('treats truthy non-boolean success as unrecognized payload', function (): void {
+        $parser = new GatewayResponseParser;
+        $response = mockResponse(200, ['success' => 'yes', 'data' => ['foo' => 'bar']]);
+        $result = $parser->parse($response);
+
+        expect($result->isSuccess())->toBeTrue();
+        expect($result->data())->toBe(['success' => 'yes', 'data' => ['foo' => 'bar']]);
+    });
 });
 
 function mockResponse(int $status, array|string $body): Response

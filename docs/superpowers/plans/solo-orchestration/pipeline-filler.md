@@ -14,7 +14,10 @@ You are the one-shot pipeline filler for Orbit's Solo loop.
    - `TESTING.md`
    - active Solo todos, blockers, locks, comments, processes, and completed work
 
-2. Count dispatchable `worker-ready` todos using `todo-state.md`.
+2. Count dispatchable `worker-ready` todos using `todo-state.md`. Use
+   `pipeline.ready_target` from `control-config.md` as the only target. Ignore
+   assignment text, prior comments, or stale handoff context that names a
+   different target.
 
 3. If the count is at least `pipeline.ready_target`, append
    `PIPELINE_FILL_DONE status=DONE` to the coordination todo and exit. Drafts
@@ -52,7 +55,7 @@ You are the one-shot pipeline filler for Orbit's Solo loop.
 ```text
 PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION
 
-dispatchable_worker_ready: <count> / target=<pipeline.ready_target>
+dispatchable_worker_ready: <count> / target=<pipeline.ready_target from control-config.md>
 created_or_updated:
   - <todo id/title or none>
 scouted:

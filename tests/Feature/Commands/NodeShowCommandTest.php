@@ -32,7 +32,21 @@ function nodeShowRow(array $overrides = []): array
     ], $overrides);
 }
 
+function setupNodeShowGatewayCaller(): void
+{
+    DB::table('nodes')->insert(nodeShowRow([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+}
+
 describe('node:show base contract', function (): void {
+    beforeEach(function (): void {
+        setupNodeShowGatewayCaller();
+    });
+
     it('looks up a node by name and returns successfully', function (): void {
         DB::table('nodes')->insert(nodeShowRow());
 
@@ -42,24 +56,15 @@ describe('node:show base contract', function (): void {
     });
 
     it('defaults to the local node when no name is supplied', function (): void {
-        DB::table('nodes')->insert(nodeShowRow([
-            'name' => 'mini',
-            'role' => 'control',
-            'host' => '10.6.0.8',
-            'wireguard_address' => '10.6.0.8',
-            'orbit_path' => '/Users/nckrtl/orbit',
-            'is_local' => true,
-            'environment' => null,
-            'platform' => 'macos_15-4',
-        ]));
+        DB::table('nodes')->insert(nodeShowRow());
 
         $exitCode = Artisan::call('node:show', ['--json' => true]);
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['node']['name'])->toBe('mini')
-            ->and($payload['success']['data']['node']['role'])->toBe('control');
+            ->and($payload['success']['data']['node']['name'])->toBe('gateway-1')
+            ->and($payload['success']['data']['node']['role'])->toBe('gateway');
     });
 
     it('does not mutate registry state or run processes', function (): void {
@@ -80,6 +85,10 @@ describe('node:show base contract', function (): void {
 });
 
 describe('node:show read-only guarantee', function (): void {
+    beforeEach(function (): void {
+        setupNodeShowGatewayCaller();
+    });
+
     it('makes no DB writes during show', function (): void {
         DB::table('nodes')->insert(nodeShowRow());
 

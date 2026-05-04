@@ -61,7 +61,9 @@ You are the one-shot orchestrator for the Orbit Solo loop.
      `PIPELINE_FILL_STARTED` without a matching `PIPELINE_FILL_DONE`.
 
    Otherwise, do not spawn a filler this cycle. Record the observed count and
-   the spawn decision in the cycle report.
+   the spawn decision in the cycle report. The target must always come from
+   `pipeline.ready_target` in `control-config.md`; do not pass or preserve any
+   assignment-level target that conflicts with the control file.
 
 10. Dispatch at most one E2E runner for one eligible `e2e-ready` gate. Use only
     the lane declared on the gate todo and the Pest E2E commands in

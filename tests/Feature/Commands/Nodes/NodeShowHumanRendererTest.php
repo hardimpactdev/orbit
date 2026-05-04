@@ -35,6 +35,16 @@ function nodeShowHumanRow(array $overrides = []): array
     ], $overrides);
 }
 
+function setupNodeShowHumanGatewayCaller(): void
+{
+    DB::table('nodes')->insert(nodeShowHumanRow([
+        'name' => 'local-gateway',
+        'role' => 'gateway',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+}
+
 function invokeNodeShowFailCommandHuman(string $code, string $message, array $meta): array
 {
     $command = new NodeShowCommand;
@@ -73,6 +83,10 @@ function invokeNodeShowFailCommandHuman(string $code, string $message, array $me
 }
 
 describe('node:show human renderer contract', function (): void {
+    beforeEach(function (): void {
+        setupNodeShowHumanGatewayCaller();
+    });
+
     it('selects human renderer when --json is absent', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow());
 
@@ -116,16 +130,16 @@ describe('node:show human renderer contract', function (): void {
 
     it('omits environment line for non-app roles', function (): void {
         DB::table('nodes')->insert(nodeShowHumanRow([
-            'name' => 'gateway-1',
+            'name' => 'gateway-2',
             'role' => 'gateway',
             'environment' => null,
         ]));
 
-        $exitCode = Artisan::call('node:show', ['name' => 'gateway-1']);
+        $exitCode = Artisan::call('node:show', ['name' => 'gateway-2']);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('Node: gateway-1')
+        expect($output)->toContain('Node: gateway-2')
             ->and($output)->toContain('Role: gateway')
             ->and($output)->not->toContain('Environment:')
             ->and($output)->toContain('Platform: ubuntu_24-04')
@@ -153,6 +167,8 @@ describe('node:show human renderer contract', function (): void {
     });
 
     it('renders missing name prose error when no local node exists', function (): void {
+        DB::table('nodes')->delete();
+
         $exitCode = Artisan::call('node:show');
         $output = Artisan::output();
 
