@@ -421,8 +421,9 @@ route them to the implementer agent.
 
 1. Finish and review `NODE-SHOW-CONTRACT-1` (todo 251).
 2. Then promote and dispatch `NODE-READ-FWD-1` (todo 253).
-3. Then promote and dispatch `E2E-NODE-READ-1` (todo 254) after
-   `E2E-TOPOLOGY-MATRIX-1` (todo 250) and todo 253 are verified.
+3. Then promote and dispatch `E2E-NODE-READ-1` (todo 254) after todo 253 is
+   verified. The earlier topology-matrix prerequisite (todo 250) is already
+   complete.
 
 Do not create more downstream node-forwarding todos while todos 251, 253, or
 254 are still open. If the ready queue is below target during that chain, fill
