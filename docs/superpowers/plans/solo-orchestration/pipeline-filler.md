@@ -16,27 +16,27 @@ You are the one-shot pipeline filler for Orbit's Solo loop.
 
 2. Count dispatchable `worker-ready` todos using `todo-state.md`.
 
-3. If the count is at least `pipeline.ready_target`, skip steps 4 and 5 (do
-   not create new candidates) and go straight to step 6 to scout any orphaned
-   drafts.
+3. If the count is at least `pipeline.ready_target`, append
+   `PIPELINE_FILL_DONE status=DONE` to the coordination todo and exit. Drafts
+   already in the queue may be deliberately held for sequencing; do not
+   auto-scout them.
 
-4. Otherwise, pick only enough next candidates from `docs/PORTING.md` to reach
-   the target. Avoid duplicates, broad backlog, and blocked downstream work.
+4. Pick only enough next candidates from `docs/PORTING.md` to reach the target.
+   Avoid duplicates, broad backlog, and blocked downstream work. Skip any
+   `docs/PORTING.md` entry that already exists as a held draft (record the
+   skip in `gap_reason`).
 
-5. Create or refresh each new candidate as `draft`. Use
+5. Create or refresh each candidate as `draft`. Use
    `worker-todo-template.md`; command ports need a paired E2E gate with
    `lane=e2e-provisioning`, `lane=e2e-feature`, or `lane=none`.
    For candidates tagged `family-review`, also use
    `family-review-todo-template.md`; they are normal worker todos and usually
    declare `lane=none`.
 
-6. List every open todo currently tagged `draft` (drafts created in step 5
-   and any orphaned drafts from earlier cycles) that has no live scout process
-   and no `SCOUT_REPORT` recorded since its last refresh. Spawn one scout per
-   such draft with `todo-scout.md` and the draft todo id. Use
-   `dispatch-protocol.md` for startup. No draft is allowed to remain unscouted
-   while the filler is running. If there are no drafts to scout and no new
-   candidates were created, append `PIPELINE_FILL_DONE status=DONE` and exit.
+6. Spawn one scout per newly created or refreshed candidate with
+   `todo-scout.md` and the candidate todo id. Use `dispatch-protocol.md` for
+   startup. Do not auto-spawn scouts for older drafts unless this filler
+   refreshed them in step 5; deliberate holds stay held.
 
 7. Wait for each `SCOUT_REPORT`, then apply it:
    - `READY`: promote implementation todos to `worker-ready`; promote E2E gate
@@ -56,10 +56,12 @@ dispatchable_worker_ready: <count> / target=<pipeline.ready_target>
 created_or_updated:
   - <todo id/title or none>
 scouted:
-  - new: <todo id/status or none>
-  - orphan_rescue: <todo id/status or none>
+  - <todo id/status or none>
 promoted:
   - <todo id/title or none>
+held_drafts:
+  - <todo id/reason or none>
+gap_reason: <why no new candidates were created, or none>
 blocked_or_escalated:
   - <todo id/reason or none>
 template_friction: <yes|no>
