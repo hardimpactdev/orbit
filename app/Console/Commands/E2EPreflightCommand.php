@@ -101,7 +101,7 @@ class E2EPreflightCommand extends Command
             return $matches[1];
         }
 
-        $lines = array_filter(array_map('trim', explode("\n", $output)));
+        $lines = array_filter(array_map(trim(...), explode("\n", $output)));
 
         return $lines[0] ?? trim($output);
     }

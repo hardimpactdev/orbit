@@ -152,35 +152,3 @@ function fakeE2EProvider(string $name, bool $available): E2EProvider
         }
     };
 }
-
-/**
- * @param  array<string, string>  $values
- */
-function withE2EProviderEnvironment(array $values, Closure $callback): void
-{
-    $keys = ['ORBIT_E2E_PROVIDER', 'ORBIT_E2E_PROVIDERS'];
-    $previous = [];
-
-    foreach ($keys as $key) {
-        $previous[$key] = getenv($key);
-        putenv($key);
-    }
-
-    foreach ($values as $key => $value) {
-        putenv("{$key}={$value}");
-    }
-
-    try {
-        $callback();
-    } finally {
-        foreach ($previous as $key => $value) {
-            if (is_string($value)) {
-                putenv("{$key}={$value}");
-
-                continue;
-            }
-
-            putenv($key);
-        }
-    }
-}

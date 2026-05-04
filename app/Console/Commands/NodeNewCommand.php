@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\OrbitHostInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -30,7 +31,7 @@ class NodeNewCommand extends Command
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
-    public function handle(OrbitHostInstaller $installer): int
+    public function handle(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter): int
     {
         $callerRole = $this->callerRole();
 
@@ -82,7 +83,7 @@ class NodeNewCommand extends Command
                 return $this->forwardAppNodeCreation($name, $inputs);
             }
 
-            return $this->provisionAppNode($installer, $name, $inputs);
+            return $this->provisionAppNode($installer, $registryWriter, $name, $inputs);
         }
 
         if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
@@ -157,7 +158,7 @@ class NodeNewCommand extends Command
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
      */
-    private function provisionAppNode(OrbitHostInstaller $installer, string $name, array $inputs): int
+    private function provisionAppNode(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter, string $name, array $inputs): int
     {
         if (Node::query()->where('name', $name)->where('status', 'active')->exists()) {
             return $this->failCommand(
@@ -196,21 +197,16 @@ class NodeNewCommand extends Command
         $wireguardAddress = $this->nextWireguardAddress();
         $gatewayEndpoint = $this->gatewayEndpoint();
 
-        Node::query()->create([
-            'name' => $name,
-            'role' => 'app',
-            'environment' => $inputs['environment'],
-            'tld' => $inputs['tld'],
-            'platform' => 'unknown',
-            'host' => $inputs['host'],
-            'wireguard_address' => $wireguardAddress,
-            'gateway_endpoint' => $gatewayEndpoint,
-            'ssh_user' => $inputs['sshUser'],
-            'user' => $runtimeUser,
-            'orbit_path' => "/home/{$runtimeUser}/orbit",
-            'status' => 'active',
-            'is_local' => false,
-        ]);
+        $registryWriter->writeAppNode(
+            name: $name,
+            environment: $inputs['environment'],
+            tld: $inputs['tld'],
+            host: $inputs['host'],
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            sshUser: $inputs['sshUser'],
+            user: $runtimeUser,
+        );
 
         $payload = [
             'result' => [

@@ -242,12 +242,19 @@ composer test:e2e:topology-contract
 composer test:e2e:features
 composer test:e2e:features:control-gateway-dev-prod
 composer test:e2e:features:parallel
+composer test:e2e:features:docker
 
 # Prepare or replace a topology clone for the feature lane
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 
+# Prepare Docker feature topology images
+composer e2e:prepare-docker-runtime -- --force
+composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+
 # Reap stale Incus VMs and images created by E2E tests
 composer e2e:reap-incus
+composer e2e:reap-docker
+composer e2e:reap-docker -- --force --older-than=0m
 ```
 
 `composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
@@ -255,11 +262,69 @@ then runs feature assertions with Pest parallel mode and `--processes=3`, which
 maps naturally to `beast`, `sidecar1`, and `sidecar2` when prepared templates
 and capacity are available. Provisioning E2E remains serial by default.
 
+### Docker Feature Topologies
+
+Docker is an optional fast provider for `e2e-feature` tests:
+
+```bash
+composer e2e:prepare-docker-runtime -- --force
+composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
+ORBIT_E2E_TOPOLOGY_PROVIDER=docker composer test:e2e:features:docker
+```
+
+Docker topologies are disposable containers seeded from per-role prepared
+images. They are useful for fast command, registry, gateway API, and forwarding
+assertions. They do not prove real SSH, sudo, OS trust-store mutation, systemd,
+package installation, cloud-init, or VM networking behavior. Tests that need
+those capabilities must call
+`E2ETopologyFactory::fromEnvironment()->requireCapabilities(E2ETopologyCapabilities::vm())->require(...)`
+so the provider pool refuses Docker for them.
+
+`composer test:e2e:features:docker` is serial in the MVP. Parallel Docker E2E
+is not supported while each test creates a fixed `10.6.0.0/16` bridge network;
+parallel support needs non-overlapping subnets or the per-worker network design
+from the Docker topology plan.
+
+Tests must reach Docker topology services through topology handles such as
+`$topology->control()->ssh(...)`, not by calling `https://10.6.0.x` directly
+from the Pest process. On macOS, Docker Desktop runs containers inside a Linux
+VM, so the bridge subnet is reachable from containers but not necessarily from
+the developer host.
+
+The Docker bridge uses subnet `10.6.0.0/16` to match seeded WireGuard
+addresses. If you also run an Orbit VPN client locally on `10.6.0.x`, stop the
+tunnel before running Docker E2E or Docker network creation will fail with a
+subnet overlap error.
+
+To offload Docker work to `beast`, keep Pest running locally and target the
+remote Docker daemon:
+
+```bash
+ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker
+```
+
+The local machine only needs the Docker CLI and SSH access; the prepared Docker
+images must exist on `beast`. The Docker provider checks `docker image inspect`
+against the remote daemon because `DOCKER_HOST=ssh://...` forwards every CLI
+call.
+
+If Docker resources accumulate from interrupted runs, prefer the reaper:
+
+```bash
+composer e2e:reap-docker
+composer e2e:reap-docker -- --force --older-than=0m
+```
+
 ## Environment
 
 ```bash
 ORBIT_E2E=1                           # Enable ephemeral E2E tests
 ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
+ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
+ORBIT_E2E_TOPOLOGY_PROVIDER=incus     # Prepared topology provider
+ORBIT_E2E_TOPOLOGY_PROVIDERS=incus    # Ordered prepared topology provider pool
+ORBIT_E2E_DOCKER_HOSTS=local          # Ordered Docker daemon pool for Docker topology provider
+ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
 ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2  # Comma-separated Incus host pool
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
@@ -270,6 +335,17 @@ ORBIT_E2E_MEMORY=2GiB                 # Memory for image-prep / provisioning VMs
 ORBIT_E2E_TOPOLOGY_CPUS=1             # vCPUs for disposable topology clones
 ORBIT_E2E_TOPOLOGY_MEMORY=2GiB        # Memory for disposable topology clones
 ```
+
+`ORBIT_E2E_PROVIDER` and `ORBIT_E2E_PROVIDERS` choose provisioning providers.
+`ORBIT_E2E_TOPOLOGY_PROVIDER` and `ORBIT_E2E_TOPOLOGY_PROVIDERS` choose
+prepared topology providers for `e2e-feature` tests. Keep provisioning provider
+selection VM-backed when a test proves machine setup, SSH, sudo, package
+installation, trust-store mutation, or system services.
+
+`ORBIT_E2E_TOPOLOGY_PROVIDER=auto` currently expands to `incus`, not Docker.
+Docker can be selected explicitly with `ORBIT_E2E_TOPOLOGY_PROVIDER=docker`;
+only add Docker to `auto` after measured timing data proves it should become
+part of the default feature-lane pool.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work

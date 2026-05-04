@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Mockery as m;
 use PHPUnit\Framework\SkippedWithMessageException;
 use Tests\E2E\Support\E2EInstance;
+use Tests\E2E\Support\E2ETopologyCapabilities;
 use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
 use Tests\E2E\Support\E2ETopologyLease;
@@ -65,7 +66,36 @@ it('skips test when requiring a topology', function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(SkippedWithMessageException::class, 'Prepared topology not available: control');
+            ->toThrow(SkippedWithMessageException::class, 'incus: prepared topology control is not available on any Incus host');
+    });
+});
+
+it('skips with topology provider failure details when no prepared provider is available', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
+        'ORBIT_E2E_INCUS_HOSTS' => 'orbit-e2e-nonexistent.invalid',
+    ], function (): void {
+        $factory = E2ETopologyFactory::fromEnvironment();
+
+        expect(fn () => $factory->require(E2ETopologyKind::Control))
+            ->toThrow(SkippedWithMessageException::class, 'Prepared topology not available');
+    });
+});
+
+it('refuses providers that do not satisfy required capabilities', function (): void {
+    withE2ETopologyEnvironment([
+        'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',
+    ], function (): void {
+        $factory = E2ETopologyFactory::fromEnvironment()
+            ->requireCapabilities(new E2ETopologyCapabilities(
+                realSsh: true,
+                systemd: false,
+                hostMutation: false,
+                kernelNetworking: false,
+            ));
+
+        expect(fn () => $factory->require(E2ETopologyKind::Control))
+            ->toThrow(SkippedWithMessageException::class, 'capabilities do not satisfy required');
     });
 });
 
@@ -121,40 +151,3 @@ it('cleans up all instances', function (): void {
 
     $lease->cleanup();
 });
-
-/**
- * @param  array<string, string>  $values
- */
-function withE2ETopologyEnvironment(array $values, Closure $callback): void
-{
-    $keys = [
-        'ORBIT_E2E_PROVIDER',
-        'ORBIT_E2E_TOPOLOGY_STRATEGY',
-        'ORBIT_E2E_INCUS_HOSTS',
-        'ORBIT_E2E_INCUS_MAX_VMS_PER_HOST',
-    ];
-    $previous = [];
-
-    foreach ($keys as $key) {
-        $previous[$key] = getenv($key);
-        putenv($key);
-    }
-
-    foreach ($values as $key => $value) {
-        putenv("{$key}={$value}");
-    }
-
-    try {
-        $callback();
-    } finally {
-        foreach ($previous as $key => $value) {
-            if (is_string($value)) {
-                putenv("{$key}={$value}");
-
-                continue;
-            }
-
-            putenv($key);
-        }
-    }
-}

@@ -49,7 +49,7 @@
 - Inspect: `tests/E2E/Support/E2ETopologyLease.php`
 - Inspect: `app/Console/Commands/Internal/*`
 
-- [ ] Check current worktree and recent E2E commits.
+- [x] Check current worktree and recent E2E commits.
 
 Run:
 
@@ -63,7 +63,7 @@ Expected:
 - no unrelated active-agent files are edited;
 - the current E2E baseline is clear before changing provider boundaries.
 
-- [ ] Confirm the landed E2E speed baseline.
+- [x] Confirm the landed E2E speed baseline.
 
 The `2026-05-04-e2e-fast-suite-hardening.md` plan has already landed. Confirm the expected code signals before Task 1 starts:
 
@@ -81,7 +81,7 @@ rg -n "test:e2e:topology-contract|withSshUsers|fresh-clone|snapshot-restore|ORBI
 
 Expected: every bullet above can be tied to current code. If this fails, stop and reconcile the baseline before introducing Docker topology providers.
 
-- [ ] Check which topology improvements already landed.
+- [x] Check which topology improvements already landed.
 
 Run:
 
@@ -94,7 +94,7 @@ Expected:
 - selective SSH setup, parallel feature scripts, timing, reset, and Incus capacity signals are present;
 - no topology-provider abstraction exists yet, unless another worker has already started this Docker plan.
 
-- [ ] Run the existing safe E2E support tests.
+- [x] Run the existing safe E2E support tests.
 
 Run:
 
@@ -104,7 +104,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php tests/Feature/E2EProv
 
 Expected: all selected tests pass before refactoring.
 
-- [ ] Check whether a `.dockerignore` already exists.
+- [x] Check whether a `.dockerignore` already exists.
 
 Run:
 
@@ -118,7 +118,7 @@ Expected:
 - record whether a Dockerfile-specific ignore file already exists;
 - record whether a `docker/` directory already houses other Dockerfiles.
 
-- [ ] Locate the local gateway bootstrap command that Docker topology baking will reuse.
+- [x] Locate the local gateway bootstrap command that Docker topology baking will reuse.
 
 Run:
 
@@ -152,7 +152,7 @@ git commit -m "docs: add docker e2e topology driver plan"
 - Modify: `composer.json` (autoload-dev `files` for the helpers)
 - Modify: `TESTING.md`
 
-- [ ] Add a failing config test for topology provider defaults.
+- [x] Add a failing config test for topology provider defaults.
 
 Append to `tests/Feature/E2EConfigTest.php`:
 
@@ -200,7 +200,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php --filter='defaults to
 
 Expected: fail because `E2EConfig::$topologyProviderNames` does not exist.
 
-- [ ] Add topology provider names to `E2EConfig`.
+- [x] Add topology provider names to `E2EConfig`.
 
 In `tests/E2E/Support/E2EConfig.php`, add the constructor property after `providerNames`:
 
@@ -263,7 +263,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php --filter='defaults to
 
 Expected: pass.
 
-- [ ] Add a failing config test for Docker topology provider selection.
+- [x] Add a failing config test for Docker topology provider selection.
 
 Append:
 
@@ -289,7 +289,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php --filter='explicit to
 
 Expected: pass after Task 1 implementation.
 
-- [ ] Consolidate the E2E environment test helpers.
+- [x] Consolidate the E2E environment test helpers.
 
 Today `withE2EConfigEnvironment()` (in `tests/Feature/E2EConfigTest.php`) and `withE2EProviderEnvironment()` (in `tests/Feature/E2EProviderPoolTest.php`) maintain duplicate key lists. With topology provider keys being added, the two will diverge. Move the shared logic into `tests/Helpers/E2EEnvironment.php`:
 
@@ -405,7 +405,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php tests/Feature/E2EProv
 
 Expected: all tests still pass with no env leakage.
 
-- [ ] Document the split in `TESTING.md`.
+- [x] Document the split in `TESTING.md`.
 
 Add these environment lines near the existing E2E environment block:
 
@@ -457,7 +457,7 @@ git commit -m "test: split e2e topology provider config"
 - Create: `tests/E2E/Support/E2ETopologyProviderPool.php`
 - Test: `tests/Feature/E2ETopologyProviderPoolTest.php`
 
-- [ ] Create a failing provider-pool test.
+- [x] Create a failing provider-pool test.
 
 Create `tests/Feature/E2ETopologyProviderPoolTest.php`:
 
@@ -601,7 +601,7 @@ php artisan test --compact tests/Feature/E2ETopologyProviderPoolTest.php
 
 Expected: fail because the topology provider classes do not exist.
 
-- [ ] Add topology capabilities with a `satisfies()` check.
+- [x] Add topology capabilities with a `satisfies()` check.
 
 Create `tests/E2E/Support/E2ETopologyCapabilities.php`:
 
@@ -660,7 +660,7 @@ final readonly class E2ETopologyCapabilities
 }
 ```
 
-- [ ] Add topology acquisition options.
+- [x] Add topology acquisition options.
 
 Create `tests/E2E/Support/E2ETopologyAcquisitionOptions.php`:
 
@@ -682,7 +682,7 @@ final readonly class E2ETopologyAcquisitionOptions
 }
 ```
 
-- [ ] Add topology provider interface.
+- [x] Add topology provider interface.
 
 Create `tests/E2E/Support/E2ETopologyProvider.php`:
 
@@ -705,7 +705,7 @@ interface E2ETopologyProvider
 }
 ```
 
-- [ ] Add provider selection.
+- [x] Add provider selection.
 
 Create `tests/E2E/Support/E2ETopologyProviderSelection.php`:
 
@@ -735,7 +735,7 @@ final readonly class E2ETopologyProviderSelection
 }
 ```
 
-- [ ] Add provider pool with capability-aware selection.
+- [x] Add provider pool with capability-aware selection.
 
 Create `tests/E2E/Support/E2ETopologyProviderPool.php`:
 
@@ -806,7 +806,7 @@ git commit -m "test: add prepared topology provider boundary"
 - Test: `tests/Feature/E2ETopologyFactoryTest.php`
 - Test: `tests/Feature/E2ETopologyProviderPoolTest.php`
 
-- [ ] Add a failing factory test for topology provider selection.
+- [x] Add a failing factory test for topology provider selection.
 
 Append to `tests/Feature/E2ETopologyFactoryTest.php`:
 
@@ -851,7 +851,7 @@ php artisan test --compact tests/Feature/E2ETopologyFactoryTest.php --filter='to
 
 Expected: fail until the factory reads topology providers and exposes capability requirements.
 
-- [ ] Create `IncusTopologyProvider`.
+- [x] Create `IncusTopologyProvider`.
 
 Use the current `E2ETopologyFactory` source as the anchor for this extraction. Do not re-implement Incus acquisition from the prose in this plan; move the current behavior behind the provider boundary and keep behavior equivalent.
 
@@ -905,7 +905,7 @@ Keep Incus internals concrete, then widen only at the lease boundary. `E2EInstan
 
 Note: `withSshUsers()` stays on `E2ETopologyFactory`. The factory passes the resolved user map through `E2ETopologyAcquisitionOptions`; providers that do not need host-to-guest SSH may ignore it, but must still accept the options object so the interface stays stable.
 
-- [ ] Add topology provider factory methods.
+- [x] Add topology provider factory methods.
 
 Update `tests/E2E/Support/E2ETopologyProviderPool.php`:
 
@@ -929,7 +929,7 @@ private static function makeProvider(string $provider, E2EConfig $config): E2ETo
 }
 ```
 
-- [ ] Slim `E2ETopologyFactory` and remove the dead `$provider` field.
+- [x] Slim `E2ETopologyFactory` and remove the dead `$provider` field.
 
 `E2ETopologyFactory` currently stores `$provider` and `$strategy` from `getenv()` and uses `$provider` only to early-skip non-Incus runs. After this task the topology provider lookup happens through the pool, so:
 
@@ -1008,7 +1008,7 @@ final class E2ETopologyFactory
 
 Update existing tests in `tests/Feature/E2ETopologyFactoryTest.php` that previously asserted on `$provider` to assert on `$strategy` only.
 
-- [ ] Run focused support tests.
+- [x] Run focused support tests.
 
 Run:
 
@@ -1036,7 +1036,7 @@ git commit -m "test: route prepared topologies through provider pool"
 
 > Note on `Process::fake()` patterns: Laravel's matcher uses fnmatch wildcards, and `escapeshellarg('foo')` produces `'foo'` (with single quotes around it). The fake key has to match the literal output including the quotes. The patterns below quote container names accordingly.
 
-- [ ] Add a failing test for Docker instance command construction.
+- [x] Add a failing test for Docker instance command construction.
 
 Create `tests/Feature/DockerTopologyProviderTest.php`:
 
@@ -1096,7 +1096,7 @@ php artisan test --compact tests/Feature/DockerTopologyProviderTest.php
 
 Expected: fail because Docker classes do not exist.
 
-- [ ] Add `DockerHost`.
+- [x] Add `DockerHost`.
 
 Create `tests/E2E/Support/DockerHost.php`:
 
@@ -1134,7 +1134,7 @@ final readonly class DockerHost
 }
 ```
 
-- [ ] Add `DockerInstance`.
+- [x] Add `DockerInstance`.
 
 Create `tests/E2E/Support/DockerInstance.php`:
 
@@ -1275,7 +1275,7 @@ git commit -m "test: add docker e2e instance primitives"
 
 > Note: this MVP only wires availability checks and capability advertising. The real `acquire()` lands in Task 6c after the prepared per-role images exist.
 
-- [ ] Add failing provider availability tests.
+- [x] Add failing provider availability tests.
 
 Append to `tests/Feature/DockerTopologyProviderTest.php`:
 
@@ -1322,7 +1322,7 @@ php artisan test --compact tests/Feature/DockerTopologyProviderTest.php --filter
 
 Expected: fail because `DockerTopologyProvider` does not exist.
 
-- [ ] Add `DockerTopologyProvider`.
+- [x] Add `DockerTopologyProvider`.
 
 Create `tests/E2E/Support/DockerTopologyProvider.php`:
 
@@ -1399,7 +1399,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
 Image tags are intentionally stable daemon-level resources and do not include `instancePrefix`. Runtime containers, build containers, and Docker networks are per-run resources and must include `instancePrefix` to avoid collisions in shared development or CI environments.
 
-- [ ] Register Docker in the topology provider pool.
+- [x] Register Docker in the topology provider pool.
 
 Update `makeProvider()` in `tests/E2E/Support/E2ETopologyProviderPool.php`:
 
@@ -1411,7 +1411,7 @@ return match ($provider) {
 };
 ```
 
-- [ ] Add provider-pool coverage for Docker config.
+- [x] Add provider-pool coverage for Docker config.
 
 Append to `tests/Feature/E2ETopologyProviderPoolTest.php`:
 
@@ -1455,7 +1455,7 @@ git commit -m "test: register docker topology provider"
 
 This task only builds a bare runtime image: PHP, Composer dependencies, the Orbit source, and the `control` and `orbit` users. It does not seed Node rows, certificates, or run `gateway:add` / `node:new` — that lands in Task 6b on top of this image.
 
-- [ ] Add a failing command test for runtime image preparation dry-run.
+- [x] Add a failing command test for runtime image preparation dry-run.
 
 Create `tests/Feature/Commands/E2EPrepareDockerRuntimeCommandTest.php`:
 
@@ -1486,7 +1486,7 @@ php artisan test --compact tests/Feature/Commands/E2EPrepareDockerRuntimeCommand
 
 Expected: fail because the command does not exist.
 
-- [ ] Add a focused Dockerfile-specific ignore file.
+- [x] Add a focused Dockerfile-specific ignore file.
 
 Create `docker/e2e/topology/Dockerfile.dockerignore`. The build context defaults to project root, which on a normal Orbit checkout includes `node_modules/`, host `vendor/`, `.git/`, the SQLite DB, secrets in `.env`, and the `tests/` tree. Docker reads a Dockerfile-specific ignore file from the Dockerfile directory when it is named `Dockerfile.dockerignore`; a plain `.dockerignore` in `docker/e2e/topology/` would be ignored because the context root is `base_path()`.
 
@@ -1514,7 +1514,7 @@ tests/E2E
 Dockerfile*
 ```
 
-- [ ] Add the runtime Dockerfile.
+- [x] Add the runtime Dockerfile.
 
 Create `docker/e2e/topology/Dockerfile`:
 
@@ -1570,7 +1570,7 @@ docker run --rm orbit-e2e-topology-runtime:current sh -lc 'cd /home/control/orbi
 
 Expected: both commands succeed. If runtime commands need a dev-only package, move that package to `require` before continuing instead of switching the image to `composer install` with dev dependencies.
 
-- [ ] Add the prepare-runtime command.
+- [x] Add the prepare-runtime command.
 
 Create `app/Console/Commands/E2EPrepareDockerRuntimeCommand.php`:
 
@@ -1675,7 +1675,7 @@ The bake target image names mirror Incus's template names:
 | `orbit-template-control-gateway-dev-prod-control`  | `orbit-e2e-topology:control-gateway-dev-prod-control-current` |
 | ... | ... |
 
-- [ ] Verify container compatibility of gateway bootstrap before building.
+- [x] Verify container compatibility of gateway bootstrap before building.
 
 Read the command that Docker will run inside the gateway container:
 
@@ -1695,7 +1695,7 @@ Expected:
 
 If any assumption fails, update this plan before writing `DockerTopologyBuilder`.
 
-- [ ] Add a failing command test for topology image preparation dry-run.
+- [x] Add a failing command test for topology image preparation dry-run.
 
 Create `tests/Feature/Commands/E2EPrepareDockerTopologyCommandTest.php`:
 
@@ -1735,7 +1735,7 @@ php artisan test --compact tests/Feature/Commands/E2EPrepareDockerTopologyComman
 
 Expected: fail because the command does not exist.
 
-- [ ] Add hidden `orbit:internal:bake-app-node` command and shared row-writer service.
+- [x] Add hidden `orbit:internal:bake-app-node` command and shared row-writer service.
 
 Extract `NodeNewCommand`'s app-row write logic into `App\Services\Nodes\NodeRegistryWriter` (matching the existing `App\Services\Ca\OrbitCaService` location convention). Both `NodeNewCommand` and the new bake command call into it, so the Eloquent shape stays consistent. No SSH, no installer.
 
@@ -1870,7 +1870,7 @@ git add app/Services/Nodes/NodeRegistryWriter.php app/Console/Commands/NodeNewCo
 git commit -m "feat: extract node registry writer for bake-app-node"
 ```
 
-- [ ] Add `DockerTopologyBuilder`.
+- [x] Add `DockerTopologyBuilder`.
 
 Create `tests/E2E/Support/DockerTopologyBuilder.php`. The builder mirrors `IncusTopologyBuilder` and produces real seeded state. Key responsibilities:
 
@@ -2037,7 +2037,7 @@ The `node:new` integration is the hardest piece because Incus's builder leans on
 
 Instead, the builder calls a hidden `orbit:internal:bake-app-node` command (added in the next sub-task) inside the gateway container to write the same Node row that `node:new` would have produced. The command and `node:new` share a `NodeRegistryWriter` service, so the baked Docker rows stay in lockstep with whatever `node:new` writes today and tomorrow.
 
-- [ ] Add the prepare-topology command.
+- [x] Add the prepare-topology command.
 
 Create `app/Console/Commands/E2EPrepareDockerTopologyCommand.php`. Mirror the shape of the existing `E2EPrepareTopologyCommand` (which prepares Incus templates):
 
@@ -2113,7 +2113,7 @@ class E2EPrepareDockerTopologyCommand extends Command
 }
 ```
 
-- [ ] Add a unit test for the builder using `Process::fake()`.
+- [x] Add a unit test for the builder using `Process::fake()`.
 
 Create `tests/Feature/DockerTopologyBuilderTest.php` that fakes the docker-cli surface and asserts that the builder issues the expected `docker run`, in-container `php artisan` calls, and `docker commit` commands per role for the `control-gateway` topology. Use fnmatch wildcards that account for `escapeshellarg` quoting around container names and image tags.
 
@@ -2165,7 +2165,7 @@ With per-role prepared images in place, acquire() does the cheap work:
 4. Build a `DockerInstance` per role.
 5. Return `E2ETopologyLease` with `snapshotReset: null` and a teardown closure that removes the per-test Docker network after all containers are deleted. `E2ETopologyLease::reset()` must remain the fallback owner: when the env value is `snapshot-restore` but `snapshotReset` is null, reset uses cleanup + rebuild, which is fresh container recreation for Docker.
 
-- [ ] Add a failing acquisition test.
+- [x] Add a failing acquisition test.
 
 Append to `tests/Feature/DockerTopologyProviderTest.php`:
 
@@ -2202,7 +2202,7 @@ php artisan test --compact tests/Feature/DockerTopologyProviderTest.php --filter
 
 Expected: fail because `acquire()` still throws.
 
-- [ ] Add a failing partial-acquire cleanup test.
+- [x] Add a failing partial-acquire cleanup test.
 
 Append a test that fakes successful network creation and control container launch, then makes the gateway container launch fail. Assert the provider deletes the control container and Docker network before rethrowing:
 
@@ -2234,7 +2234,7 @@ it('cleans containers and network when docker acquire fails partway through', fu
 
 Expected: the test fails until `acquire()` wraps partial setup in cleanup-on-error.
 
-- [ ] Add lease teardown support before wiring Docker cleanup.
+- [x] Add lease teardown support before wiring Docker cleanup.
 
 Update `tests/E2E/Support/E2ETopologyLease.php` so its constructor accepts an optional teardown closure:
 
@@ -2268,7 +2268,7 @@ Add focused coverage in `tests/Feature/E2ETopologyResetTest.php` proving:
 - teardown runs once during cleanup and does not run again on a second cleanup call;
 - `ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore` falls back to cleanup + rebuild when `snapshotReset` is null.
 
-- [ ] Implement `DockerTopologyProvider::acquire()`.
+- [x] Implement `DockerTopologyProvider::acquire()`.
 
 Replace the placeholder body:
 
@@ -2418,7 +2418,7 @@ git commit -m "test: implement docker topology acquire"
 - Modify: future `tests/E2E/*TopologyTest.php` files only when they already exist
 - Test: `tests/Feature/E2ETopologyFactoryTest.php`
 
-- [ ] Audit current feature E2E tests before exposing Docker scripts.
+- [x] Audit current feature E2E tests before exposing Docker scripts.
 
 Run:
 
@@ -2439,7 +2439,7 @@ Current expected state:
 
 Do not assume `NodeListTopologyTest.php` is the only feature test. The audit must list every `tests/E2E/*` file containing an `e2e-feature` group and classify each one before Task 7 exposes Docker scripts.
 
-- [ ] Add capability requirements only where needed.
+- [x] Add capability requirements only where needed.
 
 For VM-required feature tests, update the acquisition call:
 
@@ -2451,7 +2451,7 @@ $topology = E2ETopologyFactory::fromEnvironment()
 
 For Docker-safe feature tests, leave them without VM requirements so provider order can choose Docker later.
 
-- [ ] Do not add Composer scripts for topology feature groups that have no tests.
+- [x] Do not add Composer scripts for topology feature groups that have no tests.
 
 Run:
 
@@ -2489,7 +2489,7 @@ git commit -m "test: classify feature e2e topology capabilities"
 
 The acquire path must clean up after partial failures, but interrupted processes can still leave Docker resources behind. Add a Docker reaper that mirrors the Incus/Hcloud cleanup surface.
 
-- [ ] Add failing reaper command tests.
+- [x] Add failing reaper command tests.
 
 Create `tests/Feature/Commands/E2EReapDockerCommandTest.php`:
 
@@ -2536,7 +2536,7 @@ php artisan test --compact tests/Feature/Commands/E2EReapDockerCommandTest.php
 
 Expected: fail because the command does not exist.
 
-- [ ] Add `e2e:reap-docker`.
+- [x] Add `e2e:reap-docker`.
 
 Create `app/Console/Commands/E2EReapDockerCommand.php` with this behavior:
 
@@ -2550,7 +2550,7 @@ Create `app/Console/Commands/E2EReapDockerCommand.php` with this behavior:
 
 Keep `--older-than` in the signature for parity with other reapers, but if Docker's list output cannot reliably expose created-at timestamps in the first slice, document that Docker reaping is prefix-based until timestamp filtering lands.
 
-- [ ] Add Composer and docs entries.
+- [x] Add Composer and docs entries.
 
 Add to `composer.json`:
 
@@ -2588,7 +2588,7 @@ git commit -m "test: add docker e2e reaper"
 - Modify: `composer.json`
 - Modify: `TESTING.md`
 
-- [ ] Add Composer scripts for Docker feature runs that have tests.
+- [x] Add Composer scripts for Docker feature runs that have tests.
 
 Expose only topology sizes that already have matching `e2e-feature-*` tests. At the current baseline, that means `control-gateway-dev-prod`; add narrower Docker scripts later in the same commit that introduces narrower feature tests.
 
@@ -2620,7 +2620,7 @@ composer validate --no-check-publish
 
 Expected: Composer file is valid.
 
-- [ ] Document Docker as feature-only in `TESTING.md`.
+- [x] Document Docker as feature-only in `TESTING.md`.
 
 Add this section under prepared topology documentation:
 
@@ -2690,7 +2690,7 @@ git commit -m "docs: add docker feature e2e lane"
 
 Goal: produce defensible timing data, not noise. A single sample is not signal. Methodology below uses warmup + three measured runs per provider per topology size, reports median.
 
-- [ ] Prepare the Docker runtime + topology images.
+- [x] Prepare the Docker runtime + topology images.
 
 Run:
 
@@ -2701,7 +2701,7 @@ composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
 Expected: `orbit-e2e-topology-runtime:current` and the per-role per-topology images exist.
 
-- [ ] Warm up Docker provider page caches.
+- [x] Warm up Docker provider page caches.
 
 Run once and discard the result:
 
@@ -2711,7 +2711,7 @@ ORBIT_E2E_TIMINGS=1 composer test:e2e:features:docker -- --filter=NodeListTopolo
 
 Expected: succeeds; first-run page-cache cost is paid before measurement begins.
 
-- [ ] Run three Docker timing samples on each topology size that has feature tests.
+- [x] Run three Docker timing samples on each topology size that has feature tests.
 
 For each `(provider, topology)` cell that has at least one feature test, run three measured iterations. Current baseline example for `control-gateway-dev-prod` + Docker:
 
@@ -2724,7 +2724,7 @@ done
 
 Capture wall-clock from each log (sum of the `[orbit-e2e]` `acquire`, test runtime, and `cleanup` lines, or use `time` on the outer composer call).
 
-- [ ] Run three Incus timing samples on the same topology sizes.
+- [x] Run three Incus timing samples on the same topology sizes.
 
 ```bash
 for i in 1 2 3; do
@@ -2733,20 +2733,28 @@ for i in 1 2 3; do
 done
 ```
 
-- [ ] Record measured medians in this plan.
+- [x] Record measured medians in this plan.
 
 Add a `Measured Results` section with one table per topology size. Do not commit sample placeholders; write rows only with real measured values:
 
-```markdown
 ### Measured Results — control-gateway-dev-prod
 
 | Provider | Run 1 | Run 2 | Run 3 | Median | Acquire dominant? |
 | --- | --- | --- | --- | --- | --- |
-```
+| Docker on Beast via OrbStack CLI (`ORBIT_E2E_DOCKER_HOSTS=beast`) | 209.78s | 176.84s | 170.55s | 176.84s | Yes; container start and gateway restart dominate. |
+| Incus | 165.36s | 186.64s | 218.15s | 186.64s | Yes; clone/start, SSH authorization, snapshots, and WireGuard dominate. |
+
+Notes:
+
+- Measurement command used `NodeListTopology` because `control-gateway-dev-prod` is the only topology size with a Docker feature script in this plan.
+- Docker logs were written to `/tmp/orbit-e2e-docker-cgdp-task8-cleanup-{1,2,3}.log`.
+- Incus logs were written to `/tmp/orbit-e2e-incus-cgdp-task8-{1,2,3}.log`.
+- Docker cleanup timings required flushing the standalone `E2ETopologyLease::cleanup()` timer; without that flush, `cleanup.network` was measured but not emitted in ordinary non-reset cleanup paths.
+- Median Docker `docker.network` was 0.849s and median Docker `cleanup.network` was 1.103s. `(0.849 + 1.103) / 176.84 = 1.1%`, below the 10% per-worker network threshold.
 
 Commit only real measured values.
 
-- [ ] Decide provider order from data.
+- [x] Decide provider order from data.
 
 If Docker median is materially faster (>= 2x) and the per-topology feature tests do not require VM capabilities, update recommended feature-lane examples to:
 
@@ -2758,11 +2766,15 @@ If Docker becomes part of the recommended automatic pool, update `E2EConfig::top
 
 If Docker is not materially faster, keep Incus first and document Docker as an optional local debugging lane.
 
-- [ ] Decide whether per-worker network sharing is justified.
+Decision: keep Incus as the `auto` provider and keep Docker as an explicit feature lane for local/offloaded debugging. Docker's median was 176.84s versus Incus at 186.64s, about 5% faster, not the required >= 2x improvement. Do not update `E2EConfig::topologyProviderNames()` for `auto`.
+
+- [x] Decide whether per-worker network sharing is justified.
 
 Compute `(median docker.network + median docker.cleanup-network) / median test wall time` from the Task 8 timings. If the ratio exceeds **10%**, implement per-worker network sharing per the design below as a follow-up task. Otherwise, leave the per-test network in place — the overhead does not justify the cleanup complexity.
 
 Record the ratio in the `Measured Results` tables alongside the timing data.
+
+Decision: leave Docker network mode at per-test. The measured Docker network create/delete ratio was 1.1% of median wall time, below the 10% threshold. Per-worker network sharing would add cleanup complexity without enough measured benefit.
 
 ### Per-Worker Network Design (Deferred Implementation)
 
@@ -2802,7 +2814,7 @@ git commit -m "docs: record docker e2e timing decision"
 
 This task uses `DOCKER_HOST=ssh://host` as the remote transport, not `ssh host docker ...`. The persistent connection is materially faster, the Docker CLI handles auth, and there is no command quoting layer. Implement this after the local Docker MVP works; it is useful even before Docker becomes the default because it lets a low-resource development machine run Pest locally while `beast` runs the Docker containers.
 
-- [ ] Add config tests for remote Docker hosts.
+- [x] Add config tests for remote Docker hosts.
 
 ```php
 it('parses docker topology hosts independently from incus hosts', function (): void {
@@ -2834,7 +2846,7 @@ php artisan test --compact tests/Feature/E2EConfigTest.php --filter='docker topo
 
 Expected: fail until the config properties are added.
 
-- [ ] Add Docker host pool config.
+- [x] Add Docker host pool config.
 
 In `E2EConfig`, add:
 
@@ -2855,7 +2867,7 @@ In `forHost()`, preserve both fields.
 
 Also update the Task 9 config tests to assert `$config->forHost('sidecar1')` preserves `dockerHosts` and `dockerMaxContainersPerHost`. `E2EConfig` uses named constructor arguments; forgetting `forHost()` will fail at runtime only when pooled providers switch hosts.
 
-- [ ] Teach `DockerHost` to target local or remote Docker daemons via `DOCKER_HOST=ssh://`.
+- [x] Teach `DockerHost` to target local or remote Docker daemons via `DOCKER_HOST=ssh://`.
 
 Use this constructor:
 
@@ -2883,7 +2895,7 @@ public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
 
 This keeps the command string identical for local and remote runs — the Docker CLI on the local machine becomes the client, and the daemon over SSH becomes the server. Container exec, network create, image inspect, and so on all use the same docker subcommands without any wrapping.
 
-- [ ] Add host capacity selection.
+- [x] Add host capacity selection.
 
 In `DockerTopologyProvider`, choose the first Docker host where:
 
@@ -2899,7 +2911,7 @@ docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'
 
 Do not rely on `^orbit-e2e` anchoring in Docker's `name` filter. Parse the names returned by Docker and count only those where `str_starts_with($name, $this->config->instancePrefix.'-')`.
 
-- [ ] Document optional Docker host pooling.
+- [x] Document optional Docker host pooling.
 
 Add:
 

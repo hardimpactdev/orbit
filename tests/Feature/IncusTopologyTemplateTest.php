@@ -28,6 +28,7 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
 {
     return new E2EConfig(
         providerNames: ['incus'],
+        topologyProviderNames: ['incus'],
         host: 'beast',
         sourceImage: '',
         blankImage: '',
@@ -47,6 +48,8 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
         topologyCpus: $topologyCpus,
         topologyMemory: $topologyMemory,
         incusMaxVmsPerHost: 4,
+        dockerHosts: ['local'],
+        dockerMaxContainersPerHost: 8,
         keep: false,
     );
 }

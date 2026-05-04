@@ -36,7 +36,10 @@
         "psr-4": {
             "OrbitDocsLinter\\": "tool/docs-linter/src/",
             "Tests\\": "tests/"
-        }
+        },
+        "files": [
+            "tests/Helpers/E2EEnvironment.php"
+        ]
     },
     "scripts": {
         "setup": [
@@ -54,7 +57,7 @@
         "docs-lint": "@php tool/docs-linter/docs-linter.php --strict --format=agent",
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php artisan test --exclude-group=e2e"
+            "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
@@ -102,8 +105,26 @@
             "@test:e2e:topology-contract",
             "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=3"
         ],
+        "test:e2e:features:docker": [
+            "Composer\\Config::disableProcessTimeout",
+            "@test:e2e:features:docker:control-gateway-dev-prod"
+        ],
+        "test:e2e:features:docker:control-gateway-dev-prod": [
+            "Composer\\Config::disableProcessTimeout",
+            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args",
+            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args"
+        ],
         "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud",
         "e2e:reap-incus": "@php artisan e2e:reap-incus",
+        "e2e:reap-docker": "@php artisan e2e:reap-docker",
+        "e2e:prepare-docker-runtime": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan e2e:prepare-docker-runtime"
+        ],
+        "e2e:prepare-docker-topology": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan e2e:prepare-docker-topology"
+        ],
         "e2e:prepare-hcloud-images": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-hcloud-images"

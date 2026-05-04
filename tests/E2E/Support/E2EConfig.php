@@ -9,6 +9,8 @@ final readonly class E2EConfig
     public function __construct(
         /** @var list<string> */
         public array $providerNames,
+        /** @var list<string> */
+        public array $topologyProviderNames,
         public string $host,
         public string $sourceImage,
         public string $blankImage,
@@ -28,6 +30,9 @@ final readonly class E2EConfig
         public string $topologyCpus,
         public string $topologyMemory,
         public int $incusMaxVmsPerHost,
+        /** @var list<string> */
+        public array $dockerHosts,
+        public int $dockerMaxContainersPerHost,
         public bool $keep,
     ) {}
 
@@ -35,6 +40,7 @@ final readonly class E2EConfig
     {
         return new self(
             providerNames: self::providerNames(),
+            topologyProviderNames: self::topologyProviderNames(),
             host: self::envString('ORBIT_E2E_HOST', 'beast'),
             sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04/cloud')),
             blankImage: self::envString('ORBIT_E2E_BLANK_IMAGE', 'orbit-blank-ubuntu-26.04'),
@@ -54,8 +60,36 @@ final readonly class E2EConfig
             topologyCpus: self::envString('ORBIT_E2E_TOPOLOGY_CPUS', '1'),
             topologyMemory: self::envString('ORBIT_E2E_TOPOLOGY_MEMORY', '2GiB'),
             incusMaxVmsPerHost: self::envInt('ORBIT_E2E_INCUS_MAX_VMS_PER_HOST', 4),
+            dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
+            dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 8),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function topologyProviderNames(): array
+    {
+        $providers = self::envString('ORBIT_E2E_TOPOLOGY_PROVIDERS', '');
+
+        if ($providers !== '') {
+            $names = self::parseProviderNames($providers);
+
+            return in_array('auto', $names, true) ? ['incus'] : $names;
+        }
+
+        $provider = self::envString('ORBIT_E2E_TOPOLOGY_PROVIDER', '');
+
+        if ($provider !== '') {
+            if ($provider === 'auto') {
+                return ['incus'];
+            }
+
+            return self::parseProviderNames($provider);
+        }
+
+        return ['incus'];
     }
 
     /**
@@ -116,6 +150,7 @@ final readonly class E2EConfig
     {
         return new self(
             providerNames: $this->providerNames,
+            topologyProviderNames: $this->topologyProviderNames,
             host: $host,
             sourceImage: $this->sourceImage,
             blankImage: $this->blankImage,
@@ -135,6 +170,8 @@ final readonly class E2EConfig
             topologyCpus: $this->topologyCpus,
             topologyMemory: $this->topologyMemory,
             incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
+            dockerHosts: $this->dockerHosts,
+            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
         );
     }

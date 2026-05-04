@@ -14,6 +14,7 @@ final class E2ETopologyLease
      *     snapshotReset: (\Closure(E2EPhaseTimer): void)|null
      * }  $rebuild
      * @param  (\Closure(E2EPhaseTimer): void)|null  $snapshotReset
+     * @param  (\Closure(E2EPhaseTimer): void)|null  $teardown
      */
     public function __construct(
         private readonly E2ETopologyKind $kind,
@@ -24,6 +25,7 @@ final class E2ETopologyLease
         private readonly SshKeyPair $sshKeyPair,
         private readonly \Closure $rebuild,
         private ?\Closure $snapshotReset = null,
+        private readonly ?\Closure $teardown = null,
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -64,11 +66,22 @@ final class E2ETopologyLease
 
         $this->cleaned = true;
 
+        $shouldFlush = $timer === null;
         $timer ??= new E2EPhaseTimer;
 
-        foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod] as $role => $instance) {
-            if ($instance !== null) {
-                $timer->measure("cleanup.{$role}", fn () => $instance->delete());
+        try {
+            foreach (['control' => $this->control, 'gateway' => $this->gateway, 'dev' => $this->dev, 'prod' => $this->prod] as $role => $instance) {
+                if ($instance !== null) {
+                    $timer->measure("cleanup.{$role}", fn () => $instance->delete());
+                }
+            }
+
+            if ($this->teardown !== null) {
+                $timer->measure('cleanup.teardown', fn () => ($this->teardown)($timer));
+            }
+        } finally {
+            if ($shouldFlush) {
+                $timer->flush('cleanup');
             }
         }
     }

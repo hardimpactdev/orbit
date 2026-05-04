@@ -91,13 +91,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
         ->and($gatewaySettings['gateway_wg_ip'])->toBe('10.6.0.2')
         ->and($gatewaySettings['ca_pem_path'])->toContain('storage/app/orbit/gateway-ca/orbit.crt');
 
-    E2ECommand::ssh(
-        $control,
-        $config->controlUser,
-        $key,
-        'curl --connect-timeout 2 --max-time 5 -fsS http://10.6.0.2/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://10.6.0.2/api/me >/dev/null',
-        timeoutSeconds: 15,
-    );
+    E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
 
     $gatewayNode = E2EGatewayApi::getNode($gateway, 'gateway');
     $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');

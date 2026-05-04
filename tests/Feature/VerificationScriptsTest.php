@@ -44,7 +44,10 @@ it('runs ephemeral e2e through the opt-in Pest suite', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['test'])
-        ->toContain('@php artisan test --exclude-group=e2e');
+        ->sequence(
+            fn ($script) => $script->toContain('artisan config:clear'),
+            fn ($script) => $script->toContain('pest --exclude-group=e2e'),
+        );
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
@@ -161,4 +164,18 @@ it('exposes opt-in parallel feature e2e after topology contracts', function (): 
         '@test:e2e:topology-contract',
         'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=3',
     ]);
+});
+
+it('exposes docker feature e2e only for topology groups with tests', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($composer['scripts']['test:e2e:features:docker'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        '@test:e2e:features:docker:control-gateway-dev-prod',
+    ])->and($composer['scripts']['test:e2e:features:docker:control-gateway-dev-prod'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args',
+    ])->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker:control')
+        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker:control-gateway');
 });

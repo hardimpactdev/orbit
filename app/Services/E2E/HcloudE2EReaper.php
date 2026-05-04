@@ -95,8 +95,8 @@ final class HcloudE2EReaper
                 ],
                 $items,
             ),
-            fn (array $resource): bool => ! str_starts_with($resource['name'], 'orbit-ready-')
-                && ! str_starts_with($resource['name'], 'orbit-template-'),
+            fn (array $resource): bool => ! str_starts_with((string) $resource['name'], 'orbit-ready-')
+                && ! str_starts_with((string) $resource['name'], 'orbit-template-'),
         ));
     }
 

@@ -22,6 +22,7 @@ function e2eConfig(string $host = 'beast'): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
+        topologyProviderNames: ['incus'],
         host: $host,
         sourceImage: 'images:ubuntu/26.04/cloud',
         blankImage: 'orbit-blank-ubuntu-26.04',
@@ -41,6 +42,8 @@ function e2eConfig(string $host = 'beast'): E2EConfig
         topologyCpus: '1',
         topologyMemory: '2GiB',
         incusMaxVmsPerHost: 4,
+        dockerHosts: ['local'],
+        dockerMaxContainersPerHost: 8,
         keep: false,
     );
 }

@@ -15,6 +15,7 @@ afterEach(function (): void {
 it('cleanup is idempotent', function (): void {
     $control = m::mock(E2EInstance::class);
     $control->shouldReceive('delete')->once();
+    $teardownCalls = 0;
 
     $lease = new E2ETopologyLease(
         kind: E2ETopologyKind::Control,
@@ -24,10 +25,15 @@ it('cleanup is idempotent', function (): void {
         prod: null,
         sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
         rebuild: fn () => [],
+        teardown: function () use (&$teardownCalls): void {
+            $teardownCalls++;
+        },
     );
 
     $lease->cleanup();
     $lease->cleanup();
+
+    expect($teardownCalls)->toBe(1);
 });
 
 it('reset calls cleanup and acquires fresh instances', function (): void {
@@ -154,6 +160,7 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
         $oldControl->shouldReceive('delete')->once();
 
         $newControl = m::mock(E2EInstance::class);
+        $teardownCalls = 0;
 
         $lease = new E2ETopologyLease(
             kind: E2ETopologyKind::Control,
@@ -166,11 +173,15 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
                 'instances' => ['control' => $newControl],
                 'snapshotReset' => null,
             ],
+            teardown: function () use (&$teardownCalls): void {
+                $teardownCalls++;
+            },
         );
 
         $lease->reset();
 
-        expect($lease->control())->toBe($newControl);
+        expect($lease->control())->toBe($newControl)
+            ->and($teardownCalls)->toBe(1);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');

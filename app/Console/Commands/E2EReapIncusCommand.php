@@ -168,7 +168,7 @@ class E2EReapIncusCommand extends Command
         return Process::timeout($host->config->timeoutSeconds)
             ->run(sprintf(
                 'ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 %s %s',
-                escapeshellarg($host->config->host),
+                escapeshellarg((string) $host->config->host),
                 escapeshellarg($remoteCommand),
             ));
     }
@@ -183,7 +183,7 @@ class E2EReapIncusCommand extends Command
         return Process::timeout($host->config->timeoutSeconds)
             ->run(sprintf(
                 'ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 %s %s',
-                escapeshellarg($host->config->host),
+                escapeshellarg((string) $host->config->host),
                 escapeshellarg($remoteCommand),
             ));
     }
