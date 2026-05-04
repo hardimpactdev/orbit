@@ -9,94 +9,65 @@ You are the one-shot orchestrator for the Orbit Solo loop.
    - `docs/superpowers/plans/solo-orchestration/README.md`
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - `docs/superpowers/plans/solo-orchestration/references/dispatch-protocol.md`
-   - `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`
-   - `docs/PORTING.md`
-   - `TESTING.md` when dispatching E2E
    - active Solo todos, locks, blockers, processes, timers, and relevant comments
 
-2. Confirm the Solo project is `orbit`, read the `coordination_todo` from
-   `control-config.md`, and append:
-   `CYCLE_STARTED process=<id>`.
+2. Confirm project `orbit`; append `CYCLE_STARTED process=<id>` to
+   `coordination_todo`.
 
-3. Read `git status --short --branch` and keep only the dispatch-relevant
-   summary: clean, tracked changes, untracked changes, or conflicting ownership.
+3. If the dispatchable worker-ready count is below `pipeline.ready_target`,
+   maybe spawn one pipeline filler per `dispatch-protocol.md`.
 
-4. Reconcile state using `todo-state.md`:
-   - structured todo state wins over stale comments;
-   - one live owner per todo;
-   - close consumed helper processes only after their result label is recorded.
-     This includes scouts, implementers, reviewers, E2E runners, and rubber
-     ducks. A helper is "consumed" once its terminal label is on the todo
-     (`SCOUT_REPORT`, `WORKER_DONE`, `REVIEW_APPROVED` / `CHANGES_REQUESTED` /
-     `NEEDS_DIRECTION`, `E2E_DONE`, `RUBBER_DUCK_PROPOSAL`). Post
-     `PROCESS_CLOSED process=<id> reason=<role>` and call `close_process`.
-     Duck processes are closed individually once each posts its proposal; do
-     not wait for the pair to agree.
+4. Run reconciliation first:
+   - if a reconciler is live, wait for `RECONCILE_CYCLE_DONE` or report blocked;
+   - otherwise spawn `agents.reconciler` as `RECONCILE <run_id>`:
+     ```text
+     You are the Orbit Solo reconciler. Read docs/superpowers/plans/solo-orchestration/reconciler.md and execute exactly once.
 
-5. Handle completed helper outcomes:
-   - reviewer results: approve, route changes, or leave `needs-direction`;
-   - E2E results: complete passed gates, route failures, or report skips;
-   - rubber-duck proposals: when both ducks of a pair have posted, resume only
-     on matching `PATH` proposals; in all cases ensure both duck processes are
-     closed per step 4.
+     Parameters:
+     - coordination_todo: <coordination_todo>
+     ```
+   - wait for `RECONCILE_CYCLE_DONE`;
+   - if reconciliation reports `BLOCKED` or `NEEDS_DIRECTION`, report and exit.
 
-6. Close any implementation or E2E gate todo whose close-out rules in
-   `todo-state.md` are satisfied.
+5. Only after reconciliation reports `DONE`, dispatch at most one implementation
+   path while below `concurrency.max_active_implementers`:
+   - if no `WORKTREE_PREPARED`, spawn workspace setup:
+     - agent: `agents.workspace_setup`
+     - name: `WORKTREE-SETUP <todo_id> <branch>`
+     - prompt:
+       ```text
+       You are the Orbit Solo workspace setup helper. Read docs/superpowers/plans/solo-orchestration/references/workspace-setup.md and execute exactly once.
 
-7. Dispatch at most one reviewer for one eligible `review-ready` todo.
+       Parameters:
+       - todo_id: <todo_id>
+       - branch: <branch>
+       - path: <path>
+       - base_ref: <base_ref>
+       - coordination_todo: <coordination_todo>
+       - product_docs: <docs named by todo, e.g. docs/commands/6_workspace/2_workspace-setup/workspace-setup.md>
+       ```
+   - if `WORKTREE_SETUP_FAILED`, skip implementation dispatch;
+   - if `WORKTREE_PREPARED`, spawn the implementer with recorded worktree
+     payload.
 
-8. Dispatch at most one implementer for one eligible `worker-ready` todo while
-   active implementers are below `concurrency.max_active_implementers`. Prefer
-   eligible ids listed in `pipeline.dispatch_order`; then sort by priority
-   high-to-low and lowest id. Before spawning the implementer, create and
-   prepare its git worktree. Use `.worktrees/solo-<todo-id>` as the default path
-   and branch name, run the minimal Laravel setup needed for the assigned
-   focused gates, and add the worktree path plus prep evidence to the dispatch
-   context. If worktree preparation fails, do not dispatch the implementer;
-   route or report the prep failure instead.
+6. Record loop-clock timer state only; do not set timers.
 
-9. Count the dispatchable `worker-ready` todos using `todo-state.md`
-   eligibility (open, unblocked, unlocked, `worker-ready`, no live owner, not
-   tagged `e2e-gate`). Spawn one pipeline filler only when **all** of the
-   following are true:
-   - `pipeline.filler_enabled` is `true`;
-   - the dispatchable count is strictly less than `pipeline.ready_target`;
-   - no pipeline filler is already running, and no live scout process exists;
-   - the most recent coordination-todo entry for the filler is not still
-     `PIPELINE_FILL_STARTED` without a matching `PIPELINE_FILL_DONE`.
-
-   Otherwise, do not spawn a filler this cycle. Record the observed count and
-   the spawn decision in the cycle report. The target must always come from
-   `pipeline.ready_target` in `control-config.md`; do not pass or preserve any
-   assignment-level target that conflicts with the control file.
-
-10. Dispatch at most one E2E runner for one eligible `e2e-ready` gate. Use only
-    the lane declared on the gate todo and the Pest E2E commands in
-    `TESTING.md`.
-
-11. For one blocked todo with no live duck pair, spawn the configured rubber
-    duck pair.
-
-12. Check loop-clock timer state and record `present`, `missing`, or
-    `disabled`. Do not set timers.
-
-13. Append one compact report to the coordination todo and exit:
+7. Append one compact report to the coordination todo and exit:
 
 ```text
 CYCLE_DONE status=DONE|BLOCKED|NEEDS_DIRECTION
 
 actions:
-  - <spawned|closed|routed|blocked action>
+  - <spawned|blocked action>
 state:
-  - ready_todos: <count and ids>
+  - reconciliation: <spawned|live|clear>
   - dispatchable_worker_ready: <count> / target=<pipeline.ready_target>
-  - filler_decision: <spawned|skipped:at_or_above_target|skipped:already_running|skipped:disabled>
+  - filler_decision: <spawned|skipped:reason>
   - active_processes: <role/id list>
-  - blocked_todos: <ids or none>
   - next_clock_timer: <present|missing|disabled>
 risks:
   - <remaining ambiguity or none>
 ```
 
-Use `dispatch-protocol.md` for helper startup. Do not implement, review product
-diffs, run product tests, or continue after the report.
+Do not implement, review product diffs, run product tests, reconcile state
+yourself, or continue after the report.

@@ -12,6 +12,7 @@ You are the one-shot E2E runner for exactly one gate todo.
    - `TESTING.md`
    - `docs/PORTING.md`
    - relevant `docs/commands/**`
+   - assigned worktree path, branch, or committed ref from the gate context
    - `git log -1 --stat`
 
 2. Confirm the gate declares `lane=e2e-provisioning`, `lane=e2e-feature`, or
@@ -22,16 +23,22 @@ You are the one-shot E2E runner for exactly one gate todo.
    - `e2e-feature`: prepared ephemeral topology feature flow.
    - `none`: no command run.
 
-4. If context or prerequisites are missing, post
+4. For `e2e-feature`, confirm the command will install or overlay the assigned
+   worktree checkout into the disposable topology clone. For committed-batch
+   gates, confirm the declared ref is the checkout under test. If the lane would
+   test a stale installed `orbit` CLI or a shared checkout instead, post
+   `E2E_DONE status=SKIPPED` and explain the missing checkout-overlay support.
+
+5. If context or prerequisites are missing, post
    `E2E_DONE status=SKIPPED` with the reason and exit.
 
-5. Run each declared command exactly once, in order, with `ORBIT_E2E_KEEP=0`
+6. Run each declared command exactly once, in order, with `ORBIT_E2E_KEEP=0`
    unless the gate explicitly requests triage keep.
 
-6. Stop at the first failure. Capture command, exit code, elapsed time, cleanup
+7. Stop at the first failure. Capture command, exit code, elapsed time, cleanup
    status, and the shortest useful stdout/stderr summary.
 
-7. Post exactly one report on the gate todo and exit:
+8. Post exactly one report on the gate todo and exit:
 
 ```text
 E2E_DONE status=PASSED|FAILED|SKIPPED lane=<e2e-provisioning|e2e-feature|none>
@@ -43,6 +50,7 @@ failures:
     relevant_files: <paths from committed batch or n/a>
 evidence:
   - commit: <ref>
+  - worktree: <path or n/a>
   - testing_md: <section or rule>
   - vm_cleanup: <yes|no|n/a>
 ```

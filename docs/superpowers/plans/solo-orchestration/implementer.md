@@ -44,11 +44,12 @@ You are the implementation worker for exactly one Solo todo.
    belong to another worker and leave them untouched.
 
 5. Treat current product docs as authority. Code and `../orbit-old-may` are
-   evidence, not permission to change the product contract. If product docs are
-   missing, contradictory, or appear wrong for the assigned implementation, mark
-   `needs-direction`, release the lock, post
-   `WORKER_DONE status=NEEDS_DIRECTION`, and exit. Do not revise product
-   authority docs unless this todo explicitly owns that docs/design change.
+   evidence, not permission to change the product contract. If this todo
+   explicitly owns a product contract change, update the docs first in this
+   worktree, then implement code against those docs. If product docs are
+   missing, contradictory, or appear wrong outside an owned docs/design change,
+   mark `needs-direction`, release the lock, post
+   `WORKER_DONE status=NEEDS_DIRECTION`, and exit.
 
 6. If context is missing, scope is wrong, docs conflict, a required abstraction
    file is missing, or the required E2E lane is unsafe, mark `needs-direction`,

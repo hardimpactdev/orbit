@@ -15,13 +15,18 @@ You are the one-shot reviewer for exactly one Solo todo.
    - relevant `docs/commands/**`
    - `docs/PORTING.md`
    - relevant `../orbit-old-may` evidence
+   - assigned worktree path, branch, base ref, and `WORKTREE_PREPARED` evidence
    - changed files, gate evidence, E2E evidence or deferral, and related process state
    - other open Solo todos that were `in-progress` while this work ran, plus
      their `Owned Files Or Domains` (used in step 3 as foreign scope)
 
 2. Review against the todo contract, current docs, legacy evidence handling,
    owned scope, non-goals, focused gates, E2E evidence, safety, and tag/lock
-   state.
+   state. Inspect the assigned worktree diff rather than a shared checkout. If
+   the worktree payload is missing or points at a different branch than the
+   implementer used, choose `NEEDS_DIRECTION`. If the todo changed product
+   contract behavior, verify the product docs changed in the same worktree and
+   were treated as the implementation source of truth.
 
 3. Verify parallel-scope hygiene. List every other todo currently or recently
    tagged `in-progress` while this work was active and read their

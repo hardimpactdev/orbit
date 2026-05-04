@@ -11,6 +11,7 @@ phase tags, lifecycle labels, dispatch eligibility, and close-out rules.
 Every worker todo must state:
 
 - objective;
+- worktree assignment, once dispatched;
 - scope and non-goals;
 - sequencing and blockers;
 - product authority;
@@ -27,6 +28,14 @@ Every worker todo must state:
 ### Objective
 
 <Observable outcome. Describe behavior, not preferred internals.>
+
+### Worktree Assignment
+
+- Path: <filled by orchestrator at dispatch, for example .worktrees/solo-123>
+- Branch: <filled by orchestrator at dispatch, for example solo-123>
+- Base ref: <filled by orchestrator at dispatch>
+- Prep evidence:
+  - <filled by orchestrator, command plus exit code>
 
 ### Scope
 
@@ -84,3 +93,8 @@ A worker todo can become `worker-ready` only when it matches this template and
 the `todo-state.md` dispatch rules. An E2E gate todo can become `e2e-ready`
 only when it declares a valid lane and command list and follows those same
 state rules.
+
+`Worktree Assignment` is intentionally blank while the todo is draft or
+`worker-ready`. The orchestrator fills it immediately before implementer
+dispatch. If the section is still blank after `WORKER_STARTED`, the worker must
+stop with `NEEDS_DIRECTION`.

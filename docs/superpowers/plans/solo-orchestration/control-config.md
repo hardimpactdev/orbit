@@ -26,10 +26,12 @@ concurrency:
 agents:
   loop_clock: claude-sonnet-low
   orchestrator: claude-sonnet-low
+  workspace_setup: claude-sonnet-low
   pipeline_filler: claude-opus-xhigh
   todo_scout: gemini-3.1-pro-preview
   implementation: opencode-kimi-k2.6
   reviewer: gemini-3.1-pro-preview
+  reconciler: claude-opus-xhigh
   e2e: claude-opus-xhigh
   rubber_duck_1: gemini-3.1-pro-preview
   rubber_duck_2: claude-opus-max

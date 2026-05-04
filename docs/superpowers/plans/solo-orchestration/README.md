@@ -31,9 +31,14 @@ Source of truth for Orbit's Solo orchestration loop.
 - `pipeline-filler.md`: create or refresh draft todos and scout them.
 - `todo-scout.md`: validate exactly one draft todo before it can become
   `worker-ready`.
+- `references/workspace-setup.md`: prepare one todo's isolated git worktree
+  before implementation dispatch.
 - `implementer.md`: complete exactly one todo, including focused tests and the
   declared E2E lane.
 - `reviewer.md`: review exactly one `review-ready` todo.
+- `reconciler.md`: reconcile state, clean up idle Solo agents, dispatch
+  review/E2E/duck helpers, merge verified implementation work to `main`, and
+  clean up worktrees.
 - `rubber-duck.md`: independently resolve one blocker, in a pair.
 - `e2e.md`: rerun one gate todo's declared E2E lane in a clean state.
 
@@ -90,12 +95,14 @@ concurrency:
 agents:
   loop_clock: claude-sonnet-low
   orchestrator: claude-sonnet
+  workspace_setup: claude-sonnet-low
   pipeline_filler: claude-opus
   todo_scout: gemini-3.1-pro-preview
   reviewer: gemini-3.1-pro-preview
   implementation: opencode-kimi-k2.6
   rubber_duck_1: gemini-3.1-pro-preview
   rubber_duck_2: claude-opus
+  reconciler: claude-sonnet-low
   e2e: claude-opus
 
 safety:
@@ -304,12 +311,12 @@ Do not replace a focused gate with a broader gate unless the todo says so.
 ## Worktree Isolation
 
 Every implementation todo runs in its own git worktree and branch. The
-orchestrator creates and prepares the worktree before dispatch. Use
-`.worktrees/solo-<todo-id>` as the default local path and branch name unless
-that branch already exists or the todo needs a clearer unique suffix. That
-worktree is the only checkout the worker may use for implementation, focused
-gates, and feature E2E evidence. Workers must not implement from `main` or from
-a shared dirty checkout.
+orchestrator spawns the workspace setup helper before implementation dispatch.
+Use `.worktrees/solo-<todo-id>` as the default local path and `solo-<todo-id>`
+as the default branch name unless that branch already exists or the todo needs a
+clearer unique suffix. That worktree is the only checkout the worker may use for
+implementation, focused gates, and feature E2E evidence. Workers must not
+implement from `main` or from a shared dirty checkout.
 
 Worktree preparation means enough Laravel setup for the worker's assigned
 focused gates to run without rediscovering bootstrap steps. At minimum, the
@@ -317,7 +324,9 @@ orchestrator should install Composer dependencies, ensure the app environment is
 usable for tests, and record the worktree path plus prep evidence on the todo
 before spawning the implementer. If preparation fails, leave the todo
 non-dispatched and route the failure instead of asking the worker to start from
-a broken checkout.
+a broken checkout. The operational command sequence lives in the workspace setup
+prompt at
+`docs/superpowers/plans/solo-orchestration/references/workspace-setup.md`.
 
 Product authority docs are read-only for normal implementation todos. If the
 assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,

@@ -45,12 +45,13 @@ composer test:e2e:provisioning --filter='NodeNewGateway'
 The first ephemeral E2E harness uses Incus VMs on the configured E2E host
 (`beast` by default). Run
 `php artisan e2e:prepare-incus-images --role=blank --force` to build or replace the reusable
-`orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The default
-`composer test:e2e` path launches one disposable VM from that blank image,
-injects an ephemeral SSH key for the non-`orbit` bootstrap user, verifies SSH
-from the host into the VM, and deletes the VM. The blank image intentionally does
-not use `orbit` as the bootstrap user so gateway and app provisioning tests can
-prove Orbit creates or prepares the node-side `orbit` user itself.
+`orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The `composer test:e2e` command runs the full ephemeral E2E suite (provisioning
+followed by features). The provisioning lane includes a blank VM lifecycle test
+that launches one disposable VM from that blank image, injects an ephemeral SSH
+key for the non-`orbit` bootstrap user, verifies SSH from the host into the VM,
+and deletes the VM. The blank image intentionally does not use `orbit` as the
+bootstrap user so gateway and app provisioning tests can prove Orbit creates or
+prepares the node-side `orbit` user itself.
 
 Run `php artisan e2e:prepare-incus-images --role=control --force` to build or replace the reusable
 `orbit-ready-control` image from the blank image. That lane ships the current
@@ -72,6 +73,12 @@ current Orbit source and `bin/install-orbit` into a disposable VM, installs the
 development-app node prerequisites and CLI as the `orbit` user with
 `--role=app`, verifies `orbit --version`, then publishes the ready image.
 
+Run `php artisan e2e:prepare-incus-images --role=prodapp --force` to build or replace the reusable
+`orbit-ready-prodapp` Incus image from the blank image. That lane ships the
+current Orbit source and `bin/install-orbit` into a disposable VM, installs the
+production-app node prerequisites and CLI as the `orbit` user with
+`--role=app`, verifies `orbit --version`, then publishes the ready image.
+
 Run `composer test:e2e:provisioning --filter='NodeNewGateway'` to exercise the first-gateway bootstrap path.
 This lane launches one disposable VM from the ready control image and one from
 the blank image, injects an ephemeral SSH key into both, runs
@@ -84,7 +91,7 @@ user; SSH access from the control VM to the gateway as `orbit` is not yet
 verified because runtime-user SSH key distribution is not yet implemented.
 The VMs are destroyed at the end unless `ORBIT_E2E_KEEP=1`.
 
-Run `composer test:e2e:provisioning --filter='GatewayAdd'` to exercise control-node onboarding against a
+Run `ORBIT_E2E=1 php artisan test --testsuite=E2E --filter='GatewayAdd'` to exercise control-node onboarding against a
 prepared gateway VM. This lane launches one disposable VM from the ready control
 image and one from the ready gateway image, injects an ephemeral SSH key into
 both, configures a dummy network interface on the gateway VM with the expected
@@ -109,7 +116,6 @@ ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
 ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
-ORBIT_E2E_DEVAPP_IMAGE=orbit-ready-devapp
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
@@ -231,7 +237,7 @@ Common requirements for every prepared topology:
 `control-gateway-dev`:
 
 - includes everything from `control-gateway`;
-- one development app clone is available through the `dev` topology handle;
+- one development app clone is available through the `devApp()` topology handle;
 - the development app node is named `app-dev-1`;
 - the gateway registry stores it as role `app`, environment `development`,
   TLD `test`, user `orbit`, and gateway endpoint `10.6.0.2`;
@@ -243,7 +249,7 @@ Common requirements for every prepared topology:
 `control-gateway-dev-prod`:
 
 - includes everything from `control-gateway-dev`;
-- one production app clone is available through the `prod` topology handle;
+- one production app clone is available through the `prodApp()` topology handle;
 - the production app node is named `app-prod-1`;
 - the gateway registry stores it as role `app`, environment `production`, no
   development TLD, user `orbit`, and gateway endpoint `10.6.0.2`;
@@ -271,8 +277,12 @@ composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
+# Prepare Hcloud feature topology images
+composer e2e:prepare-hcloud-images
+
 # Reap stale Incus VMs and images created by E2E tests
 composer e2e:reap-incus
+composer e2e:reap-hcloud
 composer e2e:reap-docker
 composer e2e:reap-docker -- --force --older-than=0m
 ```
