@@ -20,6 +20,8 @@ You are the implementation worker for exactly one Solo todo.
    - E2E gate todo, if assigned
    - relevant `../orbit-old-may` evidence
    - current code, tests, and worktree diff in owned scope
+   - other open Solo todos currently tagged `in-progress` and their
+     `Owned Files Or Domains` (used in step 3 as foreign scope)
 
 2. Lock the todo, add `in-progress`, remove `worker-ready`, and post
    `WORKER_STARTED process=<id>`.

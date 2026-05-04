@@ -16,6 +16,8 @@ You are the one-shot reviewer for exactly one Solo todo.
    - `docs/PORTING.md`
    - relevant `../orbit-old-may` evidence
    - changed files, gate evidence, E2E evidence or deferral, and related process state
+   - other open Solo todos that were `in-progress` while this work ran, plus
+     their `Owned Files Or Domains` (used in step 3 as foreign scope)
 
 2. Review against the todo contract, current docs, legacy evidence handling,
    owned scope, non-goals, focused gates, E2E evidence, safety, and tag/lock
