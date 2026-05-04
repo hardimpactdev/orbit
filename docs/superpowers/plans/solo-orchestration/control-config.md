@@ -13,7 +13,7 @@ loop_clock:
   interval_minutes: 10
 
 pipeline:
-  ready_target: 4
+  ready_target: 5
   filler_enabled: true
   dispatch_order:
     - 251

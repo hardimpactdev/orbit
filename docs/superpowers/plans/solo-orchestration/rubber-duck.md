@@ -23,7 +23,7 @@ You are one rubber duck in a two-agent blocker review.
 4. Return `verdict=PATH` only when that evidence selects one safe path aligned
    with the clean rebuild. Otherwise return `verdict=NEEDS_USER_DIRECTION`.
 
-5. Post exactly one proposal on the blocked todo and exit:
+5. Post exactly one proposal on the blocked todo as a comment and exit:
 
 ```text
 RUBBER_DUCK_PROPOSAL agent=<configured-agent-string> verdict=PATH
