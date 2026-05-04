@@ -103,6 +103,7 @@ class IncusTopologyBuilder
         $control->authorizeSsh($this->host->config->controlUser, $key);
         $control->waitForSsh($this->host->config->controlUser, $key);
         $controlIp = $control->waitForIpv4();
+        E2EControlIdentity::ensure($control, $this->host->config->controlUser, $key);
         $instances['control'] = $control;
 
         if (in_array('gateway', $roles, true)) {

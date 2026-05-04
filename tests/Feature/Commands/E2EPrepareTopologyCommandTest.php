@@ -6,6 +6,7 @@ use App\Console\Commands\E2EPrepareTopologyCommand;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 use Tests\E2E\Support\E2ETopologyKind;
+use Tests\E2E\Support\IncusHost;
 use Tests\E2E\Support\IncusTopologyBuilder;
 use Tests\E2E\Support\IncusTopologyTemplate;
 
@@ -145,10 +146,27 @@ it('is hidden', function (): void {
     expect($command->isHidden())->toBeTrue();
 });
 
-it('--force without configured Incus host fails clearly', function (): void {
+it('--force uses the default Incus host when host environment is unset', function (): void {
     $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
+    $manifest = [
+        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+    ];
+    $selectedHost = null;
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('build')
+        ->with(E2ETopologyKind::Control)
+        ->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(function (IncusHost $host) use ($builder, &$selectedHost): IncusTopologyBuilder {
+        $selectedHost = $host->config->host;
+
+        return $builder;
+    });
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
     putenv('ORBIT_E2E_INCUS_HOSTS=');
     putenv('ORBIT_E2E_HOST=');
@@ -159,7 +177,9 @@ it('--force without configured Incus host fails clearly', function (): void {
             'kind' => 'control',
             '--force' => true,
         ])
-            ->assertFailed();
+            ->assertSuccessful();
+
+        expect($selectedHost)->toBe('beast');
     } finally {
         $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
         $previousHost === false ? putenv('ORBIT_E2E_HOST') : putenv("ORBIT_E2E_HOST={$previousHost}");

@@ -133,6 +133,14 @@ final class E2ETopologyFactory
             $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
         }
 
+        if (isset($instances['control'], $primaryUsers['control'])) {
+            $timer->measure('control-identity', fn () => E2EControlIdentity::ensure(
+                $instances['control'],
+                $primaryUsers['control'],
+                $sshKeyPair,
+            ));
+        }
+
         foreach ($instances as $role => $instance) {
             $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
         }

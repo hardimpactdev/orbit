@@ -66,13 +66,13 @@ it('discovers prepared hcloud snapshots by logical image label', function (): vo
     Process::fake([
         'command -v hcloud >/dev/null' => Process::result(),
         'hcloud version' => Process::result(output: "hcloud v1.62.2\n"),
-        'hcloud server-type describe *' => Process::result(output: '{}'),
-        'hcloud image describe --architecture=x86 ubuntu-24.04 -o json >/dev/null' => Process::result(),
-        'hcloud image list --selector *control*' => Process::result(output: json_encode([
+        'hcloud server-type describe * -o json >/dev/null' => Process::result(output: '{}'),
+        'hcloud image describe --architecture=x86 * -o json >/dev/null' => Process::result(),
+        'hcloud image list --selector *control* --type snapshot -o json' => Process::result(output: json_encode([
             ['id' => 401, 'description' => 'orbit-ready-control-old', 'created' => '2026-05-03T08:00:00Z'],
             ['id' => 402, 'description' => 'orbit-ready-control', 'created' => '2026-05-03T09:00:00Z'],
         ], JSON_THROW_ON_ERROR)),
-        'hcloud image list --selector *gateway*' => Process::result(output: json_encode([
+        'hcloud image list --selector *gateway* --type snapshot -o json' => Process::result(output: json_encode([
             ['id' => 501, 'description' => 'orbit-ready-gateway', 'created' => '2026-05-03T09:00:00Z'],
         ], JSON_THROW_ON_ERROR)),
     ]);

@@ -52,7 +52,15 @@ it('provisions the first gateway from a ready control VM', function (): void {
             ->and($payload['success']['data']['node']['role'])->toBe('gateway')
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('control-1');
 
-        $registry = $control->ssh($config->controlUser, $key, "cd /home/{$config->controlUser}/orbit && orbit node:list --json");
+        $php = <<<'PHP'
+echo json_encode(\App\Models\Node::query()->orderBy('name')->pluck('name')->all(), JSON_THROW_ON_ERROR);
+PHP;
+
+        $registry = $control->ssh(
+            $config->controlUser,
+            $key,
+            'cd '.escapeshellarg("/home/{$config->controlUser}/orbit").' && php artisan tinker --execute='.escapeshellarg($php),
+        );
 
         expect($registry->successful())->toBeTrue($registry->output().$registry->errorOutput())
             ->and($registry->output())->toContain('gateway-1')
