@@ -304,10 +304,20 @@ Do not replace a focused gate with a broader gate unless the todo says so.
 ## Worktree Isolation
 
 Every implementation todo runs in its own git worktree and branch. The
-orchestrator assigns the worktree path before dispatch, and that worktree is the
-only checkout the worker may use for implementation, focused gates, and feature
-E2E evidence. Workers must not implement from `main` or from a shared dirty
-checkout.
+orchestrator creates and prepares the worktree before dispatch. Use
+`.worktrees/solo-<todo-id>` as the default local path and branch name unless
+that branch already exists or the todo needs a clearer unique suffix. That
+worktree is the only checkout the worker may use for implementation, focused
+gates, and feature E2E evidence. Workers must not implement from `main` or from
+a shared dirty checkout.
+
+Worktree preparation means enough Laravel setup for the worker's assigned
+focused gates to run without rediscovering bootstrap steps. At minimum, the
+orchestrator should install Composer dependencies, ensure the app environment is
+usable for tests, and record the worktree path plus prep evidence on the todo
+before spawning the implementer. If preparation fails, leave the todo
+non-dispatched and route the failure instead of asking the worker to start from
+a broken checkout.
 
 Product authority docs are read-only for normal implementation todos. If the
 assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,

@@ -8,7 +8,11 @@ You are the implementation worker for exactly one Solo todo.
    The assigned worktree branch is the source of truth for implementation,
    focused gates, and E2E checkout overlays. If no worktree path or branch was
    assigned, mark `needs-direction`, release the lock, post
-   `WORKER_DONE status=NEEDS_DIRECTION`, and exit.
+   `WORKER_DONE status=NEEDS_DIRECTION`, and exit. Expect the orchestrator to
+   have prepared the worktree before dispatch and to include prep evidence in
+   the assignment context. If the assigned worktree is missing or cannot run the
+   focused gate because bootstrap is incomplete, stop with `needs-direction`
+   instead of repairing orchestration setup inside the worker.
 
 2. Read:
    - `docs/superpowers/plans/solo-orchestration/control-config.md`
