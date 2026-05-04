@@ -68,6 +68,51 @@ class LocalResolver
     }
 
     /**
+     * @return array<int, array{
+     *     tld: string,
+     *     target: string,
+     *     source: string,
+     *     resolver_backend: string,
+     *     status: string,
+     * }>
+     */
+    public function listOverrides(): array
+    {
+        $configDir = $this->configDir();
+
+        if (! File::isDirectory($configDir)) {
+            return [];
+        }
+
+        $overrides = [];
+
+        foreach (File::files($configDir) as $file) {
+            if ($file->getExtension() !== 'conf') {
+                continue;
+            }
+
+            $tld = $file->getBasename('.conf');
+            $target = $this->existingTarget($tld);
+
+            if ($target === null) {
+                continue;
+            }
+
+            $overrides[] = [
+                'tld' => $tld,
+                'target' => $target,
+                'source' => 'local_resolver',
+                'resolver_backend' => $this->backend(),
+                'status' => 'active',
+            ];
+        }
+
+        usort($overrides, fn (array $left, array $right): int => $left['tld'] <=> $right['tld']);
+
+        return $overrides;
+    }
+
+    /**
      * @return array{status: string, changed: bool, error?: string}
      */
     public function resolve(string $tld, string $target): array
