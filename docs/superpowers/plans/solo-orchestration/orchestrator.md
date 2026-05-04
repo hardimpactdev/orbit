@@ -25,11 +25,20 @@ You are the one-shot orchestrator for the Orbit Solo loop.
    - structured todo state wins over stale comments;
    - one live owner per todo;
    - close consumed helper processes only after their result label is recorded.
+     This includes scouts, implementers, reviewers, E2E runners, and rubber
+     ducks. A helper is "consumed" once its terminal label is on the todo
+     (`SCOUT_REPORT`, `WORKER_DONE`, `REVIEW_APPROVED` / `CHANGES_REQUESTED` /
+     `NEEDS_DIRECTION`, `E2E_DONE`, `RUBBER_DUCK_PROPOSAL`). Post
+     `PROCESS_CLOSED process=<id> reason=<role>` and call `close_process`.
+     Duck processes are closed individually once each posts its proposal; do
+     not wait for the pair to agree.
 
 5. Handle completed helper outcomes:
    - reviewer results: approve, route changes, or leave `needs-direction`;
    - E2E results: complete passed gates, route failures, or report skips;
-   - rubber-duck proposals: resume only on matching `PATH` proposals.
+   - rubber-duck proposals: when both ducks of a pair have posted, resume only
+     on matching `PATH` proposals; in all cases ensure both duck processes are
+     closed per step 4.
 
 6. Close any implementation or E2E gate todo whose close-out rules in
    `todo-state.md` are satisfied.
