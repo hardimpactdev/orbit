@@ -263,6 +263,15 @@ that a prompt landed.
   the lane; the E2E role reruns it after commit.
 - Use Pest E2E lanes from `TESTING.md`.
 
+## Manual Priority Todos
+
+`docs/PORTING.md` drives the auto-filled port pipeline via the pipeline filler.
+Other priority work — doc-driven feature changes, bug reports, ad-hoc requests —
+is created manually as Solo todos by the user. When product docs shift in ways
+that affect open work, the user revises sibling todos to match. Manually-created
+todos enter the normal `draft → scout → worker-ready` flow and obey the same
+queue rules.
+
 ## Commit Boundary
 
 - No role creates commits unless the user or assigned todo explicitly gives it
