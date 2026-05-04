@@ -46,8 +46,8 @@ JSON output returns local resolver entries under `success.data.dns`.
 ## Requirements
 
 - The command is running from a control-node caller.
-- The caller machine uses a platform with an Orbit-supported local resolver
-  backend.
+- The caller machine uses Linux or macOS with Orbit-managed local resolver
+  configuration available under Orbit's local resolver storage path.
 
 ## Related Commands
 

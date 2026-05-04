@@ -699,18 +699,19 @@ exist. Those families wait for the node/gateway/app foundations.
     - Interactive input mode prompts are covered by command logic but not fully exercised via automated TTY prompts (standard PHPUnit/Pest limitation).
     - Ephemeral E2E lane (`composer test:e2e:provisioning --filter='DnsResolveTld'`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
     - Linux backend support is intentionally deferred; only macOS dnsmasq backend is implemented.
-- [~] Port `dns:list`.
+- [x] Port `dns:list`.
   - Current implementation: `app/Console/Commands/DnsListCommand.php`
   - Current service: `app/Services/Dns/LocalResolver.php`
   - Current tests:
     - `tests/Feature/Commands/Dns/DnsListCommandTest.php` (base contract, caller role, local resolver read behavior, empty result success, unsupported platform, safety)
     - `tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` (JSON envelope, success metadata, empty result shape, resolver entry shape, error envelopes)
     - `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` (human table, empty result prose, failure prose, no progress tree, no JSON envelopes)
+    - `tests/E2E/DnsListTest.php` (Incus-backed Linux control-node feature gate)
   - Old evidence:
     - `../orbit-old-may/app/Console/Commands/DnsListCommand.php`
     - `../orbit-old-may/app/Actions/Dns/ListDnsMappings.php`
     - `../orbit-old-may/app/Concerns/ReadsDnsmasqConfig.php`
-  - Bootstrap slice implemented: control-only caller-role gate, read-only local
+  - Implemented: control-only caller-role gate, read-only local
     resolver listing from Orbit-managed dnsmasq override files, JSON renderer,
     human renderer, empty-result success, unsupported-platform failure, and
     resolver-read failure.
@@ -718,11 +719,12 @@ exist. Those families wait for the node/gateway/app foundations.
     reads caller-local resolver overrides. It does not port old Orbit's
     gateway/container DNS query path because current DNS docs explicitly keep
     this command local and away from gateway-owned development DNS mappings.
-  - Contract gaps:
-    - Paired ephemeral E2E gate todo for local resolver listing is not yet
-      created, so this entry remains `[~]` rather than `[x]`.
-    - Linux backend support is intentionally deferred; only macOS dnsmasq
-      backend inspection is implemented.
+  - Verification:
+    - In-memory Pest: `php artisan test --compact tests/Feature/Commands/Dns`.
+    - Incus E2E: `ORBIT_E2E_INCUS_HOSTS=<host-with-control-template> composer test:e2e:features:control -- --filter='DnsList'`.
+      This gate installs the current checkout into the disposable control VM
+      and invokes `php artisan dns:list --json` from that checkout, leaving the
+      VM's baked `orbit` symlink and reusable images unchanged.
 
 ## App Workstream
 

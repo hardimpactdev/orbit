@@ -93,6 +93,30 @@ describe('dns:list base contract', function (): void {
             ]);
     });
 
+    it('lists configured local resolver overrides on linux control callers', function (): void {
+        setupDnsListControlCaller();
+        setupDnsListResolver('linux');
+        putDnsListConfig('test', '10.6.0.7');
+
+        $exitCode = Artisan::call('dns:list', [
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['dns'])->toBe([
+                [
+                    'tld' => 'test',
+                    'target' => '10.6.0.7',
+                    'source' => 'local_resolver',
+                    'resolver_backend' => 'dnsmasq',
+                    'status' => 'active',
+                ],
+            ])
+            ->and($payload['success']['meta']['resolver_backend'])->toBe('dnsmasq');
+    });
+
     it('returns an empty successful result when no local overrides exist', function (): void {
         setupDnsListControlCaller();
         setupDnsListResolver();

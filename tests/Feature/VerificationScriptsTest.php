@@ -166,6 +166,20 @@ it('exposes opt-in parallel feature e2e after topology contracts', function (): 
     ]);
 });
 
+it('exposes control-only feature e2e after the control topology contract', function (): void {
+    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($composer['scripts']['test:e2e:features'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        '@test:e2e:features:control',
+        '@test:e2e:features:control-gateway-dev-prod',
+    ])->and($composer['scripts']['test:e2e:features:control'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control --fail-on-empty-test-suite @no_additional_args',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature-control --exclude-group=e2e-topology-contract @additional_args',
+    ]);
+});
+
 it('exposes docker feature e2e only for topology groups with tests', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 

@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The local caller role can be resolved as `control`.
-- The caller platform has an Orbit-supported local resolver backend.
+- The caller platform is Linux or macOS.
 
 ## Signature
 
@@ -56,6 +56,7 @@ required arguments.
 ### Local Resolver Read Rules
 
 - Read only Orbit-managed caller-local resolver overrides.
+- Linux and macOS callers are supported for read-only inspection.
 - Return an empty successful result when no Orbit-managed local resolver
   overrides exist.
 - Include the TLD, target IP address, source, resolver backend, and status for
@@ -83,7 +84,7 @@ required arguments.
 | --- | --- | --- |
 | Caller role not allowed | Invoked from a gateway or app caller. | Failure before local resolver reads |
 | Local context invalid | The local node role setting is unreadable or unsupported. | Failure before local resolver reads |
-| Unsupported platform | The caller platform has no supported local resolver backend. | Failure before local resolver reads |
+| Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 
 No local DNS overrides is success with an empty result.
@@ -101,6 +102,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: caller-role eligibility, local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway intent reads, and no public DNS reads. |
+| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: caller-role eligibility, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway intent reads, and no public DNS reads. |
 | `tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, caller-role denial prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
+| `tests/E2E/DnsListTest.php` | Incus-backed Linux control-node feature gate: install the current checkout into a disposable control VM, seed an Orbit-managed local resolver override, and verify `php artisan dns:list --json` reports it. |

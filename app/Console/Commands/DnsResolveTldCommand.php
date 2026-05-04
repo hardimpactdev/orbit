@@ -106,7 +106,7 @@ class DnsResolveTldCommand extends Command
             return $validation;
         }
 
-        if (! $resolver->isSupported()) {
+        if (! $resolver->supportsMutation()) {
             return $this->failCommand(
                 code: 'node.unsupported_platform',
                 message: 'This platform does not support automatic local DNS resolver configuration.',
@@ -212,7 +212,7 @@ class DnsResolveTldCommand extends Command
             }
         }
 
-        if (! $resolver->isSupported()) {
+        if (! $resolver->supportsMutation()) {
             return $this->failCommand(
                 code: 'node.unsupported_platform',
                 message: 'This platform does not support automatic local DNS resolver configuration.',

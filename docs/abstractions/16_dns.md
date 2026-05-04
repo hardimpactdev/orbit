@@ -18,8 +18,10 @@ product docs.
   the same local resolver storage used by `dns:resolve-tld`.
 - Missing local node role resolves as `control`; unsupported local role values
   resolve as `unknown` and fail before local resolver reads.
-- macOS dnsmasq is the current clean-rebuild backend. Linux backend support is
-  deferred until a command contract or E2E lane needs it.
+- `dns:list` supports read-only inspection on Linux and macOS because it reads
+  Orbit-managed local resolver files, not OS resolver state.
+- `dns:resolve-tld` currently mutates only the macOS dnsmasq backend. Linux
+  write support stays deferred until that command contract or E2E lane needs it.
 - Old Orbit's DNS list path queried a gateway/container dnsmasq config. That is
   legacy evidence only; the current DNS contract is caller-local and must not
   reintroduce gateway or container reads.

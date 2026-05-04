@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\E2E\Support;
 
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Process;
 
 final class IncusInstance implements E2EInstance
 {
@@ -76,6 +77,39 @@ final class IncusInstance implements E2EInstance
 
         if (! $result->successful()) {
             throw new \RuntimeException("Could not copy {$sourcePath} into {$this->name}: {$result->errorOutput()}");
+        }
+    }
+
+    public function copyLocalFileToInstance(string $sourcePath, string $targetPath): void
+    {
+        if (! is_file($sourcePath)) {
+            throw new \RuntimeException("Local file not found: {$sourcePath}");
+        }
+
+        $remotePath = '/tmp/'.basename($sourcePath);
+        $hostName = $this->host->config->host;
+
+        if ($this->isLocalHost($hostName)) {
+            if (! @copy($sourcePath, $remotePath)) {
+                throw new \RuntimeException("Could not copy {$sourcePath} to {$remotePath}.");
+            }
+        } else {
+            $result = Process::timeout(300)->run(sprintf(
+                'scp -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s:%s',
+                escapeshellarg($sourcePath),
+                escapeshellarg($hostName),
+                escapeshellarg($remotePath),
+            ));
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not copy {$sourcePath} to {$hostName}:{$remotePath}: {$result->errorOutput()}");
+            }
+        }
+
+        try {
+            $this->copyFileToInstance($remotePath, $targetPath);
+        } finally {
+            $this->host->run('rm -f '.escapeshellarg($remotePath), timeoutSeconds: 30);
         }
     }
 
@@ -188,5 +222,11 @@ final class IncusInstance implements E2EInstance
         $output = trim($result->output());
 
         return $output !== '' ? $output : null;
+    }
+
+    private function isLocalHost(string $host): bool
+    {
+        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname());
     }
 }

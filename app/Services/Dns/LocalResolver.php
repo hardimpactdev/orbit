@@ -24,11 +24,17 @@ class LocalResolver
 
         return match (PHP_OS_FAMILY) {
             'Darwin' => 'macos',
+            'Linux' => 'linux',
             default => 'unsupported',
         };
     }
 
     public function isSupported(): bool
+    {
+        return in_array($this->platform(), ['linux', 'macos'], true);
+    }
+
+    public function supportsMutation(): bool
     {
         return $this->platform() === 'macos';
     }
