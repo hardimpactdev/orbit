@@ -26,24 +26,35 @@ Source of truth for Orbit's Solo orchestration loop.
 ## Roles
 
 - `loop-clock.md`: persistent clock. No orchestration decisions.
-- `orchestrator.md`: one fresh cycle. Reconcile state, dispatch at most one
-  bounded unit per category, close consumed helpers, report, exit.
-- `pipeline-filler.md`: create or refresh draft todos and scout them.
+- `orchestrator.md`: one fresh cycle. Spawns reconciler, E2E, reviewers, and
+  rubber ducks in parallel, then waits for reconciliation, then runs pipeline
+  filler, then dispatches workspace setups and implementers.
+- `reconciler.md`: merge every passed-E2E branch to `main` and close the
+  long-lived implementer for each merged todo. Posts `RECONCILIATED` when
+  done. Conflict handling rules live here.
+- `pipeline-filler.md`: apply prior scout outcomes, re-validate held todos
+  against fresh `main`, fill to `pipeline.ready_target`, and spawn one scout
+  per new or refreshed draft.
 - `todo-scout.md`: validate exactly one draft todo before it can become
   `worker-ready`.
 - `references/workspace-setup.md`: prepare one todo's isolated git worktree
   before implementation dispatch.
-- `implementer.md`: complete exactly one todo, including focused tests and the
-  declared E2E lane.
-- `reviewer.md`: review exactly one `review-ready` todo.
-- `reconciler.md`: reconcile state, clean up idle Solo agents, dispatch
-  review/E2E/duck helpers, merge verified implementation work to `main`, and
-  clean up worktrees.
+- `implementer.md`: long-lived. Implement, post `WORKER_DONE`, then stay open
+  for `send_input` feedback from reviewer / E2E / duck resolution. Closed by
+  the reconciler on merge.
+- `reviewer.md`: review exactly one `review-ready` todo. Pulls main into the
+  worktree first; on findings, sends feedback to the long-lived implementer.
 - `rubber-duck.md`: independently resolve one blocker, in a pair.
-- `e2e.md`: rerun one gate todo's declared E2E lane in a clean state.
+- `e2e.md`: run one gate todo's declared lane or one approved implementation
+  todo's lane. Pulls main into the worktree first; on failure, sends feedback
+  to the long-lived implementer and flips the todo back to `in-progress`.
 
 The implementer/E2E boundary is strict: implementers author and pass E2E
-coverage locally; E2E only verifies the committed result in a clean state.
+coverage locally; E2E re-verifies in a clean state.
+
+Every passed-E2E branch lands on `main` (reconciler) before any new
+implementer is dispatched (orchestrator step 9), so new work always starts
+from fresh `main`.
 
 ## Initiating The Loop
 
@@ -94,15 +105,15 @@ concurrency:
 
 agents:
   loop_clock: claude-sonnet-low
-  orchestrator: claude-sonnet
+  orchestrator: claude-sonnet-low
+  reconciler: claude-opus-xhigh
+  pipeline_filler: claude-opus-xhigh
   workspace_setup: claude-sonnet-low
-  pipeline_filler: claude-opus
   todo_scout: gemini-3.1-pro-preview
   reviewer: gemini-3.1-pro-preview
   implementation: opencode-kimi-k2.6
   rubber_duck_1: gemini-3.1-pro-preview
   rubber_duck_2: claude-opus
-  reconciler: claude-sonnet-low
   e2e: claude-opus
 
 safety:
@@ -209,10 +220,13 @@ Use exact labels so future cycles can resume from durable evidence:
 
 - `CYCLE_STARTED process=<id>`
 - `CYCLE_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`
-- `PIPELINE_READY`
-- `SCOUT_REPORT status=READY|BLOCKED|NEEDS_DOCS|SCOPE_TOO_BROAD|NEEDS_DIRECTION`
+- `RECONCILE_STARTED process=<id>`
+- `RECONCILE_DONE status=MERGED|FAILED|NEEDS_DIRECTION`
+- `RECONCILIATED`
+- `RECONCILE_CYCLE_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`
 - `PIPELINE_FILL_STARTED process=<id>`
 - `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`
+- `SCOUT_REPORT status=READY|BLOCKED|NEEDS_DOCS|SCOPE_TOO_BROAD|NEEDS_DIRECTION`
 - `WORKER_STARTED process=<id>`
 - `WORKER_DONE status=DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_DIRECTION`
 - `REVIEW_APPROVED`
@@ -233,13 +247,15 @@ Use exact labels so future cycles can resume from durable evidence:
 
 - `LOOP-CLOCK <run_id>`
 - `ORCH-CYCLE <run_id> <YYYYMMDD-HHMMSS>`
-- `PIPELINE-FILLER <run_id> <timestamp>`
-- `SCOUT-<todo_id> <short-title>`
-- `IMPLEMENTER-<todo_id> <short-title>`
-- `REVIEWER-<todo_id> <short-title>`
-- `DUCK-<todo_id>-1 <short-title>`
-- `DUCK-<todo_id>-2 <short-title>`
-- `E2E-<todo_id> <command>`
+- `RECONCILE <run_id>`
+- `PIPELINE-FILLER <run_id> <YYYYMMDD-HHMMSS>`
+- `WORKTREE-SETUP-<todo_id>`
+- `SCOUT-<todo_id>`
+- `IMPLEMENTER-<todo_id>` (long-lived; closed by reconciler on merge)
+- `REVIEWER-<todo_id>`
+- `DUCK-1 <todo_id>`
+- `DUCK-2 <todo_id>`
+- `E2E-<todo_id>`
 
 Reconcile process names with locks, tags, lifecycle comments, and process
 liveness before replacing anything.
@@ -262,8 +278,11 @@ that a prompt landed.
 ## Queue Rules
 
 - Keep at most `pipeline.ready_target` dispatchable `worker-ready` todos.
-- The pipeline filler creates or refreshes draft todos, then scouts them.
-- A todo becomes `worker-ready` only after `SCOUT_REPORT status=READY`.
+- The pipeline filler applies prior `SCOUT_REPORT` outcomes, re-validates held
+  todos against fresh `main`, creates or refreshes drafts up to the target,
+  and spawns one scout per new or refreshed draft.
+- A todo becomes `worker-ready` only after `SCOUT_REPORT status=READY` is
+  applied by the next pipeline-filler run.
 - Existing ready implementation work takes precedence over filling future
   queue capacity.
 - Every command port ends with one E2E gate todo. Implementers author and run

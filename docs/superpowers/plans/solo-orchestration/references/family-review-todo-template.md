@@ -1,7 +1,7 @@
 # Family Review Todo Template
 
-Reference for pipeline filler and todo scout when creating or validating
-family-review todos.
+Reference for the pipeline filler and the todo scout when creating or
+validating family-review todos.
 
 Family-review todos are normal worker todos tagged `family-review`. They use
 the phase tags, lifecycle labels, dispatch eligibility, and close-out rules from

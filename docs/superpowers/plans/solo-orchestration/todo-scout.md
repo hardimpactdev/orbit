@@ -28,8 +28,8 @@ You are the one-shot scout for exactly one draft Solo todo.
 4. Edit only the assigned todo when clarification, blocker links, narrower
    scope, or one prerequisite blocker todo is enough.
 
-5. Leave phase promotion to the pipeline filler. Keep non-ready work tagged
-   `draft` or `needs-direction`.
+5. Leave phase promotion to the next pipeline-filler run. Keep non-ready work
+   tagged `draft` or `needs-direction`.
 
 6. Post exactly one report on the assigned todo and exit:
 

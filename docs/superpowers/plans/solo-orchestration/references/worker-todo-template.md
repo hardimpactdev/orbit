@@ -1,7 +1,7 @@
 # Worker Todo Template
 
-Reference for pipeline filler and todo scout when creating or validating worker
-todos.
+Reference for the pipeline filler and the todo scout when creating or
+validating worker todos.
 
 Use `docs/superpowers/plans/solo-orchestration/references/todo-state.md` for
 phase tags, lifecycle labels, dispatch eligibility, and close-out rules.
