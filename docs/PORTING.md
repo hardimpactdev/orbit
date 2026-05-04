@@ -416,6 +416,20 @@ E2E gate todos are dispatched only by the orchestrator's E2E role per
 `references/todo-state.md`. Never promote them to `worker-ready` and never
 route them to the implementer agent.
 
+#### Feature E2E Checkout Rule
+
+Command-port `e2e-feature` gates must test the branch or worktree that contains
+the port. Prepared topology images and templates are reusable topology baselines;
+they are not feature-code delivery vehicles. The E2E gate should acquire the
+smallest prepared topology that covers the command, install or overlay the
+current checkout into the disposable clone, and run `php artisan <command>` from
+that checkout. Do not rebuild images, mutate templates, or repoint the clone's
+steady-state `orbit` symlink just to expose a command under development.
+
+If an E2E lane cannot test the current checkout this way, the gate is not ready.
+Create an E2E harness todo first, or mark the gate blocked with the missing
+checkout-overlay support.
+
 #### Sequencing Rules
 
 - Do not start new implementation while an active final-review or push recovery

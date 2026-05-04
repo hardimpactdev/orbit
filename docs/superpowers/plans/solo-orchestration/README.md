@@ -301,6 +301,29 @@ composer test
 
 Do not replace a focused gate with a broader gate unless the todo says so.
 
+## Worktree Isolation
+
+Every implementation todo runs in its own git worktree and branch. The
+orchestrator assigns the worktree path before dispatch, and that worktree is the
+only checkout the worker may use for implementation, focused gates, and feature
+E2E evidence. Workers must not implement from `main` or from a shared dirty
+checkout.
+
+Product authority docs are read-only for normal implementation todos. If the
+assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,
+`docs/BLUEPRINT.md`, `docs/MISSION.md`, or `docs/CONCEPTS.md`, the worker marks
+the todo `needs-direction` instead of changing the contract locally. Product
+authority docs may change only through an explicit docs/design todo or direct
+human instruction. Progress and accounting docs such as `docs/PORTING.md` may be
+updated with implementation status, gate evidence, and accepted deferrals.
+
+For `e2e-feature` gates, prepared topology images and templates are reusable
+baselines. Feature assertions must install or overlay the assigned worktree's
+checkout into disposable topology clones and run `php artisan <command>` from
+that checkout. Do not bake feature code into images, mutate template instances,
+or repoint the clone's steady-state `orbit` symlink to make a feature test see
+new code.
+
 ## Safety
 
 - Standing infrastructure is not a test lane.

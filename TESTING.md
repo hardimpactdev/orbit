@@ -168,6 +168,24 @@ that covers the behavior under test:
 | `control-gateway-dev` | control + gateway + 1 dev app | Use for app or workspace commands that need a development app node. |
 | `control-gateway-dev-prod` | control + gateway + dev + 1 prod app | Full topology. Slowest but most realistic. Use for production-app flows or full-stack verification. |
 
+## Feature Checkout Overlay
+
+Prepared topology images and templates are branch-agnostic topology baselines.
+They prove OS, users, SSH, PHP, Composer, services, trust, routes, and baseline
+Orbit installation state. They must not be rebuilt just to carry feature-branch
+code for a command port.
+
+Feature assertions must run the checkout under test inside the disposable clone.
+For worktree-based development, this means the worker's current worktree is the
+source of truth. The test installs or overlays that checkout into a disposable
+path on the clone and invokes commands with `php artisan <command>` from that
+checkout. The clone's installed `orbit` CLI remains a topology/bootstrap smoke
+target unless the test is explicitly about installed CLI behavior.
+
+Use the shared E2E checkout helper when a feature test needs the current
+checkout on a clone. Do not mutate template instances, reusable images, or the
+steady-state `orbit` symlink to make a feature assertion see new code.
+
 ## Prepared Topology Contract
 
 Prepared topology clones are not just booted VMs. When
@@ -177,7 +195,8 @@ be ready for command assertions that depend on that topology kind.
 Common requirements for every prepared topology:
 
 - all nodes are disposable clones of `orbit-template-*` instances;
-- each clone has the current Orbit checkout installed at the expected user path;
+- each clone has the branch-agnostic baseline Orbit installation expected for
+  that topology;
 - SSH is authorized for the users needed by the topology handles;
 - `orbit --version` works for the steady-state Orbit user on each managed node;
 - tests may mutate clones, but must never mutate template instances;
@@ -189,7 +208,7 @@ Common requirements for every prepared topology:
 
 - one control clone is available through the `control` topology handle;
 - the control user is `ORBIT_E2E_CONTROL_USER` (`control` by default);
-- Orbit is installed at `/home/<control-user>/orbit`;
+- baseline Orbit is installed at `/home/<control-user>/orbit`;
 - commands can run from the control node through the `orbit` CLI;
 - the control registry contains the local control identity expected by
   control-node commands.
