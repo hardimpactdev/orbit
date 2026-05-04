@@ -24,28 +24,38 @@ You are the implementation worker for exactly one Solo todo.
 2. Lock the todo, add `in-progress`, remove `worker-ready`, and post
    `WORKER_STARTED process=<id>`.
 
-3. If context is missing, scope is wrong, docs conflict, a required abstraction
+3. List every other todo currently tagged `in-progress` (treat them as live
+   parallel implementers). For each, read its `Owned Files Or Domains` and
+   record those paths as **foreign scope** for this run. Your work must not
+   touch any path inside foreign scope. Also note any untracked or modified
+   files in `git status` that fall outside your own owned scope; assume they
+   belong to another worker and leave them untouched.
+
+4. If context is missing, scope is wrong, docs conflict, a required abstraction
    file is missing, or the required E2E lane is unsafe, mark `needs-direction`,
    release the lock, post `WORKER_DONE status=NEEDS_DIRECTION`, and exit.
 
-4. Implement only the assigned scope. Use current docs as product authority and
-   old Orbit as evidence.
+5. Implement only the assigned scope. Use current docs as product authority and
+   old Orbit as evidence. Never delete, rename, revert, or reformat a file
+   outside your owned scope, even when it appears stale, redundant, or
+   conflicting. If a foreign-scope file blocks progress, stop and mark
+   `needs-direction` instead of editing it.
 
-5. Classify touched tests as keep, rewrite, replace, or retire. Retire only
+6. Classify touched tests as keep, rewrite, replace, or retire. Retire only
    when current docs reject the behavior or replacement coverage exists.
 
-6. Run the focused gate from the todo. If PHP changed, run:
+7. Run the focused gate from the todo. If PHP changed, run:
 
 ```bash
 vendor/bin/pint --dirty --format agent
 ```
 
-7. Run or record the assigned E2E lane:
+8. Run or record the assigned E2E lane:
    - `e2e-provisioning`: disposable VM provisioning/destructive flow.
    - `e2e-feature`: prepared ephemeral topology feature flow.
    - `none`: cite the todo's reason.
 
-8. If implementation, focused gate, Pint when needed, and E2E evidence or
+9. If implementation, focused gate, Pint when needed, and E2E evidence or
    accepted deferral are ready, add `review-ready`, remove `in-progress`,
    release the lock, and post:
 
@@ -61,6 +71,8 @@ e2e:
   - <command or deferral reason>
 scope:
   - owned_scope_ok=<yes|no>
+  - foreign_scope_observed: <todo ids and paths, or none>
+  - foreign_scope_touched=<no|yes:reason>
 blockers:
   - <blocker or none>
 lock:

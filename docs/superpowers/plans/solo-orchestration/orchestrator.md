@@ -41,8 +41,18 @@ You are the one-shot orchestrator for the Orbit Solo loop.
    eligible ids listed in `pipeline.dispatch_order`; then sort by priority
    high-to-low and lowest id.
 
-9. If dispatchable `worker-ready` count is below `pipeline.ready_target`, spawn
-   one pipeline filler unless one is already running.
+9. Count the dispatchable `worker-ready` todos using `todo-state.md`
+   eligibility (open, unblocked, unlocked, `worker-ready`, no live owner, not
+   tagged `e2e-gate`). Spawn one pipeline filler only when **all** of the
+   following are true:
+   - `pipeline.filler_enabled` is `true`;
+   - the dispatchable count is strictly less than `pipeline.ready_target`;
+   - no pipeline filler is already running, and no live scout process exists;
+   - the most recent coordination-todo entry for the filler is not still
+     `PIPELINE_FILL_STARTED` without a matching `PIPELINE_FILL_DONE`.
+
+   Otherwise, do not spawn a filler this cycle. Record the observed count and
+   the spawn decision in the cycle report.
 
 10. Dispatch at most one E2E runner for one eligible `e2e-ready` gate. Use only
     the lane declared on the gate todo and the Pest E2E commands in
@@ -63,6 +73,8 @@ actions:
   - <spawned|closed|routed|blocked action>
 state:
   - ready_todos: <count and ids>
+  - dispatchable_worker_ready: <count> / target=<pipeline.ready_target>
+  - filler_decision: <spawned|skipped:at_or_above_target|skipped:already_running|skipped:disabled>
   - active_processes: <role/id list>
   - blocked_todos: <ids or none>
   - next_clock_timer: <present|missing|disabled>
