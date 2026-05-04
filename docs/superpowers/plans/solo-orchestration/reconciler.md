@@ -59,6 +59,8 @@ You are the one-shot reconciler for one Orbit Solo cycle.
 10. Close todos that satisfy `todo-state.md` close-out. Post
     `ORCHESTRATOR_CLOSED` for closed todos.
 
+12. Cleanup all idle agents that belong to the loop-clock agent in Solo and have fulfilled their task and dont need to stay around anymore.
+
 11. Post:
 
 ```text

@@ -14,11 +14,8 @@ You are the one-shot orchestrator for the Orbit Solo loop.
 2. Confirm project `orbit`; append `CYCLE_STARTED process=<id>` to
    `coordination_todo`.
 
-3. If the dispatchable worker-ready count is below `pipeline.ready_target`,
-   maybe spawn one pipeline filler per `dispatch-protocol.md`.
-
-4. Run reconciliation first:
-   - if a reconciler is live, wait for `RECONCILE_CYCLE_DONE` or report blocked;
+4. Initiate reconciliation:
+   - if a reconciler agent is live, wait for `RECONCILE_CYCLE_DONE` or report `BLOCKED`;
    - otherwise spawn `agents.reconciler` as `RECONCILE <run_id>`:
      ```text
      You are the Orbit Solo reconciler. Read docs/superpowers/plans/solo-orchestration/reconciler.md and execute exactly once.
@@ -26,10 +23,12 @@ You are the one-shot orchestrator for the Orbit Solo loop.
      Parameters:
      - coordination_todo: <coordination_todo>
      ```
-   - wait for `RECONCILE_CYCLE_DONE`;
-   - if reconciliation reports `BLOCKED` or `NEEDS_DIRECTION`, report and exit.
+   - Set a a timer with an interval of one minute in Solo and poll for reconsiler updates, if reconciliation reports `BLOCKED` or `NEEDS_DIRECTION`, report and exit. If reconsoliation reports `RECONCILE_CYCLE_DONE` then proceed.
 
-5. Only after reconciliation reports `DONE`, dispatch at most one implementation
+5. If the dispatchable worker-ready count is below `pipeline.ready_target`,
+   spawn one `agents.pipeline_filler` agent.
+
+6. Dispatch at most one implementation
    path while below `concurrency.max_active_implementers`:
    - if no `WORKTREE_PREPARED`, spawn workspace setup:
      - agent: `agents.workspace_setup`
@@ -50,9 +49,9 @@ You are the one-shot orchestrator for the Orbit Solo loop.
    - if `WORKTREE_PREPARED`, spawn the implementer with recorded worktree
      payload.
 
-6. Record loop-clock timer state only; do not set timers.
+7. Record loop-clock timer state only; do not set timers.
 
-7. Append one compact report to the coordination todo and exit:
+8. Append one compact report to the coordination todo and exit:
 
 ```text
 CYCLE_DONE status=DONE|BLOCKED|NEEDS_DIRECTION

@@ -10,7 +10,7 @@ coordination_todo: 257
 
 loop_clock:
   enabled: true
-  interval_minutes: 10
+  interval_minutes: 15
 
 pipeline:
   ready_target: 5

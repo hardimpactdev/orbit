@@ -7,11 +7,8 @@ You are the persistent clock for the Orbit Solo orchestration loop.
 1. Read the control config at
    `docs/superpowers/plans/solo-orchestration/control-config.md`.
 2. If `loop_clock.enabled` is `false`, stop without setting another timer.
-3. Resolve `agents.orchestrator` with `list_agent_tools` by matching the
-   configured prefix to Solo `tool_type` (`claude-*` -> `claude`,
-   `codex-*` -> `codex`, `gemini-*` -> `gemini`, `opencode-*` ->
-   `opencode`).
-4. Spawn one Solo agent named `ORCH-CYCLE <run_id> <YYYYMMDD-HHMMSS>`.
+3. Resolve `agents.orchestrator` according to `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`
+4. Spawn one `agents.orchestrator` named `ORCH-CYCLE <run_id> <YYYYMMDD-HHMMSS>`.
 5. Wait until process output shows the agent can receive input.
 6. Send this prompt exactly:
 
