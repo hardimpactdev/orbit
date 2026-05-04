@@ -161,10 +161,12 @@ yet satisfy the full product contracts.
   - Docker feature topology lane implemented for container-safe E2E:
     `composer e2e:prepare-docker-runtime -- --force`,
     `composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod`,
-    and `composer test:e2e:features:docker`. Docker can offload containers to a
-    remote daemon with `ORBIT_E2E_DOCKER_HOSTS=beast`, but Incus remains the
-    default topology provider because Task 8 measured only a small Docker speed
-    improvement and Docker does not exercise WireGuard or VM semantics.
+    and `composer test:e2e:features:docker`. The recommended local topology is
+    Beast for Docker offload (`ORBIT_E2E_DOCKER_HOSTS=beast`) and
+    sidecar1/sidecar2 for Incus feature VMs (`ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2`).
+    Incus remains the default topology provider because Task 8 measured only a
+    small Docker speed improvement and Docker does not exercise WireGuard or VM
+    semantics.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
@@ -819,7 +821,7 @@ decision evidence and tracker status only.
 - [x] Add E2E topology for gateway + control + development app + production
   app nodes.
   - Incus-backed authoritative lane:
-    `composer test:e2e:features:control-gateway-dev-prod`.
+    `ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2 composer test:e2e:features:control-gateway-dev-prod`.
   - Docker-backed container-safe offload lane:
     `ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker`.
 - [ ] Add provisioning/destructive coverage only in the `e2e-provisioning` lane.

@@ -42,12 +42,13 @@ composer test:e2e:provisioning --filter='control'
 composer test:e2e:provisioning --filter='NodeNewGateway'
 ```
 
-The first ephemeral E2E harness uses Incus VMs on beast. Run
+The first ephemeral E2E harness uses Incus VMs on the configured E2E host
+(`beast` by default). Run
 `php artisan e2e:prepare-incus-images --role=blank --force` to build or replace the reusable
 `orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The default
 `composer test:e2e` path launches one disposable VM from that blank image,
 injects an ephemeral SSH key for the non-`orbit` bootstrap user, verifies SSH
-from beast into the VM, and deletes the VM. The blank image intentionally does
+from the host into the VM, and deletes the VM. The blank image intentionally does
 not use `orbit` as the bootstrap user so gateway and app provisioning tests can
 prove Orbit creates or prepares the node-side `orbit` user itself.
 
@@ -258,9 +259,11 @@ composer e2e:reap-docker -- --force --older-than=0m
 ```
 
 `composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
-then runs feature assertions with Pest parallel mode and `--processes=3`, which
-maps naturally to `beast`, `sidecar1`, and `sidecar2` when prepared templates
-and capacity are available. Provisioning E2E remains serial by default.
+then runs feature assertions with Pest parallel mode and `--processes=3`. The
+recommended Incus pool is `sidecar1,sidecar2`; the host pool chooses the first
+host with prepared templates and enough free Orbit-owned VM slots, so multiple
+workers can share a sidecar when capacity allows. Provisioning E2E remains
+serial by default.
 
 ### Docker Feature Topologies
 
@@ -271,6 +274,10 @@ composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 ORBIT_E2E_TOPOLOGY_PROVIDER=docker composer test:e2e:features:docker
 ```
+
+The recommended local topology is to run Docker containers on `beast` and keep
+Incus feature VMs on `sidecar1` and `sidecar2`. Docker remains explicit because
+it does not exercise WireGuard or VM semantics.
 
 Docker topologies are disposable containers seeded from per-role prepared
 images. They are useful for fast command, registry, gateway API, and forwarding
@@ -323,9 +330,9 @@ ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
 ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
 ORBIT_E2E_TOPOLOGY_PROVIDER=incus     # Prepared topology provider
 ORBIT_E2E_TOPOLOGY_PROVIDERS=incus    # Ordered prepared topology provider pool
-ORBIT_E2E_DOCKER_HOSTS=local          # Ordered Docker daemon pool for Docker topology provider
+ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
-ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2  # Comma-separated Incus host pool
+ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
@@ -361,7 +368,7 @@ ignored — only instances whose name starts with `ORBIT_E2E_INSTANCE_PREFIX` ar
 counted. Recommended baseline:
 
 ```bash
-ORBIT_E2E_INCUS_HOSTS=beast,sidecar1,sidecar2
+ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
 ```
 
