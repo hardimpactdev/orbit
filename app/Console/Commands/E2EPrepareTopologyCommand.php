@@ -114,7 +114,7 @@ class E2EPrepareTopologyCommand extends Command
 
             $builder->useBundle($remoteBundle);
 
-            $manifest = $builder->build($kind);
+            $manifest = $builder->build($kind, replaceExisting: true);
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         } finally {

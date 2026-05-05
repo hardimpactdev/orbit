@@ -39,9 +39,9 @@ class IncusTopologyBuilder
      *
      * @return list<array{role: string, name: string, snapshot: string}>
      */
-    public function build(E2ETopologyKind $kind): array
+    public function build(E2ETopologyKind $kind, bool $replaceExisting = false): array
     {
-        $this->validatePreFlight($kind);
+        $this->validatePreFlight($kind, $replaceExisting);
 
         $workDirectory = $this->createWorkDirectory();
 
@@ -55,7 +55,7 @@ class IncusTopologyBuilder
         }
     }
 
-    private function validatePreFlight(E2ETopologyKind $kind): void
+    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): void
     {
         $baseImage = $this->host->config->baseImage;
 
@@ -72,8 +72,18 @@ class IncusTopologyBuilder
         foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
             $name = IncusTopologyTemplate::templateName($kind, $role);
 
-            if ($this->host->instanceExists($name)) {
+            if (! $this->host->instanceExists($name)) {
+                continue;
+            }
+
+            if (! $replaceExisting) {
                 throw new RuntimeException("Template instance [{$name}] already exists.");
+            }
+
+            $result = $this->host->deleteInstance($name);
+
+            if (! $result->successful()) {
+                throw new RuntimeException("Could not delete existing template [{$name}]: {$result->errorOutput()}");
             }
         }
     }

@@ -95,6 +95,29 @@ it('throws when a target template instance already exists', function (): void {
         ->toThrow(RuntimeException::class, 'Template instance [orbit-template-control-control] already exists');
 });
 
+it('deletes target template instances before replacing them', function (): void {
+    $config = E2EConfig::fromEnvironment();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->with('orbit-template-control-control')
+        ->andReturn(true);
+    $host->shouldReceive('deleteInstance')
+        ->with('orbit-template-control-control')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')
+        ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
+        ->andReturn(incusTopologyBuilderProcessResult(successful: false));
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::Control, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not create work directory');
+});
+
 it('bakes app node registry rows instead of running node:new during prepared topology builds', function (): void {
     $config = incusTopologyBuilderConfig();
     $commands = [];

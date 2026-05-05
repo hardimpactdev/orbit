@@ -181,7 +181,7 @@ it('--force uses the default Incus host when host environment is unset', functio
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control)
+        ->with(E2ETopologyKind::Control, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -226,7 +226,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
             $forwardedBundle = $path;
         });
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control)
+        ->with(E2ETopologyKind::Control, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -340,7 +340,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
-        ->with(E2ETopologyKind::Control)
+        ->with(E2ETopologyKind::Control, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
