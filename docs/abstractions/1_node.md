@@ -24,9 +24,12 @@ product docs.
 - `app/Console/Commands/NodeGrantCommand.php`
 - `app/Console/Commands/NodeRevokeCommand.php`
 
-## First Review Focus
+## Shared Pattern Authority
 
-The first node `family-review` todo must evaluate caller-role resolution and
-branching as a possible shared service. The review should not extract that
-service unless the boundary is concrete and focused regression coverage is in
-scope.
+Caller-role resolution, typed gateway requests, API envelope parsing, renderer
+pairing, and role-path test shapes are documented in
+`docs/abstractions/cross-cutting.md`. Read that file before implementing any
+node command port.
+
+The node family does not duplicate cross-cutting invariants here. Domain rules
+below are node-specific.

@@ -501,30 +501,30 @@ VPS-adjacent behavior.
 
 1. The read-forwarding chain is complete: `NODE-SHOW-CONTRACT-1` (todo 251),
    `NODE-READ-FWD-1` (todo 253), and `E2E-NODE-READ-1` (todo 254) are verified.
-2. Create or refresh `FAMILY-REVIEW-NODE-READ-1` as the next review candidate
-   before opening more downstream forwarding work.
-3. Then refresh the node doctor contract/docs slice needed for
-   `node:list --doctor` (todo 252 is the current draft candidate) and split it
-   if the todo is still too broad.
+2. `FAMILY-REVIEW-NODE-READ-1` (todo 265) is complete. Findings:
+   - Caller-role resolution evaluated against 11 concrete callers; extraction
+     justified and tracked as follow-up candidate.
+   - Typed gateway request, API envelope, renderer pairing, and role-path test
+     shapes already promoted in `docs/abstractions/cross-cutting.md`.
+   - JSON envelope response helper duplication identified; deferred to same
+     follow-up todo as caller-role extraction.
+3. Then port the node doctor contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`)
+   and its implementation (todo 270 `NODE-LIST-DOCTOR-1`).
 
-If the ready queue is below target during that review, fill with independent
-read-only Pest, documentation, or E2E support work only.
+If the ready queue is below target, fill with independent read-only Pest,
+documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `FAMILY-REVIEW-NODE-READ-1` — review the node read-forwarding shape once
-   `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and the caller-role parity chain
-   verify. Scope: caller-role branch, typed gateway request, API envelope,
-   renderer, and Pest/E2E mapping shape. Evaluate caller-role resolution as the
-   first shared-service promotion candidate, but extraction is not automatic.
-2. Node doctor contract/docs slice needed for `node:list --doctor` (todo 252 is
-   the current draft candidate; refresh or split it before promotion).
-3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
-   E2E gates).
-4. `node:show` real grant metadata / authorization visibility slice (with
+1. Node doctor contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`).
+2. `node:list --doctor` and doctor handoff implementation (todo 270 `NODE-LIST-DOCTOR-1`).
+3. `node:show` real grant metadata / authorization visibility slice (with
    paired Pest and E2E gates).
-5. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
+4. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
    first-gateway provisioning split below instead of promoting todo 255 as-is.
+5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
+   shared JSON envelope response trait, then migrate all 11 existing commands.
+   Do not start this until the active doctor and grant slices are on `main`.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -982,8 +982,9 @@ decision evidence and tracker status only.
 ## Next Priorities
 
 1. Resume from the post-read-forwarding queue in the Solo pipeline hints:
-   create or refresh `FAMILY-REVIEW-NODE-READ-1`, then refresh the
-   `node:list --doctor` contract/docs slice (todo 252) before promotion.
+   create or refresh `FAMILY-REVIEW-NODE-READ-1`, then port the
+   `node:list --doctor` contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`)
+   and implementation (todo 270 `NODE-LIST-DOCTOR-1`).
 2. Use the full prepared Incus topology lane for node read-forwarding E2E:
    `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
    only for container-safe feature checks that do not depend on WireGuard,

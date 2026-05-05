@@ -73,10 +73,16 @@ and repeated private helpers can diverge.
 **Current pointers:**
 
 - `docs/commands/1_node/README.md`
+- `app/Console/Commands/NodeListCommand.php`
+- `app/Console/Commands/NodeShowCommand.php`
 - `app/Console/Commands/GatewayAddCommand.php`
 - `app/Console/Commands/NodeNewCommand.php`
 - `app/Console/Commands/NodeGrantCommand.php`
+- `app/Console/Commands/NodeRevokeCommand.php`
 - `app/Console/Commands/NodeRemoveCommand.php`
+- `app/Console/Commands/NodeDefaultCommand.php`
+- `app/Console/Commands/NodeUpdateCommand.php`
+- `app/Console/Commands/DnsListCommand.php`
 - `app/Console/Commands/DnsResolveTldCommand.php`
 
 **Invariants:**
@@ -87,12 +93,64 @@ and repeated private helpers can diverge.
   side effects.
 - Command-specific caller-role consequences live in command docs; implementation
   should follow those docs and reuse the same failure vocabulary.
-- The current implementation repeats private `callerRole()` helpers. A shared
-  resolver is a post-family-review candidate, not a prerequisite for this docs
-  workflow.
-- The first `family-review` todo must explicitly evaluate whether caller-role
-  resolution should become a shared service. Evaluation does not imply
-  automatic extraction.
+- The implementation repeats an identical private `callerRole()` helper in
+  every command. `FAMILY-REVIEW-NODE-READ-1` evaluated this against 11 concrete
+  callers and concluded extraction is justified. A shared `CallerRoleResolver`
+  service is tracked as a follow-up implementation todo; do not add new
+  duplicates while that todo is open.
+
+## Role-Path Test Shape
+
+**Problem:** Commands with caller-role branching need tests that prove each role
+selects the correct local or forwarding path, and the setup helpers for those
+tests are repeated per command.
+
+**Current pointers:**
+
+- `tests/Feature/Commands/Nodes/NodeListRolePathTest.php`
+- `tests/Feature/Commands/Nodes/NodeShowRolePathTest.php`
+- `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php`
+- `tests/Feature/Commands/Dns/DnsListCommandTest.php`
+
+**Invariants:**
+
+- Role-path tests must cover gateway-local, control-forwarding, and app-forwarding
+  paths where the command contract defines them.
+- Each path must assert the correct transport edge (local DB vs. gateway API).
+- Setup helpers should create the local node row with `is_local=true` and the
+  matching role, plus gateway settings when the forwarding path needs them.
+- Shared role-path setup utilities are a candidate for a test-support helper once
+  three or more commands need identical caller-state bootstrapping.
+
+## JSON Envelope Response Helpers
+
+**Problem:** Commands that support `--json` repeat the same `wantsJson()`,
+`jsonSuccess()`, and `failCommand()`/`failValidation()` private helpers with
+only minor variation in error code and message.
+
+**Current pointers:**
+
+- `app/Console/Commands/NodeListCommand.php`
+- `app/Console/Commands/NodeShowCommand.php`
+- `app/Console/Commands/NodeGrantCommand.php`
+- `app/Console/Commands/NodeRevokeCommand.php`
+- `app/Console/Commands/NodeRemoveCommand.php`
+- `app/Console/Commands/NodeDefaultCommand.php`
+- `app/Console/Commands/NodeUpdateCommand.php`
+- `app/Console/Commands/GatewayAddCommand.php`
+- `app/Console/Commands/DnsListCommand.php`
+- `app/Console/Commands/DnsResolveTldCommand.php`
+
+**Invariants:**
+
+- Success responses use the discriminated `success` envelope with a `data` key.
+- Error responses use the discriminated `error` envelope with `code`, `message`,
+  and optional `meta`.
+- Empty `meta` must serialize as `{}` (empty object), not `[]` (empty array).
+- Human failures must not leak JSON envelope shape; they emit plain error text.
+- A shared JSON response trait or renderer base class is a candidate for
+  extraction once the caller-role resolver service is in place, because both
+  touch every command and should be migrated together to avoid churn.
 
 ## Gateway-Owned Node Execution
 
