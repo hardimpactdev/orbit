@@ -554,10 +554,23 @@ commands. Order matters because each adds a new write API endpoint:
 Do not create future FWD-* todos until the matching API-* todo is on `main`.
 Do not create more than 2 of these chains in flight at once.
 
-#### App Workstream Entry Point (Ready For Read Commands)
+#### App Workstream Entry Point (Blocked)
 
-Testing Infrastructure and the Node work needed for app read-command porting are
-cleared. The first app slices should stay read-only and use Docker-backed
+Blocked until Saloon node-family migration and activity-log foundation are
+complete. The previous "ready for read commands" status is reversed because:
+
+1. **Saloon is a prerequisite for App family porting.** The current
+   `GatewayClient`/`GatewayRequestSender` hand-rolled abstraction must be
+   replaced with Saloon before app gateway API endpoints and typed requests are
+   authored. Porting app read commands on top of the old abstraction would
+   create migration debt that immediately needs rewriting.
+2. **Activity logging must be in place before App.** The old repo's
+   `spatie/laravel-activitylog` integration provided command attribution,
+   audit trails, and correlation headers for every write and many read
+   operations. Future family ports should add activity log metadata while being
+   ported, not as a catch-up exercise at the end.
+
+When unblocked, the first app slices should stay read-only and use Docker-backed
 feature E2E before any app write/destructive commands are created:
 
 1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
@@ -580,6 +593,8 @@ exist. Those families wait for the node/gateway/app foundations.
   first-gateway provisioning prerequisites are clear.
 - Keep workspace, process, and downstream families blocked until app read
   foundations exist.
+- Keep app read commands blocked until Saloon node-family migration and
+  activity-log foundation are complete.
 - Keep app write/destructive commands blocked until app read commands and the
   required node write-forwarding/provisioning safety gates are clear.
 
@@ -815,7 +830,36 @@ exist. Those families wait for the node/gateway/app foundations.
       and invokes `php artisan dns:list --json` from that checkout, leaving the
       baked `orbit` symlink and reusable topology baselines unchanged.
 
+## Activity Logging Workstream
+
+Activity logging must be in place before the App workstream resumes. The old
+repo used `spatie/laravel-activitylog` v4 with Orbit-specific attribution
+metadata (command, action, subject, properties, description) on every write
+command and many read commands. Future family ports should add activity log
+metadata while being ported, not as a catch-up exercise at the end.
+
+- [ ] `ACTIVITY-FOUNDATION-1` — install and configure `spatie/laravel-activitylog`
+  v4.12.3, publish config/migrations, and establish the activity log table.
+- [ ] `ACTIVITY-CORRELATION-1` — port `ActivityLogCorrelation` service and
+  `X-Orbit-Request-Id` header propagation (gateway API and CLI command
+  correlation). This is a prerequisite for the Saloon `HasCorrelationHeader`
+  plugin.
+- [ ] `ACTIVITY-CLI-TRAITS-1` — define the activity-log interface/traits that
+  commands implement to declare their `activityLogType()`, `activityLogAction()`,
+  `activityLogSubject()`, `activityLogProperties()`, and `activityLogDescription()`.
+  Old evidence: `../orbit-old-may/app/Console/Commands/` (search `activityLogType`).
+- [ ] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family while
+  migrating node commands to Saloon. `node:grant`, `node:revoke`, `node:remove`,
+  `node:update`, and `node:default` are the first candidates.
+- [ ] `ACTIVITY-READ-AUDIT-1` — decide which read commands (e.g., `node:list`,
+  `node:show`, `app:list`, `app:show`) log audit entries and at what verbosity.
+  Old evidence shows `node:list` and `node:show` carried `activityLogType::Read`.
+
 ## App Workstream
+
+Blocked until Saloon node-family migration and activity-log foundation are
+complete. See `App Workstream Entry Point` in `Todo Pipeline Hints` for
+unblocking criteria.
 
 - [x] Convert app command docs into current format.
 - [ ] Create app abstraction reference (`docs/abstractions/5_app.md`).
@@ -856,54 +900,61 @@ exist. Those families wait for the node/gateway/app foundations.
 
 ### GATEWAY-API-0 Decision: Gateway API Client Transport
 
-**Status:** Decided — thin `GatewayClient` wrapper over Laravel `Http` facade.
+**Status:** Reversed — adopt `saloonphp/saloon` as the gateway API transport.
 
-**Chosen approach:** (b) a dedicated thin `GatewayClient` wrapper/service.
+**Original decision (superseded):** thin `GatewayClient` wrapper over Laravel's
+`Http` facade with a hand-rolled `GatewayRequest` interface,
+`GatewayRequestSender`, and `GatewayResponseParser`.
 
-**Rationale:**
+**Version note:** `saloonphp/saloon` v4.0.0 is the selected dependency. The plan
+originally targeted Saloon v3, but Packagist security advisories blocked v3
+resolution against PHP 8.5 / Laravel 13. v4.0.0 resolves cleanly and provides
+the same connector/request/DTO architecture.
 
-1. **Current clean-repo evidence:** `gateway:add` and `FetchGatewayRootCa` already
-   use Laravel's `Http` facade with `withOptions(['verify' => $pemPath])`. The
-   clean repo has no Saloon dependency and no typed request classes. The existing
-   pattern works for the two gateway API calls currently implemented (`/api/ca/root`
-   and `/api/me`).
+**Reversal rationale:**
 
-2. **Legacy Saloon evidence:** The old repo used `saloonphp/saloon` v4 with
-   `GatewayConnector`, `NodeConnector`, ~100 typed request classes under
-   `app/Http/Saloon/Requests/`, and `GatewayRequestSender`/`NodeRequestSender`
-   envelope parsers. This was a large abstraction surface. `NodeRequestSender` was
-   already deprecated in the old repo in favor of `GatewayRequestSender`.
-   `NodeApiClient` in the old repo actually used the Laravel `Http` facade
-   directly (not Saloon) for node-to-gateway calls.
+1. **The hand-rolled abstraction was reinventing Saloon poorly.** The clean repo's
+   `GatewayRequest` interface (`method()/path()/query()/data()`) is a literal
+   subset of Saloon's `Request` shape, with weaker mocking, no plugin pipeline,
+   no typed response DTOs, and no community familiarity.
 
-3. **Product authority:** `docs/PORTING.md` explicitly states "Legacy Saloon code
-   is reference material and a candidate implementation, not required product
-   scope." The blueprint treats the typed API as transport only; commands are the
-   stable contract. The clean-rebuild constraint is to avoid reintroducing broad
-   legacy abstractions until the clean codebase has a concrete need for them.
+2. **Cost of the abstraction was already paid.** With 7 typed requests + a
+   sender + an envelope parser + an interface in place, we were carrying
+   abstraction cost equivalent to a Saloon footprint without any of its
+   benefits. The cheapest moment to switch was while the surface was still
+   small — exactly the moment we were in.
 
-4. **Why not inline `Http::withOptions` per call:** The CA path, base URL,
-   correlation header, and `allow_redirects` config would be repeated in every
-   command. A thin wrapper centralizes this without adding an external package.
+3. **Off-the-shelf > home-grown for proven patterns.** Saloon is the de facto
+   standard for typed HTTP clients in Laravel. New contributors recognize it.
+   Plugin ecosystems (logging, retries, OAuth) are first-class. The "we don't
+   need a taxonomy yet" framing in the original decision cuts the other way:
+   if a taxonomy is inevitable, build it on the well-trodden tool.
 
-5. **Why not Saloon:** Saloon adds an external dependency and a taxonomy of typed
-   request classes that the current clean repo does not need. The old Saloon
-   request classes mapped one-to-one to gateway API endpoints; the clean rebuild
-   can achieve the same endpoint coverage with far less code by using Laravel's
-   built-in HTTP client plus a thin wrapper that pre-configures the gateway
-   connection. If future needs (e.g., advanced mocking, plugin pipelines, or
-   non-Laravel consumers) justify Saloon, it can be adopted later without
-   blocking current work.
+4. **Typed responses unlock real value.** Saloon's `createDtoFromResponse()`
+   replaces `array` plumbing with typed DTOs at every caller — caller code
+   reads `$dto->nodes` instead of `$response->data()['nodes'] ?? []`.
 
-6. **Why not a Laravel HTTP macro:** Macros are global and affect all `Http`
-   calls, making testing and isolation harder. A service-class wrapper is
-   explicit and injectable.
+**Implementation footprint:**
 
-**Reusable implementation guidance:**
+- `App\Http\Gateway\GatewayConnector` — single connector, base URL + CA verify
+  + correlation header plugin from `LocalGatewaySettings::current()`
+- `App\Http\Gateway\GatewayRequest` — abstract base with envelope-aware
+  `hasRequestFailed()` / `getRequestException()` / `unwrapData()` helpers
+- `App\Http\Gateway\GatewayApiException` — thrown on envelope errors
+- `App\Http\Gateway\Plugins\HasCorrelationHeader` — Saloon plugin trait for
+  `X-Orbit-Request-Id` and `X-Orbit-Client` headers
+- `App\Http\Gateway\Requests\<Family>\` — per-endpoint typed Saloon requests
+- `App\Http\Gateway\Responses\<Family>\` — typed response DTOs
 
-The reusable Gateway API transport and envelope pattern now lives in
-`docs/abstractions/cross-cutting.md`. Keep this workstream as historical
-decision evidence and tracker status only.
+**Out of scope for the migration:**
+
+- `FetchGatewayRootCa` stays on `Http`. It runs before the CA exists, has
+  unique connector requirements (no verify, redirect handling), and gains
+  nothing from a Saloon migration.
+- `GatewayApiRuntimeInstaller` is a server-side install helper, not a client.
+
+**Reusable implementation guidance:** see `docs/abstractions/cross-cutting.md`
+for the Saloon-based gateway transport pattern.
 
 ### Remaining Workstream Items
 
@@ -914,6 +965,11 @@ decision evidence and tracker status only.
 - [x] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
+- [~] Migrate gateway transport from hand-rolled `GatewayClient` /
+  `GatewayRequestSender` to Saloon (`saloonphp/saloon` v4.0.0). Single
+  `GatewayConnector` with abstract `GatewayRequest` base handles envelope
+  unwrapping and typed `GatewayApiException`. Per-endpoint Saloon `Request`
+  subclasses return typed DTOs from `App\Http\Gateway\Responses\<Family>\`.
 - [~] Port node API controllers and typed client requests.
   - Bootstrap slice implemented: `GET /api/nodes`, `GET /api/nodes/{node}`,
     and `POST /api/nodes/grant` endpoints with `NodeListController`,
@@ -924,6 +980,8 @@ decision evidence and tracker status only.
   - Tests: `NodeListControllerTest`, `NodeShowControllerTest`,
     `NodeGrantControllerTest`, `ListNodesRequestTest`, `ShowNodeRequestTest`,
     `GrantNodeRequestTest`.
+  - Migration note: these request classes will be replaced by Saloon
+    equivalents during the `SALOON-NODE-FAMILY-1` workstream.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
 - [ ] Port process API controllers and typed client requests.
@@ -1041,15 +1099,31 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Start the App read workstream:
-   APP-ABSTRACTION-1 → APP-SCHEMA-1 → APP-API-LIST-1 → APP-LIST-1 →
-   APP-API-SHOW-1 → APP-SHOW-1.
-2. Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
-   Docker-backed feature E2E (`composer test:e2e -- --filter='AppList'` and
-   `composer test:e2e -- --filter='AppShow'`) once the tests exist.
-3. Keep Node destructive/provisioning follow-ups explicit but out of the app
-   read critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove`
-   paired E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths,
-   WireGuard peer teardown, and DNS cleanup.
-4. Port `profile` later as a verification helper once app read state exists and
+1. **Finish Saloon foundation + node family migration.**
+   - Complete `SALOON-NODE-FAMILY-1`: migrate all existing node gateway requests
+     (`ListNodesRequest`, `ShowNodeRequest`, `GrantNodeRequest`,
+     `RevokeNodeRequest`, `RemoveNodeRequest`, `UpdateNodeRequest`,
+     `DefaultNodeRequest`) from the hand-rolled `GatewayRequestSender`
+     convention to Saloon v4.0.0 connector/request/DTO classes.
+   - Delete old `GatewayClient`, `GatewayRequestSender`, `GatewayResponseParser`,
+     and hand-rolled request DTOs once all callers are migrated.
+   - Update `docs/abstractions/cross-cutting.md` with the Saloon transport
+     pattern.
+2. **Finish activity logging foundation.**
+   - `ACTIVITY-FOUNDATION-1` → `ACTIVITY-CORRELATION-1` →
+     `ACTIVITY-CLI-TRAITS-1`.
+   - `ACTIVITY-NODE-FAMILY-1` adds activity metadata to node commands during
+     the Saloon migration.
+3. **Resume App read workstream.**
+   - Only after Saloon node-family migration and activity-log foundation are
+     complete.
+   - `APP-ABSTRACTION-1` → `APP-SCHEMA-1` → `APP-API-LIST-1` → `APP-LIST-1` →
+     `APP-API-SHOW-1` → `APP-SHOW-1`.
+   - Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
+     Docker-backed feature E2E.
+4. Keep Node destructive/provisioning follow-ups explicit but out of the
+   critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
+   E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths, WireGuard
+   peer teardown, and DNS cleanup.
+5. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
