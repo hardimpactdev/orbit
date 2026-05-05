@@ -11,33 +11,51 @@ headers, request typing, and response envelope parsing.
 
 **Current pointers:**
 
-- `app/Services/Gateway/GatewayClient.php`
-- `app/Services/Gateway/GatewayRequestSender.php`
-- `app/Services/Gateway/GatewayRequest.php`
-- `app/Services/Gateway/GatewayResponse.php`
-- `app/Services/Gateway/GatewayResponseParser.php`
-- `app/Services/Gateway/Requests/ListNodesRequest.php`
-- `app/Services/Gateway/Requests/ShowNodeRequest.php`
+- `app/Http/Gateway/GatewayConnector.php`
+- `app/Http/Gateway/GatewayRequest.php`
+- `app/Http/Gateway/GatewayApiException.php`
+- `app/Http/Gateway/Plugins/HasCorrelationHeader.php`
+- `app/Http/Gateway/Requests/<Family>/*`
+- `app/Http/Gateway/Responses/<Family>/*`
+- `app/Services/Gateway/FetchGatewayRootCa.php`
 - `app/Http/Controllers/Api/NodeListController.php`
 - `app/Http/Controllers/Api/NodeShowController.php`
-- `tests/Unit/Services/Gateway/GatewayRequestSenderTest.php`
-- `tests/Unit/Services/Gateway/GatewayResponseParserTest.php`
-- `tests/Unit/Services/Gateway/Requests/ListNodesRequestTest.php`
-- `tests/Unit/Services/Gateway/Requests/ShowNodeRequestTest.php`
+- `tests/Unit/Http/Gateway/GatewayConnectorTest.php`
+- `tests/Unit/Http/Gateway/GatewayRequestTest.php`
+- `tests/Unit/Http/Gateway/Plugins/HasCorrelationHeaderTest.php`
+- `tests/Unit/Http/Gateway/Requests/Nodes/*`
 - `tests/Feature/Http/Api/NodeListControllerTest.php`
 - `tests/Feature/Http/Api/NodeShowControllerTest.php`
+- command feature tests that fake gateway calls with Saloon
+  `MockClient` / `MockResponse`
 
 **Invariants:**
 
-- Use `GatewayClient` for steady-state CLI-to-gateway HTTP calls.
+- Use `GatewayConnector` for steady-state CLI-to-gateway HTTP calls.
 - Preserve `LocalGatewaySettings` CA verification, `allow_redirects=false`,
-  explicit timeout/connect timeout, `acceptJson()`, and Orbit correlation
+  explicit timeout/connect timeout, JSON accept headers, and Orbit correlation
   headers.
-- Use typed `GatewayRequest` classes once an endpoint has a stable command/API
-  contract.
+- `GatewayConnector` owns the base URL and default transport config. Do not
+  duplicate gateway URL, CA, redirect, timeout, or client-header setup inside
+  commands.
+- Use typed `GatewayRequest` subclasses under
+  `App\Http\Gateway\Requests\<Family>` once an endpoint has a stable
+  command/API contract.
+- Typed requests return DTOs from `App\Http\Gateway\Responses\<Family>` through
+  Saloon's DTO flow.
 - Server responses use the discriminated `success` / `error` JSON envelope.
-- Client code consumes the envelope through `GatewayRequestSender` and
-  `GatewayResponseParser`, not ad hoc response parsing inside each command.
+- Client code consumes the envelope through `GatewayRequest` and catches
+  `GatewayApiException` when a command needs command-specific error rendering;
+  do not parse success/error envelopes ad hoc inside each command.
+- Request correlation belongs in
+  `App\Http\Gateway\Plugins\HasCorrelationHeader`; new gateway callers should
+  inherit it through `GatewayConnector`.
+- Tests for gateway client requests and command forwarding use Saloon
+  `MockClient` / `MockResponse`. Laravel `Http::fake()` does not intercept
+  Saloon requests.
+- `FetchGatewayRootCa` intentionally remains on Laravel `Http` because it is
+  the pre-trust CA bootstrap path. It runs before the gateway CA is trusted and
+  should not use `GatewayConnector`.
 
 ## Command Renderer And Test Pairing
 
