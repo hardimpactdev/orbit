@@ -38,14 +38,17 @@ The orchestrator waits for your terminal label before dispatching implementers.
    - if invalidated, retag back to `draft`, post a one-line reason, and queue
      for re-scout in step 7.
 
-6. **Fill to target.** Count dispatchable `worker-ready` todos using
-   `references/todo-state.md`. If the count is at or above
-   `pipeline.ready_target`, skip to step 8. Otherwise pick only enough next
-   candidates from `docs/PORTING.md` to reach the target. Skip entries already
-   present as held drafts (record the skip as `gap_reason`). Create each as
-   `draft` using `worker-todo-template.md`. Command ports need a paired E2E
-   gate todo with `lane=e2e-provision`, `lane=e2e-feature`, or `lane=none`.
-   Family-review candidates also use `family-review-todo-template.md`.
+6. **Fill to target.** Count all open todos in the project except
+   `coordination_todo`. This is a hard cap: if the count is at or above
+   `pipeline.ready_target`, skip to step 8 and record the cap as
+   `gap_reason`. Otherwise pick next candidates from `docs/PORTING.md` so
+   the resulting total (including any paired E2E gates and prerequisite
+   splits you create this tick) stays at or below the cap. Skip entries
+   already present as held drafts. Create each as `draft` using
+   `worker-todo-template.md`. Command ports need a paired E2E gate todo
+   with `lane=e2e-provision`, `lane=e2e-feature`, or `lane=none` — the
+   gate counts toward the cap. Family-review candidates also use
+   `family-review-todo-template.md`.
 
 7. **Spawn scouts.** For each newly created or step-5-invalidated draft, spawn
    `agents.todo_scout` named `SCOUT-<todo_id>` per `dispatch-protocol.md`:
@@ -60,7 +63,8 @@ The orchestrator waits for your terminal label before dispatching implementers.
 ```text
 PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION
 
-dispatchable_worker_ready: <count> / target=<pipeline.ready_target>
+open_todos: <count> / target=<pipeline.ready_target>
+dispatchable_worker_ready: <count>
 promoted:
   - <todo id or none>
 revalidated_back_to_draft:
