@@ -380,7 +380,9 @@ describe('node:new', function (): void {
         $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
         $firstPem = file_get_contents($trustPath);
 
-        Process::fake();
+        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
+            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
+            : Process::result());
         Process::preventStrayProcesses();
         ($this->fakeGatewayApiVerification)();
 
@@ -630,7 +632,9 @@ describe('node:new', function (): void {
     });
 
     it('fails app-node creation before side effects when no gateway is configured', function (): void {
-        Process::fake();
+        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
+            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
+            : Process::result());
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
@@ -678,7 +682,9 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Process::fake();
+        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
+            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
+            : Process::result());
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [
@@ -727,6 +733,10 @@ describe('node:new', function (): void {
         Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
             && str_contains($process->command, 'app')
             && str_contains($process->command, '--source-archive='));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
+            && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'usermod -p')
+            && str_contains($process->command, 'orbit'));
     });
 
     it('provisions a production app node without a development tld from a gateway caller', function (): void {
@@ -748,7 +758,9 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Process::fake();
+        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
+            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
+            : Process::result());
         Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('node:new', [

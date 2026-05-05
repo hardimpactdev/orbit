@@ -363,6 +363,16 @@ class NodeNewCommand extends Command
             );
         }
 
+        $sshAuthorization = $this->authorizeRuntimeSshUser(
+            host: $inputs['host'],
+            sshUser: $inputs['sshUser'],
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($sshAuthorization)) {
+            return $sshAuthorization;
+        }
+
         $wireguardAddress = $this->nextWireguardAddress();
         $gatewayEndpoint = $this->gatewayEndpoint();
 
@@ -419,6 +429,64 @@ class NodeNewCommand extends Command
         $this->line("Endpoint: {$inputs['host']}");
 
         return self::SUCCESS;
+    }
+
+    private function authorizeRuntimeSshUser(string $host, string $sshUser, string $runtimeUser): ?int
+    {
+        $publicKey = $this->gatewaySshPublicKey();
+
+        if (is_int($publicKey)) {
+            return $publicKey;
+        }
+
+        $home = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
+        $authorizedKeys = "{$home}/.ssh/authorized_keys";
+        $script = sprintf(
+            'sudo install -d -m 700 -o %1$s -g %1$s %2$s && sudo touch %3$s && sudo chown %1$s:%1$s %3$s && sudo chmod 600 %3$s && (sudo grep -qxF %4$s %3$s || printf "%%s\n" %4$s | sudo tee -a %3$s >/dev/null)',
+            escapeshellarg($runtimeUser),
+            escapeshellarg("{$home}/.ssh"),
+            escapeshellarg($authorizedKeys),
+            escapeshellarg($publicKey),
+        );
+
+        $authorization = Process::timeout(30)->run(sprintf(
+            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+            escapeshellarg($sshUser),
+            escapeshellarg($host),
+            escapeshellarg($script),
+        ));
+
+        if ($authorization->successful()) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "App host '{$host}' could not authorize the steady-state SSH user.",
+            meta: [
+                'host' => $host,
+                'step' => 'steady_state_ssh_authorization',
+                'error' => trim($authorization->errorOutput()) ?: trim($authorization->output()) ?: null,
+            ],
+        );
+    }
+
+    private function gatewaySshPublicKey(): string|int
+    {
+        $publicKey = Process::timeout(30)->run('ssh-keygen -y -f ~/.ssh/id_ed25519');
+
+        if ($publicKey->successful() && trim($publicKey->output()) !== '') {
+            return trim($publicKey->output());
+        }
+
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: 'Gateway SSH identity is not available for app-node steady-state access.',
+            meta: [
+                'step' => 'steady_state_ssh_authorization',
+                'error' => trim($publicKey->errorOutput()) ?: trim($publicKey->output()) ?: null,
+            ],
+        );
     }
 
     private function bootstrapFirstGateway(

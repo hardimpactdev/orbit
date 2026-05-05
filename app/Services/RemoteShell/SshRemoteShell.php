@@ -88,7 +88,7 @@ final readonly class SshRemoteShell implements RemoteShell
         }
 
         $host = $node->wireguard_address ?: $node->host;
-        $user = $node->ssh_user ?: 'orbit';
+        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
 
         return sprintf(
             'ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 %s@%s %s',

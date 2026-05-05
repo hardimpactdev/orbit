@@ -206,6 +206,8 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['meta']['warnings'])->toBe([])
+        ->and($remoteShell->scripts[1])->toContain('/usr/sbin/php-fpm8.5')
+        ->and($remoteShell->scripts[1])->toContain('php-fpm8.5')
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
         ->and($remoteShell->scripts[2])->toContain('[orbit-docs]')
         ->and($remoteShell->scripts[2])->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')

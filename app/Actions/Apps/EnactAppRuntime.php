@@ -28,7 +28,9 @@ final readonly class EnactAppRuntime
         }
 
         $result = $this->remoteShell->run($app->node, sprintf(
-            'command -v %1$s >/dev/null 2>&1 || command -v php-fpm >/dev/null 2>&1',
+            'test -x %1$s || command -v %2$s >/dev/null 2>&1 || command -v %3$s >/dev/null 2>&1 || command -v php-fpm >/dev/null 2>&1',
+            escapeshellarg("/usr/sbin/php-fpm{$app->php_version}"),
+            escapeshellarg("php-fpm{$app->php_version}"),
             escapeshellarg("php{$app->php_version}-fpm"),
         ));
 

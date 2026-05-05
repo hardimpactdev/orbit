@@ -107,6 +107,7 @@ if ! id -u "$USER" >/dev/null 2>&1; then
     sudo useradd -m -s /bin/bash "$USER"
 fi
 sudo usermod -s /bin/bash "$USER" 2>/dev/null || true
+sudo usermod -p '*' "$USER" 2>/dev/null || true
 sudo usermod -aG sudo "$USER" 2>/dev/null || true
 if [ ! -d "/home/$USER" ]; then
     sudo mkdir -p "/home/$USER"

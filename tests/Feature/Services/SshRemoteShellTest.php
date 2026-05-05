@@ -38,7 +38,7 @@ it('runs local nodes through bash without ssh', function (): void {
     });
 });
 
-it('runs remote nodes over ssh using wireguard address and ssh user', function (): void {
+it('runs remote nodes over ssh using wireguard address and steady state user', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "cloned\n"),
@@ -47,7 +47,8 @@ it('runs remote nodes over ssh using wireguard address and ssh user', function (
     $node = Node::factory()->create([
         'host' => 'public.example.com',
         'wireguard_address' => '10.44.0.20',
-        'ssh_user' => 'deploy',
+        'ssh_user' => 'provisioner',
+        'user' => 'deploy',
         'is_local' => false,
     ]);
 
@@ -62,6 +63,24 @@ it('runs remote nodes over ssh using wireguard address and ssh user', function (
             && str_contains((string) $process->command, 'bash -lc')
             && str_contains((string) $process->command, 'git clone git@github.com:acme/site.git site');
     });
+});
+
+it('falls back to ssh user when steady state user is not recorded', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "ok\n"),
+    ]);
+
+    $node = Node::factory()->create([
+        'wireguard_address' => '10.44.0.21',
+        'ssh_user' => 'orbit',
+        'user' => null,
+        'is_local' => false,
+    ]);
+
+    (new SshRemoteShell)->run($node, 'whoami');
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, "'orbit'@'10.44.0.21'"));
 });
 
 it('throws failed remote shell results when requested', function (): void {

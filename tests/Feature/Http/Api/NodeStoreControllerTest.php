@@ -51,7 +51,9 @@ describe('NodeStoreController', function (): void {
             ]),
         ]);
 
-        Process::fake();
+        Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
+            ? Process::result(output: "ssh-ed25519 AAAATEST gateway\n")
+            : Process::result());
         Process::preventStrayProcesses();
 
         $response = $this
@@ -93,6 +95,8 @@ describe('NodeStoreController', function (): void {
         Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
             && str_contains($process->command, 'app')
             && str_contains($process->command, '--source-archive='));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
+            && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
     });
 
     it('rejects app callers before provisioning', function (): void {
