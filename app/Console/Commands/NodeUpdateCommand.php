@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Node;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\UpdateNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Input\ArgvInput;
+use Throwable;
 
 #[Signature('node:update
     {name? : Node name to update}
@@ -44,14 +47,6 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to update a node.',
-                meta: [],
-            );
-        }
-
         $name = $this->stringArgument('name');
 
         if ($name === null) {
@@ -59,19 +54,6 @@ class NodeUpdateCommand extends Command
                 code: 'validation_failed',
                 message: 'Node name is required.',
                 meta: ['field' => 'name'],
-            );
-        }
-
-        $node = Node::query()
-            ->where('name', $name)
-            ->where('status', 'active')
-            ->first();
-
-        if (! $node instanceof Node) {
-            return $this->failCommand(
-                code: 'node.not_found',
-                message: "Node '{$name}' not found.",
-                meta: ['name' => $name],
             );
         }
 
@@ -105,6 +87,23 @@ class NodeUpdateCommand extends Command
             );
         }
 
+        if ($callerRole === 'control') {
+            return $this->forwardUpdate($name, $providedFields);
+        }
+
+        $node = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $node instanceof Node) {
+            return $this->failCommand(
+                code: 'node.not_found',
+                message: "Node '{$name}' not found.",
+                meta: ['name' => $name],
+            );
+        }
+
         $roleIncompatible = $this->detectRoleIncompatibleField($node, $providedFields);
 
         if ($roleIncompatible !== null) {
@@ -119,11 +118,7 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        if (! $this->wantsJson()) {
-            $this->line('┌ Update Node');
-            $this->line('○ Validate node');
-            $this->line('○ Update intent');
-        }
+        $this->renderProgressTree();
 
         $changes = $this->computeChanges($node, $providedFields);
 
@@ -136,6 +131,50 @@ class NodeUpdateCommand extends Command
         $changedKeys = array_keys($changes);
 
         return $this->respondSuccess($name, $changedKeys);
+    }
+
+    /**
+     * @param  array<string, string|null>  $providedFields
+     */
+    private function forwardUpdate(string $name, array $providedFields): int
+    {
+        $this->renderProgressTree();
+
+        try {
+            $response = GatewayRequestSender::make()->send(
+                new UpdateNodeRequest($name, $providedFields),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update a node.',
+                meta: [],
+            );
+        }
+
+        if (! $response->isSuccess()) {
+            return $this->failCommand(
+                code: $response->errorCode() ?? 'gateway_unavailable',
+                message: $response->errorMessage() ?? 'Gateway connection is required to update a node.',
+                meta: $response->errorMeta(),
+            );
+        }
+
+        return $this->respondForwardedSuccess($name, $response->data());
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function respondForwardedSuccess(string $fallbackName, array $data): int
+    {
+        $name = $data['name'] ?? $fallbackName;
+        $changed = $data['changed'] ?? [];
+
+        return $this->respondSuccess(
+            is_string($name) && $name !== '' ? $name : $fallbackName,
+            is_array($changed) ? array_values(array_filter($changed, is_string(...))) : [],
+        );
     }
 
     private function callerRole(): string
@@ -385,5 +424,16 @@ class NodeUpdateCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function renderProgressTree(): void
+    {
+        if ($this->wantsJson()) {
+            return;
+        }
+
+        $this->line('┌ Update Node');
+        $this->line('○ Validate node');
+        $this->line('○ Update intent');
     }
 }

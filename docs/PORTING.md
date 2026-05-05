@@ -598,8 +598,10 @@ commands. Order matters because each adds a new write API endpoint:
 
 1. `NODE-API-UPDATE-1` is implemented: gateway-side `PUT /api/nodes/{name}` +
    `UpdateNodeRequest`.
-2. `NODE-UPDATE-FWD-1` — wire `node:update` control-caller forwarding (paired
-   ephemeral Pest E2E; write command).
+2. `NODE-UPDATE-FWD-1` is implemented: configured control callers forward
+   `node:update` through `UpdateNodeRequest`, preserve structured gateway API
+   errors, and avoid local target-node writes. The paired E2E gate remains
+   deferred.
 3. `NODE-API-DEFAULT-1` is implemented: gateway-side `GET|PUT|DELETE
    /api/nodes/default` + `DefaultNodeRequest`.
 4. `NODE-DEFAULT-FWD-1` — wire `node:default` control-caller forwarding
@@ -675,11 +677,14 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: gateway-local update with progress tree, field validation, role-incompatibility checks, and split contract tests.
+  - Gateway forwarding slice implemented: configured control callers forward
+    through `GatewayRequestSender` and typed `UpdateNodeRequest`; gateway API
+    structured errors are preserved, and forwarded writes do not require or
+    mutate a local target-node row.
   - Contract gaps:
-    - control-node forwarding to gateway (requires GatewayClient, GATEWAY-1/202).
     - interactive input mode (prompting for name and field selection).
     - artifact re-enactment after intent update.
-    - `NodeUpdateOnControlNodeContractTest.php` (blocked by gateway forwarding).
+    - paired ephemeral E2E gate for the control-caller forwarding path.
 - [~] Port `node:default`.
   - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`
   - Current docs: `docs/commands/1_node/9_node-default`

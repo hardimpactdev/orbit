@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
@@ -45,6 +47,22 @@ function setupGatewayCallerBase(): void
         'environment' => null,
         'is_local' => true,
     ]));
+}
+
+function setupControlCallerForNodeUpdate(): void
+{
+    DB::table('nodes')->insert(nodeUpdateBaseRow([
+        'name' => 'control-1',
+        'role' => 'control',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
 }
 
 describe('node:update base contract', function (): void {
@@ -179,7 +197,7 @@ describe('node:update caller role behavior', function (): void {
             ->and($payload['error']['meta']['caller_role'])->toBe('app');
     });
 
-    it('rejects control-node callers with gateway_unavailable', function (): void {
+    it('rejects unconfigured control-node callers with gateway_unavailable', function (): void {
         DB::table('nodes')->insert(nodeUpdateBaseRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -222,6 +240,99 @@ describe('node:update caller role behavior', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('local_context_invalid')
             ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
+    });
+});
+
+describe('node:update control forwarding', function (): void {
+    it('forwards configured control-node updates to the gateway without a local target row', function (): void {
+        setupControlCallerForNodeUpdate();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'success' => [
+                    'data' => [
+                        'name' => 'app-1',
+                        'changed' => ['host', 'public_ipv4'],
+                        'action' => 'updated',
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.8',
+            '--public-ipv4' => '203.0.113.10',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'name' => 'app-1',
+                'changed' => ['host', 'public_ipv4'],
+                'action' => 'updated',
+            ])
+            ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'PUT'
+            && $request->url() === 'https://10.6.0.2/api/nodes/app-1'
+            && $request['host'] === '10.6.0.8'
+            && $request['public_ipv4'] === '203.0.113.10');
+    });
+
+    it('passes through structured gateway authorization failures', function (): void {
+        setupControlCallerForNodeUpdate();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => 'This control node is not authorized to update nodes.',
+                    'meta' => [
+                        'required_node' => 'gateway-1',
+                        'caller_role' => 'control',
+                    ],
+                ],
+            ], 403),
+        ]);
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.8',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('authorization_failed')
+            ->and($payload['error']['message'])->toBe('This control node is not authorized to update nodes.')
+            ->and($payload['error']['meta'])->toBe([
+                'required_node' => 'gateway-1',
+                'caller_role' => 'control',
+            ]);
+    });
+
+    it('validates control-node input locally before forwarding', function (): void {
+        setupControlCallerForNodeUpdate();
+
+        Http::fake();
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--environment' => 'staging',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('environment');
+
+        Http::assertNothingSent();
     });
 });
 
