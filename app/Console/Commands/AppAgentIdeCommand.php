@@ -16,6 +16,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\select;
+
 #[Signature('app:agent-ide
     {app? : App name or hostname}
     {agent_ide? : Agent IDE adapter (opencode, polyscope, inherit, or none)}
@@ -38,11 +40,19 @@ class AppAgentIdeCommand extends Command
 
         $selector = $this->stringArgument('app');
 
+        if ($selector === null && $this->isInteractiveInput()) {
+            $selector = trim((string) $this->ask('App name or hostname'));
+        }
+
         if ($selector === null) {
             return $this->failValidation('app', 'App is required.');
         }
 
         $agentIde = $this->stringArgument('agent_ide');
+
+        if ($agentIde === null && $this->isInteractiveInput()) {
+            $agentIde = $this->promptForAgentIde($defaults);
+        }
 
         if ($agentIde === null) {
             return $this->failValidation('agent_ide', 'Agent IDE adapter is required.');
@@ -74,6 +84,31 @@ class AppAgentIdeCommand extends Command
         }
 
         return $this->successCommand($defaults->set($app, $agentIde));
+    }
+
+    private function promptForAgentIde(AppAgentIdeDefaults $defaults): string
+    {
+        $options = collect($defaults->supportedAdapters())
+            ->mapWithKeys(fn (string $adapter): array => [$adapter => $this->agentIdeChoiceLabel($adapter)])
+            ->all();
+
+        /** @var string $selected */
+        $selected = select(
+            label: 'Select agent IDE adapter',
+            options: $options,
+            default: 'inherit',
+        );
+
+        return $selected;
+    }
+
+    private function agentIdeChoiceLabel(string $adapter): string
+    {
+        return match ($adapter) {
+            'inherit' => 'Inherit node default',
+            'none' => 'None',
+            default => $adapter,
+        };
     }
 
     private function forwardSet(string $selector, string $agentIde): int
@@ -154,16 +189,19 @@ class AppAgentIdeCommand extends Command
     private function successCommand(array $data): int
     {
         if (! $this->wantsJson()) {
-            $app = $data['app'];
-            $adapter = $data['agent_ide']['effective_adapter'] ?? $data['agent_ide']['adapter'];
+            $this->line('┌ Configuring App Agent IDE');
+            $this->line('○ Validate adapter');
+            $this->line('○ Check for workspace cleanup');
+            $this->line('○ Apply and verify app agent IDE');
 
             if ($data['action'] === 'converged') {
-                $this->line("App '".(string) ($app['name'] ?? '')."' agent IDE already set to '".($adapter ?? 'none')."'.");
+                $this->line($this->humanConvergedLine($data));
 
                 return self::SUCCESS;
             }
 
-            $this->line("App '".(string) ($app['name'] ?? '')."' agent IDE set to '".($adapter ?? 'none')."'.");
+            $this->line($this->humanSetLine($data));
+            $this->renderCleanupSummary($data);
 
             return self::SUCCESS;
         }
@@ -175,6 +213,83 @@ class AppAgentIdeCommand extends Command
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{
+     *     app: array<string, mixed>,
+     *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
+     *     cleanup: array{workspaces_removed: list<string>},
+     *     action: string
+     * }  $data
+     */
+    private function humanSetLine(array $data): string
+    {
+        $name = (string) ($data['app']['name'] ?? '');
+        $node = (string) ($data['app']['node'] ?? '');
+        $agentIde = $data['agent_ide'];
+        $adapter = $agentIde['adapter'];
+        $effectiveAdapter = $agentIde['effective_adapter'];
+
+        if ($adapter === null && $agentIde['source'] === 'node' && $effectiveAdapter !== null) {
+            return "└ App `{$name}` agent IDE set to inherit (effective: `{$effectiveAdapter}` from node `{$node}`)";
+        }
+
+        if ($adapter === null) {
+            return "└ App `{$name}` agent IDE set to inherit (effective: none)";
+        }
+
+        if ($adapter === 'none') {
+            return "└ App `{$name}` agent IDE set to none (effective: none)";
+        }
+
+        return "└ App `{$name}` agent IDE set to `{$adapter}` (effective: `{$effectiveAdapter}`)";
+    }
+
+    /**
+     * @param  array{
+     *     app: array<string, mixed>,
+     *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
+     *     cleanup: array{workspaces_removed: list<string>},
+     *     action: string
+     * }  $data
+     */
+    private function humanConvergedLine(array $data): string
+    {
+        $name = (string) ($data['app']['name'] ?? '');
+        $agentIde = $data['agent_ide'];
+        $adapter = $agentIde['adapter'] ?? null;
+
+        if ($adapter === null && $agentIde['source'] === 'node') {
+            return "└ App `{$name}` agent IDE already set to inherit";
+        }
+
+        if ($adapter === null) {
+            return "└ App `{$name}` agent IDE already set to none";
+        }
+
+        return "└ App `{$name}` agent IDE already set to `{$adapter}`";
+    }
+
+    /**
+     * @param  array{
+     *     cleanup: array{workspaces_removed: list<string>}
+     * }  $data
+     */
+    private function renderCleanupSummary(array $data): void
+    {
+        $removed = $data['cleanup']['workspaces_removed'];
+
+        if ($removed === []) {
+            return;
+        }
+
+        $count = count($removed);
+        $this->line("Removed {$count} stale workspaces during adapter switch:");
+
+        foreach ($removed as $workspace) {
+            $this->line("- {$workspace}");
+        }
     }
 
     /**
@@ -211,5 +326,10 @@ class AppAgentIdeCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 }

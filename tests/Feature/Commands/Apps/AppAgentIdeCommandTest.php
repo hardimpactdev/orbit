@@ -281,3 +281,74 @@ it('forwards configured control callers through the typed gateway request', func
         ->and($payload['success']['data']['agent_ide']['effective_adapter'])->toBe('opencode')
         ->and($payload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
 });
+
+it('prompts for missing human input and renders the progress tree', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+    ]);
+
+    $this->artisan('app:agent-ide')
+        ->expectsQuestion('App name or hostname', 'docs')
+        ->expectsChoice('Select agent IDE adapter', 'opencode', [
+            'inherit' => 'Inherit node default',
+            'none' => 'None',
+            'opencode' => 'opencode',
+            'polyscope' => 'polyscope',
+        ])
+        ->expectsOutputToContain('┌ Configuring App Agent IDE')
+        ->expectsOutputToContain('○ Validate adapter')
+        ->expectsOutputToContain('○ Check for workspace cleanup')
+        ->expectsOutputToContain('○ Apply and verify app agent IDE')
+        ->expectsOutputToContain('└ App `docs` agent IDE set to `opencode` (effective: `opencode`)')
+        ->assertExitCode(0);
+});
+
+it('renders inherited and explicit none human success states', function (string $input, string $expected): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'agent_ide_config' => ['adapter' => 'polyscope'],
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $this->artisan('app:agent-ide docs '.$input)
+        ->expectsOutputToContain($expected)
+        ->assertExitCode(0);
+})->with([
+    'inherit' => ['inherit', '└ App `docs` agent IDE set to inherit (effective: `polyscope` from node `app-1`)'],
+    'none' => ['none', '└ App `docs` agent IDE set to none (effective: none)'],
+]);
+
+it('renders converged human output', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $this->artisan('app:agent-ide docs opencode')
+        ->expectsOutputToContain('└ App `docs` agent IDE already set to `opencode`')
+        ->assertExitCode(0);
+});
