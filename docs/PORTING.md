@@ -365,10 +365,12 @@ checkout-overlay support.
 Use this setup before promoting new command-port E2E gates:
 
 1. Build or refresh the stable Incus base image when apt/system dependencies
-   change:
+   change. For the shared local pool, build once on Beast and import that
+   image onto the sidecars:
 
    ```bash
-   ORBIT_E2E_HOST=beast \
+   ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast \
+   ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2 \
    ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
    composer e2e:prepare-base-image -- --force
    ```

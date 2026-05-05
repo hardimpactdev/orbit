@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Console\Commands\E2EPrepareBaseImageCommand;
 use App\E2E\Support\IncusHost;
 use App\Services\E2E\IncusBaseImagePreparer;
+use App\Services\E2E\IncusImageDistributor;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
@@ -89,19 +90,38 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
         ->assertSuccessful();
 });
 
-it('--force prepares every configured Incus host', function (): void {
+it('--force builds on the configured image build host and distributes to configured Incus hosts', function (): void {
+    $previousBuildHost = getenv('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST');
     $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
 
+    putenv('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast');
     putenv('ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2');
 
     $preparedHosts = [];
+    $distributorHost = null;
     $preparer = m::mock(IncusBaseImagePreparer::class);
     $preparer->shouldReceive('build')
-        ->twice()
         ->andReturn([
             'role' => 'base',
             'alias' => 'orbit-base-ubuntu-26.04',
             'action' => 'built',
+        ]);
+    $distributor = m::mock(IncusImageDistributor::class);
+    $distributor->shouldReceive('distribute')
+        ->once()
+        ->andReturn([
+            [
+                'host' => 'sidecar1',
+                'role' => 'base',
+                'alias' => 'orbit-base-ubuntu-26.04',
+                'action' => 'imported',
+            ],
+            [
+                'host' => 'sidecar2',
+                'role' => 'base',
+                'alias' => 'orbit-base-ubuntu-26.04',
+                'action' => 'imported',
+            ],
         ]);
 
     $command = app(E2EPrepareBaseImageCommand::class);
@@ -109,6 +129,11 @@ it('--force prepares every configured Incus host', function (): void {
         $preparedHosts[] = $host->config->host;
 
         return $preparer;
+    });
+    $command->setImageDistributorFactory(function (IncusHost $host) use ($distributor, &$distributorHost): IncusImageDistributor {
+        $distributorHost = $host->config->host;
+
+        return $distributor;
     });
     $this->app->instance(E2EPrepareBaseImageCommand::class, $command);
 
@@ -118,23 +143,29 @@ it('--force prepares every configured Incus host', function (): void {
                 'provider' => 'incus',
                 'dry_run' => false,
                 'image' => [
-                    'host' => 'sidecar1',
+                    'host' => 'beast',
                     'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
                     'action' => 'built',
                 ],
                 'images' => [
                     [
-                        'host' => 'sidecar1',
+                        'host' => 'beast',
                         'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
                         'action' => 'built',
                     ],
                     [
+                        'host' => 'sidecar1',
+                        'role' => 'base',
+                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'action' => 'imported',
+                    ],
+                    [
                         'host' => 'sidecar2',
                         'role' => 'base',
                         'alias' => 'orbit-base-ubuntu-26.04',
-                        'action' => 'built',
+                        'action' => 'imported',
                     ],
                 ],
             ],
@@ -146,10 +177,12 @@ it('--force prepares every configured Incus host', function (): void {
             ->expectsOutput($expected)
             ->assertSuccessful();
     } finally {
+        $previousBuildHost === false ? putenv('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST') : putenv("ORBIT_E2E_INCUS_IMAGE_BUILD_HOST={$previousBuildHost}");
         $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
     }
 
-    expect($preparedHosts)->toBe(['sidecar1', 'sidecar2']);
+    expect($preparedHosts)->toBe(['beast']);
+    expect($distributorHost)->toBe('beast');
 });
 
 it('--force without an Incus provider fails clearly', function (): void {

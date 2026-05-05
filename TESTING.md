@@ -62,7 +62,10 @@ default). It builds two reusable images plus per-topology template snapshots:
    `composer e2e:prepare-base-image -- --force`. Ubuntu cloud + bootstrap
    user + the `orbit` user + the apt deps that `bin/install-orbit` would
    otherwise install (PHP 8.5, composer, git, sqlite, WireGuard, openssh).
-   No Orbit source is baked in. Rebuilt only when system deps change.
+   No Orbit source is baked in. Rebuilt only when system deps change. In a
+   multi-host pool, the image is built on
+   `ORBIT_E2E_INCUS_IMAGE_BUILD_HOST` (default: `ORBIT_E2E_HOST`) and then
+   exported/imported onto the configured `ORBIT_E2E_INCUS_HOSTS`.
 3. **Per-topology templates** (`orbit-template-<kind>-<role>`). Built per
    `composer e2e:prepare-topology -- --force <kind>` invocation. The
    command tars the current checkout, ships it plus `bin/install-orbit`,
@@ -104,6 +107,7 @@ Environment overrides:
 
 ```bash
 ORBIT_E2E_HOST=beast
+ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
 ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
@@ -310,6 +314,7 @@ composer test:e2e:topology-contract
 composer e2e:preflight
 
 # Build the reusable Incus base image (deps + orbit user, no source).
+# Multi-host pools build on ORBIT_E2E_INCUS_IMAGE_BUILD_HOST and import to hosts.
 # Rebuild only when system deps change.
 composer e2e:prepare-base-image -- --force
 
@@ -500,6 +505,7 @@ ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=2  # Pest workers for composer test:e2e:p
 ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
 ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
 ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
+ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast # Build Incus images once here, then import to Incus hosts
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy

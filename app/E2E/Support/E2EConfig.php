@@ -43,14 +43,17 @@ final readonly class E2EConfig
         public int $slotStaleSeconds = 7200,
         /** @var array<string, int> */
         public array $dockerHostSlots = [],
+        public string $incusImageBuildHost = '',
     ) {}
 
     public static function fromEnvironment(): self
     {
+        $host = self::envString('ORBIT_E2E_HOST', 'beast');
+
         return new self(
             providerNames: self::providerNames(),
             topologyProviderNames: self::topologyProviderNames(),
-            host: self::envString('ORBIT_E2E_HOST', 'beast'),
+            host: $host,
             sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04/cloud')),
             blankImage: self::envString('ORBIT_E2E_BLANK_IMAGE', 'orbit-blank-ubuntu-26.04'),
             baseImage: self::envString('ORBIT_E2E_BASE_IMAGE', 'orbit-base-ubuntu-26.04'),
@@ -77,6 +80,7 @@ final readonly class E2EConfig
             slotWaitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
             slotStaleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
             dockerHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', ''), backend: 'Docker'),
+            incusImageBuildHost: self::envString('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST', $host),
         );
     }
 
@@ -224,6 +228,7 @@ final readonly class E2EConfig
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
+            incusImageBuildHost: $this->incusImageBuildHost,
         );
     }
 
@@ -259,6 +264,7 @@ final readonly class E2EConfig
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
+            incusImageBuildHost: $this->incusImageBuildHost,
         );
     }
 
@@ -300,6 +306,7 @@ final readonly class E2EConfig
             slotWaitSeconds: $this->slotWaitSeconds,
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
+            incusImageBuildHost: $this->incusImageBuildHost,
         );
     }
 }

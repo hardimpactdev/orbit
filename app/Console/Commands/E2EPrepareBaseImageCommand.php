@@ -9,6 +9,7 @@ use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
 use App\Services\E2E\IncusBaseImagePreparationOptions;
 use App\Services\E2E\IncusBaseImagePreparer;
+use App\Services\E2E\IncusImageDistributor;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -29,11 +30,24 @@ class E2EPrepareBaseImageCommand extends Command
     private ?Closure $preparerFactory = null;
 
     /**
+     * @var (Closure(IncusHost): IncusImageDistributor)|null
+     */
+    private ?Closure $imageDistributorFactory = null;
+
+    /**
      * @param  Closure(IncusHost): IncusBaseImagePreparer  $factory
      */
     public function setPreparerFactory(Closure $factory): void
     {
         $this->preparerFactory = $factory;
+    }
+
+    /**
+     * @param  Closure(IncusHost): IncusImageDistributor  $factory
+     */
+    public function setImageDistributorFactory(Closure $factory): void
+    {
+        $this->imageDistributorFactory = $factory;
     }
 
     public function handle(): int
@@ -79,26 +93,31 @@ class E2EPrepareBaseImageCommand extends Command
         $builtImages = [];
 
         try {
-            foreach ($hosts as $host) {
-                $hostConfig = $host->config;
-                $options = new IncusBaseImagePreparationOptions(
-                    force: true,
-                    sourceImage: $hostConfig->sourceImage,
-                    baseImageAlias: $hostConfig->baseImage,
-                    bootstrapUser: $hostConfig->bootstrapUser,
-                    cpus: (int) $hostConfig->cpus,
-                    memory: $hostConfig->memory,
-                    timeoutSeconds: $hostConfig->timeoutSeconds,
-                    depsScriptPath: base_path('bin/_e2e-deps.sh'),
-                );
+            $buildHost = new IncusHost($config->forHost($config->incusImageBuildHost));
+            $buildHostConfig = $buildHost->config;
+            $options = new IncusBaseImagePreparationOptions(
+                force: true,
+                sourceImage: $buildHostConfig->sourceImage,
+                baseImageAlias: $buildHostConfig->baseImage,
+                bootstrapUser: $buildHostConfig->bootstrapUser,
+                cpus: (int) $buildHostConfig->cpus,
+                memory: $buildHostConfig->memory,
+                timeoutSeconds: $buildHostConfig->timeoutSeconds,
+                depsScriptPath: base_path('bin/_e2e-deps.sh'),
+            );
 
-                $preparer = $this->preparerFactory !== null
-                    ? ($this->preparerFactory)($host)
-                    : new IncusBaseImagePreparer($host);
+            $preparer = $this->preparerFactory !== null
+                ? ($this->preparerFactory)($buildHost)
+                : new IncusBaseImagePreparer($buildHost);
 
-                $built = $preparer->build($options);
-                $builtImages[] = ['host' => $hostConfig->host, ...$built];
-            }
+            $built = $preparer->build($options);
+            $builtImages[] = ['host' => $buildHostConfig->host, ...$built];
+
+            $distributor = $this->imageDistributorFactory !== null
+                ? ($this->imageDistributorFactory)($buildHost)
+                : new IncusImageDistributor($buildHost);
+
+            array_push($builtImages, ...$distributor->distribute($buildHostConfig->baseImage, $hosts));
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         }
