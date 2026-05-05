@@ -144,9 +144,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/9_node-default/technical/1_node-default.md' => <<<'MD'
+# Technical Contract: `orbit node:default [name]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(3);
+    expect($findings)->toHaveCount(4);
 });

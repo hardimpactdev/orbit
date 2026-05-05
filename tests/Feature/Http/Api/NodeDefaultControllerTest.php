@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -99,6 +101,28 @@ describe('NodeDefaultController', function (): void {
             ]);
     });
 
+    it('logs activity when showing the configured default node', function (): void {
+        createDefaultCallerNode();
+        DB::table('local_node_defaults')->insert([
+            'default_node_name' => 'app-1',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = nodeDefaultJson('GET', '/api/nodes/default', server: ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:GET /nodes/default');
+        expect($entry->subject_type)->toBeNull();
+        expect($entry->properties->get('type'))->toBe('read');
+        expect($entry->properties->get('action'))->toBe('show');
+        expect($entry->properties->get('default_node'))->toBe('app-1');
+    });
+
     it('shows an empty default state', function (): void {
         createDefaultCallerNode();
 
@@ -121,6 +145,27 @@ describe('NodeDefaultController', function (): void {
             ->assertJsonPath('success.data.default_node.name', 'app-1');
 
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('app-1');
+    });
+
+    it('logs activity when setting the default node', function (): void {
+        $callerId = createDefaultCallerNode();
+        $appId = (int) DB::table('nodes')->insertGetId(apiDefaultNodeRow());
+        grantDefaultNodeAccess($callerId, $appId);
+
+        $response = nodeDefaultJson('PUT', '/api/nodes/default', ['name' => 'app-1'], ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:PUT /nodes/default');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe($appId);
+        expect($entry->description)->toBe('Default node set to app-1');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('action'))->toBe('set');
+        expect($entry->properties->get('default_node'))->toBe('app-1');
     });
 
     it('updates the existing default row on repeated set', function (): void {
@@ -156,6 +201,29 @@ describe('NodeDefaultController', function (): void {
             ->assertJsonPath('success.meta.was_set', true);
 
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBeNull();
+    });
+
+    it('logs activity when clearing the default node', function (): void {
+        createDefaultCallerNode();
+        DB::table('local_node_defaults')->insert([
+            'default_node_name' => 'app-1',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = nodeDefaultJson('DELETE', '/api/nodes/default', server: ['REMOTE_ADDR' => DEFAULT_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:DELETE /nodes/default');
+        expect($entry->subject_type)->toBeNull();
+        expect($entry->description)->toBe('Default node cleared');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('action'))->toBe('clear');
+        expect($entry->properties->get('default_node'))->toBeNull();
     });
 
     it('clears when no default was set', function (): void {

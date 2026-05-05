@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\SetDefaultNodeApiRequest;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-final readonly class NodeDefaultController
+final readonly class NodeDefaultController implements Loggable
 {
     public function show(Request $request): JsonResponse
     {
@@ -210,5 +213,67 @@ final readonly class NodeDefaultController
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return request()->isMethod('GET') ? ActivityLogType::Read : ActivityLogType::Write;
+    }
+
+    public function activityLogAction(): string
+    {
+        return sprintf('api:%s /nodes/default', request()->method());
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        if (! request()->isMethod('PUT')) {
+            return null;
+        }
+
+        return Node::query()
+            ->where('name', (string) request('name'))
+            ->first();
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [
+            'action' => $this->activityAction(),
+            'default_node' => $this->activityDefaultNode(),
+        ];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return match ($this->activityAction()) {
+            'set' => sprintf('Default node set to %s', (string) request('name')),
+            'clear' => 'Default node cleared',
+            default => null,
+        };
+    }
+
+    private function activityAction(): string
+    {
+        return match (request()->method()) {
+            'PUT' => 'set',
+            'DELETE' => 'clear',
+            default => 'show',
+        };
+    }
+
+    private function activityDefaultNode(): ?string
+    {
+        if (request()->isMethod('PUT')) {
+            $name = request('name');
+
+            return is_string($name) && $name !== '' ? $name : null;
+        }
+
+        if (request()->isMethod('DELETE')) {
+            return null;
+        }
+
+        return $this->readDefaultNode();
     }
 }

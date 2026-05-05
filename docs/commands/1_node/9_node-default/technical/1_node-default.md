@@ -178,6 +178,19 @@ sub-action is selected instead.
   `orbit node:default <valid-development-app-node>` or
   `orbit node:default --clear`.
 
+## Activity Logging
+
+The gateway API endpoints emit activity entries for successful and failed
+default-node reads and writes.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /nodes/default` for show, `api:PUT /nodes/default` for set, and `api:DELETE /nodes/default` for clear. |
+| Effect | `read` for show; `write` for set and clear. |
+| Subject | Target development app `Node` for set when the node is resolved; `none` for show, clear, and failures before target resolution. |
+| Properties | `action` is one of `show`, `set`, or `clear`; `default_node` is the selected/stored node name for show and set, or `null` for clear and empty show results. |
+| Description | `Default node set to <name>` for set, `Default node cleared` for clear, and derived for show. |
+
 ## Test Mapping
 
 Primary test owners:
