@@ -607,6 +607,10 @@ before any app write/destructive commands are created:
    `../orbit-old-may/app/Actions/Apps/ShowAppInfo.php` and
    `../orbit-old-may/app/Http/Saloon/Requests/Apps/ShowAppRequest.php`.
 6. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
+   **Implemented:** command, human/JSON renderers, typed gateway forwarding,
+   focused in-memory Pest coverage, and Docker feature E2E coverage are on
+   `main`. Current docs: `docs/commands/5_app/4_app-show`. Old evidence:
+   `../orbit-old-may/app/Console/Commands/AppShowCommand.php`.
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until
 the read pair is verified. Do not create workspace, process, tool, proxy,
