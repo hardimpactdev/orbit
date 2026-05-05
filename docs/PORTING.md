@@ -1186,14 +1186,14 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     persists intent and returns retryable `proxy.domain_inactive` warnings that
     point back to `app:register`.
   - [x] Provisioning-lane registration refresh gate.
-- [~] Port `app:root`.
+- [x] Port `app:root`.
   - [x] Gateway-local JSON/non-interactive intent update slice: resolves app
     names/hosts from gateway state, validates document roots lexically against
     the app path, updates `document_root`, and reuses app runtime enactment for
     PHP-FPM/proxy refresh.
   - [x] Gateway API endpoint and configured control-caller forwarding.
   - [x] Interactive input mode and human renderer progress tree.
-  - [ ] E2E root refresh gate.
+  - [x] E2E root refresh gate.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.
 - [ ] Port `app:agent-ide`.

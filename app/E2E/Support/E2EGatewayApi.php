@@ -377,6 +377,15 @@ PHP;
             return run_orbit_command(implode(' ', $parts));
         }
 
+        function run_app_root(string $name, array $input): array
+        {
+            return run_orbit_command(
+                'php artisan app:root '
+                    .escapeshellarg($name).' '
+                    .escapeshellarg((string) ($input['root'] ?? '')).' --json'
+            );
+        }
+
         function run_activity_list(array $query): array
         {
             $parts = ['php artisan activity:list --json'];
@@ -640,6 +649,29 @@ PHP;
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (preg_match('#^POST /api/apps/([^ ?]+)/root#', $requestLine, $matches) === 1) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_app_root(urldecode($matches[1]), $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
 
