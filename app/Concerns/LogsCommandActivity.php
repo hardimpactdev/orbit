@@ -12,6 +12,7 @@ use App\Services\ActivityLogTargets;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
+// @phpstan-ignore trait.unused
 trait LogsCommandActivity
 {
     private bool $activityLogOwnsCorrelation = false;

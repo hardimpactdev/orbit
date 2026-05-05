@@ -73,11 +73,13 @@ final readonly class LogActivity
         $client = $request->header('X-Orbit-Client');
         $localNode = $this->resolveLocalNode();
 
+        $servedByName = $localNode instanceof Node ? $localNode->name : gethostname();
+
         $props = [
             'client' => is_string($client) && $client !== '' ? $client : 'api',
             'method' => $request->method(),
             'path' => $request->path(),
-            'served_by_name' => $localNode?->name ?? gethostname() ?: 'unknown',
+            'served_by_name' => $servedByName ?: 'unknown',
             'served_by_wg_ip' => $localNode?->wireguard_address,
         ];
 

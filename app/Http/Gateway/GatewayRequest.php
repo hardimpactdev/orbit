@@ -94,7 +94,7 @@ abstract class GatewayRequest extends SaloonRequest
     {
         $raw = $response->body();
 
-        if (! is_string($raw) || $raw === '') {
+        if ($raw === '') {
             return null;
         }
 
