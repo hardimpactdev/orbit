@@ -87,12 +87,18 @@ describe('node:show role paths', function (): void {
             '*' => Http::response([
                 'success' => [
                     'data' => [
-                        'name' => 'visible-app',
-                        'role' => 'app',
-                        'status' => 'active',
-                        'environment' => 'development',
-                        'platform' => 'ubuntu_24-04',
-                        'wireguard_address' => '10.6.0.7',
+                        'node' => [
+                            'name' => 'visible-app',
+                            'role' => 'app',
+                            'status' => 'active',
+                            'environment' => 'development',
+                            'platform' => 'ubuntu_24-04',
+                            'wireguard_address' => '10.6.0.7',
+                            'grants' => [
+                                'consuming_nodes' => [],
+                                'serving_nodes' => [],
+                            ],
+                        ],
                     ],
                 ],
             ], 200),
@@ -112,15 +118,17 @@ describe('node:show role paths', function (): void {
             '*' => Http::response([
                 'success' => [
                     'data' => [
-                        'name' => 'gateway-1',
-                        'role' => 'gateway',
-                        'status' => 'active',
-                        'environment' => null,
-                        'platform' => 'ubuntu_24-04',
-                        'wireguard_address' => '10.6.0.2',
-                        'addresses' => ['wireguard' => '10.6.0.2'],
-                        'agent_ide' => ['adapter' => null, 'source' => 'default'],
-                        'grants' => ['consuming_nodes' => [], 'serving_nodes' => []],
+                        'node' => [
+                            'name' => 'gateway-1',
+                            'role' => 'gateway',
+                            'status' => 'active',
+                            'environment' => null,
+                            'platform' => 'ubuntu_24-04',
+                            'wireguard_address' => '10.6.0.2',
+                            'addresses' => ['wireguard' => '10.6.0.2'],
+                            'agent_ide' => ['adapter' => null, 'source' => 'default'],
+                            'grants' => ['consuming_nodes' => [], 'serving_nodes' => []],
+                        ],
                     ],
                 ],
             ], 200),
@@ -131,6 +139,38 @@ describe('node:show role paths', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['name'])->toBe('gateway-1');
+    });
+
+    it('forwards real grant data from gateway for control caller', function (): void {
+        setupNodeShowRolePathControlCaller();
+
+        Http::fake([
+            '*' => Http::response([
+                'success' => [
+                    'data' => [
+                        'node' => [
+                            'name' => 'app-1',
+                            'role' => 'app',
+                            'status' => 'active',
+                            'environment' => 'development',
+                            'platform' => 'ubuntu_24-04',
+                            'wireguard_address' => '10.6.0.7',
+                            'grants' => [
+                                'consuming_nodes' => ['control-1', 'control-2'],
+                                'serving_nodes' => ['control-1'],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['grants']['consuming_nodes'])->toBe(['control-1', 'control-2'])
+            ->and($payload['success']['data']['node']['grants']['serving_nodes'])->toBe(['control-1']);
     });
 
     it('handles gateway forwarding error for control caller', function (): void {

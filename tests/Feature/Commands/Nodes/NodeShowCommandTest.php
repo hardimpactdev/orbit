@@ -221,4 +221,43 @@ describe('node:show caller role behavior', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('gateway_unavailable');
     });
+
+    it('returns real grant data for gateway-local lookups', function (): void {
+        setupNodeShowCommandGatewayCaller();
+
+        DB::table('nodes')->insert([
+            nodeShowCommandRow([
+                'name' => 'app-1',
+                'role' => 'app',
+            ]),
+            nodeShowCommandRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+            nodeShowCommandRow([
+                'name' => 'control-2',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+        ]);
+
+        $app1Id = DB::table('nodes')->where('name', 'app-1')->value('id');
+        $control1Id = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $control2Id = DB::table('nodes')->where('name', 'control-2')->value('id');
+
+        DB::table('node_access')->insert([
+            ['consumer_node_id' => $control1Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $control2Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $app1Id, 'serving_node_id' => $control1Id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['grants']['consuming_nodes'])->toBe(['control-1', 'control-2'])
+            ->and($payload['success']['data']['node']['grants']['serving_nodes'])->toBe(['control-1']);
+    });
 });
