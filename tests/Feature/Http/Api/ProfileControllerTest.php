@@ -115,4 +115,54 @@ describe('ProfileController', function (): void {
             ->assertJsonPath('error.code', 'app.not_found')
             ->assertJsonPath('error.meta.app', 'hidden');
     });
+
+    it('resolves a visible app by absolute path', function (): void {
+        $caller = createProfileCallerNode();
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        grantProfileAccess($caller, $node);
+        $appPath = sys_get_temp_dir().'/orbit-profile-api-path-'.bin2hex(random_bytes(4));
+        mkdir($appPath.'/subdir', 0777, true);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+            'path' => $appPath,
+        ]);
+
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler
+        {
+            public function profile(string $url, array $headers = []): array
+            {
+                return [
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => $url,
+                        'uri' => '/',
+                        'status' => 200,
+                        'bytes' => 1234,
+                        'completed' => true,
+                    ],
+                    'timings' => [
+                        'dns_ms' => 1.0,
+                        'connect_ms' => 2.0,
+                        'tls_ms' => 3.0,
+                        'ttfb_ms' => 4.0,
+                        'download_ms' => 1.5,
+                        'total_ms' => 5.5,
+                    ],
+                    'error' => null,
+                    'response_headers' => [],
+                ];
+            }
+        });
+
+        $response = $this->call('GET', '/api/profile', [
+            'target' => $appPath.'/subdir',
+        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.target.app', 'docs')
+            ->assertJsonPath('success.data.request.url', 'https://docs.example.com/');
+    });
 });

@@ -126,6 +126,17 @@ final class ProfileController implements Loggable
                 fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $nodeConstraint)),
             );
 
+        if (str_starts_with($selector, '/')) {
+            $normalizedSelector = realpath($selector) ?: $selector;
+
+            return $baseQuery->get()->first(function (AppModel $app) use ($normalizedSelector): bool {
+                $path = realpath($app->path) ?: $app->path;
+
+                return $normalizedSelector === $path
+                    || str_starts_with($normalizedSelector, rtrim($path, '/').'/');
+            });
+        }
+
         $nameMatch = (clone $baseQuery)
             ->where('name', $selector)
             ->first();

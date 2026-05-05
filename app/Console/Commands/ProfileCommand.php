@@ -113,7 +113,7 @@ class ProfileCommand extends Command
             [$selector, $uri] = $parsed;
         }
 
-        if ($selector === null && $callerRole === 'gateway') {
+        if ($selector === null && in_array($callerRole, ['gateway', 'app'], true)) {
             $cwd = getcwd();
             $selector = is_string($cwd) ? $cwd : null;
         }

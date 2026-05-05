@@ -297,6 +297,79 @@ it('asks the gateway to profile targets for app callers', function (): void {
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/login');
 });
 
+it('sends the current working directory as the app caller profile target when target is omitted', function (): void {
+    Node::factory()->create([
+        'name' => 'app-local',
+        'role' => 'app',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        ShowProfileRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'source' => 'baseline',
+                    'instrumented' => false,
+                    'auth_mode' => 'guest',
+                    'request_id' => 'profile-request-id',
+                    'origin' => 'gateway',
+                    'target' => [
+                        'app' => 'docs',
+                        'workspace' => null,
+                        'node' => 'app-dev-1',
+                        'domain' => 'docs.test',
+                    ],
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => 'https://docs.test/',
+                        'uri' => '/',
+                        'status' => 200,
+                        'bytes' => 1200,
+                        'completed' => true,
+                    ],
+                    'timings' => [
+                        'dns_ms' => 1.0,
+                        'connect_ms' => 3.0,
+                        'tls_ms' => 7.0,
+                        'ttfb_ms' => 50.0,
+                        'download_ms' => 2.0,
+                        'total_ms' => 52.0,
+                    ],
+                    'error' => null,
+                    'response_headers' => [],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $appPath = sys_get_temp_dir().'/orbit-profile-app-cwd-'.bin2hex(random_bytes(4));
+    mkdir($appPath, 0777, true);
+    $originalCwd = getcwd();
+
+    try {
+        chdir($appPath);
+
+        $exitCode = Artisan::call('profile', [
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($originalCwd)) {
+            chdir($originalCwd);
+        }
+    }
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['origin'])->toBe('gateway')
+        ->and($payload['success']['data']['target']['app'])->toBe('docs');
+});
+
 it('falls back to gateway-origin profiling for control callers when caller-origin profiling fails', function (): void {
     Node::factory()->create([
         'name' => 'control-1',

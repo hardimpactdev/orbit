@@ -255,8 +255,11 @@ yet satisfy the full product contracts.
   - Gateway-caller cwd inference slice implemented: omitted targets on gateway
     callers resolve from the current working directory when it maps to an app
     path known by the gateway registry.
+  - App-caller cwd inference slice implemented: omitted targets on app callers
+    use the current working directory as a gateway-authorized path selector, and
+    `GET /api/profile` resolves visible app records by absolute app paths.
   - Contract gaps:
-    - app/workspace cwd inference for non-gateway callers and workspace paths.
+    - workspace cwd inference.
     - interactive app selector.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.
     - paired E2E gate for an observable profile target.
