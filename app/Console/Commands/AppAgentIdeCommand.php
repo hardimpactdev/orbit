@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
+use App\Http\Gateway\Responses\Apps\AppAgentIdeResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('app:agent-ide
     {app? : App name or hostname}
@@ -44,11 +49,7 @@ class AppAgentIdeCommand extends Command
         }
 
         if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to validate the adapter or list registered adapters.',
-                meta: [],
-            );
+            return $this->forwardSet($selector, $agentIde);
         }
 
         $app = $this->resolveApp($selector);
@@ -73,6 +74,32 @@ class AppAgentIdeCommand extends Command
         }
 
         return $this->successCommand($defaults->set($app, $agentIde));
+    }
+
+    private function forwardSet(string $selector, string $agentIde): int
+    {
+        try {
+            /** @var AppAgentIdeResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new SetAppAgentIdeRequest($selector, $agentIde))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to set app agent IDE defaults.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to set app agent IDE defaults.',
+                meta: [],
+            );
+        }
+
+        return $this->successCommand($dto->data);
     }
 
     private function resolveApp(string $selector): ?App

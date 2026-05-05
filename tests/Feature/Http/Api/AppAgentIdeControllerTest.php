@@ -1,0 +1,182 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\App;
+use App\Models\Node;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
+
+uses(RefreshDatabase::class);
+
+const APP_AGENT_IDE_CALLER_WG_IP = '10.6.0.98';
+
+function createAppAgentIdeCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => APP_AGENT_IDE_CALLER_WG_IP,
+        'wireguard_address' => APP_AGENT_IDE_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantAppAgentIdeAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ * @param  array<string, string>  $server
+ */
+function postAppAgentIdeJson(string $uri, array $data, array $server = []): TestResponse
+{
+    return test()->call(
+        'POST',
+        $uri,
+        $data,
+        [],
+        [],
+        array_merge([
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+        ], $server),
+        json_encode($data, JSON_THROW_ON_ERROR),
+    );
+}
+
+describe('AppAgentIdeController', function (): void {
+    it('sets an app agent IDE default for an authorized control caller', function (): void {
+        $caller = createAppAgentIdeCallerNode();
+        $appNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
+        grantAppAgentIdeAccess($caller, $appNode);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+        ]);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'opencode',
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
+            ->assertJsonPath('success.data.agent_ide.source', 'app')
+            ->assertJsonPath('success.data.agent_ide.effective_adapter', 'opencode')
+            ->assertJsonPath('success.data.cleanup.workspaces_removed', [])
+            ->assertJsonPath('success.data.action', 'set');
+
+        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe(['adapter' => 'opencode']);
+    });
+
+    it('clears an app override with inherit and reports the node effective adapter', function (): void {
+        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        $appNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'inherit',
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.agent_ide.adapter', null)
+            ->assertJsonPath('success.data.agent_ide.source', 'node')
+            ->assertJsonPath('success.data.agent_ide.effective_adapter', 'polyscope');
+
+        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
+    });
+
+    it('logs activity for a successful app agent IDE write', function (): void {
+        $caller = createAppAgentIdeCallerNode();
+        $appNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+        ]);
+        grantAppAgentIdeAccess($caller, $appNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+        ]);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'opencode',
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:POST /apps/{app}/agent-ide');
+        expect($entry->subject_type)->toBe(App::class);
+        expect($entry->subject_id)->toBe($app->id);
+        expect($entry->description)->toBe('App docs agent IDE set to opencode');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('target_app'))->toBe('docs');
+        expect($entry->properties->get('agent_ide'))->toBe('opencode');
+        expect($entry->properties->get('action'))->toBe('set');
+    });
+
+    it('rejects callers without access before mutation', function (): void {
+        createAppAgentIdeCallerNode();
+        $appNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+        ]);
+
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+        ]);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'opencode',
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.app', 'docs');
+
+        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
+    });
+
+    it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $field): void {
+        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        App::factory()->create([
+            'name' => 'docs',
+        ]);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', $data, ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', $code)
+            ->assertJsonPath("error.meta.{$field}", $data['agent_ide'] ?? 'agent_ide');
+    })->with([
+        'missing adapter' => [[], 'validation_failed', 'field'],
+        'unsupported adapter' => [['agent_ide' => 'unknown-ide'], 'app.unsupported_adapter', 'adapter'],
+    ]);
+});

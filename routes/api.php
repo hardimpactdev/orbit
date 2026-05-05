@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
+use App\Http\Controllers\Api\AppAgentIdeController;
 use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppRegisterController;
 use App\Http\Controllers\Api\AppRemoveController;
@@ -38,6 +39,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/apps', AppListController::class);
         Route::post('/apps/register', AppRegisterController::class);
         Route::post('/apps', AppStoreController::class);
+        Route::post('/apps/{app}/agent-ide', AppAgentIdeController::class);
         Route::post('/apps/{app}/root', AppRootController::class);
         Route::delete('/apps/{app}', AppRemoveController::class);
         Route::get('/apps/{app}', AppShowController::class);

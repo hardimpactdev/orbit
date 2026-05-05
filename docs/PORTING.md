@@ -1214,7 +1214,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     app-level adapter overrides, supports `inherit` and `none`, resolves
     effective adapter through the owning node default, and returns empty
     workspace cleanup until workspace intent exists.
-  - [ ] Gateway API endpoint and configured control-caller forwarding.
+  - [x] Gateway API endpoint and configured control-caller forwarding.
   - [ ] Interactive input mode and human renderer.
   - [ ] Workspace cleanup planning once workspace schema/removal exists.
   - [ ] E2E adapter intent gate.

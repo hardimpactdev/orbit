@@ -2,12 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('sets an app-level agent ide adapter from a gateway caller', function (): void {
     Node::factory()->create([
@@ -213,3 +221,63 @@ it('validates missing required non-interactive inputs', function (?string $app, 
     'missing app' => [null, 'opencode', 'app'],
     'missing agent ide' => ['docs', null, 'agent_ide'],
 ]);
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    App::factory()->create([
+        'name' => 'docs',
+    ]);
+
+    MockClient::global([
+        SetAppAgentIdeRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'agent_ide' => [
+                        'adapter' => 'opencode',
+                        'source' => 'app',
+                        'effective_adapter' => 'opencode',
+                    ],
+                    'cleanup' => [
+                        'workspaces_removed' => [],
+                    ],
+                    'action' => 'set',
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('app:agent-ide', [
+        'app' => 'docs',
+        'agent_ide' => 'opencode',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull()
+        ->and($payload['success']['data']['app']['name'])->toBe('docs')
+        ->and($payload['success']['data']['agent_ide']['effective_adapter'])->toBe('opencode')
+        ->and($payload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
+});

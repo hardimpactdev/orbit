@@ -1,0 +1,231 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Http\Requests\Api\SetAppAgentIdeApiRequest;
+use App\Models\App;
+use App\Models\Node;
+use App\Services\Apps\AppAgentIdeDefaults;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+
+final class AppAgentIdeController implements Loggable
+{
+    private ?App $activitySubject = null;
+
+    private ?string $activityTargetName = null;
+
+    private ?string $activityAgentIde = null;
+
+    private ?string $activityAction = null;
+
+    public function __construct(
+        private readonly AppAgentIdeDefaults $defaults,
+    ) {}
+
+    public function __invoke(SetAppAgentIdeApiRequest $request, string $app): JsonResponse
+    {
+        $this->activityTargetName = $app;
+
+        /** @var mixed $resolvedUser */
+        $resolvedUser = $request->user();
+        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
+
+        if (! $caller instanceof Node) {
+            return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        if ($caller->role === 'app') {
+            return $this->error(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => 'app'],
+                status: 403,
+            );
+        }
+
+        $targetApp = $this->resolveApp($app);
+
+        if (! $targetApp instanceof App) {
+            return $this->error(
+                code: 'app.not_found',
+                message: "App '{$app}' not found.",
+                meta: ['app' => $app],
+                status: 404,
+            );
+        }
+
+        $targetApp->loadMissing('node');
+
+        if (! $targetApp->node instanceof Node || ! $this->callerCanManageApp($caller, $targetApp)) {
+            return $this->authorizationFailed(
+                message: "This node is not authorized to manage app '{$targetApp->name}'.",
+                meta: [
+                    'app' => $targetApp->name,
+                    'caller_role' => $caller->role,
+                ],
+            );
+        }
+
+        $agentIde = $request->agentIde();
+
+        if (! $this->defaults->isSupported($agentIde)) {
+            return $this->error(
+                code: 'app.unsupported_adapter',
+                message: "The adapter \"{$agentIde}\" is not supported.",
+                meta: [
+                    'adapter' => $agentIde,
+                    'supported' => $this->defaults->supportedAdapters(),
+                ],
+                status: 422,
+            );
+        }
+
+        $data = $this->defaults->set($targetApp, $agentIde);
+        $this->activitySubject = $targetApp->refresh();
+        $this->activityAgentIde = $data['agent_ide']['effective_adapter'] ?? $data['agent_ide']['adapter'];
+        $this->activityAction = $data['action'];
+
+        return response()->json([
+            'success' => [
+                'data' => $data,
+            ],
+        ]);
+    }
+
+    private function resolveApp(string $selector): ?App
+    {
+        return App::query()
+            ->with('node')
+            ->get()
+            ->filter(fn (App $app): bool => $app->name === $selector
+                || $app->domain === $selector
+                || $app->url() === "https://{$selector}")
+            ->values()
+            ->first();
+    }
+
+    private function callerCanManageApp(Node $caller, App $app): bool
+    {
+        if ($caller->role === 'gateway') {
+            return true;
+        }
+
+        $node = $app->node;
+
+        if (! $node instanceof Node) {
+            return false;
+        }
+
+        return DB::table('node_access')
+            ->where('consumer_node_id', $caller->id)
+            ->where('serving_node_id', $node->id)
+            ->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function authorizationFailed(string $message, array $meta = []): JsonResponse
+    {
+        return $this->error(
+            code: 'authorization_failed',
+            message: $message,
+            meta: $meta,
+            status: 403,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function error(string $code, string $message, array $meta, int $status): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ],
+        ], $status);
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
+    {
+        return 'api:POST /apps/{app}/agent-ide';
+    }
+
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return [
+            'target_app' => $this->activityTargetName ?? (string) request()->route('app'),
+            'agent_ide' => $this->activityAgentIde,
+            'action' => $this->activityAction,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
+    {
+        $target = $this->activityTargetName ?? (string) request()->route('app');
+
+        if ($target === '' || $this->activityAction === null) {
+            return null;
+        }
+
+        if ($this->activityAgentIde === null) {
+            return "App {$target} agent IDE cleared";
+        }
+
+        if ($this->activityAction === 'converged') {
+            return "App {$target} agent IDE already set to {$this->activityAgentIde}";
+        }
+
+        return "App {$target} agent IDE set to {$this->activityAgentIde}";
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
+    }
+}
