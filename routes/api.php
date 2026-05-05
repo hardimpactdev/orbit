@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeDefaultController;
 use App\Http\Controllers\Api\NodeGrantController;
 use App\Http\Controllers\Api\NodeListController;
+use App\Http\Controllers\Api\NodeRevokeController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
@@ -25,6 +26,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::put('/nodes/default', [NodeDefaultController::class, 'set']);
         Route::delete('/nodes/default', [NodeDefaultController::class, 'clear']);
         Route::post('/nodes/grant', NodeGrantController::class);
+        Route::post('/nodes/revoke', NodeRevokeController::class);
         Route::put('/nodes/{name}', NodeUpdateController::class);
         Route::get('/nodes/{name}', NodeShowController::class);
     });
