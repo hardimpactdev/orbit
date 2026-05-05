@@ -429,6 +429,29 @@ When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command prepares each unique slot
 host once. Otherwise it uses `ORBIT_E2E_DOCKER_HOSTS`. Use
 `--runtime-only` or `--topology-only` when only one image layer needs refreshing.
 
+To run Docker feature E2E on temporary Hetzner capacity, use the hidden wrapper:
+
+```bash
+composer test:e2e:hcloud-docker -- --force --location=nbg1 --processes=3
+```
+
+For explicit per-location resource shapes, pass or export resource slots:
+
+```bash
+ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1 \
+composer test:e2e:hcloud-docker -- --force --processes=3
+```
+
+The wrapper creates a temporary Hetzner Cloud server with Docker installed,
+prepares the Docker runtime and topology images on that server, runs
+`composer test:e2e` with `ORBIT_E2E_DOCKER_HOSTS=root@<server-ip>`, then deletes
+the server and temporary SSH key unless `--keep` is set. This is intentionally
+separate from the always-on Docker host pool: use it when local/standing Docker
+capacity is unavailable or when CI needs disposable Docker capacity. When
+resource slots are configured, the wrapper leases one
+`location/server-type/image` slot and uses that exact shape for the temporary
+server.
+
 If Docker resources accumulate from interrupted runs, prefer the reaper:
 
 ```bash
@@ -451,6 +474,8 @@ ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemo
 ORBIT_E2E_PARALLEL_PROCESSES=2        # Pest workers for composer test:e2e
 ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
 ORBIT_E2E_INCUS_HOST_SLOTS=sidecar1:1,sidecar2:1  # Incus provisioning-test lease pool
+ORBIT_E2E_HCLOUD_LOCATION_SLOTS=nbg1:2,fsn1:1  # Hetzner provisioning-test lease pool
+ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1  # Hetzner location/type/image pool
 ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=2  # Pest workers for composer test:e2e:provision
 ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
 ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
@@ -474,15 +499,28 @@ prepared topology providers for `e2e-feature` tests. Keep provisioning provider
 selection VM-backed when a test proves machine setup, SSH, sudo, package
 installation, trust-store mutation, or system services.
 
+`ORBIT_E2E_PROVIDER=auto` expands to Incus only. Hetzner Cloud is intentionally
+opt-in: use `ORBIT_E2E_PROVIDER=hcloud`, `ORBIT_E2E_PROVIDERS=hcloud`, or the
+dedicated `composer test:e2e:hcloud-docker -- --force` wrapper when a run should
+create paid Hetzner resources.
+
 `composer test:e2e` sets `ORBIT_E2E_TOPOLOGY_PROVIDER=docker` explicitly.
 `ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
 or Pest invocations unless the provider selection code is changed.
 
 `composer test:e2e` and `composer test:e2e:provision` use separate local lease
 pools. Docker feature tests read `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus
-provisioning tests read `ORBIT_E2E_INCUS_HOST_SLOTS`. A busy Docker slot does
-not block an Incus provisioning worker, and a busy Incus slot does not block a
+provisioning tests read `ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud
+provisioning tests read `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
+`ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. A busy Docker slot does not block an Incus or
+Hetzner provisioning worker, and a busy provisioning slot does not block a
 Docker feature worker.
+
+`ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` treats each key as
+`location/server-type/image` and applies all three values before creating
+servers. `ORBIT_E2E_HCLOUD_LOCATION_SLOTS` remains available when every leased
+location should use the same `ORBIT_E2E_HCLOUD_SERVER_TYPE` and
+`ORBIT_E2E_HCLOUD_BLANK_IMAGE`.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work

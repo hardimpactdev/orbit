@@ -37,6 +37,10 @@ final readonly class E2EConfig
         public bool $keep,
         /** @var array<string, int> */
         public array $incusHostSlots = [],
+        /** @var array<string, int> */
+        public array $hcloudLocationSlots = [],
+        /** @var array<string, int> */
+        public array $hcloudResourceSlots = [],
         public int $slotWaitSeconds = 900,
         public int $slotStaleSeconds = 7200,
         /** @var array<string, int> */
@@ -69,6 +73,8 @@ final readonly class E2EConfig
             incusStoragePool: self::envString('ORBIT_E2E_INCUS_STORAGE_POOL', ''),
             incusMaxVmsPerHost: self::envInt('ORBIT_E2E_INCUS_MAX_VMS_PER_HOST', 4),
             incusHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_INCUS_HOST_SLOTS', ''), backend: 'Incus'),
+            hcloudLocationSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_LOCATION_SLOTS', ''), backend: 'Hcloud'),
+            hcloudResourceSlots: self::parseHostSlots(self::envString('ORBIT_E2E_HCLOUD_RESOURCE_SLOTS', ''), backend: 'Hcloud'),
             dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
             dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 8),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
@@ -118,7 +124,7 @@ final readonly class E2EConfig
         $provider = self::envString('ORBIT_E2E_PROVIDER', 'incus');
 
         if ($provider === 'auto') {
-            return ['incus', 'hcloud'];
+            return ['incus'];
         }
 
         return self::parseProviderNames($provider);
@@ -216,6 +222,88 @@ final readonly class E2EConfig
             incusStoragePool: $this->incusStoragePool,
             incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
             incusHostSlots: $this->incusHostSlots,
+            hcloudLocationSlots: $this->hcloudLocationSlots,
+            hcloudResourceSlots: $this->hcloudResourceSlots,
+            dockerHosts: $this->dockerHosts,
+            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
+            keep: $this->keep,
+            slotWaitSeconds: $this->slotWaitSeconds,
+            slotStaleSeconds: $this->slotStaleSeconds,
+            dockerHostSlots: $this->dockerHostSlots,
+        );
+    }
+
+    public function forHcloudLocation(string $location): self
+    {
+        return new self(
+            providerNames: $this->providerNames,
+            topologyProviderNames: $this->topologyProviderNames,
+            host: $this->host,
+            sourceImage: $this->sourceImage,
+            blankImage: $this->blankImage,
+            baseImage: $this->baseImage,
+            hcloudServerType: $this->hcloudServerType,
+            hcloudLocation: $location,
+            hcloudBlankImage: $this->hcloudBlankImage,
+            hcloudControlImage: $this->hcloudControlImage,
+            hcloudGatewayImage: $this->hcloudGatewayImage,
+            bootstrapUser: $this->bootstrapUser,
+            controlUser: $this->controlUser,
+            instancePrefix: $this->instancePrefix,
+            timeoutSeconds: $this->timeoutSeconds,
+            cpus: $this->cpus,
+            memory: $this->memory,
+            topologyCpus: $this->topologyCpus,
+            topologyMemory: $this->topologyMemory,
+            topologyStateSize: $this->topologyStateSize,
+            incusStoragePool: $this->incusStoragePool,
+            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
+            incusHostSlots: $this->incusHostSlots,
+            hcloudLocationSlots: $this->hcloudLocationSlots,
+            hcloudResourceSlots: $this->hcloudResourceSlots,
+            dockerHosts: $this->dockerHosts,
+            dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
+            keep: $this->keep,
+            slotWaitSeconds: $this->slotWaitSeconds,
+            slotStaleSeconds: $this->slotStaleSeconds,
+            dockerHostSlots: $this->dockerHostSlots,
+        );
+    }
+
+    public function forHcloudResource(string $resource): self
+    {
+        [$location, $serverType, $image] = array_pad(explode('/', $resource, 3), 3, '');
+
+        if ($location === '' || $serverType === '' || $image === '') {
+            throw new \InvalidArgumentException("Invalid Hcloud resource slot [{$resource}]. Expected location/server-type/image.");
+        }
+
+        return new self(
+            providerNames: $this->providerNames,
+            topologyProviderNames: $this->topologyProviderNames,
+            host: $this->host,
+            sourceImage: $this->sourceImage,
+            blankImage: $this->blankImage,
+            baseImage: $this->baseImage,
+            hcloudServerType: $serverType,
+            hcloudLocation: $location,
+            hcloudBlankImage: $image,
+            hcloudControlImage: $this->hcloudControlImage,
+            hcloudGatewayImage: $this->hcloudGatewayImage,
+            bootstrapUser: $this->bootstrapUser,
+            controlUser: $this->controlUser,
+            instancePrefix: $this->instancePrefix,
+            timeoutSeconds: $this->timeoutSeconds,
+            cpus: $this->cpus,
+            memory: $this->memory,
+            topologyCpus: $this->topologyCpus,
+            topologyMemory: $this->topologyMemory,
+            topologyStateSize: $this->topologyStateSize,
+            incusStoragePool: $this->incusStoragePool,
+            incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
+            incusHostSlots: $this->incusHostSlots,
+            hcloudLocationSlots: $this->hcloudLocationSlots,
+            hcloudResourceSlots: $this->hcloudResourceSlots,
             dockerHosts: $this->dockerHosts,
             dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,

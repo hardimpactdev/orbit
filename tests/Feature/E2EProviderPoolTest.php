@@ -23,9 +23,9 @@ it('defaults to the incus provider', function (): void {
     });
 });
 
-it('expands auto provider selection to incus and hcloud', function (): void {
+it('expands auto provider selection to incus only', function (): void {
     withE2EProviderEnvironment(['ORBIT_E2E_PROVIDER' => 'auto'], function (): void {
-        expect(E2EConfig::fromEnvironment()->providerNames)->toBe(['incus', 'hcloud']);
+        expect(E2EConfig::fromEnvironment()->providerNames)->toBe(['incus']);
     });
 });
 
@@ -184,6 +184,100 @@ it('releases configured incus host slots during run cleanup', function (): void 
 
             expect($pool->snapshot('incus', ['sidecar1' => 1]))->toMatchArray([
                 ['host' => 'sidecar1', 'slot' => 1, 'leased' => false],
+            ]);
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+    }
+});
+
+it('leases configured hcloud location slots before checking availability', function (): void {
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake([
+        'command -v hcloud >/dev/null' => Process::result(),
+        'hcloud version' => Process::result(output: "hcloud v1.62.2\n"),
+        'hcloud server-type describe * -o json >/dev/null' => Process::result(output: '{}'),
+        'hcloud image describe --architecture=x86 * -o json >/dev/null' => Process::result(),
+    ]);
+
+    try {
+        withE2EProviderEnvironment([
+            'ORBIT_E2E_PROVIDER' => 'hcloud',
+            'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:1,fsn1:1',
+        ], function (): void {
+            $provider = new HcloudProvider(E2EConfig::fromEnvironment());
+
+            $availability = $provider->availability([E2EImage::Blank]);
+
+            expect($availability->available)->toBeTrue()
+                ->and($provider->config()->hcloudLocation)->toBe('nbg1');
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+    }
+});
+
+it('applies configured hcloud resource slots before checking availability', function (): void {
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake([
+        'command -v hcloud >/dev/null' => Process::result(),
+        'hcloud version' => Process::result(output: "hcloud v1.62.2\n"),
+        "hcloud server-type describe 'cx23' -o json >/dev/null" => Process::result(output: '{}'),
+        "hcloud image describe --architecture=x86 'ubuntu-24.04' -o json >/dev/null" => Process::result(),
+    ]);
+
+    try {
+        withE2EProviderEnvironment([
+            'ORBIT_E2E_PROVIDER' => 'hcloud',
+            'ORBIT_E2E_HCLOUD_RESOURCE_SLOTS' => 'nbg1/cx23/ubuntu-24.04:1,fsn1/cpx31/ubuntu-24.04:1',
+        ], function (): void {
+            $provider = new HcloudProvider(E2EConfig::fromEnvironment());
+
+            $availability = $provider->availability([E2EImage::Blank]);
+
+            expect($availability->available)->toBeTrue()
+                ->and($provider->config()->hcloudLocation)->toBe('nbg1')
+                ->and($provider->config()->hcloudServerType)->toBe('cx23')
+                ->and($provider->config()->hcloudBlankImage)->toBe('ubuntu-24.04');
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+    }
+});
+
+it('releases configured hcloud location slots during run cleanup', function (): void {
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake([
+        '*rm -rf*' => Process::result(),
+    ]);
+
+    try {
+        withE2EProviderEnvironment([
+            'ORBIT_E2E_PROVIDER' => 'hcloud',
+            'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:1',
+            'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
+        ], function () use ($leaseDirectory): void {
+            $provider = new HcloudProvider(E2EConfig::fromEnvironment());
+            $run = $provider->startRun('hcloud lease release');
+            $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+            expect($pool->snapshot('hcloud', ['nbg1' => 1]))->toMatchArray([
+                ['host' => 'nbg1', 'slot' => 1, 'leased' => true],
+            ]);
+
+            $run->cleanup();
+
+            expect($pool->snapshot('hcloud', ['nbg1' => 1]))->toMatchArray([
+                ['host' => 'nbg1', 'slot' => 1, 'leased' => false],
             ]);
         });
     } finally {

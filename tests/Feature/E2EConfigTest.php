@@ -137,6 +137,35 @@ it('parses incus host slots for the lease pool', function (): void {
     });
 });
 
+it('parses hcloud location slots for the lease pool', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:2, fsn1:1',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->hcloudLocationSlots)->toBe([
+            'nbg1' => 2,
+            'fsn1' => 1,
+        ])->and($config->forHcloudLocation('fsn1')->hcloudLocationSlots)->toBe([
+            'nbg1' => 2,
+            'fsn1' => 1,
+        ]);
+    });
+});
+
+it('parses hcloud resource slots for the lease pool', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_HCLOUD_RESOURCE_SLOTS' => 'nbg1/cx23/ubuntu-24.04:2, fsn1/cpx31/ubuntu-24.04:1',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->hcloudResourceSlots)->toBe([
+            'nbg1/cx23/ubuntu-24.04' => 2,
+            'fsn1/cpx31/ubuntu-24.04' => 1,
+        ]);
+    });
+});
+
 it('defaults e2e slot wait and stale seconds', function (): void {
     withE2EConfigEnvironment([], function (): void {
         $config = E2EConfig::fromEnvironment();
