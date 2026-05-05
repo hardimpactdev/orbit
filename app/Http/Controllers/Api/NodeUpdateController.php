@@ -1,0 +1,204 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Requests\Api\UpdateNodeApiRequest;
+use App\Models\Node;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+
+final readonly class NodeUpdateController
+{
+    public function __invoke(UpdateNodeApiRequest $request, string $name): JsonResponse
+    {
+        /** @var mixed $resolvedUser */
+        $resolvedUser = $request->user();
+        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
+
+        if (! $caller instanceof Node) {
+            return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        if ($caller->role === 'app') {
+            return $this->error(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => 'app'],
+                status: 403,
+            );
+        }
+
+        if ($caller->role === 'control') {
+            $authorization = $this->authorizeControlCaller($caller);
+
+            if ($authorization instanceof JsonResponse) {
+                return $authorization;
+            }
+        }
+
+        $node = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $node instanceof Node) {
+            return $this->error(
+                code: 'node.not_found',
+                message: "Node '{$name}' not found.",
+                meta: ['name' => $name],
+                status: 404,
+            );
+        }
+
+        $providedFields = $request->updateFields();
+        $roleIncompatible = $this->detectRoleIncompatibleField($node, $providedFields);
+
+        if ($roleIncompatible !== null) {
+            return $this->error(
+                code: 'node.field_role_incompatible',
+                message: "The field '{$roleIncompatible['field']}' is not valid for node '{$name}' (role: {$roleIncompatible['role']}).",
+                meta: [
+                    'field' => $roleIncompatible['field'],
+                    'name' => $name,
+                    'role' => $roleIncompatible['role'],
+                ],
+                status: 422,
+            );
+        }
+
+        $changes = $this->computeChanges($node, $providedFields);
+
+        if ($changes !== []) {
+            $node->update($changes);
+        }
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'name' => $name,
+                    'changed' => array_keys($changes),
+                    'action' => 'updated',
+                ],
+            ],
+        ]);
+    }
+
+    private function authorizeControlCaller(Node $caller): ?JsonResponse
+    {
+        $gateway = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->first();
+
+        if (! $gateway instanceof Node) {
+            return $this->authorizationFailed(
+                message: 'This control node is not authorized to update nodes.',
+                meta: [
+                    'required_node' => null,
+                    'caller_role' => 'control',
+                ],
+            );
+        }
+
+        $hasGatewayAccess = DB::table('node_access')
+            ->where('consumer_node_id', $caller->id)
+            ->where('serving_node_id', $gateway->id)
+            ->exists();
+
+        if ($hasGatewayAccess) {
+            return null;
+        }
+
+        return $this->authorizationFailed(
+            message: 'This control node is not authorized to update nodes.',
+            meta: [
+                'required_node' => $gateway->name,
+                'caller_role' => 'control',
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $providedFields
+     * @return array{field: string, role: string}|null
+     */
+    private function detectRoleIncompatibleField(Node $node, array $providedFields): ?array
+    {
+        $role = $node->role;
+
+        if (isset($providedFields['environment']) && $role !== 'app') {
+            return ['field' => 'environment', 'role' => $role];
+        }
+
+        if (isset($providedFields['host']) && $role === 'control') {
+            return ['field' => 'host', 'role' => $role];
+        }
+
+        if (isset($providedFields['public_ipv4']) && $role === 'control') {
+            return ['field' => 'public_ipv4', 'role' => $role];
+        }
+
+        if (isset($providedFields['public_ipv6']) && $role === 'control') {
+            return ['field' => 'public_ipv6', 'role' => $role];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, string>  $providedFields
+     * @return array<string, string>
+     */
+    private function computeChanges(Node $node, array $providedFields): array
+    {
+        $changes = [];
+
+        if (isset($providedFields['host']) && $providedFields['host'] !== $node->host) {
+            $changes['host'] = $providedFields['host'];
+        }
+
+        if (isset($providedFields['environment']) && $providedFields['environment'] !== $node->environment) {
+            $changes['environment'] = $providedFields['environment'];
+        }
+
+        if (isset($providedFields['public_ipv4']) && $providedFields['public_ipv4'] !== $node->public_ipv4) {
+            $changes['public_ipv4'] = $providedFields['public_ipv4'];
+        }
+
+        if (isset($providedFields['public_ipv6']) && $providedFields['public_ipv6'] !== $node->public_ipv6) {
+            $changes['public_ipv6'] = $providedFields['public_ipv6'];
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function authorizationFailed(string $message, array $meta = []): JsonResponse
+    {
+        return $this->error(
+            code: 'authorization_failed',
+            message: $message,
+            meta: $meta,
+            status: 403,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function error(string $code, string $message, array $meta, int $status): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ],
+        ], $status);
+    }
+}

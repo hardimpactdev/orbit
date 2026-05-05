@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeListController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
+use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Middleware\CorrelationHeader;
 use App\Http\Middleware\WireGuardIdentity;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
+        Route::put('/nodes/{name}', NodeUpdateController::class);
         Route::get('/nodes/{name}', NodeShowController::class);
     });
 });

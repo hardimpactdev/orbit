@@ -552,8 +552,10 @@ documentation, or E2E support work only.
    bootstrap now detects the gateway platform through the bootstrapped remote
    Orbit command, detects the initiating control platform locally, persists both
    platform identifiers, and keeps repeat convergence runs stable.
-4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
-   typed request, after the grant E2E gate lands.
+4. `NODE-API-UPDATE-1` (todo 276) is implemented: gateway-side
+   `PUT /api/nodes/{name}` updates node intent through the WireGuard-authenticated
+   API, enforces gateway-node authorization for control callers, and adds the
+   typed `UpdateNodeRequest`.
 5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
    Do not start this until the grant E2E implementation is on `main`.
@@ -593,7 +595,8 @@ Once `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and
 caller-role-branch + typed-request pattern can be applied to the write
 commands. Order matters because each adds a new write API endpoint:
 
-1. `NODE-API-UPDATE-1` — gateway-side `PUT /api/nodes/{name}` + `UpdateNodeRequest`.
+1. `NODE-API-UPDATE-1` is implemented: gateway-side `PUT /api/nodes/{name}` +
+   `UpdateNodeRequest`.
 2. `NODE-UPDATE-FWD-1` — wire `node:update` control-caller forwarding (paired
    ephemeral Pest E2E; write command).
 3. `NODE-API-DEFAULT-1` + `NODE-DEFAULT-FWD-1` — same pattern for `node:default`.
