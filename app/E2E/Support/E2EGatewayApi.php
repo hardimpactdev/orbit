@@ -127,8 +127,9 @@ PHP;
             sleep(2);
         }
 
-        expect($last)->not->toBeNull();
-        expect($last?->successful())->toBeTrue(($last?->output() ?? '').($last?->errorOutput() ?? '').($lastException?->getMessage() ?? ''));
+        $message = trim(($last?->output() ?? '').($last?->errorOutput() ?? '').($lastException?->getMessage() ?? ''));
+
+        throw new \RuntimeException($message === '' ? 'Gateway API did not become reachable.' : $message);
     }
 
     /**

@@ -11,7 +11,12 @@ final readonly class E2ENodeProbe
         $install = $instance->exec('test -d /home/orbit/orbit && test -f /home/orbit/orbit/artisan');
         $version = $instance->exec("sudo -iu orbit bash -lc 'orbit --version >/dev/null'");
 
-        expect($install->successful())->toBeTrue($install->output().$install->errorOutput())
-            ->and($version->successful())->toBeTrue($version->output().$version->errorOutput());
+        if (! $install->successful()) {
+            throw new \RuntimeException(trim($install->output().$install->errorOutput()) ?: 'Orbit install files were not found.');
+        }
+
+        if (! $version->successful()) {
+            throw new \RuntimeException(trim($version->output().$version->errorOutput()) ?: 'Orbit version command failed.');
+        }
     }
 }

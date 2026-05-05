@@ -98,6 +98,18 @@ it('keeps active porting and orchestration docs on current e2e script names', fu
         ->not->toContain('composer test:e2e:features:docker');
 });
 
+it('keeps reusable e2e support code free of Pest-only expectations', function (): void {
+    $supportFiles = collect(new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(base_path('app/E2E/Support')),
+    ))
+        ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php')
+        ->mapWithKeys(fn (SplFileInfo $file): array => [
+            $file->getPathname() => file_get_contents($file->getPathname()) ?: '',
+        ]);
+
+    expect($supportFiles)->each(fn ($contents) => $contents->not->toContain('expect('));
+});
+
 it('exposes the hcloud e2e resource reaper', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
