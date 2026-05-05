@@ -758,12 +758,12 @@ exist. Those families wait for the node/gateway/app foundations.
     configured control forwarding through `GatewayConnector` and typed
     `SetNodeAgentIdeRequest`, gateway API endpoint, unsupported-adapter and
     node-not-found errors, app-caller denial, node-show metadata, and activity
-    logging.
+    logging. Docker feature E2E verifies the configured control-caller
+    forwarding path and node-show metadata convergence.
   - Contract gaps:
     - interactive input prompting.
     - extension-registered adapter registry beyond the core adapters
       (`opencode`, `polyscope`) and reserved `none` token.
-    - paired E2E feature gate for the control-caller forwarding path.
 - [~] Port `node:new`.
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
     fresh gateway host.
