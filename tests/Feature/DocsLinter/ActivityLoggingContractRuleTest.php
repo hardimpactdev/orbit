@@ -149,9 +149,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/7_node-update/technical/1_node-update.md' => <<<'MD'
+# Technical Contract: `orbit node:update [name]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(4);
+    expect($findings)->toHaveCount(5);
 });

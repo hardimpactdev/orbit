@@ -268,6 +268,19 @@ under `success.meta.warnings[]` and exit code `0`. See the
 - Broader drift in tools, firewall rules, apps, workspaces, processes,
   schedules, and proxy routes is verified by those family contracts.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed node
+metadata writes.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:PUT /nodes/{name}` |
+| Effect | `write` |
+| Subject | Target `Node` when the node is resolved; `none` when validation or lookup fails before target resolution. |
+| Properties | `target_node` is the requested node name; `changed_fields` lists stored fields that changed. |
+| Description | `Node <name> updated` |
+
 ## Test Mapping
 
 Primary test owners:

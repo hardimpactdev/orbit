@@ -4,15 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
-final readonly class NodeUpdateController
+final class NodeUpdateController implements Loggable
 {
+    private ?Node $activitySubject = null;
+
+    private ?string $activityTargetName = null;
+
+    /**
+     * @var list<string>
+     */
+    private array $activityChangedFields = [];
+
     public function __invoke(UpdateNodeApiRequest $request, string $name): JsonResponse
     {
+        $this->activityTargetName = $name;
+
         /** @var mixed $resolvedUser */
         $resolvedUser = $request->user();
         $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
@@ -52,6 +66,8 @@ final readonly class NodeUpdateController
             );
         }
 
+        $this->activitySubject = $node;
+
         $providedFields = $request->updateFields();
         $roleIncompatible = $this->detectRoleIncompatibleField($node, $providedFields);
 
@@ -69,6 +85,7 @@ final readonly class NodeUpdateController
         }
 
         $changes = $this->computeChanges($node, $providedFields);
+        $this->activityChangedFields = array_keys($changes);
 
         if ($changes !== []) {
             $node->update($changes);
@@ -200,5 +217,35 @@ final readonly class NodeUpdateController
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:PUT /nodes/{name}';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [
+            'target_node' => $this->activityTargetName ?? (string) request()->route('name'),
+            'changed_fields' => $this->activityChangedFields,
+        ];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        $target = $this->activityTargetName ?? (string) request()->route('name');
+
+        return $target !== '' ? "Node {$target} updated" : null;
     }
 }

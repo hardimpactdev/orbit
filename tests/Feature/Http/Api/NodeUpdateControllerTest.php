@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -115,6 +117,32 @@ describe('NodeUpdateController', function (): void {
         expect($node->host)->toBe('10.6.0.8')
             ->and($node->environment)->toBe('production')
             ->and($node->public_ipv4)->toBe('203.0.113.10');
+    });
+
+    it('logs activity for a successful node update write', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        $targetId = (int) DB::table('nodes')->insertGetId(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', [
+            'host' => '10.6.0.8',
+            'environment' => 'production',
+            'public_ipv4' => '203.0.113.10',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:PUT /nodes/{name}');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe($targetId);
+        expect($entry->description)->toBe('Node app-1 updated');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('target_node'))->toBe('app-1');
+        expect($entry->properties->get('changed_fields'))->toBe(['host', 'environment', 'public_ipv4']);
     });
 
     it('updates a node directly for a gateway caller', function (): void {
