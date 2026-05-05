@@ -7,6 +7,7 @@ namespace App\Console\Commands\Internal;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewayApiRuntimeInstaller;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -22,8 +23,11 @@ use RuntimeException;
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
 {
-    public function handle(OrbitCaService $caService, WireGuardInterfaceInstaller $wireGuard): int
-    {
+    public function handle(
+        OrbitCaService $caService,
+        WireGuardInterfaceInstaller $wireGuard,
+        GatewayApiRuntimeInstaller $gatewayApiRuntimeInstaller,
+    ): int {
         $name = $this->stringArgument('name');
         $wireguardAddress = $this->stringArgument('wireguard-address');
         $identity = $this->identityPayload();
@@ -110,6 +114,7 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         $caService->ensureRootCa();
+        $gatewayApiRuntimeInstaller->install($wireguardAddress);
 
         $this->line($caService->rootCert());
 

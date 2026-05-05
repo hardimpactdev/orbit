@@ -152,6 +152,11 @@ yet satisfy the full product contracts.
     launches disposable VMs, runs `orbit node:new --role=gateway`, and verifies
     the gateway is provisioned under the steady-state `orbit` user with a
     working Orbit installation.
+  - First-gateway WireGuard enrollment lane implemented:
+    `composer test:e2e:provision -- --filter='NodeNewWireGuard'` verifies real
+    gateway/control WireGuard interfaces, gateway peer persistence, gateway API
+    reachability through the WireGuard address, and idempotent first-gateway
+    convergence on disposable Incus VMs.
   - Prepared topology lanes implemented: `composer e2e:prepare-topology -- --force control-gateway-dev-prod`
     builds reusable Incus templates for control, gateway, development app, and
     production app roles; `composer test:e2e:features:control-gateway-dev-prod`
@@ -172,7 +177,9 @@ yet satisfy the full product contracts.
     installer for Ubuntu and macOS that installs PHP, Composer, Git, Orbit
     source, SQLite database state, migrations, and the `orbit` symlink. Ubuntu
     installs PHP 8.5 by default when the native package is available, with the
-    same Ondrej PHP PPA pattern used by old Orbit as a fallback. Ephemeral E2E
+    same Ondrej PHP PPA pattern used by old Orbit as a fallback. Ubuntu gateway
+    installs include WireGuard, Caddy, and PHP-FPM for first-gateway runtime
+    verification. Ephemeral E2E
     uses Ubuntu 26.04 because its native PHP 8.5 packages avoid depending on
     Launchpad reachability from Incus guests.
   - UX note: follows the command-designer human output shape with immediate
@@ -753,8 +760,14 @@ exist. Those families wait for the node/gateway/app foundations.
     (`orbit`) through the bootstrap SSH user and installs Orbit under that user.
   - [x] First-gateway ephemeral E2E lane (`composer test:e2e:provision --filter='NodeNewGateway'`) verifies
     end-to-end provisioning against disposable Incus VMs.
+  - [x] First-gateway WireGuard enrollment E2E lane (`composer test:e2e:provision -- --filter='NodeNewWireGuard'`)
+    verifies gateway/control WireGuard interfaces, gateway registry peer rows,
+    gateway API reachability over WireGuard, and idempotent gateway convergence.
   - [x] First-gateway bootstrap invokes gateway-local internal command over SSH
     to initialize gateway node identity (`is_local=true`) and generate root CA.
+  - [x] First-gateway bootstrap provisions the gateway-local Orbit API runtime
+    using Caddy and an Orbit-owned PHP-FPM pool before verifying `/api/me` from
+    the initiating control node.
   - [x] First-gateway bootstrap captures gateway root CA from remote command
     output and stores it locally for control-node trust.
   - [ ] Interactive input mode.

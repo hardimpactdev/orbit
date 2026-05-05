@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\Gateway\GatewayApiRuntimeInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -16,6 +17,21 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
         mkdir($this->tempStorage.'/app/orbit', 0777, true);
         app()->useStoragePath($this->tempStorage);
+
+        $this->gatewayApiRuntimeInstaller = new class extends GatewayApiRuntimeInstaller
+        {
+            /** @var list<string> */
+            public array $addresses = [];
+
+            public function __construct() {}
+
+            public function install(string $wireguardAddress, string $phpVersion = '8.5', string $orbitPath = ''): void
+            {
+                $this->addresses[] = $wireguardAddress;
+            }
+        };
+
+        app()->instance(GatewayApiRuntimeInstaller::class, $this->gatewayApiRuntimeInstaller);
     });
 
     afterEach(function (): void {
@@ -36,7 +52,8 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
             ->and(Node::query()->where('is_local', true)->value('role'))->toBe('gateway')
             ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
-            ->and($output)->toContain('-----END CERTIFICATE-----');
+            ->and($output)->toContain('-----END CERTIFICATE-----')
+            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
     });
 
     it('is idempotent when the gateway node and CA already exist', function (): void {

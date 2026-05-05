@@ -14,6 +14,7 @@ use App\Services\Platform\PlatformDetector;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -46,6 +47,7 @@ class NodeNewCommand extends Command
         NodeRegistryWriter $registryWriter,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         PlatformDetector $platformDetector,
+        WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
     ): int {
         $callerRole = $this->callerRole();
 
@@ -132,7 +134,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $platformDetector, $name);
+        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $platformDetector, $wireGuardInterfaceInstaller, $name);
     }
 
     private function convergeFirstGateway(string $name): int
@@ -417,6 +419,7 @@ class NodeNewCommand extends Command
         OrbitHostInstaller $installer,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         PlatformDetector $platformDetector,
+        WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
         string $name,
     ): int {
         $host = $this->stringOption('host');
@@ -593,6 +596,30 @@ class NodeNewCommand extends Command
             return $trustStatus;
         }
 
+        if (! $this->wantsJson()) {
+            $this->line('○ Install local WireGuard config');
+        }
+
+        try {
+            $wireGuardInterfaceInstaller->install($this->controlWireGuardConfig(
+                controlPrivateKey: $controlKeys['private_key'],
+                controlWireguardAddress: $controlAddress,
+                gatewayPublicKey: $gatewayKeys['public_key'],
+                gatewayWireguardAddress: $gatewayAddress,
+                gatewayEndpoint: $host,
+            ));
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to install local WireGuard configuration.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'local_wireguard_install',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
         DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
@@ -699,6 +726,27 @@ class NodeNewCommand extends Command
         $this->line("Control node: {$controlName}");
 
         return self::SUCCESS;
+    }
+
+    private function controlWireGuardConfig(
+        string $controlPrivateKey,
+        string $controlWireguardAddress,
+        string $gatewayPublicKey,
+        string $gatewayWireguardAddress,
+        string $gatewayEndpoint,
+    ): string {
+        return implode("\n", [
+            '[Interface]',
+            "PrivateKey = {$controlPrivateKey}",
+            "Address = {$controlWireguardAddress}/24",
+            '',
+            '[Peer]',
+            "PublicKey = {$gatewayPublicKey}",
+            "AllowedIPs = {$gatewayWireguardAddress}/32",
+            "Endpoint = {$gatewayEndpoint}:51820",
+            'PersistentKeepalive = 25',
+            '',
+        ]);
     }
 
     /**

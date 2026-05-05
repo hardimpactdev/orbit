@@ -179,7 +179,10 @@ describe('node:new', function (): void {
             ->and($help->output())->toContain('First-gateway bootstrap may ship this same script')
             ->and($contents)->toContain('packages.sury.org/php')
             ->and($contents)->toContain('sury-php.gpg')
-            ->and($contents)->toContain('php${PHP_VERSION}-cli');
+            ->and($contents)->toContain('php${PHP_VERSION}-cli')
+            ->and($contents)->toContain('php${PHP_VERSION}-fpm')
+            ->and($contents)->toContain('wireguard-tools')
+            ->and($contents)->toContain('caddy');
     });
 
     it('renders installer failures with Orbit-style progress and stable error codes', function (): void {

@@ -265,11 +265,14 @@ install_ubuntu_prerequisites() {
     sudo_run apt-get update
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
+        caddy \
         curl \
         git \
         gnupg \
         tar \
-        unzip
+        unzip \
+        wireguard \
+        wireguard-tools
 
     if ! ubuntu_php_package_available; then
         install_sury_php_repo
@@ -278,19 +281,23 @@ install_ubuntu_prerequisites() {
 
     sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
+        caddy \
         composer \
         curl \
         git \
         "php${PHP_VERSION}-bcmath" \
         "php${PHP_VERSION}-cli" \
         "php${PHP_VERSION}-curl" \
+        "php${PHP_VERSION}-fpm" \
         "php${PHP_VERSION}-intl" \
         "php${PHP_VERSION}-mbstring" \
         "php${PHP_VERSION}-sqlite3" \
         "php${PHP_VERSION}-xml" \
         "php${PHP_VERSION}-zip" \
         tar \
-        unzip
+        unzip \
+        wireguard \
+        wireguard-tools
     sudo_run update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
 }
 
