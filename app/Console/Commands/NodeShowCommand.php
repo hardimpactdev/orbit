@@ -13,6 +13,8 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
+use function Laravel\Prompts\text;
+
 #[Signature('node:show
     {name? : Node name to inspect}
     {--json : Output JSON}')]
@@ -35,7 +37,7 @@ class NodeShowCommand extends Command
             );
         }
 
-        $name = $this->resolveName();
+        $name = $this->resolveName($callerRole);
 
         if ($name === null) {
             return $this->failCommand(
@@ -109,7 +111,7 @@ class NodeShowCommand extends Command
         return $localRole;
     }
 
-    private function resolveName(): ?string
+    private function resolveName(string $callerRole): ?string
     {
         $name = $this->argument('name');
 
@@ -132,7 +134,47 @@ class NodeShowCommand extends Command
             return $localName;
         }
 
+        if ($this->isInteractiveInput()) {
+            return $this->promptNodeName($callerRole);
+        }
+
         return null;
+    }
+
+    protected function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson()
+            && function_exists('posix_isatty')
+            && @posix_isatty(STDOUT);
+    }
+
+    protected function promptNodeName(string $callerRole): string
+    {
+        return trim(text(
+            label: 'Node name',
+            required: true,
+            validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
+        ));
+    }
+
+    private function validatePromptNodeName(string $value, string $callerRole): ?string
+    {
+        $name = trim($value);
+
+        if ($name === '') {
+            return 'Node name is required.';
+        }
+
+        if ($callerRole !== 'gateway') {
+            return null;
+        }
+
+        $exists = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->exists();
+
+        return $exists ? null : "Node '{$name}' not found or not visible.";
     }
 
     /**

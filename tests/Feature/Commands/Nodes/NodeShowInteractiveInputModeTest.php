@@ -2,9 +2,38 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\NodeShowCommand;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+
+#[Signature('node:show
+    {name? : Node name to inspect}
+    {--json : Output JSON}')]
+#[Description('Show node details from the gateway registry')]
+class TestableNodeShowCommand extends NodeShowCommand
+{
+    public static int $promptCalls = 0;
+
+    public static string $promptedName = 'prompted-node';
+
+    protected function isInteractiveInput(): bool
+    {
+        return ! $this->option('json');
+    }
+
+    protected function promptNodeName(string $callerRole): string
+    {
+        self::$promptCalls++;
+
+        return self::$promptedName;
+    }
+}
 
 uses(RefreshDatabase::class);
 
@@ -62,6 +91,48 @@ function setupShowInteractiveAppCaller(): void
         'environment' => 'development',
         'is_local' => true,
     ]));
+}
+
+/**
+ * @return array{exit_code: int, output: string}
+ */
+function runTestableNodeShowCommand(array $arguments = []): array
+{
+    TestableNodeShowCommand::$promptCalls = 0;
+    TestableNodeShowCommand::$promptedName = 'prompted-node';
+
+    $command = new TestableNodeShowCommand;
+    $command->setLaravel(app());
+
+    $input = new ArrayInput($arguments);
+    $output = new BufferedOutput;
+
+    $merge = new ReflectionMethod($command, 'mergeApplicationDefinition');
+    $merge->setAccessible(true);
+    $merge->invoke($command);
+
+    $definition = $command->getDefinition();
+    $input->bind($definition);
+    $input->validate();
+
+    $init = new ReflectionMethod($command, 'initialize');
+    $init->setAccessible(true);
+    $init->invoke($command, $input, $output);
+
+    $inputProp = (new ReflectionClass(Command::class))->getProperty('input');
+    $inputProp->setAccessible(true);
+    $inputProp->setValue($command, $input);
+
+    $outputProp = (new ReflectionClass(Command::class))->getProperty('output');
+    $outputProp->setAccessible(true);
+    $outputProp->setValue($command, $output);
+
+    $exitCode = $command->run($input, $output);
+
+    return [
+        'exit_code' => $exitCode,
+        'output' => $output->fetch(),
+    ];
 }
 
 describe('node:show interactive input mode', function (): void {
@@ -132,14 +203,34 @@ describe('node:show interactive input mode', function (): void {
         DB::table('nodes')->delete();
         DB::table('local_node_defaults')->delete();
 
-        $exitCode = Artisan::call('node:show', [
-            '--no-interaction' => false,
-        ]);
+        $result = runTestableNodeShowCommand();
 
-        $output = Artisan::output();
+        expect(TestableNodeShowCommand::$promptCalls)->toBe(1)
+            ->and($result['exit_code'])->not->toBe(0)
+            ->and($result['output'])->toContain('Gateway connection is required')
+            ->and($result['output'])->not->toContain('Node name is required.')
+            ->and($result['output'])->not->toContain('validation_failed');
+    });
 
-        expect($exitCode)->not->toBe(0);
-        expect($output)->not->toContain('No gateway node');
+    it('does not prompt when json forces non-interactive mode', function (): void {
+        DB::table('nodes')->delete();
+        DB::table('local_node_defaults')->delete();
+
+        $result = runTestableNodeShowCommand(['--json' => true]);
+        $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect(TestableNodeShowCommand::$promptCalls)->toBe(0)
+            ->and($result['exit_code'])->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('name');
+    });
+
+    it('does not prompt when the calling node default resolves the target', function (): void {
+        $result = runTestableNodeShowCommand();
+
+        expect(TestableNodeShowCommand::$promptCalls)->toBe(0)
+            ->and($result['exit_code'])->toBe(0)
+            ->and($result['output'])->toContain('test-gateway');
     });
 
     it('does not deny app callers before prompts or side effects', function (): void {
