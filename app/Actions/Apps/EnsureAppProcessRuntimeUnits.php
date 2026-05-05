@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Process;
 use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
 
 final readonly class EnsureAppProcessRuntimeUnits
@@ -15,6 +16,7 @@ final readonly class EnsureAppProcessRuntimeUnits
     public function __construct(
         private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $renderer,
+        private RuntimeBackendProbe $runtimeBackendProbe,
     ) {}
 
     /**
@@ -32,9 +34,9 @@ final readonly class EnsureAppProcessRuntimeUnits
             return [];
         }
 
-        $probe = $this->remoteShell->run($app->node, 'command -v supervisorctl >/dev/null 2>&1');
+        $probe = $this->runtimeBackendProbe->check($app->node);
 
-        if (! $probe->successful()) {
+        if (! $probe->available) {
             return [[
                 'code' => 'process.runtime_backend_unavailable',
                 'family' => 'process',

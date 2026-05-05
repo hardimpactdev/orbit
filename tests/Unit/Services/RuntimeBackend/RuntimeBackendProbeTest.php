@@ -1,0 +1,63 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Services\RuntimeBackend\RuntimeBackendProbe;
+
+it('reports the runtime backend as available when supervisorctl status succeeds', function (): void {
+    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
+        new RemoteShellResult(exitCode: 0, stdout: "orbit_worker RUNNING\n", stderr: '', durationMs: 1),
+    );
+
+    $result = (new RuntimeBackendProbe($remoteShell))->check($node);
+
+    expect($result->available)->toBeTrue()
+        ->and($result->exitCode)->toBe(0)
+        ->and($result->output)->toBe('orbit_worker RUNNING')
+        ->and($remoteShell->scripts)->toBe([
+            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+        ])
+        ->and($remoteShell->options[0]['timeout'])->toBe(15);
+});
+
+it('reports the runtime backend as unavailable when supervisorctl is missing or unreachable', function (): void {
+    $node = new Node(['name' => 'app-1', 'role' => 'app']);
+    $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
+        new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+    );
+
+    $result = (new RuntimeBackendProbe($remoteShell))->check($node);
+
+    expect($result->available)->toBeFalse()
+        ->and($result->exitCode)->toBe(127)
+        ->and($result->output)->toBe('missing supervisorctl');
+});
+
+final class RuntimeBackendProbeRecordingRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
+    public function __construct(
+        private readonly RemoteShellResult $result,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+        $this->options[] = $options;
+
+        return $this->result;
+    }
+}

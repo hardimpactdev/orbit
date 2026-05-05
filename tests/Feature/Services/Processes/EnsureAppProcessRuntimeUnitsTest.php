@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Services\Processes\SupervisorProgramRenderer;
+use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -46,11 +47,12 @@ it('renders and enacts supervisor programs for app process definitions', functio
     $warnings = (new EnsureAppProcessRuntimeUnits(
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
+        runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
     ))->handle($app);
 
     expect($warnings)->toBe([])
         ->and($remoteShell->scripts)->toHaveCount(2)
-        ->and($remoteShell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1')
+        ->and($remoteShell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1')
         ->and($remoteShell->scripts[1])->toContain('/etc/supervisor/conf.d/orbit_docs_main_vite.conf')
         ->and($remoteShell->scripts[1])->toContain('[program:orbit_docs_main_vite]')
         ->and($remoteShell->scripts[1])->toContain('directory=/home/orbit/apps/docs')
@@ -90,6 +92,7 @@ it('reports process family warnings when supervisor is unavailable after intent 
     $warnings = (new EnsureAppProcessRuntimeUnits(
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
+        runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
     ))->handle($app);
 
     expect($warnings)->toHaveCount(1)
@@ -120,6 +123,7 @@ it('does not probe supervisor when an app has no process definitions', function 
     $warnings = (new EnsureAppProcessRuntimeUnits(
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
+        runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
     ))->handle($app);
 
     expect($warnings)->toBe([])

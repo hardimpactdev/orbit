@@ -1333,8 +1333,12 @@ across the process and schedule families.
     prerequisites, and `bin/_e2e-deps.sh` includes `supervisor` in prepared E2E
     base-image packages so `--skip-prerequisites` role provisioning still has the
     runtime backend package available.
-- [ ] Add the runtime backend reachability probe shared by process and
+- [x] Add the runtime backend reachability probe shared by process and
   schedule doctor.
+  - `RuntimeBackendProbe` checks `supervisorctl` presence plus control-socket
+    responsiveness through the existing gateway-owned `RemoteShell` edge.
+    Current process runtime-unit enactment uses the probe; process/schedule
+    doctor command wiring remains in the family command implementation items.
 - [ ] Add the Supervisor program renderer shared by process and schedule
   enactment.
 - [ ] Add the `orbit-scheduler` Artisan-command daemon.
