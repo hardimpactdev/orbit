@@ -92,8 +92,8 @@ workspace is visible to them through gateway-owned access policy.
 
 `workspace:log` must not:
 
-- Connect to running processes, tail journald, or otherwise stream live
-  output. Live process logs belong to
+- Connect to running processes, tail runtime backend logs, or otherwise
+  stream live output. Live process logs belong to
   [`orbit process:logs`](../../../7_process/8_process-logs/process-logs.md).
 - SSH into the owning app node. The command is gateway-only.
 - Modify gateway intent or node artifacts.

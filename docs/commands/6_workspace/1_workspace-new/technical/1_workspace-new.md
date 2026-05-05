@@ -63,14 +63,14 @@ until then `workspace:new` does not consult app intent for this default.
 3. **Validate Workspace Identity (gateway-side, static):**
    - Slug regex: `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`.
    - Reserved name: `main` is reserved for the primary app instance in
-     runtime unit naming (`orbit_<app>_main_<process>.service`); a workspace
-     named `main` would collide with that backend layer.
+     runtime unit naming (`orbit_<app>_main_<process>`); a workspace named
+     `main` would collide with that backend layer.
    - Length: `workspace_slug` must not exceed 63 characters. The workspace
      hostname shape uses the workspace slug as its own DNS label
      (`{workspace}.{app}.{tld}`), so the workspace identity limit is
-     independent of the parent app slug. Backend artifact renderers must still
-     validate final generated names such as PHP-FPM pools, sockets, systemd
-     units, and certificate paths before writing them.
+     independent of the parent app slug. Backend artifact renderers must
+     still validate final generated names such as PHP-FPM pools, sockets,
+     Supervisor programs, and certificate paths before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
      globally — unlike the `app` slug, which is globally unique.
@@ -123,8 +123,8 @@ register an existing path use
      `proxy` family.
    - **PHP-FPM:** render and install the workspace-specific FPM pool config
      on the app node.
-   - **Inherited process units:** render and (re)install systemd units
-     derived from the parent app's process definitions.
+   - **Inherited runtime units:** render and (re)install Supervisor
+     programs derived from the parent app's process definitions.
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
@@ -195,5 +195,5 @@ register an existing path use
 | `tests/Feature/Commands/Workspaces/WorkspaceNewCommandContractTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, drift-warning emission shape, and shared exit-status behavior. |
 | `tests/Feature/Actions/Workspaces/CreateWorkspaceActionTest.php` | Internal action contract: identity write, worktree provisioning dispatch, setup-pipeline orchestration, and warning aggregation. |
 | `tests/Unit/Services/Workspaces/ResolveParentAppFromCwdTest.php` | CWD inference precedence: explicit `--app` > `.orbit/config` marker > gateway path-ownership lookup; rejection of project-file content reading as a parent-app signal. |
-| `tests/E2E/Ephemeral/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited process unit rendering. |
+| `tests/E2E/Ephemeral/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. Docker-eligible. |
 | `tests/E2E/Ephemeral/WorkspaceNewDriftWarningTest.php` | Real-environment success-with-warning path when the SSH-side enactment fails after the gateway workspace row is written. |

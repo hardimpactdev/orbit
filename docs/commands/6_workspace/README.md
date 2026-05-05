@@ -30,8 +30,10 @@ canonical name, and owns one workspace route lifecycle.
 - A workspace hostname is the workspace slug prepended to the parent app's
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
-- Workspaces inherit app process definitions as runtime artifacts. Inherited
-  process-unit convergence belongs to the `process` family.
+- Workspaces inherit app process definitions as runtime units. Each
+  inherited runtime unit is rendered by the runtime backend as a Supervisor
+  program owned by the workspace. Runtime unit convergence belongs to the
+  `process` family.
 - Workspace setup and teardown step definitions are gateway-owned workspace
   policy. Adding, listing, removing, and ordering those definitions are explicit
   workspace commands, not doctor repair actions.
@@ -42,6 +44,12 @@ canonical name, and owns one workspace route lifecycle.
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
+
+Workspace registry-only reads — `workspace:show`, `workspace:history`,
+`workspace:list`, and `workspace:log` for stored history — do not require a
+live runtime backend. `workspace:new`, `workspace:setup`, and
+`workspace:remove` require a live runtime backend on the owning app node
+when they create, update, remove, or verify inherited runtime units.
 
 ## Workspace JSON Entity
 

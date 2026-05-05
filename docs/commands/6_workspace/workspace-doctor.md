@@ -101,8 +101,8 @@ or operator work. Failed setup and teardown runs are visible through
 `workspace:history` and `workspace:log`; doctor verifies current workspace
 reality instead of rewriting historical runs. Workspace doctor never creates
 parent apps, changes workspace names, moves a workspace to another app, edits
-setup or teardown step definitions, edits workspace-owned proxy routes, edits
-inherited process units, or changes node reachability.
+setup or teardown step definitions, edits workspace-owned proxy routes,
+edits inherited runtime units, or changes node reachability.
 
 ## Workspace Adopt Map
 
