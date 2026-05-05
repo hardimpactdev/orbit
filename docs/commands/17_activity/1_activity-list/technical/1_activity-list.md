@@ -2,7 +2,7 @@
 
 [Back to public `activity:list` documentation.](../activity-list.md)
 
-**Owner:** `operation`.
+**Owner:** `activity`.
 
 **Effects:** `read`.
 
@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit activity:list [--app=<app>] [--node=<node>] [--correlation=<uuid>] [--limit=<count>] [--json]
+orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -29,6 +29,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `app` | `--app` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
+| `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
 | `limit` | `--limit` | Optional. | Never. | `25`. | Integer from `1` through `200`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
@@ -62,6 +63,7 @@ requested filters.
    - `correlation` must be a UUID when present.
    - `limit` must be an integer from `1` through `200`.
    - `app` and `node` must be non-empty when present.
+   - `effect` must be one of `read`, `write`, `destructive` when present.
 5. Request visible activity history from the gateway.
 
 No input-mode-specific contracts are required. All inputs are optional, and the
@@ -73,14 +75,13 @@ command does not prompt.
 
 - Read durable activity history recorded by the gateway database.
 - Return entries newest first.
-- Apply `app`, `node`, and `correlation` filters against recorded activity
-  relationships, not live node or app probes.
+- Apply `app`, `node`, `effect`, and `correlation` filters against recorded
+  activity relationships, not live node or app probes.
 - Return an empty successful result when no visible activity matches the
   filters.
 - Preserve each entry's `correlation_id` so automation can group related
   command, API, and gateway enactment records.
-- Report the recorded entry effect as `read`, `write`, `destructive`, or
-  `internal`.
+- Report the recorded entry effect as `read`, `write`, or `destructive`.
 
 ### Authorization Rules
 
@@ -117,6 +118,23 @@ command does not prompt.
 
 No matching activity is success with an empty result.
 
+## Activity Logging
+
+Emitted through the cross-cutting Loggable contract. See
+[`activity-concepts.md`](../../activity-concepts.md).
+
+| Field | Value |
+| --- | --- |
+| Channel | `api` (gateway controller). |
+| Type | `activity.listed` |
+| Effect | `read` |
+| Subject | `null`. The command returns a filtered set, not a single record. |
+| Properties | `filter_app` (string\|null), `filter_node` (string\|null), `filter_effect` (`read`\|`write`\|`destructive`\|null), `filter_correlation` (uuid\|null), `filter_limit` (int), `result_count` (int). No secrets, no raw argv. |
+| Description | `derived` from filter set. Renderers may show `"listed N activity entries"` and the applied filters. |
+
+A successful read produces one entry. Authorization or validation failures
+produce an entry recording the failure outcome under the same correlation id.
+
 ## Doctor Relationship
 
 - `activity:list` reads historical gateway records.
@@ -129,6 +147,6 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/ActivityListCommandTest.php` | Gateway-history read behavior, caller-role transport selection, filter validation, authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
-| `tests/Feature/Commands/Operations/ActivityListJsonRendererTest.php` | JSON renderer selection, success envelope, activity DTO shape, filter metadata, empty result shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Operations/ActivityListHumanRendererTest.php` | Human renderer table, empty result prose, no-progress-tree behavior, validation failure prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |
+| `tests/Feature/Commands/Activity/ActivityListCommandTest.php` | Gateway-history read behavior, caller-role transport selection, filter validation, authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
+| `tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php` | JSON renderer selection, success envelope, activity DTO shape, filter metadata, empty result shape, every `error.code` value, and `--json` forcing non-interactive mode. |
+| `tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php` | Human renderer table, empty result prose, no-progress-tree behavior, validation failure prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |

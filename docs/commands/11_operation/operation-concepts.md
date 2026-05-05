@@ -7,9 +7,9 @@ supports the operation command contracts; it does not override the
 ## Domain And Scope
 
 - **Operation command domain:** The cross-cutting command domain for updating
-  Orbit installations, orchestrating doctor convergence, reading operational
-  history, and running request profiling diagnostics. It does not create a
-  separate state family.
+  Orbit installations, orchestrating doctor convergence, and running request
+  profiling diagnostics. It does not create a separate state family.
+  Operational history reads live in the activity family.
 - **Cross-family workflow:** Operation command path that reads, writes,
   verifies, fixes, or adopts state owned by one or more product families while
   preserving those families as the owners of intent, reality, issue codes, and
@@ -64,17 +64,8 @@ supports the operation command contracts; it does not override the
 
 ## Activity
 
-- **Gateway activity history:** Durable operational history recorded by the
-  gateway database. It is historical evidence, not a substitute for live doctor
-  probes.
-- **Activity entry:** One gateway history record with stable fields such as
-  occurrence time, type, effect, subject, actor, command, correlation id,
-  summary, and diagnostic details.
-- **Correlation id:** Metadata identifier that groups related command, API, and
-  gateway enactment activity entries. It does not collapse those entries into a
-  single synthetic row.
-- **Activity visibility:** Gateway-owned authorization filter that controls
-  which activity rows and correlated entries a caller may read.
+Activity logging and history reads live in the activity family. See
+[`docs/commands/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Profiling
 
@@ -97,8 +88,8 @@ supports the operation command contracts; it does not override the
 ## Boundaries
 
 - **Operation-domain boundaries:** Operation commands own cross-family
-  orchestration, update workflows, activity-history reads, and request
-  profiling diagnostics. They do not own durable operation intent, invent
-  operation-family drift, replace family doctor contracts, grant node access,
-  create product-family records, or treat update/profile/activity success as
-  proof of state-family convergence.
+  orchestration, update workflows, and request profiling diagnostics. They do
+  not own durable operation intent, invent operation-family drift, replace
+  family doctor contracts, grant node access, create product-family records,
+  or treat update or profile success as proof of state-family convergence.
+  Activity-history reads belong to the activity family.

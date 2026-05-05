@@ -28,6 +28,16 @@ final class NonStateDomainHandoffRule implements CommandDocsLintRule
      * @var array<string, list<string>>
      */
     private const array REQUIRED_DOCTOR_HANDOFFS = [
+        'activity' => [
+            'node',
+            'app',
+            'workspace',
+            'process',
+            'proxy',
+            'schedule',
+            'tool',
+            'firewall_rule',
+        ],
         'agent-ide' => ['node', 'app', 'workspace', 'process', 'tool'],
         'cf' => ['proxy', 'app'],
         'deploy' => ['app'],

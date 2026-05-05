@@ -30,6 +30,7 @@ specific `(path, rule_id, severity)` tuple. If the count grows, the linter emits
 | Rule | Severity | Checks | Fix |
 | --- | --- | --- | --- |
 | `command_docs.canonical_technical_contract` | error | Canonical technical contracts include the required sections and command signature. | Add the missing canonical section or correct the signature. |
+| `command_docs.activity_logging_contract` | error | Allowlisted commands' canonical technical contracts include `## Activity Logging` declaring `Type`, `Effect`, `Subject`, and `Properties`, or explicitly state the command does not emit. The allowlist grows as commands backfill their activity logging declaration. | Add the `## Activity Logging` section per `docs/commands/17_activity/activity-concepts.md`, or extend the rule's enforced allowlist when a new command adopts it. |
 | `command_docs.destructive_consent` | error | Destructive commands document explicit consent behavior. | Add the required consent contract and JSON failure shape. |
 | `command_docs.shared_failure_vocabulary` | error | Shared failures use canonical error code vocabulary instead of synonyms. | Replace stale or command-specific synonyms with registered shared codes. |
 | `command_docs.product_code_namespace` | error | Machine-readable product codes use singular product prefixes. | Use prefixes such as `node.` instead of plural family prefixes. |

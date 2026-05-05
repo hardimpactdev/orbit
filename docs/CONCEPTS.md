@@ -256,10 +256,6 @@ Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
 - **Family doctor contract**
 - **Doctor issue kind**
 - **Doctor action**
-- **Gateway activity history**
-- **Activity entry**
-- **Correlation id**
-- **Activity visibility**
 - **Profile target**
 - **Profile request origin**
 - **Baseline profile result**
@@ -423,4 +419,33 @@ Source: [DNS Concepts](commands/16_dns/dns-concepts.md).
 - **App-node resolver drift**
 - **Public DNS boundary**
 - **DNS-domain boundaries**
+<!-- /concept-index -->
+
+## Activity Concepts
+
+Source: [Activity Concepts](commands/17_activity/activity-concepts.md).
+
+<!-- concept-index:commands/17_activity/activity-concepts.md -->
+- **Activity command domain**
+- **Gateway activity history**
+- **Activity entry**
+- **Type**
+- **Effect**
+- **Subject**
+- **Causer (actor)**
+- **Properties**
+- **Description**
+- **Channel**
+- **Correlation id**
+- **Correlation generation**
+- **Optional CLI propagation**
+- **Correlation visibility**
+- **Loggable interface**
+- **Loggable emission**
+- **Logging failure handling**
+- **Activity visibility**
+- **Filter denial versus empty**
+- **Activity-domain boundaries**
+- **Activity is not metrics**
+- **Activity is not the live state**
 <!-- /concept-index -->

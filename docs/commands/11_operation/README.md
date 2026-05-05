@@ -1,8 +1,9 @@
 # Operation Commands
 
 Operation commands cut across Orbit's command surface. They update Orbit
-installations, verify convergence, inspect operational history, and run
-diagnostic workflows.
+installations, verify convergence, and run diagnostic workflows. Activity
+history reads live in their own family; see
+[`docs/commands/17_activity`](../17_activity/README.md).
 
 The operation domain does not own a state family. Operation commands may read,
 write, verify, or repair state that belongs to other families, but permanent
@@ -19,9 +20,9 @@ cross-family workflows.
 state: `doctor --family=node`, `doctor --family=app`,
 `doctor --family=workspace`, `doctor --family=process`,
 `doctor --family=proxy`, `doctor --family=schedule`,
-`doctor --family=tool`, and `doctor --family=firewall_rule`. Update and
-activity commands may reference those families, but they must not invent
-operation-family drift.
+`doctor --family=tool`, and `doctor --family=firewall_rule`. Update commands
+may reference those families, but they must not invent operation-family
+drift.
 
 ## Domain Rules
 
@@ -35,15 +36,13 @@ operation-family drift.
   runtime readiness matters.
 - `doctor` owns cross-family convergence orchestration. Family doctor contracts
   own concrete probes, issue codes, and fix/adopt action maps.
-- Operational history is gateway history. A single operation may produce
-  multiple records under one correlation id when history support is available.
 - Profiling reads request/runtime data and must not mutate app intent.
+- Operation commands emit activity entries through the cross-cutting Loggable
+  contract. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Commands
 
 1. [`orbit update`](1_update/update.md)
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
-4. [`orbit activity:list`](4_activity-list/activity-list.md)
-5. [`orbit activity:show [id]`](5_activity-show/activity-show.md)
-6. [`orbit profile [target]`](6_profile/profile.md)
+4. [`orbit profile [target]`](4_profile/profile.md)

@@ -1,6 +1,6 @@
 # `orbit activity:show [id]`
 
-[Back to Operation commands.](../README.md)
+[Back to Activity commands.](../README.md)
 
 Show one gateway activity history entry.
 
@@ -56,10 +56,10 @@ correlated entries under `success.data.related`.
 
 ## Related Commands
 
-- [`activity:list`](../4_activity-list/activity-list.md) - list recent activity
-  entries
-- [`doctor`](../3_doctor/doctor.md) - verify current drift instead of reading
-  historical events
+- [`activity:list`](../1_activity-list/activity-list.md) - list recent
+  activity entries
+- [`doctor`](../../11_operation/3_doctor/doctor.md) - verify current drift
+  instead of reading historical events
 
 ## Technical Contract
 

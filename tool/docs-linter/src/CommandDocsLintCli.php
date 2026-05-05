@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OrbitDocsLinter;
 
 use Laravel\Pao\OutputCleaner;
+use OrbitDocsLinter\Rules\ActivityLoggingContractRule;
 use OrbitDocsLinter\Rules\AppNodeWriteDenialRule;
 use OrbitDocsLinter\Rules\AppPhpVersionContractRule;
 use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
@@ -197,6 +198,7 @@ final class CommandDocsLintCli
                 new ConceptIndexRule,
                 new NonStateDomainHandoffRule,
                 new CanonicalTechnicalContractRule,
+                new ActivityLoggingContractRule,
                 new BehaviorContractStructureRule,
                 new DestructiveConsentRule,
                 new SharedFailureVocabularyRule,

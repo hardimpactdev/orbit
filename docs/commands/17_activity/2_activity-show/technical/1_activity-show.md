@@ -2,7 +2,7 @@
 
 [Back to public `activity:show` documentation.](../activity-show.md)
 
-**Owner:** `operation`.
+**Owner:** `activity`.
 
 **Effects:** `read`.
 
@@ -116,6 +116,23 @@ resolved activity id.
 | Gateway unavailable | The caller cannot reach the configured gateway API. | Failure |
 | Authorization failed | The gateway denies activity-history access for the caller. | Failure |
 
+## Activity Logging
+
+Emitted through the cross-cutting Loggable contract. See
+[`activity-concepts.md`](../../activity-concepts.md).
+
+| Field | Value |
+| --- | --- |
+| Channel | `api` (gateway controller). |
+| Type | `activity.shown` |
+| Effect | `read` |
+| Subject | The selected `Activity` record, by id. `null` when the id resolves to no visible record. |
+| Properties | `activity_id` (int), `related_count` (int), `outcome` (`shown`\|`not_found`\|`unauthorized`). No secrets, no raw argv. |
+| Description | `derived`. Renderers may show `"shown activity #<id>"`. |
+
+A successful read produces one entry. Not-found and authorization failures
+also produce an entry recording the outcome.
+
 ## Doctor Relationship
 
 - `activity:show` reads historical gateway records.
@@ -128,8 +145,8 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/ActivityShowCommandTest.php` | Gateway-history detail behavior, caller-role transport selection, id validation, not-found behavior, authorization behavior, related-entry visibility, read-only guarantee, no live probes, and no repair side effects. |
-| `tests/Feature/Commands/Operations/ActivityShowInteractiveInputModeTest.php` | TTY selection, prompt behavior when `id` is missing, prompt ID, label, primitive, validation, prompt abort behavior, and `--json` opt-out. |
-| `tests/Feature/Commands/Operations/ActivityShowNonInteractiveInputModeTest.php` | No-prompt selection without a TTY, `--json` forcing non-interactive mode, missing-id failure, invalid-id failure, and no prompt rendering. |
-| `tests/Feature/Commands/Operations/ActivityShowJsonRendererTest.php` | JSON renderer selection, success envelope, activity detail DTO shape, related entry shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Operations/ActivityShowHumanRendererTest.php` | Human renderer detail view, related activity rendering, no-progress-tree behavior, validation failure prose, not-found prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |
+| `tests/Feature/Commands/Activity/ActivityShowCommandTest.php` | Gateway-history detail behavior, caller-role transport selection, id validation, not-found behavior, authorization behavior, related-entry visibility, read-only guarantee, no live probes, and no repair side effects. |
+| `tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php` | TTY selection, prompt behavior when `id` is missing, prompt ID, label, primitive, validation, prompt abort behavior, and `--json` opt-out. |
+| `tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php` | No-prompt selection without a TTY, `--json` forcing non-interactive mode, missing-id failure, invalid-id failure, and no prompt rendering. |
+| `tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php` | JSON renderer selection, success envelope, activity detail DTO shape, related entry shape, every `error.code` value, and `--json` forcing non-interactive mode. |
+| `tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php` | Human renderer detail view, related activity rendering, no-progress-tree behavior, validation failure prose, not-found prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |

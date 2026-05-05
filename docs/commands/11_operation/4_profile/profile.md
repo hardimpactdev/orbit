@@ -66,6 +66,6 @@ for the exact shape.
 - [`doctor --family=app`](../../5_app/app-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [`orbit app:show [app]`](../../5_app/4_app-show/app-show.md)
-- [`orbit activity:show [id]`](../5_activity-show/activity-show.md)
+- [`orbit activity:show [id]`](../../17_activity/2_activity-show/activity-show.md)
 
 See [`profile` technical contract](technical/1_profile.md).

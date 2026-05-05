@@ -1,6 +1,6 @@
 # `orbit activity:list`
 
-[Back to Operation commands.](../README.md)
+[Back to Activity commands.](../README.md)
 
 List recent gateway activity history visible to the caller.
 
@@ -12,7 +12,7 @@ ties entries from the same operation together.
 ## Usage
 
 ```bash
-orbit activity:list [--app=<app>] [--node=<node>] [--correlation=<uuid>] [--limit=<count>] [--json]
+orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--limit=<count>] [--json]
 ```
 
 ## Examples
@@ -21,6 +21,8 @@ orbit activity:list [--app=<app>] [--node=<node>] [--correlation=<uuid>] [--limi
 orbit activity:list
 orbit activity:list --app=docs
 orbit activity:list --node=app-1 --limit=50
+orbit activity:list --effect=destructive
+orbit activity:list --effect=destructive --node=app-1
 orbit activity:list --correlation=9f7307e8-38b2-45b8-9b94-cfc341456b85
 orbit activity:list --json
 ```
@@ -29,6 +31,7 @@ orbit activity:list --json
 
 - `--app`: Limit results to activity associated with the recorded app key.
 - `--node`: Limit results to activity associated with the recorded node name.
+- `--effect`: Limit results to one effect: `read`, `write`, or `destructive`.
 - `--correlation`: Limit results to one correlated operation.
 - `--limit`: Maximum number of entries to return. Defaults to `25`.
 - `--json`: Output JSON.
@@ -62,10 +65,10 @@ and count metadata under `success.meta`.
 
 ## Related Commands
 
-- [`activity:show`](../5_activity-show/activity-show.md) - show one activity
+- [`activity:show`](../2_activity-show/activity-show.md) - show one activity
   entry and its correlated context
-- [`doctor`](../3_doctor/doctor.md) - verify current drift instead of reading
-  historical events
+- [`doctor`](../../11_operation/3_doctor/doctor.md) - verify current drift
+  instead of reading historical events
 
 ## Technical Contract
 
