@@ -1181,7 +1181,9 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     authorizes target app-node access, and gateway-local registration remains the
     only SSH edge to app nodes.
   - [x] Interactive input mode and human renderer progress tree.
-  - [ ] Production activation retry warnings and E2E registration/adoption gate.
+  - [x] Docker feature E2E registration/adoption gate through the gateway API.
+  - [ ] Production activation retry warnings and provisioning-lane registration
+    refresh gate.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.

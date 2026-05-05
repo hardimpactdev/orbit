@@ -356,6 +356,27 @@ PHP;
             return run_orbit_command(implode(' ', $parts));
         }
 
+        function run_app_register(array $input): array
+        {
+            $parts = [
+                'php artisan app:register',
+                escapeshellarg((string) ($input['name'] ?? '')),
+                '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
+                '--php-version='.escapeshellarg((string) ($input['php_version'] ?? '8.5')),
+                '--json',
+            ];
+
+            foreach (['node' => 'node', 'path' => 'path', 'domain' => 'domain'] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            return run_orbit_command(implode(' ', $parts));
+        }
+
         function run_activity_list(array $query): array
         {
             $parts = ['php artisan activity:list --json'];
@@ -619,6 +640,29 @@ PHP;
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/apps/register ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_app_register($input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
 
