@@ -242,8 +242,11 @@ yet satisfy the full product contracts.
     resolution, `--node` scoping validation, baseline cURL timing capture,
     request id and Toolbar auth headers, baseline JSON envelope, baseline human
     output, and completed non-2xx success semantics.
+  - Gateway resolution slice implemented: control callers resolve named/domain
+    targets through typed `ShowAppRequest`, preserve baseline profiling from
+    the caller process, and report `origin=caller`.
   - Contract gaps:
-    - control/app caller gateway resolution and request-origin selection.
+    - app caller gateway resolution and gateway-origin fallback profiling.
     - app/workspace cwd inference beyond gateway-local app paths.
     - interactive app selector.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.

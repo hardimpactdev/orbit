@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Profile\ShowProfile;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Throwable;
 
 #[Signature('profile
     {target? : Domain, app hostname, full URL, or absolute app path}
@@ -64,14 +68,6 @@ class ProfileCommand extends Command
             );
         }
 
-        if ($callerRole !== 'gateway') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to resolve this profile target.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
-
         $uri = $this->normalizedUri();
 
         if ($uri === null) {
@@ -88,7 +84,7 @@ class ProfileCommand extends Command
         $selector = $appOption ?? $target;
         $nodeConstraint = $this->stringOption('node');
 
-        if ($nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
+        if ($callerRole === 'gateway' && $nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: "Node '{$nodeConstraint}' not found.",
@@ -127,27 +123,54 @@ class ProfileCommand extends Command
             );
         }
 
-        $app = $this->resolveLocalApp($selector, $nodeConstraint);
+        if ($callerRole === 'gateway') {
+            $app = $this->resolveLocalApp($selector, $nodeConstraint);
 
-        if (! $app instanceof App) {
-            return $this->failCommand(
-                code: 'target_not_found',
-                message: 'No linked app found for the requested profile target.',
-                meta: ['target' => $selector],
-            );
-        }
+            if (! $app instanceof App) {
+                return $this->failCommand(
+                    code: 'target_not_found',
+                    message: 'No linked app found for the requested profile target.',
+                    meta: ['target' => $selector],
+                );
+            }
 
-        $url = $this->profileUrl($app, $uri);
-        $result = $profile->handle(
-            url: $url,
-            authMode: $this->authMode(),
-            target: [
+            $url = $this->profileUrl($app, $uri);
+            $targetPayload = [
                 'app' => $app->name,
                 'workspace' => null,
                 'node' => $app->node?->name,
                 'domain' => $this->appDomain($app),
-            ],
-            origin: 'gateway',
+            ];
+            $origin = 'gateway';
+        } else {
+            $gatewayResult = $this->fetchGatewayApp($selector);
+
+            if ($gatewayResult instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $gatewayResult->errorCode() === 'app.not_found' ? 'target_not_found' : ($gatewayResult->errorCode() ?? 'gateway_unavailable'),
+                    message: $gatewayResult->errorCode() === 'app.not_found'
+                        ? 'No linked app found for the requested profile target.'
+                        : ($gatewayResult->getMessage() !== '' ? $gatewayResult->getMessage() : 'Gateway connection is required to resolve this profile target.'),
+                    meta: $gatewayResult->errorMeta(),
+                );
+            }
+
+            $appPayload = $gatewayResult['app'];
+            $url = $this->profileUrlFromPayload($appPayload, $uri);
+            $targetPayload = [
+                'app' => is_string($appPayload['name'] ?? null) ? $appPayload['name'] : $selector,
+                'workspace' => null,
+                'node' => is_string($appPayload['node'] ?? null) ? $appPayload['node'] : null,
+                'domain' => $this->domainFromPayload($appPayload, $selector),
+            ];
+            $origin = 'caller';
+        }
+
+        $result = $profile->handle(
+            url: $url,
+            authMode: $this->authMode(),
+            target: $targetPayload,
+            origin: $origin,
             user: $this->stringOption('user'),
         );
 
@@ -179,6 +202,31 @@ class ProfileCommand extends Command
         $this->renderHuman($data);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{app: array<string, mixed>, details: array<string, mixed>}|GatewayApiException
+     */
+    private function fetchGatewayApp(string $selector): array|GatewayApiException
+    {
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ShowAppRequest($selector))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException(
+                message: 'Gateway connection is required to resolve this profile target.',
+                errorCode: 'gateway_unavailable',
+                errorMeta: [],
+            );
+        }
+
+        return [
+            'app' => $dto->app,
+            'details' => $dto->details,
+        ];
     }
 
     private function callerRole(): string
@@ -285,6 +333,18 @@ class ProfileCommand extends Command
         return rtrim($app->url(), '/').$uri;
     }
 
+    /**
+     * @param  array<string, mixed>  $app
+     */
+    private function profileUrlFromPayload(array $app, string $uri): string
+    {
+        $url = is_string($app['url'] ?? null) && $app['url'] !== ''
+            ? $app['url']
+            : 'https://'.$this->domainFromPayload($app, is_string($app['name'] ?? null) ? $app['name'] : 'app');
+
+        return rtrim($url, '/').$uri;
+    }
+
     private function appDomain(App $app): string
     {
         $domain = $app->domain;
@@ -294,6 +354,26 @@ class ProfileCommand extends Command
         }
 
         return parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
+    }
+
+    /**
+     * @param  array<string, mixed>  $app
+     */
+    private function domainFromPayload(array $app, string $fallback): string
+    {
+        if (is_string($app['domain'] ?? null) && $app['domain'] !== '') {
+            return $app['domain'];
+        }
+
+        if (is_string($app['url'] ?? null)) {
+            $host = parse_url($app['url'], PHP_URL_HOST);
+
+            if (is_string($host) && $host !== '') {
+                return $host;
+            }
+        }
+
+        return $fallback;
     }
 
     private function authMode(): string

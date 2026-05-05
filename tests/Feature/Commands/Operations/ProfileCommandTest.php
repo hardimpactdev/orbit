@@ -3,12 +3,20 @@
 declare(strict_types=1);
 
 use App\Contracts\RequestProfiler;
+use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('profiles a gateway-local app target as baseline json', function (): void {
     $gateway = Node::factory()->create([
@@ -77,6 +85,78 @@ it('profiles a gateway-local app target as baseline json', function (): void {
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/')
         ->and($payload['success']['data']['request']['status'])->toBe(200)
         ->and($payload['success']['meta']['warnings'])->toBe([]);
+});
+
+it('resolves a control caller target through the gateway before profiling', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        ShowAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-dev-1',
+                        'url' => 'https://docs.test',
+                    ],
+                    'details' => [],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    app()->instance(RequestProfiler::class, new class implements RequestProfiler
+    {
+        public function profile(string $url, array $headers = []): array
+        {
+            return [
+                'request' => [
+                    'method' => 'GET',
+                    'url' => $url,
+                    'uri' => '/login',
+                    'status' => 200,
+                    'bytes' => 1200,
+                    'completed' => true,
+                ],
+                'timings' => [
+                    'dns_ms' => 1.0,
+                    'connect_ms' => 3.0,
+                    'tls_ms' => 7.0,
+                    'ttfb_ms' => 50.0,
+                    'download_ms' => 2.0,
+                    'total_ms' => 52.0,
+                ],
+                'error' => null,
+                'response_headers' => [],
+            ];
+        }
+    });
+
+    $exitCode = Artisan::call('profile', [
+        'target' => 'docs',
+        '--uri' => '/login',
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['origin'])->toBe('caller')
+        ->and($payload['success']['data']['target'])->toBe([
+            'app' => 'docs',
+            'workspace' => null,
+            'node' => 'app-dev-1',
+            'domain' => 'docs.test',
+        ])
+        ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/login');
 });
 
 it('treats a completed non-2xx response as a successful profile result', function (): void {
