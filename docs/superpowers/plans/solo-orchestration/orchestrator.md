@@ -36,15 +36,17 @@ their implementer dispatch.
    - post `E2E_DISPATCHED process=<id> lane=<lane>` on the todo;
    - fire-and-forget.
 
-5. **Spawn reviewers for review-ready todos.** For every todo tagged
-   `review-ready` whose latest `WORKER_DONE` is newer than the latest
-   reviewer outcome (`REVIEW_APPROVED` or `CHANGES_REQUESTED`), and
-   no live `REVIEWER-<todo_id>` process was spawned after that latest
-   `WORKER_DONE`:
+5. **Spawn reviewers for review-ready todos.** A reviewer is needed
+   whenever the latest `WORKER_DONE` is newer than the latest reviewer
+   outcome (`REVIEW_APPROVED` or `CHANGES_REQUESTED`) on that todo.
+   For every such todo:
+   - if a `REVIEWER-<todo_id>` process is alive AND its outcome
+     predates the latest `WORKER_DONE`, close it first: post
+     `PROCESS_CLOSED process=<id> reason=stale-reviewer` on the todo
+     and call `close_process`;
    - spawn `agents.reviewer` named `REVIEWER-<todo_id>` per `dispatch-protocol.md`;
    - prompt: `Read docs/superpowers/plans/solo-orchestration/reviewer.md and review todo <todo_id>.`;
-   - fire-and-forget. A stale `REVIEWER-<todo_id>` whose outcome
-     predates the current `WORKER_DONE` does not block re-dispatch.
+   - fire-and-forget.
 
 6. **Spawn rubber-duck pairs for unaddressed blockers.** For every todo tagged
    `needs-direction` with a clear blocker comment, no completed duck pair for
