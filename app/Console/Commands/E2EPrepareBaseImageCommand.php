@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
 use App\Services\E2E\IncusBaseImagePreparationOptions;
 use App\Services\E2E\IncusBaseImagePreparer;
@@ -23,12 +24,12 @@ class E2EPrepareBaseImageCommand extends Command
     protected $hidden = true;
 
     /**
-     * @var (Closure(): IncusBaseImagePreparer)|null
+     * @var (Closure(IncusHost): IncusBaseImagePreparer)|null
      */
     private ?Closure $preparerFactory = null;
 
     /**
-     * @param  Closure(): IncusBaseImagePreparer  $factory
+     * @param  Closure(IncusHost): IncusBaseImagePreparer  $factory
      */
     public function setPreparerFactory(Closure $factory): void
     {
@@ -69,29 +70,35 @@ class E2EPrepareBaseImageCommand extends Command
         }
 
         $hostPool = IncusHostPool::fromEnvironment($config);
-        $host = $hostPool->first();
+        $hosts = $hostPool->hosts();
 
-        if ($host === null) {
+        if ($hosts === []) {
             return $this->failCommand('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
         }
 
-        $options = new IncusBaseImagePreparationOptions(
-            force: true,
-            sourceImage: $config->sourceImage,
-            baseImageAlias: $config->baseImage,
-            bootstrapUser: $config->bootstrapUser,
-            cpus: (int) $config->cpus,
-            memory: $config->memory,
-            timeoutSeconds: $config->timeoutSeconds,
-            depsScriptPath: base_path('bin/_e2e-deps.sh'),
-        );
+        $builtImages = [];
 
         try {
-            $preparer = $this->preparerFactory !== null
-                ? ($this->preparerFactory)()
-                : new IncusBaseImagePreparer($host);
+            foreach ($hosts as $host) {
+                $hostConfig = $host->config;
+                $options = new IncusBaseImagePreparationOptions(
+                    force: true,
+                    sourceImage: $hostConfig->sourceImage,
+                    baseImageAlias: $hostConfig->baseImage,
+                    bootstrapUser: $hostConfig->bootstrapUser,
+                    cpus: (int) $hostConfig->cpus,
+                    memory: $hostConfig->memory,
+                    timeoutSeconds: $hostConfig->timeoutSeconds,
+                    depsScriptPath: base_path('bin/_e2e-deps.sh'),
+                );
 
-            $built = $preparer->build($options);
+                $preparer = $this->preparerFactory !== null
+                    ? ($this->preparerFactory)($host)
+                    : new IncusBaseImagePreparer($host);
+
+                $built = $preparer->build($options);
+                $builtImages[] = ['host' => $hostConfig->host, ...$built];
+            }
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         }
@@ -99,7 +106,8 @@ class E2EPrepareBaseImageCommand extends Command
         $result = [
             'provider' => 'incus',
             'dry_run' => false,
-            'image' => $built,
+            'image' => $builtImages[0],
+            'images' => $builtImages,
         ];
 
         if ((bool) $this->option('json')) {
@@ -109,7 +117,10 @@ class E2EPrepareBaseImageCommand extends Command
         }
 
         $this->info('Built Incus base image.');
-        $this->line("{$built['action']}: {$built['role']} -> {$built['alias']}");
+
+        foreach ($builtImages as $built) {
+            $this->line("{$built['host']}: {$built['action']}: {$built['role']} -> {$built['alias']}");
+        }
 
         return self::SUCCESS;
     }

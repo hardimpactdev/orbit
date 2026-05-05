@@ -50,4 +50,12 @@ final readonly class IncusHostPool
     {
         return $this->hosts[0] ?? null;
     }
+
+    /**
+     * @return list<IncusHost>
+     */
+    public function hosts(): array
+    {
+        return $this->hosts;
+    }
 }

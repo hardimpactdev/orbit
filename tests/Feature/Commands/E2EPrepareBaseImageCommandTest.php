@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareBaseImageCommand;
+use App\E2E\Support\IncusHost;
 use App\Services\E2E\IncusBaseImagePreparer;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
@@ -57,7 +58,7 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
     ]);
 
     $command = app(E2EPrepareBaseImageCommand::class);
-    $command->setPreparerFactory(fn () => $preparer);
+    $command->setPreparerFactory(fn (IncusHost $host): IncusBaseImagePreparer => $preparer);
     $this->app->instance(E2EPrepareBaseImageCommand::class, $command);
 
     $expected = json_encode([
@@ -66,9 +67,18 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
                 'provider' => 'incus',
                 'dry_run' => false,
                 'image' => [
+                    'host' => 'beast',
                     'role' => 'base',
                     'alias' => 'orbit-base-ubuntu-26.04',
                     'action' => 'built',
+                ],
+                'images' => [
+                    [
+                        'host' => 'beast',
+                        'role' => 'base',
+                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'action' => 'built',
+                    ],
                 ],
             ],
         ],
@@ -77,6 +87,69 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
     $this->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
         ->expectsOutput($expected)
         ->assertSuccessful();
+});
+
+it('--force prepares every configured Incus host', function (): void {
+    $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
+
+    putenv('ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2');
+
+    $preparedHosts = [];
+    $preparer = m::mock(IncusBaseImagePreparer::class);
+    $preparer->shouldReceive('build')
+        ->twice()
+        ->andReturn([
+            'role' => 'base',
+            'alias' => 'orbit-base-ubuntu-26.04',
+            'action' => 'built',
+        ]);
+
+    $command = app(E2EPrepareBaseImageCommand::class);
+    $command->setPreparerFactory(function (IncusHost $host) use ($preparer, &$preparedHosts): IncusBaseImagePreparer {
+        $preparedHosts[] = $host->config->host;
+
+        return $preparer;
+    });
+    $this->app->instance(E2EPrepareBaseImageCommand::class, $command);
+
+    $expected = json_encode([
+        'success' => [
+            'data' => [
+                'provider' => 'incus',
+                'dry_run' => false,
+                'image' => [
+                    'host' => 'sidecar1',
+                    'role' => 'base',
+                    'alias' => 'orbit-base-ubuntu-26.04',
+                    'action' => 'built',
+                ],
+                'images' => [
+                    [
+                        'host' => 'sidecar1',
+                        'role' => 'base',
+                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'action' => 'built',
+                    ],
+                    [
+                        'host' => 'sidecar2',
+                        'role' => 'base',
+                        'alias' => 'orbit-base-ubuntu-26.04',
+                        'action' => 'built',
+                    ],
+                ],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    try {
+        $this->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
+            ->expectsOutput($expected)
+            ->assertSuccessful();
+    } finally {
+        $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
+    }
+
+    expect($preparedHosts)->toBe(['sidecar1', 'sidecar2']);
 });
 
 it('--force without an Incus provider fails clearly', function (): void {
@@ -99,7 +172,7 @@ it('--force surfaces preparer failure as command failure', function (): void {
         ->andThrow(new RuntimeException('Source image [orbit-missing] is not available.'));
 
     $command = app(E2EPrepareBaseImageCommand::class);
-    $command->setPreparerFactory(fn () => $preparer);
+    $command->setPreparerFactory(fn (IncusHost $host): IncusBaseImagePreparer => $preparer);
     $this->app->instance(E2EPrepareBaseImageCommand::class, $command);
 
     $this->artisan('e2e:prepare-base-image', ['--force' => true])
