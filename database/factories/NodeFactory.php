@@ -15,7 +15,7 @@ class NodeFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => $this->faker->unique()->slug(),
+            'name' => fake()->unique()->bothify('node-####'),
             'role' => 'app',
             'host' => $this->faker->domainName(),
             'ssh_user' => 'orbit',

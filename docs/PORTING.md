@@ -508,23 +508,27 @@ VPS-adjacent behavior.
      shapes already promoted in `docs/abstractions/cross-cutting.md`.
    - JSON envelope response helper duplication identified; deferred to same
      follow-up todo as caller-role extraction.
-3. Then port the node doctor contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`)
-   and its implementation (todo 270 `NODE-LIST-DOCTOR-1`).
+3. `NODE-DOCTOR-CONTRACT-1` (todo 252) is merged: the technical contract,
+   probe primitives, DTOs, and focused unit tests are on `main`.
+4. Next active doctor work is `NODE-LIST-DOCTOR-1` (todo 270): wire
+   `node:list --doctor` to `NodesProbe` and render the doctor summary.
 
 If the ready queue is below target, fill with independent read-only Pest,
 documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. Node doctor contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`).
-2. `node:list --doctor` and doctor handoff implementation (todo 270 `NODE-LIST-DOCTOR-1`).
-3. `node:show` real grant metadata / authorization visibility slice (with
-   paired Pest and E2E gates).
-4. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
+1. `node:list --doctor` and doctor handoff implementation (todo 270 `NODE-LIST-DOCTOR-1`).
+2. `E2E-NODE-SHOW-GRANT-1` (todo 267): paired feature E2E for the real
+   `node:show` grant metadata that is now merged locally.
+3. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
    first-gateway provisioning split below instead of promoting todo 255 as-is.
+4. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
+   foundation is merged.
 5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
-   Do not start this until the active doctor and grant slices are on `main`.
+   Do not start this until the active doctor handoff and grant E2E slices are on
+   `main`.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -532,6 +536,9 @@ Todo 255 is intentionally broad and should be refreshed or replaced by bounded
 worker todos before dispatch. Use these candidates in order when provisioning
 work becomes the active lane:
 
+0. `NODENEW-WG-FOUNDATION-1` (todo 271) is merged: `WireGuardPeer`,
+   `wireguard_peers`, factories, and `WireGuardKeyGenerator` are available for
+   the enrollment slice.
 1. `NODENEW-WIREGUARD-ENROLL-1` — enroll the first gateway in WireGuard and
    prove the resulting registry and config state with focused Pest coverage;
    pair with an `e2e-provision` gate.
@@ -599,6 +606,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] JSON renderer contract.
   - [x] Human renderer contract.
   - [x] `--role` and `--environment` filters.
+  - [x] Node doctor technical contract and `NodesProbe` primitives.
   - [ ] `--doctor` secondary operation.
   - [ ] caller visibility/access-policy behavior.
   - [~] gateway forwarding (control/app CLI callers use typed GatewayClient;
@@ -614,7 +622,7 @@ exist. Those families wait for the node/gateway/app foundations.
     E2E gate todo 254 pending).
   - [ ] interactive prompting.
   - [ ] default development app-node resolution.
-  - [ ] real grant metadata.
+  - [x] real grant metadata for gateway-local and forwarded reads.
 - [x] Reconcile `node:register` with product command contracts.
   - **Decision:** Retire as public command. `node:register` is an internal
     bootstrap utility only. See tracker entry above for rationale.
@@ -911,9 +919,16 @@ decision evidence and tracker status only.
 
 ## State Families And Doctor Workstream
 
-- [ ] Port family inventory from the blueprint into current docs before
+- [~] Port family inventory from the blueprint into current docs before
   implementation.
-- [ ] Port node doctor contracts and checks.
+  - [x] Node-family public contract and technical `NodesProbe` contract.
+  - [ ] App/workspace/process/proxy/firewall/tool/schedule family inventories.
+- [~] Port node doctor contracts and checks.
+  - [x] `NodesProbe` DTOs/enums, technical contract, in-memory registry/access/default checks, and focused unit tests.
+  - [ ] `node:list --doctor` command handoff and renderer integration.
+  - [ ] External-reality checks: WireGuard peer reality, platform detection,
+    SSH reachability, gateway/app runtime readiness, development TLD, and PHP
+    default verification.
 - [ ] Port app doctor contracts and checks.
 - [ ] Port workspace doctor contracts and checks.
 - [ ] Port process doctor contracts and checks.
@@ -983,24 +998,23 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Resume from the post-read-forwarding queue in the Solo pipeline hints:
-   create or refresh `FAMILY-REVIEW-NODE-READ-1`, then port the
-   `node:list --doctor` contract/docs slice (todo 252 `NODE-DOCTOR-CONTRACT-1`)
-   and implementation (todo 270 `NODE-LIST-DOCTOR-1`).
+1. Wire `node:list --doctor` to the merged `NodesProbe` primitives
+   (todo 270 `NODE-LIST-DOCTOR-1`) and keep it an explicit secondary
+   operation with human and JSON doctor summaries.
 2. Use the full prepared Incus topology lane for node read-forwarding E2E:
    `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
    only for container-safe feature checks that do not depend on WireGuard,
    systemd, SSH provisioning, or VM networking semantics.
-3. Finish node registry and metadata slices before app work: `node:list
-   --doctor`, `node:show` authorization/grant visibility, and the
-   `FAMILY-REVIEW-NODE-READ-1` review candidate once `node:list` and
-   `node:show` prove the shared read-forwarding shape.
-4. Continue gateway forwarding in the documented order after the
-   read-forwarding family review: `node:update`, `node:default`, `node:grant`,
+3. Run the paired `E2E-NODE-SHOW-GRANT-1` feature gate for the merged
+   `node:show` grant metadata, then leave remaining `node:show` work scoped to
+   access-policy authorization, interactive prompting, and default app-node
+   resolution.
+4. Continue gateway forwarding in the documented order after the active doctor
+   handoff and grant E2E slices: `node:update`, `node:default`, `node:grant`,
    `node:revoke`, and `node:remove`.
-5. Extend `node:new --role=gateway` WireGuard/API/vhost/FPM provisioning only
-   when a porting slice explicitly targets provisioning or host mutation; keep
-   those checks in the `e2e-provision` lane.
+5. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
+   then pair it with the `e2e-provision` lane before treating first-gateway
+   WireGuard state as complete.
 6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
 7. Complete the documented `update` and `update:all` implementation gaps once
