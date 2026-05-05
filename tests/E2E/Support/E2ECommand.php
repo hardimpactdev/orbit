@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\E2E\Support;
 
 use Illuminate\Contracts\Process\ProcessResult;
+use RuntimeException;
 
 final readonly class E2ECommand
 {
@@ -12,7 +13,9 @@ final readonly class E2ECommand
     {
         $result = $instance->exec($command, $timeoutSeconds);
 
-        expect($result->successful())->toBeTrue($message."\n".$result->output().$result->errorOutput());
+        if (! $result->successful()) {
+            throw new RuntimeException(trim($message."\n".$result->output().$result->errorOutput()));
+        }
 
         return $result;
     }
@@ -31,7 +34,9 @@ final readonly class E2ECommand
     {
         $result = $instance->ssh($user, $key, $command, $timeoutSeconds);
 
-        expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
+        if (! $result->successful()) {
+            throw new RuntimeException(trim("SSH command failed: {$command}\n".$result->output().$result->errorOutput()));
+        }
 
         return $result;
     }
