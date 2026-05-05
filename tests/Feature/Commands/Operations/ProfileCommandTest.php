@@ -232,6 +232,106 @@ it('asks the gateway to profile targets for app callers', function (): void {
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/login');
 });
 
+it('falls back to gateway-origin profiling for control callers when caller-origin profiling fails', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        ShowAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-dev-1',
+                        'url' => 'https://docs.test',
+                    ],
+                    'details' => [],
+                ],
+            ],
+        ], 200),
+        ShowProfileRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'source' => 'baseline',
+                    'instrumented' => false,
+                    'auth_mode' => 'guest',
+                    'request_id' => 'gateway-profile-request-id',
+                    'origin' => 'gateway',
+                    'target' => [
+                        'app' => 'docs',
+                        'workspace' => null,
+                        'node' => 'app-dev-1',
+                        'domain' => 'docs.test',
+                    ],
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => 'https://docs.test/',
+                        'uri' => '/',
+                        'status' => 200,
+                        'bytes' => 1200,
+                        'completed' => true,
+                    ],
+                    'timings' => [
+                        'dns_ms' => 1.0,
+                        'connect_ms' => 3.0,
+                        'tls_ms' => 7.0,
+                        'ttfb_ms' => 50.0,
+                        'download_ms' => 2.0,
+                        'total_ms' => 52.0,
+                    ],
+                    'error' => null,
+                    'response_headers' => [],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    app()->instance(RequestProfiler::class, new class implements RequestProfiler
+    {
+        public function profile(string $url, array $headers = []): array
+        {
+            return [
+                'request' => [
+                    'method' => 'GET',
+                    'url' => $url,
+                    'uri' => '/',
+                    'status' => null,
+                    'bytes' => 0,
+                    'completed' => false,
+                ],
+                'timings' => [
+                    'dns_ms' => 0.0,
+                    'connect_ms' => 0.0,
+                    'tls_ms' => 0.0,
+                    'ttfb_ms' => 0.0,
+                    'download_ms' => 0.0,
+                    'total_ms' => 3000.0,
+                ],
+                'error' => ['message' => 'Could not resolve host'],
+                'response_headers' => [],
+            ];
+        }
+    });
+
+    $exitCode = Artisan::call('profile', [
+        'target' => 'docs',
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['origin'])->toBe('gateway')
+        ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/');
+});
+
 it('treats a completed non-2xx response as a successful profile result', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',

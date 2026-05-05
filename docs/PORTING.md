@@ -249,9 +249,10 @@ yet satisfy the full product contracts.
     authorizes visible apps on the gateway, performs the profile request from
     gateway origin, and app callers use typed `ShowProfileRequest` instead of a
     caller-local HTTP profile edge.
+  - Request-origin fallback slice implemented: control callers first attempt
+    caller-origin profiling for resolved targets, then fall back to typed
+    gateway-origin profiling when the caller-local request cannot complete.
   - Contract gaps:
-    - control caller gateway-origin fallback profiling when caller-local
-      profiling cannot reach the route.
     - app/workspace cwd inference beyond gateway-local app paths.
     - interactive app selector.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.

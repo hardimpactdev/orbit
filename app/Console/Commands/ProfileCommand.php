@@ -196,6 +196,20 @@ class ProfileCommand extends Command
         );
 
         if (($result['success'] ?? false) !== true) {
+            if ($callerRole === 'control') {
+                $gatewayResult = $this->profileThroughGateway($selector, $uri, $nodeConstraint);
+
+                if (! $gatewayResult instanceof GatewayApiException) {
+                    if ($this->wantsJson()) {
+                        return $this->jsonSuccess($gatewayResult);
+                    }
+
+                    $this->renderHuman($gatewayResult);
+
+                    return self::SUCCESS;
+                }
+            }
+
             $error = $result['error'] ?? [];
 
             return $this->failCommand(
