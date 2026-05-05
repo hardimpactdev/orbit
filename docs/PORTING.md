@@ -261,9 +261,10 @@ yet satisfy the full product contracts.
   - Interactive selector slice implemented: when no explicit target or cwd app
     context resolves, interactive callers can choose from visible app targets
     through the documented `profile.app` datatable prompt.
+  - Toolbar human renderer slice implemented: decoded Toolbar stages, collection
+    overhead, and query summary counts render in human output when available.
   - Contract gaps:
     - workspace cwd inference is blocked until workspace schema/models exist.
-    - Toolbar-enriched renderer details beyond attaching decoded summary data.
     - paired E2E gate for an observable profile target.
 - [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`

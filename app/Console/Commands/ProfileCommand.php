@@ -604,8 +604,93 @@ class ProfileCommand extends Command
         $this->line('Connect '.$this->formatMsValue($timings, 'connect_ms'));
         $this->line('TLS '.$this->formatMsValue($timings, 'tls_ms'));
         $this->line('Waiting for response '.$this->formatMsValue($timings, 'ttfb_ms'));
+        $this->renderToolbarHuman(is_array($data['toolbar'] ?? null) ? $data['toolbar'] : null);
         $this->line('Download response '.$this->formatMsValue($timings, 'download_ms'));
         $this->line('Total '.$this->formatMs($totalMs).'ms');
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $toolbar
+     */
+    private function renderToolbarHuman(?array $toolbar): void
+    {
+        if ($toolbar === null) {
+            return;
+        }
+
+        $anchors = is_array($toolbar['timing_anchors'] ?? null) ? $toolbar['timing_anchors'] : [];
+        $caddyStart = $this->numericValue($anchors, 'caddy_start_ms');
+        $phpStart = $this->numericValue($anchors, 'php_start_ms');
+        $laravelStart = $this->numericValue($anchors, 'laravel_start_ms');
+        $profilerEnd = $this->numericValue($anchors, 'profiler_end_ms');
+        $collectedAt = $this->numericValue($anchors, 'collected_at_ms');
+
+        if ($caddyStart !== null && $phpStart !== null) {
+            $this->line('  Caddy in '.$this->formatMs(max(0.0, $phpStart - $caddyStart)).'ms');
+        }
+
+        if ($phpStart !== null && $laravelStart !== null) {
+            $this->line('  PHP-FPM '.$this->formatMs(max(0.0, $laravelStart - $phpStart)).'ms');
+        }
+
+        $profiler = is_array($toolbar['profiler'] ?? null) ? $toolbar['profiler'] : [];
+        $stages = is_array($profiler['stages'] ?? null) ? $profiler['stages'] : [];
+
+        foreach ($stages as $stage) {
+            if (! is_array($stage) || ! is_string($stage['label'] ?? null)) {
+                continue;
+            }
+
+            $duration = is_numeric($stage['duration_ms'] ?? null)
+                ? (float) $stage['duration_ms']
+                : null;
+
+            if ($duration === null) {
+                continue;
+            }
+
+            $this->line('  '.$stage['label'].' '.$this->formatMs($duration).'ms');
+        }
+
+        if ($profilerEnd !== null && $collectedAt !== null) {
+            $this->line('  Toolbar '.$this->formatMs(max(0.0, $collectedAt - $profilerEnd)).'ms');
+        }
+
+        $this->renderToolbarQueries(is_array($toolbar['queries'] ?? null) ? $toolbar['queries'] : []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $queries
+     */
+    private function renderToolbarQueries(array $queries): void
+    {
+        $count = (int) ($queries['count'] ?? 0);
+
+        if ($count <= 0) {
+            return;
+        }
+
+        $parts = ["{$count} queries"];
+        $slowCount = (int) ($queries['slow_count'] ?? 0);
+        $duplicateCount = (int) ($queries['duplicate_count'] ?? 0);
+
+        if ($slowCount > 0) {
+            $parts[] = "{$slowCount} slow";
+        }
+
+        if ($duplicateCount > 0) {
+            $parts[] = "{$duplicateCount} duplicate";
+        }
+
+        $this->line(implode(', ', $parts));
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     */
+    private function numericValue(array $values, string $key): ?float
+    {
+        return is_numeric($values[$key] ?? null) ? (float) $values[$key] : null;
     }
 
     /**
