@@ -6,14 +6,22 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
+use App\Http\Gateway\Requests\Apps\RemoveAppRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('removes app intent and owned artifacts from a gateway caller', function (): void {
     Node::factory()->create([
@@ -214,6 +222,68 @@ it('reports node cleanup drift as success warnings after intent removal', functi
         ->and($payload['success']['meta']['warnings'])->toHaveCount(2)
         ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.fpm_config_extra')
         ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('app.runtime_config_extra');
+});
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+    ]);
+    $remoteShell = new AppRemoveSequencedRemoteShell([]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        RemoveAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'result' => ['action' => 'removed'],
+                    'cleanup' => [
+                        'proxy_routes_removed' => 1,
+                        'workspaces_removed' => 0,
+                        'schedules_removed' => 0,
+                        'processes_removed' => 0,
+                        'fpm_config_removed' => true,
+                        'runtime_config_removed' => true,
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('app:remove', [
+        'app' => 'docs',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(App::query()->whereKey($app->id)->exists())->toBeTrue()
+        ->and($remoteShell->scripts)->toBe([])
+        ->and($payload['success']['data']['app']['name'])->toBe('docs')
+        ->and($payload['success']['data']['cleanup']['proxy_routes_removed'])->toBe(1);
 });
 
 final class AppRemoveSequencedRemoteShell implements RemoteShell

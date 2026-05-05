@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\RemoveApp;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\RemoveAppRequest;
+use App\Http\Gateway\Responses\Apps\AppRemoveResponse;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('app:remove
     {app? : App name or hostname}
@@ -55,11 +60,7 @@ class AppRemoveCommand extends Command
         }
 
         if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to remove apps.',
-                meta: [],
-            );
+            return $this->forwardRemove($selector);
         }
 
         $app = $this->resolveApp($selector);
@@ -79,6 +80,37 @@ class AppRemoveCommand extends Command
         $result = $removeApp->handle($app);
 
         return $this->successCommand($result);
+    }
+
+    private function forwardRemove(string $selector): int
+    {
+        try {
+            /** @var AppRemoveResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new RemoveAppRequest($selector))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to remove an app.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to remove an app.',
+                meta: [],
+            );
+        }
+
+        return $this->successCommand([
+            'app' => is_array($dto->data['app'] ?? null) ? $dto->data['app'] : [],
+            'result' => is_array($dto->data['result'] ?? null) ? $dto->data['result'] : ['action' => 'removed'],
+            'cleanup' => is_array($dto->data['cleanup'] ?? null) ? $dto->data['cleanup'] : [],
+            'warnings' => $dto->warnings,
+        ]);
     }
 
     private function resolveApp(string $selector): ?App

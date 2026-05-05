@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
 use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppRegisterController;
+use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
@@ -38,6 +39,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/register', AppRegisterController::class);
         Route::post('/apps', AppStoreController::class);
         Route::post('/apps/{app}/root', AppRootController::class);
+        Route::delete('/apps/{app}', AppRemoveController::class);
         Route::get('/apps/{app}', AppShowController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
