@@ -538,8 +538,11 @@ documentation, or E2E support work only.
 
 1. `NODENEW-GATEWAY-API-VERIFY-1`: verify the gateway API over WireGuard,
    including `/api/me`, after first-gateway bootstrap.
-2. `NODENEW-GATEWAY-CA-VERIFY-1`: make gateway CA trust verification explicit
-   in the command result and focused tests.
+2. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
+   bootstrap now verifies and installs gateway CA trust through the existing
+   trust-store installer, persists local gateway trust settings, exposes
+   `gateway_trust` evidence in JSON output, and converges repeat runs without
+   duplicate trust installation.
 3. `NODENEW-PLATFORM-DETECT-1`: replace optimistic platform placeholders in the
    first-gateway bootstrap path.
 4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
@@ -565,9 +568,10 @@ work becomes the active lane:
 2. `NODENEW-GATEWAY-API-VERIFY-1` — verify the gateway API over WireGuard,
    including `/api/me`, after first-gateway bootstrap; pair with an
    `e2e-provision` gate.
-3. `NODENEW-GATEWAY-CA-VERIFY-1` — make gateway CA trust verification explicit
-   in the command result and focused tests; pair with provisioning E2E only if
-   the behavior mutates a host.
+3. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
+   bootstrap verifies and installs gateway CA trust, stores local trust
+   metadata, exposes JSON trust evidence, and keeps repeat runs idempotent.
+   The paired provisioning E2E gate remains deferred.
 4. `NODENEW-PLATFORM-DETECT-1` — replace optimistic platform placeholders with
    real platform detection for the gateway bootstrap path.
 5. `NODENEW-JSON-SUCCESS-1` — finalize the documented JSON success state only
@@ -778,9 +782,11 @@ exist. Those families wait for the node/gateway/app foundations.
       the gateway's database identity (`is_local=true`, `role=gateway`, `status=active`)
       and calls `OrbitCaService::ensureRootCa()`.
     - `node:new --role=gateway` invokes this command over SSH after remote Orbit
-      installation succeeds, captures the root CA cert, and stores it locally.
+      installation succeeds, captures the root CA cert, stores it locally,
+      verifies local trust installation, and persists gateway trust metadata.
     - Focused tests cover CA generation, idempotence, node demotion, invalid-PEM
-      rejection, and the full `node:new` bootstrap invocation path.
+      rejection, trust-store install evidence/failure, idempotent repeat runs,
+      and the full `node:new` bootstrap invocation path.
 
 ## DNS Workstream
 

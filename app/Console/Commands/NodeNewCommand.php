@@ -10,6 +10,9 @@ use App\Models\WireGuardPeer;
 use App\Services\Gateway\GatewayRequestSender;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\OrbitHostInstaller;
+use App\Services\Trust\TrustStoreInstaller;
+use App\Services\Trust\TrustStoreInstallException;
+use App\Services\Trust\TrustStoreInstallReason;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -32,6 +35,8 @@ use RuntimeException;
 class NodeNewCommand extends Command
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
+
+    private const string TRUST_LABEL = 'orbit';
 
     public function handle(
         OrbitHostInstaller $installer,
@@ -108,6 +113,14 @@ class NodeNewCommand extends Command
         }
 
         if ($gatewayConfigured || $callerRole === 'gateway') {
+            if (
+                $callerRole === 'control'
+                && $gatewayConfigured
+                && Node::query()->where('name', $name)->where('role', 'gateway')->where('status', 'active')->exists()
+            ) {
+                return $this->convergeFirstGateway($name);
+            }
+
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway forwarding is required before gateway convergence can run.',
@@ -116,6 +129,128 @@ class NodeNewCommand extends Command
         }
 
         return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $name);
+    }
+
+    private function convergeFirstGateway(string $name): int
+    {
+        $host = $this->stringOption('host');
+
+        if ($host === null) {
+            return $this->validationFailed('host', 'Host is required for gateway nodes.');
+        }
+
+        $controlName = $this->stringOption('control-name') ?? $this->defaultControlName();
+
+        if ($controlName === null || ! $this->isValidNodeName($controlName)) {
+            return $this->validationFailed('control_name', 'Control node name must be a valid node name.');
+        }
+
+        if ($controlName === $name) {
+            return $this->validationFailed('control_name', 'Control node name must be different from gateway node name.');
+        }
+
+        $gateway = Node::query()
+            ->where('name', $name)
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
+
+        if (! $gateway instanceof Node || $gateway->host !== $host) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Gateway node '{$name}' is not compatible with this bootstrap request.",
+                meta: ['name' => $name, 'host' => $host],
+            );
+        }
+
+        $control = Node::query()
+            ->where('name', $controlName)
+            ->where('role', 'control')
+            ->where('status', 'active')
+            ->where('is_local', true)
+            ->first();
+
+        if (! $control instanceof Node) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Local control node '{$controlName}' is not fully onboarded.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'local_control_identity',
+                    'error' => 'Local control node record is missing or inactive.',
+                ],
+            );
+        }
+
+        $settings = LocalGatewaySettings::current();
+
+        if (! is_string($settings->ca_pem_path) || $settings->ca_pem_path === '' || ! File::exists($settings->ca_pem_path)) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway CA trust material is missing locally.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'gateway_ca_trust',
+                    'error' => 'Local gateway CA PEM file is missing.',
+                ],
+            );
+        }
+
+        $caCert = File::get($settings->ca_pem_path);
+        $caSha256 = is_string($settings->ca_sha256) && $settings->ca_sha256 !== ''
+            ? $settings->ca_sha256
+            : hash('sha256', $caCert);
+
+        $trustStatus = $this->ensureGatewayCaTrusted(
+            host: $host,
+            trustPath: $settings->ca_pem_path,
+            caSha256: $caSha256,
+        );
+
+        if (is_int($trustStatus)) {
+            return $trustStatus;
+        }
+
+        $settings->fill([
+            'gateway_url' => $this->gatewayUrl($host),
+            'gateway_wg_ip' => $gateway->wireguard_address,
+            'ca_sha256' => $caSha256,
+            'ca_pem_path' => $settings->ca_pem_path,
+            'trusted_at' => $settings->trusted_at ?? now(),
+        ])->save();
+
+        $payload = $this->firstGatewayPayload(
+            action: 'converged',
+            provisioningStatus: 'already_provisioned',
+            name: $name,
+            host: $host,
+            gatewayAddress: (string) $gateway->wireguard_address,
+            controlName: $controlName,
+            controlAddress: (string) $control->wireguard_address,
+            onboarding: [
+                'wireguard' => 'already_installed',
+                'gateway_trust' => $trustStatus,
+                'gateway_config' => 'already_stored',
+                'gateway_api' => 'pending',
+            ],
+            gatewayTrust: [
+                'gateway_url' => $this->gatewayUrl($host),
+                'trusted' => true,
+                'status' => $trustStatus,
+                'ca_sha256' => $caSha256,
+                'ca_pem_path' => $settings->ca_pem_path,
+            ],
+        );
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Gateway node {$name} already provisioned.");
+        $this->line("Endpoint: {$host}");
+        $this->line("Control node: {$controlName}");
+
+        return self::SUCCESS;
     }
 
     /**
@@ -396,7 +531,23 @@ class NodeNewCommand extends Command
             );
         }
 
-        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress, $controlKeys): void {
+        $caSha256 = hash('sha256', $caCert);
+
+        if (! $this->wantsJson()) {
+            $this->line('○ Verify gateway CA trust');
+        }
+
+        $trustStatus = $this->ensureGatewayCaTrusted(
+            host: $host,
+            trustPath: $trustPath,
+            caSha256: $caSha256,
+        );
+
+        if (is_int($trustStatus)) {
+            return $trustStatus;
+        }
+
+        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress, $controlKeys, $trustPath, $caSha256): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
             Node::query()->updateOrCreate(
@@ -443,11 +594,77 @@ class NodeNewCommand extends Command
                     'allowed_ips' => "{$controlAddress}/32",
                 ],
             );
+
+            LocalGatewaySettings::current()->fill([
+                'gateway_url' => $this->gatewayUrl($host),
+                'gateway_wg_ip' => $gatewayAddress,
+                'ca_sha256' => $caSha256,
+                'ca_pem_path' => $trustPath,
+                'trusted_at' => now(),
+            ])->save();
         });
 
-        $payload = [
+        $payload = $this->firstGatewayPayload(
+            action: 'created',
+            provisioningStatus: 'complete',
+            name: $name,
+            host: $host,
+            gatewayAddress: $gatewayAddress,
+            controlName: $controlName,
+            controlAddress: $controlAddress,
+            onboarding: [
+                'wireguard' => 'installed',
+                'gateway_trust' => $trustStatus,
+                'gateway_config' => 'stored',
+                'gateway_api' => 'pending',
+            ],
+            gatewayTrust: [
+                'gateway_url' => $this->gatewayUrl($host),
+                'trusted' => true,
+                'status' => $trustStatus,
+                'ca_sha256' => $caSha256,
+                'ca_pem_path' => $trustPath,
+            ],
+        );
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Created gateway node {$name}.");
+        $this->line("Endpoint: {$host}");
+        $this->line("Control node: {$controlName}");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{wireguard: string, gateway_trust: string, gateway_config: string, gateway_api: string}  $onboarding
+     * @param  array<string, mixed>  $gatewayTrust
+     * @return array{
+     *     result: array{action: string},
+     *     node: array<string, mixed>,
+     *     provisioning: array<string, string>,
+     *     local_control_node: array<string, mixed>,
+     *     local_onboarding: array<string, string>,
+     *     gateway_trust: array<string, mixed>,
+     *     next_steps: array<int, mixed>
+     * }
+     */
+    private function firstGatewayPayload(
+        string $action,
+        string $provisioningStatus,
+        string $name,
+        string $host,
+        string $gatewayAddress,
+        string $controlName,
+        string $controlAddress,
+        array $onboarding,
+        array $gatewayTrust,
+    ): array {
+        return [
             'result' => [
-                'action' => 'created',
+                'action' => $action,
             ],
             'node' => [
                 'name' => $name,
@@ -464,7 +681,7 @@ class NodeNewCommand extends Command
             'provisioning' => [
                 'transport' => 'ssh',
                 'host' => $host,
-                'status' => 'complete',
+                'status' => $provisioningStatus,
             ],
             'local_control_node' => [
                 'name' => $controlName,
@@ -477,24 +694,66 @@ class NodeNewCommand extends Command
                 ],
                 'status' => 'active',
             ],
-            'local_onboarding' => [
-                'wireguard' => 'installed',
-                'gateway_trust' => 'trusted',
-                'gateway_config' => 'stored',
-                'gateway_api' => 'pending',
-            ],
+            'local_onboarding' => $onboarding,
+            'gateway_trust' => $gatewayTrust,
             'next_steps' => [],
         ];
+    }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
+    private function ensureGatewayCaTrusted(string $host, string $trustPath, string $caSha256): string|int
+    {
+        try {
+            $installer = app(TrustStoreInstaller::class);
+        } catch (TrustStoreInstallException $e) {
+            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
+                return $this->unsupportedTrustStore();
+            }
+
+            throw $e;
+        } catch (RuntimeException) {
+            return $this->unsupportedTrustStore();
         }
 
-        $this->info("Created gateway node {$name}.");
-        $this->line("Endpoint: {$host}");
-        $this->line("Control node: {$controlName}");
+        $alreadyTrusted = $installer->isCaTrusted($trustPath, self::TRUST_LABEL)
+            && LocalGatewaySettings::current()->ca_sha256 === $caSha256;
 
-        return self::SUCCESS;
+        if ($alreadyTrusted) {
+            return 'already_trusted';
+        }
+
+        try {
+            $installer->trustCa($trustPath, self::TRUST_LABEL);
+        } catch (TrustStoreInstallException $e) {
+            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
+                return $this->unsupportedTrustStore();
+            }
+
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to install the gateway CA into the local trust store.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'gateway_ca_trust',
+                    'error' => 'Trust store installation failed.',
+                ],
+            );
+        }
+
+        return 'trusted';
+    }
+
+    private function unsupportedTrustStore(): int
+    {
+        return $this->failCommand(
+            code: 'node.unsupported_platform',
+            message: 'This platform does not support automatic gateway CA trust installation.',
+            meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
+        );
+    }
+
+    private function gatewayUrl(string $host): string
+    {
+        return str_starts_with($host, 'http') ? $host : "https://{$host}";
     }
 
     private function callerRole(): string

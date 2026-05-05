@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Models\WireGuardPeer;
+use App\Services\Trust\TrustStoreInstaller;
+use App\Services\Trust\TrustStoreInstallException;
+use App\Services\Trust\TrustStoreInstallReason;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
@@ -36,6 +39,37 @@ describe('node:new', function (): void {
 
         @unlink($tmpKey);
         @unlink($tmpCrt);
+
+        $this->fakeInstaller = new class implements TrustStoreInstaller
+        {
+            public bool $isTrusted = false;
+
+            public bool $throwCommandFailed = false;
+
+            /** @var list<array{path: string, label: string}> */
+            public array $trustCalls = [];
+
+            public function isCaTrusted(string $rootCaPath, string $label): bool
+            {
+                return $this->isTrusted;
+            }
+
+            public function trustCa(string $rootCaPath, string $label, ?Closure $log = null): void
+            {
+                $this->trustCalls[] = ['path' => $rootCaPath, 'label' => $label];
+
+                if ($this->throwCommandFailed) {
+                    throw new TrustStoreInstallException(
+                        'Command failed',
+                        TrustStoreInstallReason::CommandFailed,
+                    );
+                }
+
+                $this->isTrusted = true;
+            }
+        };
+
+        app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
 
         $this->fakeFirstGatewayProcesses = function (string $bootstrapOutput, ?string &$bootstrapInput = null): void {
             $privateKeys = ['gateway-private-key', 'control-private-key'];
@@ -148,6 +182,12 @@ describe('node:new', function (): void {
                 'gateway_config' => 'stored',
                 'gateway_api' => 'pending',
             ])
+            ->and($payload['success']['data']['gateway_trust'])->toMatchArray([
+                'gateway_url' => 'https://192.0.2.10',
+                'trusted' => true,
+                'status' => 'trusted',
+                'ca_sha256' => hash('sha256', $mockCaCert),
+            ])
             ->and($payload)->not->toHaveKey('error');
 
         $gateway = DB::table('nodes')->where('name', 'gateway-1')->first();
@@ -193,6 +233,19 @@ describe('node:new', function (): void {
         expect(file_exists($trustPath))->toBeTrue()
             ->and(file_get_contents($trustPath))->toBe($mockCaCert);
 
+        expect($this->fakeInstaller->trustCalls)->toBe([
+            ['path' => $trustPath, 'label' => 'orbit'],
+        ]);
+
+        $settings = DB::table('local_gateway_settings')->first();
+
+        expect($settings)->not->toBeNull()
+            ->and($settings->gateway_url)->toBe('https://192.0.2.10')
+            ->and($settings->gateway_wg_ip)->toBe('10.6.0.2')
+            ->and($settings->ca_sha256)->toBe(hash('sha256', $mockCaCert))
+            ->and($settings->ca_pem_path)->toBe($trustPath)
+            ->and($settings->trusted_at)->not->toBeNull();
+
         Process::assertRan(fn ($process): bool => str_starts_with($process->command, 'tar '));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'scp ')
             && str_contains($process->command, 'install-orbit'));
@@ -212,6 +265,83 @@ describe('node:new', function (): void {
             && str_contains($process->command, '--identity-json=-')
             && ! str_contains($process->command, 'gateway-private-key')
             && ! str_contains($process->command, 'control-private-key'));
+    });
+
+    it('converges an already bootstrapped first gateway without duplicating trust install', function (): void {
+        $mockCaCert = $this->mockCaCert;
+
+        ($this->fakeFirstGatewayProcesses)($mockCaCert);
+
+        Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
+        $firstPem = file_get_contents($trustPath);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('converged')
+            ->and($payload['success']['data']['provisioning']['status'])->toBe('already_provisioned')
+            ->and($payload['success']['data']['local_onboarding'])->toBe([
+                'wireguard' => 'already_installed',
+                'gateway_trust' => 'already_trusted',
+                'gateway_config' => 'already_stored',
+                'gateway_api' => 'pending',
+            ])
+            ->and($payload['success']['data']['gateway_trust']['status'])->toBe('already_trusted')
+            ->and($payload['success']['data']['gateway_trust']['ca_sha256'])->toBe(hash('sha256', $mockCaCert))
+            ->and($this->fakeInstaller->trustCalls)->toHaveCount(1)
+            ->and(file_get_contents($trustPath))->toBe($firstPem);
+    });
+
+    it('fails when local gateway CA trust installation fails during first gateway bootstrap', function (): void {
+        $this->fakeInstaller->throwCommandFailed = true;
+
+        ($this->fakeFirstGatewayProcesses)($this->mockCaCert);
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-trust-fail',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.77',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => 'Failed to install the gateway CA into the local trust store.',
+                    'meta' => [
+                        'host' => '192.0.2.77',
+                        'step' => 'gateway_ca_trust',
+                        'error' => 'Trust store installation failed.',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->count())->toBe(0);
     });
 
     it('fails when remote bootstrap returns an invalid or empty CA certificate', function (): void {
