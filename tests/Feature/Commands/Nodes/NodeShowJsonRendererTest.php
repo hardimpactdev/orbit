@@ -212,6 +212,45 @@ describe('node:show JSON renderer contract', function (): void {
         ]);
     });
 
+    it('returns real grant data from gateway registry', function (): void {
+        DB::table('nodes')->insert([
+            nodeShowJsonRow([
+                'name' => 'app-1',
+                'role' => 'app',
+            ]),
+            nodeShowJsonRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+            nodeShowJsonRow([
+                'name' => 'control-2',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+        ]);
+
+        $app1Id = DB::table('nodes')->where('name', 'app-1')->value('id');
+        $control1Id = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $control2Id = DB::table('nodes')->where('name', 'control-2')->value('id');
+
+        DB::table('node_access')->insert([
+            ['consumer_node_id' => $control1Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $control2Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $app1Id, 'serving_node_id' => $control1Id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $grants = $payload['success']['data']['node']['grants'];
+
+        expect($grants['consuming_nodes'])->toBe(['control-1', 'control-2'])
+            ->and($grants['serving_nodes'])->toBe(['control-1']);
+    });
+
     it('has no live-check fields', function (): void {
         DB::table('nodes')->insert(nodeShowJsonRow());
 

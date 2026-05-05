@@ -158,6 +158,43 @@ describe('node:show human renderer contract', function (): void {
             ->and($output)->toContain('Serving: (none)');
     });
 
+    it('renders real grant data from gateway registry', function (): void {
+        DB::table('nodes')->insert([
+            nodeShowHumanRow([
+                'name' => 'app-1',
+                'role' => 'app',
+            ]),
+            nodeShowHumanRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+            nodeShowHumanRow([
+                'name' => 'control-2',
+                'role' => 'control',
+                'environment' => null,
+            ]),
+        ]);
+
+        $app1Id = DB::table('nodes')->where('name', 'app-1')->value('id');
+        $control1Id = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $control2Id = DB::table('nodes')->where('name', 'control-2')->value('id');
+
+        DB::table('node_access')->insert([
+            ['consumer_node_id' => $control1Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $control2Id, 'serving_node_id' => $app1Id, 'created_at' => now(), 'updated_at' => now()],
+            ['consumer_node_id' => $app1Id, 'serving_node_id' => $control1Id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+        expect($output)->toContain('Grants:')
+            ->and($output)->toContain('Consuming: control-1, control-2')
+            ->and($output)->toContain('Serving: control-1');
+    });
+
     it('renders missing node prose error', function (): void {
         $exitCode = Artisan::call('node:show', ['name' => 'missing-node']);
         $output = Artisan::output();

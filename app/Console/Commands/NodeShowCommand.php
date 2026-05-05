@@ -155,23 +155,25 @@ class NodeShowCommand extends Command
      */
     private function restructureGatewayData(array $gatewayData): array
     {
+        $nodeData = $gatewayData['node'] ?? [];
+
         return [
-            'name' => $gatewayData['name'] ?? '',
-            'role' => $gatewayData['role'] ?? '',
-            'status' => $gatewayData['status'] ?? 'active',
-            'environment' => $gatewayData['environment'] ?? null,
-            'platform' => $gatewayData['platform'] ?? 'unknown',
+            'name' => $nodeData['name'] ?? '',
+            'role' => $nodeData['role'] ?? '',
+            'status' => $nodeData['status'] ?? 'active',
+            'environment' => $nodeData['environment'] ?? null,
+            'platform' => $nodeData['platform'] ?? 'unknown',
             'addresses' => [
-                'wireguard' => $gatewayData['wireguard_address']
-                    ?? ($gatewayData['addresses']['wireguard'] ?? ($gatewayData['host'] ?? '')),
+                'wireguard' => $nodeData['wireguard_address']
+                    ?? ($nodeData['addresses']['wireguard'] ?? ($nodeData['host'] ?? '')),
             ],
             'agent_ide' => [
                 'adapter' => null,
                 'source' => 'default',
             ],
             'grants' => [
-                'consuming_nodes' => [],
-                'serving_nodes' => [],
+                'consuming_nodes' => $nodeData['grants']['consuming_nodes'] ?? [],
+                'serving_nodes' => $nodeData['grants']['serving_nodes'] ?? [],
             ],
         ];
     }
@@ -204,8 +206,8 @@ class NodeShowCommand extends Command
                 'source' => 'default',
             ],
             'grants' => [
-                'consuming_nodes' => [],
-                'serving_nodes' => [],
+                'consuming_nodes' => $node->consumingNodes()->pluck('name')->all(),
+                'serving_nodes' => $node->servingNodes()->pluck('name')->all(),
             ],
         ];
     }
