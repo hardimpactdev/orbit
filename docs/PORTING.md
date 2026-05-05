@@ -925,9 +925,13 @@ names and adds `destructive` to the effect set.
 - [ ] `ACTIVITY-LOGGABLE-RENAME-1` — rename Loggable contract surface in PHP
   (`App\Contracts\Loggable`, traits, controllers) to the doctrine names.
   Keep old method names as thin proxies until callers migrate, then remove.
-- [ ] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect
+- [~] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect
   enum to support `destructive` and surface the new value in the gateway
   response payload and `activity:list --effect` filter.
+  - [x] PHP `ActivityLogType` enum and activity middleware logging now support
+    `destructive`.
+  - [ ] Complete `activity:list --effect=destructive` runtime filtering when
+    the activity command/API read surface is ported.
 
 ### Per-Command Tech Contract Backfill
 

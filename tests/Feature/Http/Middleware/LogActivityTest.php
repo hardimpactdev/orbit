@@ -51,6 +51,39 @@ final class FakeWriteController implements Loggable
     }
 }
 
+final class FakeDestructiveController implements Loggable
+{
+    public function __invoke(Request $request): JsonResponse
+    {
+        return new JsonResponse(['success' => true]);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Destructive;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:DELETE /_test/fake-destructive';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return null;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return null;
+    }
+}
+
 describe('LogActivity middleware', function (): void {
     beforeEach(function (): void {
         Node::query()->insert([
@@ -171,5 +204,34 @@ describe('LogActivity middleware', function (): void {
             ->assertOk();
 
         expect(Activity::query()->count())->toBe(0);
+    });
+
+    it('logs destructive effects', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'caller',
+            'role' => 'control',
+            'host' => LOG_TEST_WG_IP,
+            'ssh_user' => 'test',
+            'orbit_path' => '/home/test/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'wireguard_address' => LOG_TEST_WG_IP,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Route::middleware([WireGuardIdentity::class, LogActivity::class])
+            ->delete('/_test/fake-destructive', FakeDestructiveController::class);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
+            ->deleteJson('/_test/fake-destructive')
+            ->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:DELETE /_test/fake-destructive');
+        expect($entry->properties->get('type'))->toBe('destructive');
     });
 });
