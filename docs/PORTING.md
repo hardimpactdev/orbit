@@ -589,6 +589,11 @@ before any app write/destructive commands are created:
    `docs/commands/5_app/README.md` and `docs/commands/5_app/app-concepts.md`.
    Old evidence: `../orbit-old-may/app/Models/App.php`.
 3. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
+   **Implemented:** gateway API list endpoint, typed Saloon request/DTO,
+   activity logging contract, and focused API/request coverage are on `main`.
+   Current docs: `docs/commands/5_app/3_app-list`. Old evidence:
+   `../orbit-old-may/app/Actions/Apps/ListApps.php` and
+   `../orbit-old-may/app/Http/Saloon/Requests/Apps/ListAppsRequest.php`.
 4. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
 5. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
 6. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
