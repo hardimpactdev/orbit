@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\Requests\ListNodesRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Http\Client\ConnectionException;
 use RuntimeException;
+use Throwable;
 
 use function Laravel\Prompts\select;
 
@@ -142,7 +143,7 @@ class NodeDefaultCommand extends Command
     {
         try {
             $nodes = $this->fetchDevelopmentAppNodes();
-        } catch (ConnectionException|RuntimeException) {
+        } catch (GatewayApiException|RuntimeException) {
             return $this->failGatewayUnavailable();
         }
 
@@ -189,7 +190,7 @@ class NodeDefaultCommand extends Command
     {
         try {
             $nodes = $this->fetchDevelopmentAppNodes();
-        } catch (ConnectionException|RuntimeException) {
+        } catch (GatewayApiException|RuntimeException) {
             return $this->failGatewayUnavailable();
         }
 
@@ -246,20 +247,17 @@ class NodeDefaultCommand extends Command
      */
     private function fetchGatewayDevelopmentAppNodes(): array
     {
-        $response = GatewayRequestSender::make()->send(new ListNodesRequest(
-            role: 'app',
-            environment: 'development',
-        ));
-
-        if (! $response->isSuccess()) {
-            throw new RuntimeException($response->errorMessage() ?? 'Gateway request failed.');
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ListNodesRequest(role: 'app', environment: 'development'))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            throw new RuntimeException($e->getMessage() !== '' ? $e->getMessage() : 'Gateway request failed.');
+        } catch (Throwable $e) {
+            throw new RuntimeException($e->getMessage() !== '' ? $e->getMessage() : 'Gateway request failed.');
         }
 
-        $nodes = $response->data()['nodes'] ?? [];
-
-        if (! is_array($nodes)) {
-            return [];
-        }
+        $nodes = $dto->nodes;
 
         return collect($nodes)
             ->filter(fn (mixed $node): bool => $this->isDevelopmentAppNodePayload($node))

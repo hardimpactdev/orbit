@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -84,8 +90,8 @@ describe('node:list role paths', function (): void {
     it('forwards to gateway for app caller', function (): void {
         setupNodeListAppCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'nodes' => [
@@ -113,8 +119,8 @@ describe('node:list role paths', function (): void {
     it('forwards to gateway for control caller', function (): void {
         setupNodeListControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'nodes' => [
@@ -142,8 +148,8 @@ describe('node:list role paths', function (): void {
     it('handles gateway forwarding error for control caller', function (): void {
         setupNodeListControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
                     'message' => 'Gateway is unreachable.',
@@ -161,8 +167,8 @@ describe('node:list role paths', function (): void {
     it('forwards filters for app caller', function (): void {
         setupNodeListAppCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'nodes' => [

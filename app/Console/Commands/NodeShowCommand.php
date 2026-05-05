@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
+use App\Http\Gateway\Responses\Nodes\NodeShowResponse;
 use App\Models\Node;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\Requests\ShowNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 use function Laravel\Prompts\text;
 
@@ -48,8 +51,19 @@ class NodeShowCommand extends Command
 
         if ($callerRole !== 'gateway') {
             try {
-                $response = GatewayRequestSender::make()->send(new ShowNodeRequest($name));
-            } catch (\Throwable) {
+                /** @var NodeShowResponse $dto */
+                $dto = app(GatewayConnector::class)
+                    ->send(new ShowNodeRequest($name))
+                    ->dto();
+            } catch (GatewayApiException $e) {
+                return $this->failCommand(
+                    code: $e->errorCode() ?? 'gateway_unavailable',
+                    message: $e->getMessage() !== ''
+                        ? $e->getMessage()
+                        : 'Gateway connection is required to show node details.',
+                    meta: $e->errorMeta(),
+                );
+            } catch (Throwable) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
                     message: 'Gateway connection is required to show node details.',
@@ -57,15 +71,7 @@ class NodeShowCommand extends Command
                 );
             }
 
-            if (! $response->isSuccess()) {
-                return $this->failCommand(
-                    code: $response->errorCode() ?? 'gateway_unavailable',
-                    message: $response->errorMessage() ?? 'Gateway connection is required to show node details.',
-                    meta: $response->errorMeta(),
-                );
-            }
-
-            $payload = ['node' => $this->restructureGatewayData($response->data())];
+            $payload = ['node' => $this->restructureGatewayData(['node' => $dto->node])];
 
             if ($this->wantsJson()) {
                 return $this->jsonSuccess($payload);

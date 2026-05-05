@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -83,8 +89,8 @@ describe('node:show role paths', function (): void {
     it('forwards to gateway for app caller', function (): void {
         setupNodeShowRolePathAppCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'node' => [
@@ -114,8 +120,8 @@ describe('node:show role paths', function (): void {
     it('forwards to gateway for control caller', function (): void {
         setupNodeShowRolePathControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'node' => [
@@ -144,8 +150,8 @@ describe('node:show role paths', function (): void {
     it('forwards real grant data from gateway for control caller', function (): void {
         setupNodeShowRolePathControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'node' => [
@@ -176,8 +182,8 @@ describe('node:show role paths', function (): void {
     it('handles gateway forwarding error for control caller', function (): void {
         setupNodeShowRolePathControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
                     'message' => 'Gateway is unreachable.',
@@ -195,8 +201,8 @@ describe('node:show role paths', function (): void {
     it('preserves gateway authorization failures for control callers', function (): void {
         setupNodeShowRolePathControlCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => "Node 'private-app' is not visible to this caller.",
@@ -229,8 +235,8 @@ describe('node:show role paths', function (): void {
             'updated_at' => now(),
         ]);
 
-        Http::fake([
-            'https://10.6.0.1/api/nodes/default-app' => Http::response([
+        $mock = MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'node' => [
@@ -256,14 +262,14 @@ describe('node:show role paths', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['node']['name'])->toBe('default-app');
 
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://10.6.0.1/api/nodes/default-app');
+        $mock->assertSent(fn (ShowNodeRequest $request): bool => $request->name === 'default-app');
     });
 
     it('handles gateway forwarding error for app caller', function (): void {
         setupNodeShowRolePathAppCaller();
 
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
                     'message' => 'Gateway is unreachable.',

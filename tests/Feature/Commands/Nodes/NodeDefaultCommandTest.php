@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -69,18 +74,11 @@ function nodeDefaultGatewayResponse(array $nodes): array
     ];
 }
 
-function expectNodeDefaultListRequest(Request $request): bool
+function expectNodeDefaultListRequest(ListNodesRequest $request): bool
 {
-    $query = [];
-    parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
-
-    return $request->method() === 'GET'
-        && $request->url() !== 'https://gateway.test/api/nodes'
-        && str_starts_with($request->url(), 'https://gateway.test/api/nodes?')
-        && $query === [
-            'role' => 'app',
-            'environment' => 'development',
-        ];
+    return $request->role === 'app'
+        && $request->environment === 'development'
+        && $request->doctor === false;
 }
 
 describe('node:default command contract', function (): void {
@@ -259,8 +257,8 @@ describe('node:default command contract', function (): void {
     it('validates set through gateway-visible development app nodes for configured control callers', function (): void {
         setupConfiguredControlNodeDefaultCaller();
 
-        Http::fake([
-            'gateway.test/*' => Http::response(nodeDefaultGatewayResponse([
+        $mock = MockClient::global([
+            ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 [
                     'name' => 'remote-app',
                     'role' => 'app',
@@ -289,14 +287,14 @@ describe('node:default command contract', function (): void {
             ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app')
             ->and(DB::table('nodes')->where('name', 'remote-app')->exists())->toBeFalse();
 
-        Http::assertSent(fn (Request $request): bool => expectNodeDefaultListRequest($request));
+        $mock->assertSent(fn (ListNodesRequest $request): bool => expectNodeDefaultListRequest($request));
     });
 
     it('discovers interactive choose options through gateway-visible development app nodes', function (): void {
         setupConfiguredControlNodeDefaultCaller();
 
-        Http::fake([
-            'gateway.test/*' => Http::response(nodeDefaultGatewayResponse([
+        $mock = MockClient::global([
+            ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([
                 [
                     'name' => 'remote-app-1',
                     'role' => 'app',
@@ -328,14 +326,16 @@ describe('node:default command contract', function (): void {
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app-2')
             ->and(DB::table('nodes')->whereIn('name', ['remote-app-1', 'remote-app-2'])->exists())->toBeFalse();
 
-        Http::assertSent(fn (Request $request): bool => expectNodeDefaultListRequest($request));
+        $mock->assertSent(fn (ListNodesRequest $request): bool => expectNodeDefaultListRequest($request));
     });
 
     it('keeps show and clear local-only for configured control callers', function (): void {
         setupConfiguredControlNodeDefaultCaller();
         setLocalDefaultCommand('stale-local-app');
 
-        Http::fake();
+        $mock = MockClient::global([
+            ListNodesRequest::class => MockResponse::make(nodeDefaultGatewayResponse([]), 200),
+        ]);
 
         $showExitCode = Artisan::call('node:default', ['--json' => true]);
         $showPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -350,7 +350,7 @@ describe('node:default command contract', function (): void {
             ->and($clearPayload['success']['data']['action'])->toBe('clear')
             ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBeNull();
 
-        Http::assertNothingSent();
+        $mock->assertNothingSent();
     });
 
     it('does not mutate node registry on set', function (): void {

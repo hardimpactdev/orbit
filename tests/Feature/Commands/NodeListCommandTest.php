@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -272,8 +278,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards to gateway and renders gateway response', function (): void {
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
                         'nodes' => [
@@ -306,29 +312,33 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards role filter to gateway request', function (): void {
-        Http::fake(function ($request) {
-            if (str_contains($request->url(), '/api/nodes?role=app')) {
-                return Http::response([
-                    'success' => [
-                        'data' => [
-                            'nodes' => [
-                                [
-                                    'name' => 'app-1',
-                                    'role' => 'app',
-                                    'environment' => 'development',
-                                    'platform' => 'ubuntu_24-04',
-                                    'status' => 'active',
+        MockClient::global([
+            ListNodesRequest::class => function ($pendingRequest) {
+                $request = $pendingRequest->getRequest();
+
+                if ($request instanceof ListNodesRequest && $request->role === 'app') {
+                    return MockResponse::make([
+                        'success' => [
+                            'data' => [
+                                'nodes' => [
+                                    [
+                                        'name' => 'app-1',
+                                        'role' => 'app',
+                                        'environment' => 'development',
+                                        'platform' => 'ubuntu_24-04',
+                                        'status' => 'active',
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                ], 200);
-            }
+                    ], 200);
+                }
 
-            return Http::response([
-                'success' => ['data' => ['nodes' => []]],
-            ], 200);
-        });
+                return MockResponse::make([
+                    'success' => ['data' => ['nodes' => []]],
+                ], 200);
+            },
+        ]);
 
         $exitCode = Artisan::call('node:list', ['--json' => true, '--role' => 'app']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -339,44 +349,48 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards doctor flag to gateway request and renders returned meta', function (): void {
-        Http::fake(function ($request) {
-            if (str_contains($request->url(), '/api/nodes?doctor=1')) {
-                return Http::response([
-                    'success' => [
-                        'data' => [
-                            'nodes' => [
-                                [
-                                    'name' => 'gateway-1',
-                                    'role' => 'gateway',
-                                    'environment' => null,
-                                    'platform' => 'ubuntu_24-04',
-                                    'status' => 'active',
+        MockClient::global([
+            ListNodesRequest::class => function ($pendingRequest) {
+                $request = $pendingRequest->getRequest();
+
+                if ($request instanceof ListNodesRequest && $request->doctor === true) {
+                    return MockResponse::make([
+                        'success' => [
+                            'data' => [
+                                'nodes' => [
+                                    [
+                                        'name' => 'gateway-1',
+                                        'role' => 'gateway',
+                                        'environment' => null,
+                                        'platform' => 'ubuntu_24-04',
+                                        'status' => 'active',
+                                    ],
                                 ],
                             ],
-                        ],
-                        'meta' => [
-                            'doctor' => [
-                                'checked' => 1,
-                                'issues' => 1,
-                                'failures' => [
-                                    [
-                                        'node' => 'gateway-1',
-                                        'code' => 'node.record_incomplete',
-                                        'message' => 'Node record for gateway-1 is missing required fields.',
-                                        'family' => 'node',
-                                        'next_command' => 'doctor --family=node --fix',
+                            'meta' => [
+                                'doctor' => [
+                                    'checked' => 1,
+                                    'issues' => 1,
+                                    'failures' => [
+                                        [
+                                            'node' => 'gateway-1',
+                                            'code' => 'node.record_incomplete',
+                                            'message' => 'Node record for gateway-1 is missing required fields.',
+                                            'family' => 'node',
+                                            'next_command' => 'doctor --family=node --fix',
+                                        ],
                                     ],
                                 ],
                             ],
                         ],
-                    ],
-                ], 200);
-            }
+                    ], 200);
+                }
 
-            return Http::response([
-                'success' => ['data' => ['nodes' => []]],
-            ], 200);
-        });
+                return MockResponse::make([
+                    'success' => ['data' => ['nodes' => []]],
+                ], 200);
+            },
+        ]);
 
         $exitCode = Artisan::call('node:list', ['--json' => true, '--doctor' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -387,8 +401,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('handles forwarding error with JSON envelope', function (): void {
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
                     'message' => 'Gateway is unreachable.',
@@ -405,8 +419,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('preserves authorization failures from the gateway', function (): void {
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'authorization_failed',
                     'message' => 'This node is not authorized to read the node registry.',
@@ -431,8 +445,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('handles forwarding error with human message', function (): void {
-        Http::fake([
-            '*' => Http::response([
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
                     'message' => 'Gateway is unreachable.',

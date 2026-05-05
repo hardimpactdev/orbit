@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
+use App\Http\Gateway\Responses\Nodes\NodeListResponse;
 use App\Models\Node;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\GatewayResponse;
-use App\Services\Gateway\Requests\ListNodesRequest;
 use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -64,11 +65,8 @@ class NodeListCommand extends Command
             return $this->failForwarding();
         }
 
-        if ($result instanceof GatewayResponse) {
-            return $this->failGatewayResponse(
-                response: $result,
-                fallbackMessage: 'Gateway connection is required to list nodes.',
-            );
+        if ($result instanceof GatewayApiException) {
+            return $this->failGatewayException($result);
         }
 
         $payload = ['nodes' => $result['nodes']];
@@ -91,9 +89,9 @@ class NodeListCommand extends Command
      * @return array{
      *     nodes: list<array<string, mixed>>,
      *     meta: array<string, mixed>,
-     * }|GatewayResponse
+     * }|GatewayApiException
      */
-    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array|GatewayResponse
+    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array|GatewayApiException
     {
         if ($this->isGatewayCaller()) {
             return $this->fetchLocalNodes(
@@ -104,22 +102,18 @@ class NodeListCommand extends Command
             );
         }
 
-        $response = GatewayRequestSender::make()->send(new ListNodesRequest(
-            role: $role,
-            environment: $environment,
-            doctor: $doctor,
-        ));
-
-        if (! $response->isSuccess()) {
-            return $response;
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ListNodesRequest(role: $role, environment: $environment, doctor: $doctor))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
         }
 
-        $data = $response->data();
-        $nodes = $data['nodes'] ?? [];
-
+        /** @var NodeListResponse $dto */
         return [
-            'nodes' => is_array($nodes) ? $nodes : [],
-            'meta' => $response->meta(),
+            'nodes' => $dto->nodes,
+            'meta' => $dto->meta,
         ];
     }
 
@@ -341,12 +335,14 @@ class NodeListCommand extends Command
         );
     }
 
-    private function failGatewayResponse(GatewayResponse $response, string $fallbackMessage): int
+    private function failGatewayException(GatewayApiException $exception): int
     {
         return $this->failGatewayError(
-            code: $response->errorCode() ?? 'gateway_unavailable',
-            message: $response->errorMessage() ?? $fallbackMessage,
-            meta: $response->errorMeta(),
+            code: $exception->errorCode() ?? 'gateway_unavailable',
+            message: $exception->getMessage() !== ''
+                ? $exception->getMessage()
+                : 'Gateway connection is required to list nodes.',
+            meta: $exception->errorMeta(),
         );
     }
 
