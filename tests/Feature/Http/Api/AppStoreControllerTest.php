@@ -61,7 +61,7 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->toHaveCount(2);
+            ->and($remoteShell->runs)->toHaveCount(3);
     });
 
     it('rejects app creation when the caller cannot access the target app node', function (): void {

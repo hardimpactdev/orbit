@@ -46,7 +46,7 @@ it('creates source on the target app node before writing gateway app intent', fu
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(2)
+        ->and($remoteShell->runs)->toHaveCount(3)
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
         ->and($remoteShell->runs[0]['script'])->toContain("mkdir -p '/home/orbit/apps/docs'")
         ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
@@ -172,6 +172,43 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
             'family' => 'app',
             'next_command' => 'doctor --family=app --fix',
         ]);
+});
+
+it('renders and reloads an app php-fpm pool after app intent is durable', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'ssh_user' => 'orbit',
+        'status' => 'active',
+    ]);
+
+    $remoteShell = new SequencedRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['meta']['warnings'])->toBe([])
+        ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
+        ->and($remoteShell->scripts[2])->toContain('[orbit-docs]')
+        ->and($remoteShell->scripts[2])->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
+        ->and($remoteShell->scripts[2])->toContain('sudo systemctl reload');
 });
 
 it('fails before remote work when the app name is already registered', function (): void {
