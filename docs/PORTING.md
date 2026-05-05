@@ -1249,7 +1249,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       filters, path resolution, pagination metadata, human/JSON renderers, and
       focused Pest coverage.
     - [x] Read-only Docker feature E2E gate from the command contract.
-- [ ] Port workspace lifecycle commands.
+- [!] Port workspace lifecycle commands.
+  - Blocked as a full command-contract slice until workspace runtime
+    prerequisites are available: proxy route convergence, PHP-FPM artifact
+    rendering, inherited Supervisor runtime-unit rendering, and the live runtime
+    backend gates tracked below. Next concrete action while blocked: port the
+    gateway-owned setup/teardown step policy commands, which are registry reads
+    and policy writes that do not require app-node runtime mutation.
 - [ ] Port workspace setup and teardown step commands.
 - [x] Port workspace history and log commands.
   - [x] `workspace:history` registry read, typed gateway API forwarding,
