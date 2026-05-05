@@ -7,93 +7,94 @@ reviewer-approved implementation todo.
 
 1. Read:
    - `docs/superpowers/plans/solo-orchestration/control-config.md`
-   - `docs/superpowers/plans/solo-orchestration/README.md`
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - the assigned todo and comments
    - `TESTING.md`
    - `docs/PORTING.md`
    - relevant `docs/commands/**`
-   - assigned worktree path and branch from the todo's `Worktree Assignment`
-   - `git log -1 --stat` inside the worktree
+   - assigned worktree path and branch from the todo's `Worktree Assignment`.
 
 2. Confirm the todo declares `lane=e2e-provision`, `lane=e2e-feature`, or
-   `lane=none`, plus exact commands. Lane `none` requires a concrete
-   no-runtime reason. Check lane safety against `TESTING.md`:
-   - `e2e-provision`: disposable VM provisioning/destructive flow;
-   - `e2e-feature`: prepared ephemeral topology feature flow, with the
-     command installing or overlaying this worktree's checkout into the
-     disposable topology clone;
-   - `none`: no command run.
+   `lane=none`, plus exact commands. Check lane safety against `TESTING.md`:
+   - `e2e-provision`: VM-backed provisioning/destructive flow on Incus,
+     typically `composer test:e2e:provision`;
+   - `e2e-feature`: Docker-backed prepared-topology feature flow with this
+     worktree's checkout overlaid into the topology clone, typically
+     `composer test:e2e`;
+   - `none`: no command run; cite the todo's reason.
 
-   Reject stale `lane=e2e-provisioning` declarations. Comment with
+   Reject stale `lane=e2e-provisioning` declarations. Post
    `E2E_DONE status=FAILED lane=e2e-provisioning reason=stale-lane-name`,
-   remove `in-progress`, add `needs-direction`, and exit so the todo can be
-   refreshed.
+   remove `in-progress`, add `needs-direction`, and exit.
 
-   For `e2e-feature`, reject any command that rebuilds images/templates to make
-   branch code visible. Feature gates must use the prepared topology plus the
-   checkout overlay/cache described in `TESTING.md` and `docs/PORTING.md`.
+   For `e2e-feature`, reject any command that rebuilds images or templates
+   to make branch code visible. Feature gates must use the prepared
+   topology plus the checkout overlay/cache described in `TESTING.md` and
+   `docs/PORTING.md`.
 
-3. **Refresh the worktree from main.** Inside the worktree:
+3. If lane is `none`, post
+   `E2E_DONE status=SKIPPED lane=none reason=<todo's reason>` and jump to
+   step 8.
+
+4. Refresh the worktree from local `main`. Do not rebase on `origin/main`.
+
    ```bash
    cd "<path>"
    git fetch origin
    git rebase main
+   git log -1 --stat
    ```
-   Local `main` is the loop integration authority. Do not rebase on
-   `origin/main` unless the assigned todo explicitly says the local main has
-   already been synchronized and should not be used.
 
    On rebase conflict:
-   - `git rebase --abort`;
-   - `send_input` to the long-lived implementer process for this todo
-     (`IMPLEMENTER-<todo_id>`):
+   - run `git rebase --abort`;
+   - `send_input` to `IMPLEMENTER-<todo_id>`:
+
      ```text
      E2E: cannot rebase <branch> on main (conflict). Resolve inside your worktree, rerun your focused gate, and post a fresh WORKER_DONE.
      ```
-   - post `E2E_DONE status=SKIPPED lane=<lane> reason=merge-conflict` on the
-     todo and exit.
 
-4. If lane is `none`, post `E2E_DONE status=SKIPPED lane=none reason=<todo's reason>` and exit.
+   - post `E2E_DONE status=SKIPPED lane=<lane> reason=merge-conflict` on
+     the todo and jump to step 8.
 
 5. If context or prerequisites are missing, post
-   `E2E_DONE status=SKIPPED lane=<lane> reason=<short reason>` and exit.
+   `E2E_DONE status=SKIPPED lane=<lane> reason=<short reason>` and jump to
+   step 8.
 
-6. Run each declared command exactly once, in order. Stop at the first failure.
-   Capture command, exit code, elapsed time, cleanup status, and the shortest
-   useful stdout/stderr summary.
+6. Run each declared command exactly once, in order. Stop at the first
+   failure. Capture command, exit code, elapsed time, cleanup status, and
+   the shortest useful stdout/stderr summary.
 
-   Use `ORBIT_E2E_KEEP=0` by default for `e2e-feature` commands. For
-   `e2e-provision`, follow `TESTING.md`'s provision failure behavior: successful
-   runs clean up; failed provisioning runs may keep tracked VMs for inspection
-   unless the todo explicitly requests forced cleanup.
+   Default `ORBIT_E2E_KEEP=0` for `e2e-feature` commands. For
+   `e2e-provision`, follow `TESTING.md`'s provision failure behavior:
+   successful runs clean up; failed runs may keep tracked VMs for
+   inspection unless the todo explicitly requests forced cleanup.
 
-7. **On failure (implementation todo, not E2E gate todo):**
-   - post one comment on the todo with concrete failure findings (file
-     references where possible);
-   - `send_input` to `IMPLEMENTER-<todo_id>`:
+7. Apply the outcome on the todo:
+
+   - `PASSED` on an implementation todo: post `E2E_DONE status=PASSED lane=<lane>`
+     using the Report Shape below. Leave `verified` in place; the
+     reconciler picks it up next cycle.
+   - `PASSED` on an E2E gate todo: post `E2E_DONE status=PASSED lane=<lane>`,
+     remove `in-progress`, add `verified`. Orchestrator/reconciler
+     close-out completes the todo.
+   - `FAILED` on an implementation todo: post one comment with concrete
+     failure findings (file references where possible); `send_input` to
+     `IMPLEMENTER-<todo_id>`:
+
      ```text
      E2E failed for todo <todo_id>. See comment <comment_id> for findings. Fix inside your worktree, rerun your focused gate and the lane locally, post a fresh WORKER_DONE.
      ```
-   - remove `verified` tag, add `in-progress` (the implementer is alive and
-     handling feedback);
-   - post `E2E_DONE status=FAILED lane=<lane>` with the report below.
 
-   **On failure (E2E gate todo):**
-   - post `E2E_DONE status=FAILED lane=<lane>` with findings;
-   - remove `in-progress`;
-   - add `e2e-failed` when the failure is actionable within the gate scope, or
-     add `needs-direction` when the failure is infrastructure, missing
-     prerequisite, or unclear ownership;
-   - leave detailed routing to the orchestrator's next cycle (gate todos are
-     not paired with a long-lived implementer).
+     Remove `verified`, add `in-progress`, and post
+     `E2E_DONE status=FAILED lane=<lane>` using the Report Shape below.
+   - `FAILED` on an E2E gate todo: post
+     `E2E_DONE status=FAILED lane=<lane>` with findings, remove
+     `in-progress`, and add `e2e-failed` when the failure is actionable
+     within the gate scope, or `needs-direction` when the failure is
+     infrastructure, missing prerequisite, or unclear ownership. Leave
+     detailed routing to the orchestrator's next cycle.
 
-8. **On pass:**
-   - implementation todo: post `E2E_DONE status=PASSED lane=<lane>` and leave
-     `verified` in place. The reconciler picks it up next cycle.
-   - E2E gate todo: post `E2E_DONE status=PASSED lane=<lane>`, remove
-     `in-progress`, add `verified`, and leave completion to the orchestrator /
-     reconciler close-out path.
+8. Close this E2E process in Solo.
 
 ## Report Shape
 
@@ -111,6 +112,3 @@ evidence:
   - testing_md: <section or rule>
   - vm_cleanup: <yes|no|n/a>
 ```
-
-Do not edit product code, prepare missing infrastructure, complete the todo, or
-spawn other roles. Apply only the tag transitions explicitly described above.
