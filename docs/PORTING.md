@@ -159,17 +159,17 @@ yet satisfy the full product contracts.
     convergence on disposable Incus VMs.
   - Prepared topology lanes implemented: `composer e2e:prepare-topology -- --force control-gateway-dev-prod`
     builds reusable Incus templates for control, gateway, development app, and
-    production app roles; `composer test:e2e:features:control-gateway-dev-prod`
-    verifies the prepared full topology before running feature tests.
+    production app roles; `composer test:e2e:topology-contract` verifies the
+    prepared full topology contract before feature tests rely on it.
   - Docker feature topology lane implemented for container-safe E2E:
     `composer e2e:prepare-docker-runtime -- --force`,
     `composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod`,
-    and `composer test:e2e:features:docker`. The recommended local topology is
-    Beast for Docker offload (`ORBIT_E2E_DOCKER_HOSTS=beast`) and
-    sidecar1/sidecar2 for Incus feature VMs (`ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2`).
-    Incus remains the default topology provider because Task 8 measured only a
-    small Docker speed improvement and Docker does not exercise WireGuard or VM
-    semantics.
+    and `composer test:e2e`. The recommended local topology is Beast for
+    Docker offload (`ORBIT_E2E_DOCKER_HOSTS=beast`) and sidecar1/sidecar2 for
+    Incus provisioning VMs (`ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2`). Docker
+    is the default feature provider; Incus remains the VM-realism lane for
+    provisioning, WireGuard, systemd, SSH, package installation, trust-store,
+    and VPS-adjacent behavior.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
@@ -314,82 +314,6 @@ proxy ingress safeguards, tool credentials and service endpoints, and TLS trust
 behavior. Do not document backend recipes or old implementation classes;
 document the supported Orbit capability and ownership boundary.
 
-### Converted Command Docs
-
-- [x] `docs/commands/1_node`
-- [x] `docs/commands/2_gateway`
-- [x] `docs/commands/3_tool`
-- [x] `docs/commands/4_firewall`
-- [x] `docs/commands/5_app`
-- [x] `docs/commands/6_workspace`
-- [x] `docs/commands/7_process`
-- [x] `docs/commands/8_proxy`
-- [x] `docs/commands/9_schedule`
-- [x] `docs/commands/10_deploy`
-- [x] `docs/commands/12_cf`
-- [x] `docs/commands/13_vpn`
-  - [x] `vpn-client:list`
-  - [x] `vpn-client:new`
-  - [x] `vpn-client:enable`
-  - [x] `vpn-client:disable`
-  - [x] `vpn-client:remove`
-  - [x] `vpn-web-ui:change-password`
-- [x] `docs/commands/14_php`
-  - [x] `php:list`
-  - [x] `php:use`
-- [x] `docs/commands/15_agent-ide`
-  - [x] `agent-ide:message`
-- [x] `docs/commands/16_dns`
-
-Docs marked converted here mean the command contracts exist in the clean repo.
-They do not imply the matching implementation has been ported.
-
-### Converted Legacy Domains
-
-- [x] Proxy routes: `../orbit-old-may/docs/commands/07-proxy-routes`
-  - [x] `proxy:list`
-  - [x] `proxy:add`
-  - [x] `proxy:remove`
-  - [x] Legacy `proxy:redirect-add` folded into `proxy:add --redirect=<url>`.
-  - [x] Legacy `proxy:redirect-list` folded into `proxy:list --filter=redirect`.
-  - [x] Legacy `proxy:redirect-remove` folded into `proxy:remove`.
-- [x] Schedules: `../orbit-old-may/docs/commands/08-schedules`
-  - [x] `schedule:add`
-  - [x] `schedule:list`
-  - [x] `schedule:show`
-  - [x] `schedule:remove`
-  - [x] `schedule:run`
-  - [x] `schedule:logs`
-- [x] Deployments: `../orbit-old-may/docs/commands/09-deployments`
-  - [x] `deploy:step-add`
-  - [x] `deploy:step-list`
-  - [x] `deploy:step-remove`
-  - [x] `deploy:run`
-  - [x] `deploy:history`
-  - [x] `deploy:log`
-- [~] Operations: `../orbit-old-may/docs/commands/10-operations`
-  - [x] `doctor`
-  - [!] `profile` docs conversion is an early verification-helper candidate
-    after node identity and minimal app resolution are available.
-  - [x] `update`
-  - [x] `update:all`
-  - [x] `activity:list`
-  - [x] `activity:show`
-- [x] Cloudflare: `../orbit-old-may/docs/commands/11-cloudflare`
-  - [x] Legacy `cf:zones` renamed to `cf-zone:list`.
-  - [x] `cf-dns:list`
-  - [x] `cf-dns:add`
-  - [x] `cf-dns:remove`
-  - [x] `cf-cache:flush`
-  - [x] `cf-cache-rule:add`
-  - [x] `cf-cache-rule:remove`
-  - [x] `cf-ssl:enable`
-  - [x] `cf-ssl:disable`
-
-### Legacy Command Docs Still To Port
-
-All legacy command docs have been converted. See individual family statuses above.
-
 ### Todo Pipeline Hints
 
 These hints are for the Solo pipeline filler. They describe todo sequencing
@@ -413,7 +337,7 @@ todos required by the Rules section:
 - `E2E-<short-id>` — ephemeral E2E gate todo. Tagged `e2e`, `e2e-gate`,
   `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
   `SCOUT_REPORT status=READY`. Lane must declare a concrete
-  `composer test:e2e:provision` invocation, `composer test:e2e:features`
+  `composer test:e2e:provision` invocation, `composer test:e2e`
   invocation, `php artisan e2e:*` command, or `lane=none` reason; if that lane
   does not yet exist, create a separate implementer todo to author it before the
   E2E gate becomes dispatchable.
@@ -466,23 +390,20 @@ Use this setup before promoting new command-port E2E gates:
 3. For feature ports, prefer the fast aggregate first:
 
    ```bash
-   ORBIT_E2E_INCUS_HOSTS=beast \
-   ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
    composer test:e2e
    ```
 
-   This runs `e2e-feature` tests in one PHP process, acquires the prepared
-   superset once, overlays the current checkout per test via the Pest helpers,
+   This runs `e2e-feature` tests with Pest parallel mode, uses the Docker
+   topology provider by default, acquires hosts through the shared `.env.e2e`
+   lease pool, overlays the current checkout per test via the Pest helpers,
    and reuses the checkout cache for the process.
 
-4. Add scenario-specific gates only when the command truly needs a narrower
-   topology contract:
+4. Add scenario-specific gates with Pest filters or groups only when the
+   command truly needs a narrower topology contract:
 
    ```bash
-   composer test:e2e:features:control
-   composer test:e2e:features:control-gateway
-   composer test:e2e:features:control-gateway-dev
-   composer test:e2e:features:control-gateway-dev-prod
+   composer test:e2e -- --filter='DnsList'
+   composer test:e2e -- --filter='NodeShowGrant'
    ```
 
 5. Keep provisioning, installer, host mutation, and destructive setup flows out
@@ -539,32 +460,28 @@ VPS-adjacent behavior.
    `wg-orbit` on the gateway, and covers fresh plus idempotent paths with
    focused Pest tests. The paired provisioning E2E lane is still deferred.
 
-If the ready queue is below target, fill with independent read-only Pest,
-documentation, or E2E support work only.
+Manual orchestration priority: keep the active queue on Testing Infrastructure
+and the Node family. Do not create or dispatch app work until the open Testing
+Infrastructure items are complete or explicitly product-deferred and the Node
+Workstream command gaps are cleared.
 
-#### Next 5 Candidates
+#### Next Manual Candidates
 
-1. `NODENEW-GATEWAY-API-VERIFY-1` (todo 283) is implemented: first-gateway
-   bootstrap verifies `GET /api/me` over the gateway WireGuard IP using the
-   persisted gateway CA, reports `local_onboarding.gateway_api=verified`, and
-   fails with `node.gateway_api_error` if the verification endpoint does not
-   return a valid identity response.
-2. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
-   bootstrap now verifies and installs gateway CA trust through the existing
-   trust-store installer, persists local gateway trust settings, exposes
-   `gateway_trust` evidence in JSON output, and converges repeat runs without
-   duplicate trust installation.
-3. `NODENEW-PLATFORM-DETECT-1` (todo 274) is implemented: first-gateway
-   bootstrap now detects the gateway platform through the bootstrapped remote
-   Orbit command, detects the initiating control platform locally, persists both
-   platform identifiers, and keeps repeat convergence runs stable.
-4. `NODE-API-UPDATE-1` (todo 276) is implemented: gateway-side
-   `PUT /api/nodes/{name}` updates node intent through the WireGuard-authenticated
-   API, enforces gateway-node authorization for control callers, and adds the
-   typed `UpdateNodeRequest`.
-5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
-   shared JSON envelope response trait, then migrate all 11 existing commands.
-   Do not start this until the grant E2E implementation is on `main`.
+1. `E2E-IMAGE-WALLTIME-1` (todo 279) — measure prepared topology cold/warm
+   rebuild wall time and run `composer test:e2e:topology-contract`.
+2. `E2E-PROVISION-VERIFY-1` (todo 290) — unlock the stale Solo lease, then run
+   and fix the full `composer test:e2e:provision` lane.
+3. `E2E-AUTHOR-NODENEW-GATEWAY-CA-VERIFY-1` (todo 292), then gate todo 273.
+4. `E2E-AUTHOR-NODENEW-GATEWAY-API-VERIFY-1` (todo 293), then gate todo 291.
+5. `NODE-DEFAULT-VALIDATION-1` — contract-aligned `node:default` set/choose
+   validation through visible gateway development app nodes while preserving
+   the local preference storage contract. Do not revive command forwarding
+   unless product docs change first.
+6. `NODE-API-GRANT-1` (todo 289), then create the matching
+   `NODE-GRANT-FWD-1` command-forwarding todo after the API lands.
+7. Continue the remaining Node family command gaps, including `node:revoke`,
+   `node:remove`, interactive/default-resolution gaps, and their paired E2E
+   gates where the Pairing Rule applies.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -596,7 +513,7 @@ work becomes the active lane:
    documented state, including no SSH transport claim for already-provisioned
    convergence.
 
-#### Gateway Forwarding Chain (Unlocks After Read-Forwarding Chain)
+#### Gateway Write-Forwarding Chain (Separate Track)
 
 Once `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and
 `FAMILY-REVIEW-NODE-READ-1` are verified or explicitly deferred here, the same
@@ -611,20 +528,23 @@ commands. Order matters because each adds a new write API endpoint:
    deferred.
 3. `NODE-API-DEFAULT-1` is implemented: gateway-side `GET|PUT|DELETE
    /api/nodes/default` + `DefaultNodeRequest`.
-4. `NODE-DEFAULT-FWD-1` — wire `node:default` control-caller forwarding
-   (paired ephemeral Pest E2E; write command).
+4. `NODE-DEFAULT-FWD-1` is invalidated/deferred: the current command contract
+   keeps `node:default` as a control-node-local preference. Do not wire command
+   forwarding unless the command docs are intentionally changed first.
 5. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
 6. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
 7. `NODE-API-REMOVE-1` + `NODE-REMOVE-FWD-1` — `node:remove` (paired E2E only,
    coordinate with WireGuard peer teardown blocker).
 
 Do not create the FWD-* todos until the matching API-* todo is on `main`. Do
-not create more than 2 of these chains in flight at once.
+not create more than 2 of these chains in flight at once. This chain remains
+part of the Node family gate before app work starts.
 
-#### App Workstream Entry Point (Unlocks After Gateway Forwarding Chain)
+#### App Workstream Entry Point (Blocked)
 
-App work begins only after the node/gateway foundations are solid. The first
-slice candidates, in order:
+App work starts only after Testing Infrastructure and the Node Workstream are
+cleared or explicitly product-deferred. Do not create app todos until that
+decision is made in this tracker. Once unblocked, the first slice candidates are:
 
 1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
    docs, old app evidence, and cross-cutting patterns before any app
@@ -644,8 +564,10 @@ exist. Those families wait for the node/gateway/app foundations.
 
 - Keep gateway-family implementation blocked until the node identity and
   first-gateway provisioning prerequisites are clear.
-- Keep workspace, process, and downstream families blocked until the app
-  workstream entry point is verified.
+- Keep app, workspace, process, and downstream families blocked until Testing
+  Infrastructure and the Node family are clear.
+- Keep app write/destructive commands blocked until app read commands and the
+  required node write-forwarding/provisioning safety gates are clear.
 
 ## Node Workstream
 
@@ -702,11 +624,15 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: local read/show/set/clear sub-actions, human progress tree, JSON envelope shape, caller role rejection, split contract tests.
   - Gateway API slice implemented: gateway-side show/set/clear endpoints and typed `DefaultNodeRequest`.
+    This API exists on `main`, but command forwarding is not part of the active
+    product contract.
   - Contract gaps:
-    - Gateway forwarding for set/choose (requires wiring the command to GatewayClient).
-    - Real authorization check in the command-side forwarded path; gateway API authorization exists for the API slice.
-    - Interactive choose path requires real gateway node list (`gateway_unavailable` is a stub bootstrap gap).
-    - `NodeDefaultOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - Set/choose should validate against visible development app nodes through
+      the gateway instead of only the local registry.
+    - Interactive choose path requires real gateway node list
+      (`gateway_unavailable` is a stub bootstrap gap).
+    - No command-forwarding todo is currently valid for `node:default` without
+      a product-doc change.
 - [~] Port `node:grant`.
   - Current implementation: `app/Console/Commands/NodeGrantCommand.php`
   - Current docs: `docs/commands/1_node/5_node-grant`
@@ -860,19 +786,22 @@ exist. Those families wait for the node/gateway/app foundations.
     this command local and away from gateway-owned development DNS mappings.
   - Verification:
     - In-memory Pest: `php artisan test --compact tests/Feature/Commands/Dns`.
-    - Incus E2E: `ORBIT_E2E_INCUS_HOSTS=<host-with-control-template> composer test:e2e:features:control -- --filter='DnsList'`.
-      This gate installs the current checkout into the disposable control VM
+    - Feature E2E: `composer test:e2e -- --filter='DnsList'`.
+      This gate installs the current checkout into the disposable control role
       and invokes `php artisan dns:list --json` from that checkout, leaving the
-      VM's baked `orbit` symlink and reusable images unchanged.
+      baked `orbit` symlink and reusable topology baselines unchanged.
 
 ## App Workstream
 
 - [x] Convert app command docs into current format.
+- [ ] Create app abstraction reference (`docs/abstractions/5_app.md`).
 - [ ] Port app schema and models needed by documented app commands.
+- [ ] Port gateway API list support (`GET /api/apps` + `ListAppsRequest`).
+- [ ] Port `app:list`.
+- [ ] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
+- [ ] Port `app:show`.
 - [ ] Port `app:new`.
 - [ ] Port `app:register`.
-- [ ] Port `app:list`.
-- [ ] Port `app:show`.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.
@@ -1031,10 +960,18 @@ decision evidence and tracker status only.
   - [x] Create prepared production app topology lane for `e2e-feature` tests.
 - [x] Add E2E topology for gateway + control + development app + production
   app nodes.
-  - Incus-backed authoritative lane:
-    `ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2 composer test:e2e:features:control-gateway-dev-prod`.
-  - Docker-backed container-safe offload lane:
-    `ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker`.
+  - Prepared topology build:
+    `composer e2e:prepare-topology -- --force control-gateway-dev-prod`.
+  - Docker-backed container-safe feature lane:
+    `composer test:e2e`.
+  - Docker-backed full topology contract lane:
+    `composer test:e2e:topology-contract`.
+- [x] Docker-backed feature E2E exists for future app read-command porting.
+  - Use `composer test:e2e -- --filter='AppList'` and
+    `composer test:e2e -- --filter='AppShow'` once app work is unblocked and
+    those tests exist.
+  - This lane does not unlock app work by itself; finish the open Testing
+    Infrastructure and Node gates first.
 - [~] E2E-IMAGE-ARCH-1: stable base image + per-run Orbit provisioner
   - [x] Provisioner script `bin/e2e-provision-node` + apt-deps helper
     `bin/_e2e-deps.sh` (single source of truth shared with the base preparer).
@@ -1063,26 +1000,24 @@ decision evidence and tracker status only.
   - [x] Rework `e2e-provision` tests that previously launched from
     `E2EImage::Control`/`Gateway` (now refused by `IncusProvider::aliasFor`)
     to base + provisioner. Focused provider tests and stale-reference audit
-    pass; the full Incus provision-lane run is deferred.
-- [ ] Add provisioning/destructive coverage only in the `e2e-provision` lane.
+    pass; the full Incus provision-lane run remains open via
+    `E2E-PROVISION-VERIFY-1`.
+- [ ] Add provisioning/destructive coverage only in the `e2e-provision` lane
+  when working on provisioning, WireGuard, SSH trust, host mutation, or app
+  write/destructive commands.
 
 ## Next Priorities
 
-1. When E2E work resumes, run the deferred `NodeShowGrant` feature lane against
-   `control-gateway-dev-prod` to verify the implemented `node:show` grant gate.
-2. Run the deferred full `e2e-provision` lane to verify the provisioning test
-   rework end to end.
-3. Pair `NODENEW-WIREGUARD-ENROLL-1`, `NODENEW-GATEWAY-CA-VERIFY-1`, and
-   `NODENEW-GATEWAY-API-VERIFY-1` with their deferred `e2e-provision` lanes
-   before treating first-gateway onboarding as infrastructure-verified.
-4. Continue gateway forwarding in the documented order after the grant E2E
-   slice: `node:update`, `node:default`, then the API/FWD pairs for
-   `node:grant`, `node:revoke`, and `node:remove`.
-5. Use the full prepared Incus topology lane for node read-forwarding E2E:
-   `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
-   only for container-safe feature checks that do not depend on WireGuard,
-   systemd, SSH provisioning, or VM networking semantics.
-6. Convert `profile` docs once its node/app prerequisites are present, then
-   port it early as a verification-helper command.
-7. Complete the documented `update` and `update:all` implementation gaps once
-   the current node access path is stable enough to enforce them.
+1. Finish Testing Infrastructure open gates:
+   `E2E-IMAGE-WALLTIME-1`, `E2E-PROVISION-VERIFY-1`, and the first-gateway
+   CA/API provisioning E2E authoring + run gates.
+2. Finish the Node family command gaps before apps: contract-aligned
+   `node:default` gateway validation, `node:grant` API/forwarding, then
+   `node:revoke` and `node:remove` parity.
+3. Keep Docker feature E2E ready for later app read gates, but do not dispatch
+   app work yet.
+4. Start the App workstream only after the previous two items are cleared:
+   APP-ABSTRACTION-1 → APP-SCHEMA-1 → APP-API-LIST-1 → APP-LIST-1 →
+   APP-API-SHOW-1 → APP-SHOW-1.
+5. Port `profile` later as a verification helper once app read state exists and
+   can support useful target resolution.

@@ -81,6 +81,23 @@ it('documents the supported verification lanes', function (): void {
         ->not->toContain('Standing Live Node Rule');
 });
 
+it('keeps active porting and orchestration docs on current e2e script names', function (): void {
+    $porting = file_get_contents(base_path('docs/PORTING.md'));
+    $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
+
+    expect($porting)
+        ->toContain('composer test:e2e')
+        ->toContain('composer test:e2e:provision')
+        ->not->toContain('composer test:e2e:features')
+        ->not->toContain('composer test:e2e:features:docker');
+
+    expect($orchestration)
+        ->toContain('composer test:e2e')
+        ->toContain('composer test:e2e:provision')
+        ->not->toContain('composer test:e2e:features')
+        ->not->toContain('composer test:e2e:features:docker');
+});
+
 it('exposes the hcloud e2e resource reaper', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 

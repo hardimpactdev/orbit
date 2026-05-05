@@ -153,7 +153,7 @@ Current docs decide product behavior. Current implementation and the old repo
 are evidence, not automatic authority.
 
 The orchestration loop should create Pest E2E work using
-`composer test:e2e:provision`, `composer test:e2e:features`, and
+`composer test:e2e:provision`, `composer test:e2e`, and
 `composer e2e:prepare-topology`, or create a docs-refresh todo when the tracker
 needs correction.
 

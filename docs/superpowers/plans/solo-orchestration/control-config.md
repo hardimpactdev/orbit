@@ -8,7 +8,7 @@ Human-editable control file for the Orbit Solo orchestration loop.
 coordination_todo: 286
 
 loop_clock:
-  enabled: true
+  enabled: false
   interval_minutes: 30
 
 pipeline:
