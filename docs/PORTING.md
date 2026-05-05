@@ -925,15 +925,16 @@ names and adds `destructive` to the effect set.
 - [x] `ACTIVITY-LOGGABLE-RENAME-1` — rename Loggable contract surface in PHP
   (`App\Contracts\Loggable`, traits, controllers) to the doctrine names.
   Keep old method names as thin proxies until callers migrate, then remove.
-- [~] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect
+- [x] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect
   enum to support `destructive` and surface the new value in the gateway
   response payload and `activity:list --effect` filter.
   - [x] PHP `ActivityLogType` enum and activity middleware logging now support
     `destructive`.
   - [x] Gateway API activity history reads now surface `effect` in the response
     payload and support destructive filtering through `GET /api/activity`.
-  - [ ] Complete CLI `activity:list --effect=destructive` runtime filtering on
-    top of the gateway API read surface.
+  - [x] CLI `activity:list --effect=destructive` now filters locally for gateway
+    callers and forwards through the typed gateway API request for control/app
+    callers.
 
 ### Per-Command Tech Contract Backfill
 
@@ -1009,9 +1010,13 @@ that produced the controller's Loggable wiring.
 - [x] Pest: gateway API activity list read supports destructive filtering,
   normalized JSON metadata, `has_more`, validation, and `activity.listed`
   logging through `tests/Feature/Http/Api/ActivityListControllerTest.php`.
-- [ ] Pest: `activity:list` and `activity:show` command tests under
+- [~] Pest: `activity:list` and `activity:show` command tests under
   `tests/Feature/Commands/Activity/Activity*Test.php` (the moved tech
   contracts already point at the `Activity` namespace).
+  - [x] `activity:list` command coverage for local gateway reads, typed gateway
+    forwarding, destructive filtering, validation, empty human output, and typed
+    gateway request DTO parsing.
+  - [ ] `activity:show` command coverage.
 - [ ] E2E gate: standing live-node smoke read of `activity:list` against
   the gateway after a few writes; read-only.
 
@@ -1323,7 +1328,8 @@ for the Saloon-based gateway transport pattern.
    - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
      exceptions go in the command's tech-contract section.
    - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
-     are the remaining doctrine-alignment implementation tasks.
+     are resolved; keep command backfills and remaining activity command read
+     surfaces moving.
 2. **Keep app writes blocked until write-safety gates are cleared.**
    - `APP-LIST-1` and `APP-SHOW-1` now have focused Pest and Docker feature
      E2E coverage.

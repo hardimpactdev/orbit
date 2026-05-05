@@ -41,6 +41,10 @@ especially `activity-concepts.md`.
   require a more specific timestamp tie-breaker.
 - `limit` queries should fetch one extra row so the response can report
   `has_more` without running a second count query.
+- Gateway-local command and API reads share `App\Services\Activity\ActivityHistory`
+  so filters, DTO shape, `has_more`, and subject/actor formatting do not drift.
+- Control and app callers forward `activity:list` through the typed Saloon
+  `ListActivityRequest` and consume `ActivityListResponse`.
 - The activity read controller itself is Loggable with `type=activity.listed`
   and `effect=read`; it records normalized filter values and returned row
   count after a successful read.
