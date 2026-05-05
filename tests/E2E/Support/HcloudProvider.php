@@ -8,10 +8,12 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Throwable;
 
-final readonly class HcloudProvider implements E2EProvider
+final class HcloudProvider implements E2EProvider
 {
+    private ?E2EResourceLease $resourceLease = null;
+
     public function __construct(
-        public E2EConfig $config,
+        private E2EConfig $config,
     ) {}
 
     public function name(): string
@@ -28,6 +30,22 @@ final readonly class HcloudProvider implements E2EProvider
      * @param  list<E2EImage>  $images
      */
     public function availability(array $images): ProviderAvailability
+    {
+        $this->ensureResourceLease();
+
+        $availability = $this->inspectAvailability($images);
+
+        if (! $availability->available) {
+            $this->releaseResourceLease();
+        }
+
+        return $availability;
+    }
+
+    /**
+     * @param  list<E2EImage>  $images
+     */
+    private function inspectAvailability(array $images): ProviderAvailability
     {
         if (! $this->run('command -v hcloud >/dev/null', timeoutSeconds: 10)->successful()) {
             return ProviderAvailability::unavailable('hcloud command is not available');
@@ -64,11 +82,15 @@ final readonly class HcloudProvider implements E2EProvider
 
     public function startRun(string $label): E2ERun
     {
+        $this->ensureResourceLease();
+
         $safeLabel = E2ERun::safeLabel($label);
         $id = E2ERun::id();
         $directory = sys_get_temp_dir()."/{$this->config->instancePrefix}-{$id}-{$safeLabel}";
 
         if (! is_dir($directory) && ! mkdir($directory, 0700, recursive: true) && ! is_dir($directory)) {
+            $this->releaseResourceLease();
+
             throw new \RuntimeException("Could not create local E2E run directory: {$directory}");
         }
 
@@ -143,27 +165,31 @@ final readonly class HcloudProvider implements E2EProvider
      */
     public function cleanup(E2ERun $run, array $instances): void
     {
-        if ($this->config->keep) {
-            fwrite(STDERR, "ORBIT_E2E_KEEP=1; keeping E2E run {$run->id} on hcloud\n");
+        try {
+            if ($this->config->keep) {
+                fwrite(STDERR, "ORBIT_E2E_KEEP=1; keeping E2E run {$run->id} on hcloud\n");
 
-            return;
-        }
-
-        foreach ($instances as $instance) {
-            try {
-                $instance->delete();
-            } catch (Throwable $exception) {
-                fwrite(STDERR, "Could not delete hcloud E2E server {$instance->name()}: {$exception->getMessage()}\n");
+                return;
             }
+
+            foreach ($instances as $instance) {
+                try {
+                    $instance->delete();
+                } catch (Throwable $exception) {
+                    fwrite(STDERR, "Could not delete hcloud E2E server {$instance->name()}: {$exception->getMessage()}\n");
+                }
+            }
+
+            $sshKeyName = $run->metadata('hcloud_ssh_key');
+
+            if ($sshKeyName !== null) {
+                $this->run(sprintf('hcloud ssh-key delete %s >/dev/null 2>&1 || true', escapeshellarg($sshKeyName)), timeoutSeconds: 60);
+            }
+
+            $this->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 30);
+        } finally {
+            $this->releaseResourceLease();
         }
-
-        $sshKeyName = $run->metadata('hcloud_ssh_key');
-
-        if ($sshKeyName !== null) {
-            $this->run(sprintf('hcloud ssh-key delete %s >/dev/null 2>&1 || true', escapeshellarg($sshKeyName)), timeoutSeconds: 60);
-        }
-
-        $this->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 30);
     }
 
     public function supportsPreparedTopologies(): bool
@@ -244,5 +270,42 @@ users:
       - {$publicKey}
 ssh_pwauth: false
 YAML;
+    }
+
+    private function ensureResourceLease(): void
+    {
+        if ($this->resourceLease !== null) {
+            return;
+        }
+
+        if ($this->config->hcloudResourceSlots !== []) {
+            $this->resourceLease = new E2EResourceLeasePool(
+                directory: storage_path('framework/e2e/leases'),
+                waitSeconds: $this->config->slotWaitSeconds,
+                staleSeconds: $this->config->slotStaleSeconds,
+            )->acquire('hcloud', $this->config->hcloudResourceSlots);
+
+            $this->config = $this->config->forHcloudResource($this->resourceLease->host());
+
+            return;
+        }
+
+        if ($this->config->hcloudLocationSlots === []) {
+            return;
+        }
+
+        $this->resourceLease = new E2EResourceLeasePool(
+            directory: storage_path('framework/e2e/leases'),
+            waitSeconds: $this->config->slotWaitSeconds,
+            staleSeconds: $this->config->slotStaleSeconds,
+        )->acquire('hcloud', $this->config->hcloudLocationSlots);
+
+        $this->config = $this->config->forHcloudLocation($this->resourceLease->host());
+    }
+
+    private function releaseResourceLease(): void
+    {
+        $this->resourceLease?->release();
+        $this->resourceLease = null;
     }
 }
