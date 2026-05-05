@@ -33,6 +33,8 @@ describe('workspace:show human renderer contract', function (): void {
     });
 
     it('renders missing input as prose', function (): void {
+        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
+
         $exitCode = Artisan::call('workspace:show', ['--no-interaction' => true]);
         $output = Artisan::output();
 

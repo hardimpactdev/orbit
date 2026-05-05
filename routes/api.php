@@ -39,6 +39,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/profile', ProfileController::class);
         Route::get('/workspaces', WorkspaceListController::class);
+        Route::get('/workspaces/resolve-by-path', [WorkspaceShowController::class, 'fromPath']);
         Route::get('/workspaces/{name}', WorkspaceShowController::class);
         Route::get('/apps', AppListController::class);
         Route::post('/apps/register', AppRegisterController::class);

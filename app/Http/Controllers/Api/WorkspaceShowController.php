@@ -20,6 +20,30 @@ final readonly class WorkspaceShowController implements Loggable
 {
     public function __invoke(string $name, Request $request, WorkspaceShowPayload $payload): JsonResponse
     {
+        return $this->showWorkspace($name, $request, $payload);
+    }
+
+    public function fromPath(Request $request, WorkspaceShowPayload $payload): JsonResponse
+    {
+        $path = $this->stringQuery($request, 'path');
+
+        if ($path === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Workspace path is required.',
+                    'meta' => [
+                        'field' => 'path',
+                    ],
+                ],
+            ], 400);
+        }
+
+        return $this->showWorkspaceForPath($path, $request, $payload);
+    }
+
+    private function showWorkspace(string $name, Request $request, WorkspaceShowPayload $payload): JsonResponse
+    {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -75,6 +99,48 @@ final readonly class WorkspaceShowController implements Loggable
         ]);
     }
 
+    private function showWorkspaceForPath(string $path, Request $request, WorkspaceShowPayload $payload): JsonResponse
+    {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        $visibleNodeIds = $this->visibleAppNodeIds($caller);
+
+        if ($caller->role !== 'gateway' && $visibleNodeIds === []) {
+            return $this->authorizationFailed("This caller is not authorized to inspect '{$path}'.", [
+                'path' => $path,
+                'caller_role' => $caller->role,
+            ]);
+        }
+
+        $workspace = $this->matchingWorkspacePath($caller, $visibleNodeIds, $path);
+
+        if (! $workspace instanceof Workspace) {
+            return response()->json([
+                'error' => [
+                    'code' => 'workspace.not_found',
+                    'message' => "Workspace for path '{$path}' not found or not visible.",
+                    'meta' => [
+                        'path' => $path,
+                    ],
+                ],
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => [
+                'data' => $payload->forWorkspace($workspace),
+                'meta' => [
+                    'registry_only' => true,
+                ],
+            ],
+        ]);
+    }
+
     /**
      * @return list<int>
      */
@@ -110,6 +176,24 @@ final readonly class WorkspaceShowController implements Loggable
             ->get();
     }
 
+    /**
+     * @param  list<int>  $visibleNodeIds
+     */
+    private function matchingWorkspacePath(Node $caller, array $visibleNodeIds, string $path): ?Workspace
+    {
+        $normalizedPath = rtrim($path, '/');
+
+        return Workspace::query()
+            ->with(['app.node', 'app.processes', 'proxyRoutes', 'runs'])
+            ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->get()
+            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
+                $workspacePath = rtrim($workspace->path, '/');
+
+                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
+            });
+    }
+
     private function stringQuery(Request $request, string $key): ?string
     {
         $value = $request->query($key);
@@ -143,7 +227,7 @@ final readonly class WorkspaceShowController implements Loggable
 
     public function type(): string
     {
-        return 'api:GET /workspaces/{name}';
+        return 'api:GET /workspaces/{name-or-path}';
     }
 
     public function activityLogAction(): string

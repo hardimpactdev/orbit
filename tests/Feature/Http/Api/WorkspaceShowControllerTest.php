@@ -117,6 +117,24 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('error.meta.apps', ['docs', 'api']);
     });
 
+    it('resolves a visible workspace by path prefix', function (): void {
+        $caller = createWorkspaceShowCallerNode();
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        grantWorkspaceShowAccess($caller, $node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'path' => '/srv/docs/workspaces/feature-docs',
+        ]);
+
+        $response = $this->call('GET', '/api/workspaces/resolve-by-path?path=/srv/docs/workspaces/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.workspace.name', 'feature-docs')
+            ->assertJsonPath('success.meta.registry_only', true);
+    });
+
     it('returns not found for hidden workspaces', function (): void {
         createWorkspaceShowCallerNode();
         $node = Node::factory()->create(['role' => 'app']);

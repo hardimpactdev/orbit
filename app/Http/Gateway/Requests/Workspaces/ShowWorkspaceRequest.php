@@ -14,12 +14,17 @@ final class ShowWorkspaceRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly string $name,
+        public readonly ?string $name = null,
         public readonly ?string $app = null,
+        public readonly ?string $path = null,
     ) {}
 
     public function resolveEndpoint(): string
     {
+        if ($this->name === null) {
+            return '/api/workspaces/resolve-by-path';
+        }
+
         return "/api/workspaces/{$this->name}";
     }
 
@@ -30,6 +35,7 @@ final class ShowWorkspaceRequest extends GatewayRequest
     {
         return array_filter([
             'app' => $this->app,
+            'path' => $this->path,
         ], fn (?string $value): bool => $value !== null && $value !== '');
     }
 

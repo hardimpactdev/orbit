@@ -54,6 +54,8 @@ describe('workspace:show base contract', function (): void {
     });
 
     it('fails when name is missing in non-interactive mode', function (): void {
+        createWorkspaceShowLocalNode('gateway');
+
         $exitCode = Artisan::call('workspace:show', ['--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -148,6 +150,35 @@ describe('workspace:show base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['workspace']['name'])->toBe('feature-docs');
+    });
+
+    it('forwards non-gateway cwd resolution through the typed gateway request', function (): void {
+        createWorkspaceShowLocalNode('control');
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        $mock = MockClient::global([
+            ShowWorkspaceRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'workspace' => [
+                            'name' => 'feature-docs',
+                            'app' => 'docs',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('workspace:show', ['--json' => true]);
+
+        expect($exitCode)->toBe(0);
+        $mock->assertSent(fn (ShowWorkspaceRequest $request): bool => $request->resolveEndpoint() === '/api/workspaces/resolve-by-path'
+            && is_string($request->path)
+            && $request->path !== '');
     });
 
     it('preserves structured gateway authorization failures', function (): void {

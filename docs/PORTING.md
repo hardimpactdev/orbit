@@ -1235,14 +1235,15 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     forwarding, access-policy filtering, human/JSON renderers, focused Pest
     coverage, and E2E gate classified as `lane=none` because the command is a
     fast registry read with no runtime behavior outside Pest.
-  - [~] `workspace:show`.
+  - [x] `workspace:show`.
     - [x] Named lookup registry slice: gateway-local read, typed gateway API
       forwarding, access-policy filtering, JSON/human registry renderers,
       ambiguity/not-found handling, focused Pest coverage, and E2E gate
       classified as `lane=none`.
     - [x] Interactive missing-name and ambiguous-app prompts, plus explicit
       invalid local-context handling.
-    - [ ] Full CWD resolution parity for forwarded callers.
+    - [x] Full CWD resolution parity for forwarded callers through a typed
+      gateway path-resolution request.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
 - [ ] Port workspace history and log commands.

@@ -30,6 +30,7 @@ class WorkspaceShowCommand extends Command
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
         $callerRole = $this->callerRole();
+        $path = null;
 
         if ($callerRole === 'unknown') {
             return $this->failCommand(
@@ -47,11 +48,16 @@ class WorkspaceShowCommand extends Command
             $name = $this->resolveNameFromCwd($callerRole);
         }
 
-        if ($name === null && $this->isInteractiveInput()) {
-            $name = $this->promptForName();
+        if ($name === null && $callerRole !== 'gateway') {
+            $path = realpath((string) getcwd()) ?: (string) getcwd();
         }
 
-        if ($name === null) {
+        if ($name === null && $this->isInteractiveInput()) {
+            $name = $this->promptForName();
+            $path = null;
+        }
+
+        if ($name === null && $path === null) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: 'Workspace name is required.',
@@ -60,12 +66,12 @@ class WorkspaceShowCommand extends Command
         }
 
         try {
-            $workspace = $this->fetchWorkspace($name, $app, $payload, $callerRole);
+            $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
         } catch (GatewayApiException $e) {
             if ($this->shouldPromptForAmbiguousApp($e, $app)) {
                 $app = $this->promptForApp($e->errorMeta());
                 try {
-                    $workspace = $this->fetchWorkspace($name, $app, $payload, $callerRole);
+                    $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
                 } catch (GatewayApiException $retryException) {
                     return $this->failCommand(
                         code: $retryException->errorCode() ?? 'gateway_unavailable',
@@ -100,15 +106,21 @@ class WorkspaceShowCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function fetchWorkspace(string $name, ?string $app, WorkspaceShowPayload $payload, string $callerRole): array
+    private function fetchWorkspace(?string $name, ?string $app, ?string $path, WorkspaceShowPayload $payload, string $callerRole): array
     {
         if ($callerRole !== 'gateway') {
             /** @var WorkspaceShowResponse $dto */
             $dto = app(GatewayConnector::class)
-                ->send(new ShowWorkspaceRequest(name: $name, app: $app))
+                ->send(new ShowWorkspaceRequest(name: $name, app: $app, path: $path))
                 ->dto();
 
             return $dto->workspace;
+        }
+
+        if ($name === null) {
+            throw new GatewayApiException('Workspace name is required.', 'validation_failed', [
+                'field' => 'name',
+            ]);
         }
 
         $matches = $this->matchingLocalWorkspaces($name, $app);
@@ -126,7 +138,7 @@ class WorkspaceShowCommand extends Command
                     $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
                 );
 
-                return $this->fetchWorkspace($name, $app, $payload, $callerRole);
+                return $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
             }
 
             throw new GatewayApiException("Workspace name '{$name}' is ambiguous.", 'workspace.ambiguous_name', [
