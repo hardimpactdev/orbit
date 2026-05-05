@@ -1346,7 +1346,12 @@ across the process and schedule families.
     scripts. The process-family renderer builds process-specific definitions
     on top of that shared renderer; scheduler enactment can reuse the same
     backend renderer when the `orbit_scheduler` daemon slice lands.
-- [ ] Add the `orbit-scheduler` Artisan-command daemon.
+- [x] Add the `orbit-scheduler` Artisan-command daemon.
+  - Hidden `orbit-scheduler` command runs the resident daemon loop and supports
+    one-tick execution for tests/smoke checks. The current tick is intentionally
+    schema-free and reports zero due/executed schedules; schedule sync,
+    locks, heartbeat persistence, and run-history reporting remain in the
+    dedicated scheduler state/API items below.
 - [ ] Add scheduler local-state schema (locks, heartbeat, last-sync).
 - [ ] Add scheduler-to-gateway authentication using the existing WireGuard
   node identity.
