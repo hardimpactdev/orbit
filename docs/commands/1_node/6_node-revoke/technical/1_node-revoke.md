@@ -175,6 +175,19 @@ are known.
   longer exists. See [`node-doctor.md`](../../node-doctor.md).
 - Stale authorization decisions after revocation are not node-family drift.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed grant
+revocations.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /nodes/revoke` |
+| Effect | `destructive` |
+| Subject | Serving `Node` when the serving node is resolved; `none` when validation fails before a serving node can be resolved. |
+| Properties | `consuming_node` is the node losing access; `serving_node` is the node being made invisible to the consuming node; `self_lockout` records whether the revocation removes the caller's gateway access. |
+| Description | `<consuming_node> revoked access to <serving_node>` |
+
 ## Test Mapping
 
 Primary test owners:

@@ -154,9 +154,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/6_node-revoke/technical/1_node-revoke.md' => <<<'MD'
+# Technical Contract: `orbit node:revoke [consuming_node] [serving_node]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(5);
+    expect($findings)->toHaveCount(6);
 });

@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -124,6 +126,43 @@ describe('NodeRevokeController', function (): void {
             ->where('consumer_node_id', $consumingId)
             ->where('serving_node_id', $servingId)
             ->exists())->toBeFalse();
+    });
+
+    it('logs activity for a successful grant revocation', function (): void {
+        $callerId = createRevokeCallerNode();
+        $gatewayId = createRevokeGatewayNode();
+        grantRevokeAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiRevokeNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        grantRevokeAccess($consumingId, $servingId);
+
+        $response = postNodeRevokeJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'force' => true,
+        ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:POST /nodes/revoke');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe($servingId);
+        expect($entry->description)->toBe('control-1 revoked access to app-1');
+        expect($entry->properties->get('type'))->toBe('destructive');
+        expect($entry->properties->get('consuming_node'))->toBe('control-1');
+        expect($entry->properties->get('serving_node'))->toBe('app-1');
+        expect($entry->properties->get('self_lockout'))->toBeFalse();
     });
 
     it('revokes directly for a gateway caller', function (): void {

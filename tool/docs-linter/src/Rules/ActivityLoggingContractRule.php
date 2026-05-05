@@ -27,6 +27,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'node-grant',
         'node-default',
         'node-update',
+        'node-revoke',
     ];
 
     /**
