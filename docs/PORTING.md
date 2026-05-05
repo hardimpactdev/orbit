@@ -1182,8 +1182,10 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     only SSH edge to app nodes.
   - [x] Interactive input mode and human renderer progress tree.
   - [x] Docker feature E2E registration/adoption gate through the gateway API.
-  - [ ] Production activation retry warnings and provisioning-lane registration
-    refresh gate.
+  - [x] Production activation retry warnings: production-domain registration
+    persists intent and returns retryable `proxy.domain_inactive` warnings that
+    point back to `app:register`.
+  - [ ] Provisioning-lane registration refresh gate.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.

@@ -49,7 +49,7 @@ final readonly class EnsureAppProxyRoute
         $result = $this->remoteShell->run($app->node, $this->renderInstallScript($domain, $content));
 
         if ($result->successful()) {
-            return [];
+            return $this->productionActivationWarnings($app);
         }
 
         return [[
@@ -57,6 +57,23 @@ final readonly class EnsureAppProxyRoute
             'family' => 'proxy',
             'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
             'next_command' => 'doctor --family=proxy --fix',
+        ]];
+    }
+
+    /**
+     * @return list<array<string, string>>
+     */
+    private function productionActivationWarnings(App $app): array
+    {
+        if (! is_string($app->domain) || $app->domain === '') {
+            return [];
+        }
+
+        return [[
+            'code' => 'proxy.domain_inactive',
+            'family' => 'proxy',
+            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit app:register {$app->name} --domain={$app->domain}' once DNS has propagated.",
+            'next_command' => "app:register {$app->name} --domain={$app->domain}",
         ]];
     }
 

@@ -122,6 +122,75 @@ it('converges an already registered app without changing repository metadata', f
         ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('app.php_version_unavailable');
 });
 
+it('reports production domain activation as a retryable proxy warning', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'environment' => 'production',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:register', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--path' => '/home/docs/app',
+        '--domain' => 'docs.example.com',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['app']['environment'])->toBe('production')
+        ->and($payload['success']['data']['app']['url'])->toBe('https://docs.example.com')
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+            'code' => 'proxy.domain_inactive',
+            'family' => 'proxy',
+            'next_command' => 'app:register docs --domain=docs.example.com',
+        ]);
+});
+
+it('renders production activation warnings in human output', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'environment' => 'production',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:register docs --node=app-1 --path=/home/docs/app --domain=docs.example.com')
+        ->expectsConfirmation('Adopt existing app path?', 'yes')
+        ->expectsOutputToContain('Warnings:')
+        ->expectsOutputToContain("Production domain 'docs.example.com' is not yet active.")
+        ->expectsOutputToContain('Retry with: orbit app:register docs --domain=docs.example.com')
+        ->assertExitCode(0);
+});
+
 it('rejects unmanaged registration without a path before remote work', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
