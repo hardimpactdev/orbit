@@ -1244,14 +1244,18 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       invalid local-context handling.
     - [x] Full CWD resolution parity for forwarded callers through a typed
       gateway path-resolution request.
-  - [~] `workspace:history`.
+  - [x] `workspace:history`.
     - [x] Gateway-local and forwarded registry history read, limit/date
       filters, path resolution, pagination metadata, human/JSON renderers, and
       focused Pest coverage.
-    - [ ] Read-only E2E gate from the command contract.
+    - [x] Read-only Docker feature E2E gate from the command contract.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
-- [ ] Port workspace history and log commands.
+- [~] Port workspace history and log commands.
+  - [x] `workspace:history` registry read, typed gateway API forwarding,
+    pagination filters, human/JSON renderers, focused Pest coverage, and
+    read-only Docker feature E2E gate.
+  - [ ] `workspace:log`.
 - [ ] Port workspace progress stream behavior.
 
 ## Process Workstream

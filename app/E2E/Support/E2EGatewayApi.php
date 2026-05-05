@@ -414,6 +414,27 @@ PHP;
 
             return run_orbit_command(implode(' ', $parts));
         }
+
+        function run_workspace_history(?string $name, array $query): array
+        {
+            $parts = ['php artisan workspace:history'];
+
+            if ($name !== null && $name !== '') {
+                $parts[] = escapeshellarg($name);
+            }
+
+            foreach (['app', 'limit', 'since', 'until'] as $option) {
+                $value = $query[$option] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            $parts[] = '--json';
+
+            return run_orbit_command(implode(' ', $parts));
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -663,6 +684,38 @@ PHP;
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'GET /api/workspaces/history/resolve-by-path?')) {
+                $path = explode(' ', $requestLine)[1] ?? '/api/workspaces/history/resolve-by-path';
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_workspace_history(null, $query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^GET /api/workspaces/([^ ?]+)/history#', $requestLine, $matches) === 1) {
+                $path = explode(' ', $requestLine)[1] ?? "/api/workspaces/{$matches[1]}/history";
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_workspace_history(urldecode($matches[1]), $query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
 
