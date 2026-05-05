@@ -74,7 +74,9 @@ profiling data without leaving the terminal.
 
 ## Full Laravel, not Laravel Zero
 
-No PHAR builds. Updating any machine is `git pull && composer install --no-dev`. Full Laravel (currently 13.x) also gives us scheduler, queues, and a path to a web UI without a framework migration.
+No PHAR builds. Updating any machine is `git pull && composer install --no-dev`.
+Full Laravel (currently 13.x) gives us a queue runtime, a web UI path, and the
+console scheduler primitives that the Orbit Scheduler builds on.
 
 ## Open source and fully yours
 
@@ -115,11 +117,11 @@ configuration for fleet adoption or disaster recovery. A family may support
 verify, fix, adopt, or a subset of those modes.
 
 Each family ships a probe, and may ship fix and adopt paths when those modes are
-safe. Backend names such as Caddy sites, UFW rules, tool installs, app
-schedulers, deploy retention probes, or process-event notifier probes are
-implementation details or contraction candidates until folded into the product
-families. Deployment retention specifically should not become a product family;
-retention belongs only to deployment steps that need it.
+safe. Backend names such as Caddy sites, UFW rules, tool installs, Supervisor
+programs, or runtime backend log paths are implementation details or
+contraction candidates until folded into the product families. Deployment
+retention specifically should not become a product family; retention belongs
+only to deployment steps that need it.
 
 ## RemoteShell — gateway→node primitive
 
@@ -140,7 +142,7 @@ App nodes do not own durable Orbit state, do not run an Orbit API for other node
 
 ## Production hosting
 
-Production nodes use the same Orbit model — same CLI, same gateway registry, same Caddy runtime — with isolation and security appropriate for public-facing app:
+Production nodes use the same Orbit model — same CLI, same gateway registry, same Caddy runtime, same runtime backend — with isolation and security appropriate for public-facing app:
 
 - **App-user isolation.** Each production app gets a dedicated non-login Unix user. App files live at `/home/{slug}/app`, owned by that user. No shared `/srv/code` directory.
 - **Dedicated PHP-FPM pools.** Each production app runs in its own PHP-FPM pool under its app user, not the shared development pool.
