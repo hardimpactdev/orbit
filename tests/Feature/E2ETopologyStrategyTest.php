@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ETopologyFactory;
-use Tests\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyKind;
 
 $envBackup = [];
 

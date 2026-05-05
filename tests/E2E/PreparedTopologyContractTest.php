@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ECommand;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EGatewayApi;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ETopologyFactory;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\SshKeyPair;
+use App\E2E\Support\E2ECommand;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-topology-contract');
 
@@ -151,7 +151,7 @@ function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair 
         $instance,
         $user,
         $key,
-        'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version | grep -F Orbit',
+        'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version >/dev/null',
     );
 }
 

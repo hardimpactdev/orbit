@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyKind;
 
 it('lists nodes from a prepared control and gateway topology', function (): void {
     $topology = e2eTopology(E2ETopologyKind::ControlGateway)

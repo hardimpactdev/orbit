@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusTopologyBuilder;
+use App\E2E\Support\IncusTopologyTemplate;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\IncusHost;
-use Tests\E2E\Support\IncusTopologyBuilder;
-use Tests\E2E\Support\IncusTopologyTemplate;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();

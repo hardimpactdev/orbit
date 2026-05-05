@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SshKeyPair;
 use Mockery as m;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\SshKeyPair;
 
 afterEach(function (): void {
     m::close();

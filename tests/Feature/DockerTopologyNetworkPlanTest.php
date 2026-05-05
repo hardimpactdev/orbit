@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\DockerTopologyNetworkPlan;
+use App\E2E\Support\DockerTopologyNetworkPlan;
 
 it('keeps the canonical docker subnet outside parallel workers', function (): void {
     $previous = getenv('TEST_TOKEN');

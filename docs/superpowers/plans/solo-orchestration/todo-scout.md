@@ -47,6 +47,8 @@ You are the one-shot scout for exactly one draft Solo todo.
      - <required for non-READY>
    ```
 
-6. Run the self-cleanup sub-procedure at
-   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
-   with `target_todo=<assigned todo>` and `role=scout`.
+6. Call `whoami` to resolve your own Solo process id.
+
+7. On the assigned todo, post `PROCESS_CLOSED process=<id> reason=scout`.
+
+8. Call `close_process` on your own process id.

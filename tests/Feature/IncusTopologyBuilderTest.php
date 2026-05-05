@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusTopologyBuilder;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\IncusHost;
-use Tests\E2E\Support\IncusTopologyBuilder;
 
 afterEach(function (): void {
     m::close();
@@ -35,8 +35,6 @@ function incusTopologyBuilderConfig(): E2EConfig
         hcloudServerType: 'cpx11',
         hcloudLocation: 'ash',
         hcloudBlankImage: 'ubuntu-24.04',
-        hcloudControlImage: '',
-        hcloudGatewayImage: '',
         bootstrapUser: 'provisioner',
         controlUser: 'control',
         instancePrefix: 'orbit-e2e',

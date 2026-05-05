@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use App\E2E\Support\E2EResourceLease;
+use App\E2E\Support\E2EResourceLeasePool;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
-use Tests\E2E\Support\E2EResourceLease;
-use Tests\E2E\Support\E2EResourceLeasePool;
 
 final class HcloudDockerE2ERunner
 {

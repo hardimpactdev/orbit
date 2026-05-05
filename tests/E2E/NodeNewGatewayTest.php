@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EImage;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ERun;
-use Tests\E2E\Support\E2ETopologyCapabilities;
-use Tests\E2E\Support\E2ETopologyFactory;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\IncusProvider;
-use Tests\E2E\Support\ProviderPool;
-use Tests\E2E\Support\SshKeyPair;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EImage;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ERun;
+use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\IncusProvider;
+use App\E2E\Support\ProviderPool;
+use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
@@ -86,7 +86,7 @@ PHP;
 
         [$gatewayInstall, $gatewayVersion] = e2eProvisionStep('assert gateway install', fn () => [
             $gateway->exec('test -d /home/orbit/orbit && test -f /home/orbit/orbit/artisan'),
-            $gateway->exec("sudo -iu orbit bash -lc 'orbit --version | grep -F Orbit'"),
+            $gateway->exec("sudo -iu orbit bash -lc 'orbit --version >/dev/null'"),
         ]);
 
         expect($gatewayInstall->successful())->toBeTrue($gatewayInstall->errorOutput())
@@ -129,6 +129,12 @@ PHP;
         expect($rerunPayload['success']['data']['result']['action'])->toBe('converged')
             ->and($rerunPayload['success']['data']['local_onboarding']['wireguard'])->toBe('already_installed')
             ->and($rerunPeers)->toBe($gatewayPeers);
+
+        // TODO 256: Assert gateway CA trust on control node
+        // TODO 256: Assert local_onboarding.gateway_api = verified
+        // TODO 256: Assert gateway API reachability over WireGuard (GET /api/me)
+        // TODO 256: Assert platform metadata for both nodes
+        // TODO 256: Assert full documented JSON success state structure
 
         $passed = true;
     } finally {

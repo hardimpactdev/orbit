@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\E2EConfig;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use RuntimeException;
-use Tests\E2E\Support\DockerHost;
-use Tests\E2E\Support\E2EConfig;
 
 #[Signature('e2e:reap-docker
     {--force : Delete stale Docker E2E containers and networks}

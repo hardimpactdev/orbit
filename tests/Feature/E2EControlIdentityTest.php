@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EControlIdentity;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
-use Tests\E2E\Support\E2EControlIdentity;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\SshKeyPair;
 
 afterEach(function (): void {
     m::close();

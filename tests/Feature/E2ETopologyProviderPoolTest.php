@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2ETopologyAcquisitionOptions;
+use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\E2ETopologyProvider;
+use App\E2E\Support\E2ETopologyProviderPool;
+use App\E2E\Support\ProviderAvailability;
 use Illuminate\Support\Facades\Process;
-use Tests\E2E\Support\E2EPhaseTimer;
-use Tests\E2E\Support\E2ETopologyAcquisitionOptions;
-use Tests\E2E\Support\E2ETopologyCapabilities;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\E2ETopologyProvider;
-use Tests\E2E\Support\E2ETopologyProviderPool;
-use Tests\E2E\Support\ProviderAvailability;
 
 it('selects the first topology provider with the requested kind available', function (): void {
     $pool = new E2ETopologyProviderPool([

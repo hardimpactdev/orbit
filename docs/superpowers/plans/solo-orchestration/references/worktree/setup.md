@@ -86,6 +86,8 @@ You are the one-shot worktree setup helper for one Solo todo.
      - <command or collision check>: <short reason>
    ```
 
-8. Run the self-cleanup sub-procedure at
-   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
-   with `target_todo=<assigned todo>` and `role=workspace-setup`.
+8. Call `whoami` to resolve your own Solo process id.
+
+9. On the assigned todo, post `PROCESS_CLOSED process=<id> reason=workspace-setup`.
+
+10. Call `close_process` on your own process id.

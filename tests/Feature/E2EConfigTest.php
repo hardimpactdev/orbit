@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EConfig;
 
 it('defaults topology cpus to 1 and topology memory to 2GiB', function (): void {
     withE2EConfigEnvironment([], function (): void {

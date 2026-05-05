@@ -109,6 +109,23 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
         ])->and($composer['scripts'])->not->toHaveKey('e2e:prepare-hcloud-images');
 });
 
+it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
+    $appFiles = collect(new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(base_path('app'), FilesystemIterator::SKIP_DOTS),
+    ))
+        ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php');
+
+    $offenders = $appFiles
+        ->filter(fn (SplFileInfo $file): bool => str_contains((string) file_get_contents($file->getPathname()), 'Tests\\E2E\\Support'))
+        ->map(fn (SplFileInfo $file): string => str_replace(base_path().'/', '', $file->getPathname()))
+        ->values()
+        ->all();
+
+    expect($offenders)->toBe([]);
+
+    expect(is_file(base_path('app/Console/Commands/E2EPrepareHcloudImagesCommand.php')))->toBeFalse();
+});
+
 it('registers ephemeral e2e as a guarded Pest group', function (): void {
     $phpunit = file_get_contents(base_path('phpunit.xml'));
     $pest = file_get_contents(base_path('tests/Pest.php'));

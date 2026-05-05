@@ -49,6 +49,8 @@ You are one rubber duck in a two-agent blocker review.
      - existing-code: <citation or no relevant guidance>
    ```
 
-4. Run the self-cleanup sub-procedure at
-   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
-   with `target_todo=<blocked todo>` and `role=rubber-duck`.
+4. Call `whoami` to resolve your own Solo process id.
+
+5. On the blocked todo, post `PROCESS_CLOSED process=<id> reason=rubber-duck`.
+
+6. Call `close_process` on your own process id.

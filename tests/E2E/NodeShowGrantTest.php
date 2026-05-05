@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EGatewayApi;
-use Tests\E2E\Support\E2ETopologyHarness;
-use Tests\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
+use App\E2E\Support\E2ETopologyHarness;
+use App\E2E\Support\E2ETopologyKind;
 
 function nodeShowGrantSeed(E2ETopologyHarness $topology): void
 {

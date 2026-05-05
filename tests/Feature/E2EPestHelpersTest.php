@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyCache;
+use App\E2E\Support\E2ETopologyHarness;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ETopologyCache;
-use Tests\E2E\Support\E2ETopologyHarness;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\SshKeyPair;
 
 afterEach(function (): void {
     E2ETopologyCache::flushForTests(cleanup: false);
@@ -205,6 +205,8 @@ function e2ePestFakeInstance(array &$commands, string $name): E2EInstance
 
         public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
 
+        public function waitForAgent(): void {}
+
         public function waitForIpv4(): string
         {
             return '10.201.0.10';
@@ -245,6 +247,8 @@ function e2ePestDeletableFakeInstance(int &$deleted, string $name): E2EInstance
         public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}
 
         public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
 
         public function waitForIpv4(): string
         {

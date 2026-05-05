@@ -93,6 +93,8 @@ You are the one-shot orchestrator for one Orbit Solo cycle.
       - <remaining ambiguity or none>
     ```
 
-11. Run the self-cleanup sub-procedure at
-    `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
-    with `target_todo=coordination_todo` and `role=orchestrator`.
+11. Call `whoami` to resolve your own Solo process id.
+
+12. On `coordination_todo`, post `PROCESS_CLOSED process=<id> reason=orchestrator`.
+
+13. Call `close_process` on your own process id.

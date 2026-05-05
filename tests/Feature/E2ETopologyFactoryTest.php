@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\E2ETopologyUnavailable;
+use App\E2E\Support\SshKeyPair;
 use Mockery as m;
-use PHPUnit\Framework\SkippedWithMessageException;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ETopologyCapabilities;
-use Tests\E2E\Support\E2ETopologyFactory;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\SshKeyPair;
 
 afterEach(function (): void {
     m::close();
@@ -59,18 +59,18 @@ it('falls back to minimal for unknown strategy', function (): void {
     });
 });
 
-it('skips test when requiring a topology', function (): void {
+it('reports unavailable topology when requiring a topology', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_INCUS_HOSTS' => 'orbit-e2e-nonexistent.invalid',
     ], function (): void {
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(SkippedWithMessageException::class, 'incus: prepared topology control is not available on any Incus host');
+            ->toThrow(E2ETopologyUnavailable::class, 'incus: prepared topology control is not available on any Incus host');
     });
 });
 
-it('skips with topology provider failure details when no prepared provider is available', function (): void {
+it('reports topology provider failure details when no prepared provider is available', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'incus',
         'ORBIT_E2E_INCUS_HOSTS' => 'orbit-e2e-nonexistent.invalid',
@@ -78,7 +78,7 @@ it('skips with topology provider failure details when no prepared provider is av
         $factory = E2ETopologyFactory::fromEnvironment();
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(SkippedWithMessageException::class, 'Prepared topology not available');
+            ->toThrow(E2ETopologyUnavailable::class, 'Prepared topology not available');
     });
 });
 
@@ -95,7 +95,7 @@ it('refuses providers that do not satisfy required capabilities', function (): v
             ));
 
         expect(fn () => $factory->require(E2ETopologyKind::Control))
-            ->toThrow(SkippedWithMessageException::class, 'capabilities do not satisfy required');
+            ->toThrow(E2ETopologyUnavailable::class, 'capabilities do not satisfy required');
     });
 });
 

@@ -212,6 +212,10 @@ Use exact labels so future cycles can resume from durable evidence:
 - `PIPELINE_FILL_STARTED process=<id>`
 - `PIPELINE_FILL_DONE status=DONE|BLOCKED|NEEDS_DIRECTION`
 - `SCOUT_REPORT status=READY|BLOCKED|NEEDS_DOCS|SCOPE_TOO_BROAD|NEEDS_DIRECTION`
+- `WORKTREE_SETUP_STARTED process=<id> path=<path> branch=<branch> base_ref=<base_ref>`
+- `WORKTREE_PREPARED path=<path> branch=<branch> base_ref=<base_ref>`
+- `WORKTREE_SETUP_FAILED path=<path> branch=<branch> base_ref=<base_ref>`
+- `WORKTREE_DISPATCH_SKIPPED reason=<workspace-setup-failed|workspace-setup-process-exited>`
 - `WORKER_STARTED process=<id>`
 - `WORKER_DONE status=DONE|DONE_WITH_CONCERNS|BLOCKED|NEEDS_DIRECTION`
 - `REVIEW_APPROVED`

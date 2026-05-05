@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHost;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\IncusHost;
 
 afterEach(function (): void {
     m::close();
@@ -23,8 +23,6 @@ function incusHostTestConfig(string $incusStoragePool = ''): E2EConfig
         hcloudServerType: 'cpx11',
         hcloudLocation: 'ash',
         hcloudBlankImage: 'ubuntu-24.04',
-        hcloudControlImage: '',
-        hcloudGatewayImage: '',
         bootstrapUser: 'provisioner',
         controlUser: 'control',
         instancePrefix: 'orbit-e2e',

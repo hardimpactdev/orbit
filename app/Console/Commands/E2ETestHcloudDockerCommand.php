@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\E2ETopologyKind;
 use App\Services\E2E\HcloudDockerE2ERunner;
 use App\Services\E2E\HcloudDockerE2ERunOptions;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use RuntimeException;
-use Tests\E2E\Support\E2ETopologyKind;
 
 #[Signature('e2e:test-hcloud-docker
     {--force : Create a temporary Hetzner Docker host and run Docker feature E2E}

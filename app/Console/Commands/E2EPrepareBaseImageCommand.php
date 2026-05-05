@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHostPool;
 use App\Services\E2E\IncusBaseImagePreparationOptions;
 use App\Services\E2E\IncusBaseImagePreparer;
 use Closure;
@@ -11,8 +13,6 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use RuntimeException;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\IncusHostPool;
 
 #[Signature('e2e:prepare-base-image
     {--force : Build the base image (otherwise prints the planned alias)}

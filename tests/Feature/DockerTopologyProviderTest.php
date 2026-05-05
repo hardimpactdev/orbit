@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerInstance;
+use App\E2E\Support\DockerTopologyProvider;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2EResourceLeasePool;
+use App\E2E\Support\E2ETopologyAcquisitionOptions;
+use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Support\Facades\Process;
-use Tests\E2E\Support\DockerHost;
-use Tests\E2E\Support\DockerInstance;
-use Tests\E2E\Support\DockerTopologyProvider;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EPhaseTimer;
-use Tests\E2E\Support\E2EResourceLeasePool;
-use Tests\E2E\Support\E2ETopologyAcquisitionOptions;
-use Tests\E2E\Support\E2ETopologyCapabilities;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\SshKeyPair;
 
 it('runs docker exec for instance commands', function (): void {
     Process::fake([

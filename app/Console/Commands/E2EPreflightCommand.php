@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHostPool;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\IncusHostPool;
 
 #[Signature('e2e:preflight {--json}')]
 #[Description('Check that the configured Incus host is reachable')]

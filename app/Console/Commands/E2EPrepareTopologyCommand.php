@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusHostPool;
+use App\E2E\Support\IncusTopologyBuilder;
+use App\E2E\Support\IncusTopologyTemplate;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\IncusHost;
-use Tests\E2E\Support\IncusHostPool;
-use Tests\E2E\Support\IncusTopologyBuilder;
-use Tests\E2E\Support\IncusTopologyTemplate;
 
 #[Signature('e2e:prepare-topology
     {kind=control-gateway-dev-prod : Topology kind to prepare (control|control-gateway|control-gateway-dev|control-gateway-dev-prod)}

@@ -2,16 +2,20 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-provision');
+pest()->group('e2e-feature', 'e2e-feature-control');
 
-it('launches a prepared control topology and runs orbit', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd);
+it('runs the current checkout from a prepared control topology', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::Control);
     $passed = false;
 
     try {
-        $result = $topology->ssh('control', "orbit --version | grep -F 'Orbit'");
+        $checkouts = e2eCheckout($topology, roles: ['control']);
+        $result = $topology->ssh('control', sprintf(
+            'cd %s && php artisan --version >/dev/null && php artisan list --raw >/dev/null',
+            escapeshellarg($checkouts['control']),
+        ));
 
         expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 

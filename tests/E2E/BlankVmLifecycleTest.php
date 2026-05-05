@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EImage;
-use Tests\E2E\Support\E2ERun;
-use Tests\E2E\Support\ProviderPool;
+use App\E2E\Support\E2EImage;
+use App\E2E\Support\E2ERun;
+use App\E2E\Support\ProviderPool;
 
 pest()->group('e2e-provision');
 

@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareDockerTopologyCommand;
+use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
-use Tests\E2E\Support\E2ETopologyKind;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();

@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EBaseProvisioner;
-use Tests\E2E\Support\E2ECommand;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EGatewayApi;
-use Tests\E2E\Support\E2EImage;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ENetwork;
-use Tests\E2E\Support\E2EProvisioningBundle;
-use Tests\E2E\Support\E2ERun;
-use Tests\E2E\Support\IncusProvider;
-use Tests\E2E\Support\ProviderPool;
-use Tests\E2E\Support\SshKeyPair;
+use App\E2E\Support\E2EBaseProvisioner;
+use App\E2E\Support\E2ECommand;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
+use App\E2E\Support\E2EImage;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ENetwork;
+use App\E2E\Support\E2EProvisioningBundle;
+use App\E2E\Support\E2ERun;
+use App\E2E\Support\IncusProvider;
+use App\E2E\Support\ProviderPool;
+use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 

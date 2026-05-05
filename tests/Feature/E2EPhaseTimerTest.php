@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2EPhaseTimer;
 
 it('returns the callback value from measure', function (): void {
     $timer = new E2EPhaseTimer;

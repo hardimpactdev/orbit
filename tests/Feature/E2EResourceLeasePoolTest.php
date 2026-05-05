@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EResourceLeasePool;
+use App\E2E\Support\E2EResourceLeasePool;
 
 beforeEach(function (): void {
     $this->leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));

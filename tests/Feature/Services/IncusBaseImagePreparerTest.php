@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\IncusHost;
 use App\Services\E2E\IncusBaseImagePreparationOptions;
 use App\Services\E2E\IncusBaseImagePreparer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
-use Tests\E2E\Support\IncusHost;
 
 afterEach(function (): void {
     m::close();

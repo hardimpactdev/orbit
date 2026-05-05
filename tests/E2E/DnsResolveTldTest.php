@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
 
 pest()->group('e2e-feature', 'e2e-feature-control');
 

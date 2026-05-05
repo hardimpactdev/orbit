@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\IncusHost;
 use App\Services\E2E\IncusE2EImagePreparationOptions;
 use App\Services\E2E\IncusE2EImagePreparer;
 use Mockery as m;
-use Tests\E2E\Support\IncusHost;
 
 afterEach(function (): void {
     m::close();

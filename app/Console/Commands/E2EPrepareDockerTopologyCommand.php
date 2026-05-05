@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\DockerTopologyBuilder;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use RuntimeException;
-use Tests\E2E\Support\DockerTopologyBuilder;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ETopologyKind;
 
 #[Signature('e2e:prepare-docker-topology
     {kind=control-gateway-dev-prod : Topology kind to prepare (control|control-gateway|control-gateway-dev|control-gateway-dev-prod)}

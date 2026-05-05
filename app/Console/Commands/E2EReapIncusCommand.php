@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\IncusHostPool;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -12,8 +14,6 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use RuntimeException;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\IncusHostPool;
 
 #[Signature('e2e:reap-incus
     {--force : Delete stale instances instead of reporting a dry run}

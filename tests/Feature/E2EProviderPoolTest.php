@@ -2,20 +2,18 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EImage;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2EProvider;
+use App\E2E\Support\E2EResourceLeasePool;
+use App\E2E\Support\E2ERun;
+use App\E2E\Support\HcloudProvider;
+use App\E2E\Support\IncusProvider;
+use App\E2E\Support\ProviderAvailability;
+use App\E2E\Support\ProviderPool;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Support\Facades\Process;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2EImage;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2EProvider;
-use Tests\E2E\Support\E2EResourceLeasePool;
-use Tests\E2E\Support\E2ERun;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\HcloudProvider;
-use Tests\E2E\Support\IncusProvider;
-use Tests\E2E\Support\ProviderAvailability;
-use Tests\E2E\Support\ProviderPool;
-use Tests\E2E\Support\SshKeyPair;
 
 it('defaults to the incus provider', function (): void {
     withE2EProviderEnvironment([], function (): void {
@@ -69,33 +67,11 @@ it('reports provider failures when no provider is available', function (): void 
         fakeE2EProvider('hcloud', false),
     ]);
 
-    $selection = $pool->select(E2EImage::Control);
+    $selection = $pool->select(E2EImage::Blank);
 
     expect($selection->available())->toBeFalse()
         ->and($selection->message)->toContain('incus: unavailable')
         ->and($selection->message)->toContain('hcloud: unavailable');
-});
-
-it('discovers prepared hcloud snapshots by logical image label', function (): void {
-    Process::fake([
-        'command -v hcloud >/dev/null' => Process::result(),
-        'hcloud version' => Process::result(output: "hcloud v1.62.2\n"),
-        'hcloud server-type describe * -o json >/dev/null' => Process::result(output: '{}'),
-        'hcloud image describe --architecture=x86 * -o json >/dev/null' => Process::result(),
-        'hcloud image list --selector *control* --type snapshot -o json' => Process::result(output: json_encode([
-            ['id' => 401, 'description' => 'orbit-ready-control-old', 'created' => '2026-05-03T08:00:00Z'],
-            ['id' => 402, 'description' => 'orbit-ready-control', 'created' => '2026-05-03T09:00:00Z'],
-        ], JSON_THROW_ON_ERROR)),
-        'hcloud image list --selector *gateway* --type snapshot -o json' => Process::result(output: json_encode([
-            ['id' => 501, 'description' => 'orbit-ready-gateway', 'created' => '2026-05-03T09:00:00Z'],
-        ], JSON_THROW_ON_ERROR)),
-    ]);
-
-    $provider = new HcloudProvider(E2EConfig::fromEnvironment());
-
-    expect($provider->availability([E2EImage::Blank, E2EImage::Control, E2EImage::Gateway])->available)->toBeTrue()
-        ->and($provider->imageReferenceFor(E2EImage::Control))->toBe('402')
-        ->and($provider->imageReferenceFor(E2EImage::Gateway))->toBe('501');
 });
 
 it('discovers the incus base image by logical image label', function (): void {
@@ -110,20 +86,6 @@ it('discovers the incus base image by logical image label', function (): void {
         ->availability([E2EImage::Base]);
 
     expect($availability->available)->toBeTrue();
-});
-
-it('reports retired incus ready images as unavailable instead of throwing', function (): void {
-    Process::fake([
-        '*command -v*incus*' => Process::result(),
-        '*incus info*' => Process::result(),
-        '*incus network show incusbr0*' => Process::result(),
-    ]);
-
-    $availability = (new IncusProvider(E2EConfig::fromEnvironment()))
-        ->availability([E2EImage::Control]);
-
-    expect($availability->available)->toBeFalse()
-        ->and($availability->message)->toContain('Role-specific ready images have been replaced');
 });
 
 it('leases configured incus host slots before checking availability', function (): void {
@@ -340,21 +302,6 @@ function fakeE2EProvider(string $name, bool $available): E2EProvider
         public function cleanup(E2ERun $run, array $instances): void
         {
             throw new RuntimeException('Fake provider cannot clean up.');
-        }
-
-        public function supportsPreparedTopologies(): bool
-        {
-            return false;
-        }
-
-        public function topologyAvailability(E2ETopologyKind $kind): ProviderAvailability
-        {
-            return ProviderAvailability::unavailable('Fake provider does not support prepared topologies');
-        }
-
-        public function acquireTopology(E2ETopologyKind $kind, string $label): E2ETopologyLease
-        {
-            throw new RuntimeException('Fake provider cannot acquire topologies.');
         }
     };
 }

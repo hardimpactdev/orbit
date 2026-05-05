@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\IncusHostPool;
+use App\E2E\Support\IncusTopologyBuilder;
+use App\E2E\Support\IncusTopologyTemplate;
 use Illuminate\Support\Facades\Process;
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\IncusHostPool;
-use Tests\E2E\Support\IncusTopologyBuilder;
-use Tests\E2E\Support\IncusTopologyTemplate;
 
 pest()->group('e2e-provision');
 

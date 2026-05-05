@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2ECurrentCheckout;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
-use Tests\E2E\Support\E2ECurrentCheckout;
-use Tests\E2E\Support\E2EInstance;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
-use Tests\E2E\Support\SshKeyPair;
 
 afterEach(function (): void {
     E2ECurrentCheckout::flushCache();
@@ -63,6 +63,8 @@ function currentCheckoutFakeInstance(array &$commands, string $name = 'fake-cont
         {
             $this->commands[] = "copy {$sourcePath} {$targetPath}";
         }
+
+        public function waitForAgent(): void {}
 
         public function waitForIpv4(): string
         {

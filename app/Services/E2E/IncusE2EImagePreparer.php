@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use App\E2E\Support\IncusHost;
 use RuntimeException;
-use Tests\E2E\Support\IncusHost;
 
 /**
  * Builds the reusable Incus blank image (`orbit-blank-ubuntu-26.04`) used by

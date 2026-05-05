@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2EConfig;
-use Tests\E2E\Support\E2ECurrentCheckout;
-use Tests\E2E\Support\E2ERun;
-use Tests\E2E\Support\E2ETopologyCache;
-use Tests\E2E\Support\E2ETopologyFactory;
-use Tests\E2E\Support\E2ETopologyHarness;
-use Tests\E2E\Support\E2ETopologyKind;
-use Tests\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2ECurrentCheckout;
+use App\E2E\Support\E2ERun;
+use App\E2E\Support\E2ETopologyCache;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyHarness;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\E2ETopologyUnavailable;
 
 /**
  * @template TValue
@@ -52,7 +53,11 @@ function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withG
         $factory = $factory->withGatewayApi();
     }
 
-    $lease = $factory->require($kind);
+    try {
+        $lease = $factory->require($kind);
+    } catch (E2ETopologyUnavailable $exception) {
+        test()->markTestSkipped($exception->getMessage());
+    }
 
     return new E2ETopologyHarness($lease);
 }
