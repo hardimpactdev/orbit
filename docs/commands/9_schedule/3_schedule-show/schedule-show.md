@@ -5,8 +5,8 @@
 Show one schedule's target, interval, execution source, and recent run state.
 
 Use `schedule:show` when inspecting the durable configuration of a specific
-recurring task. The command reads gateway intent; live timer drift belongs to
-doctor.
+recurring task. The command reads gateway intent; live scheduler drift
+belongs to doctor.
 
 ## Usage
 
@@ -33,8 +33,8 @@ orbit schedule:show backups --node=app-1
 ## What Happens
 
 `schedule:show` reads one schedule and latest durable run history from the
-gateway. It does not SSH to nodes, inspect systemd timers, repair drift, or
-adopt backend artifacts.
+gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair
+drift, or adopt scheduler-side state.
 
 ## Output
 

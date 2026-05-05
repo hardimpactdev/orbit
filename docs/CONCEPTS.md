@@ -21,6 +21,21 @@ owning family concept document.
   [Blueprint: Drift And Doctor](BLUEPRINT.md#drift-and-doctor).
 - **Adopt** — doctor mode that records compatible observed node reality into
   gateway intent. See [Blueprint: Drift And Doctor](BLUEPRINT.md#drift-and-doctor).
+- **Runtime backend** — host-level supervisor that owns Orbit-managed
+  long-running processes on a node. Supervisor (`supervisord`) on every
+  gateway and app node. See
+  [Blueprint: Runtime Backend And Orbit Scheduler](BLUEPRINT.md#runtime-backend-and-orbit-scheduler).
+- **Runtime unit** — abstract product noun for an Orbit-managed long-running
+  process. Rendered as a Supervisor program by the runtime backend. See
+  [Process Concepts](commands/7_process/process-concepts.md).
+- **Supervisor program** — backend-specific name for the rendered runtime
+  unit. See [Process Concepts](commands/7_process/process-concepts.md).
+- **Orbit Scheduler** — resident `orbit-scheduler` Artisan-command daemon
+  supervised by the runtime backend on every gateway and app node. Owns
+  schedule evaluation, due-run dispatch, overlap policy, run history, and
+  heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+- **Host init** — the host's own service manager that keeps the runtime
+  backend alive. systemd on Ubuntu. Not the product-level process runtime.
 - **RemoteShell** — gateway-to-app-node execution primitive. See
   [Building Blocks: Transport](BUILDING-BLOCKS.md#transport).
 - **CLI caller** — an Orbit CLI invocation from a control node, app node, or the
@@ -143,6 +158,7 @@ Source: [Process Concepts](commands/7_process/process-concepts.md).
 - **Runtime unit**
 - **Runtime unit filename**
 - **Runtime unit environment**
+- **Supervisor program**
 - **Restart policy**
 - **Crash notification policy**
 - **Process event**
@@ -184,7 +200,11 @@ Source: [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
 - **Laravel scheduler**
 - **Execution source**
 - **Portable interval expression**
+- **Orbit Scheduler**
+- **Scheduler heartbeat**
 - **Schedule run**
+- **Schedule lock**
+- **Run-history hook**
 - **Schedule-family boundaries**
 <!-- /concept-index -->
 

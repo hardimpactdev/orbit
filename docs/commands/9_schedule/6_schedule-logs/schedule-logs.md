@@ -5,7 +5,7 @@
 Show stored output for schedule runs.
 
 Use `schedule:logs` to inspect durable schedule run history captured by the
-gateway. The command is for past run output, not live timer inspection.
+gateway. The command is for past run output, not live scheduler inspection.
 
 ## Usage
 

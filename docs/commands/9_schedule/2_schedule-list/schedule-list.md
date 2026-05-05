@@ -5,7 +5,7 @@
 List gateway-owned schedule intent visible to the caller.
 
 Use `schedule:list` to audit recurring app, node, and Orbit-owned maintenance
-schedules without probing live timer state.
+schedules without probing live scheduler state.
 
 ## Usage
 
@@ -31,9 +31,9 @@ orbit schedule:list --node=app-1
 
 ## What Happens
 
-`schedule:list` reads schedule intent and latest durable run history from the
-gateway. It does not SSH to nodes, inspect systemd timers, repair drift, or
-adopt backend artifacts.
+`schedule:list` reads schedule intent and latest durable run history from
+the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair
+drift, or adopt scheduler-side state.
 
 ## Output
 

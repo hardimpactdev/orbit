@@ -4,9 +4,9 @@
 
 Remove a recurring Orbit-managed schedule.
 
-Use `schedule:remove` when a recurring task is no longer managed by Orbit. The
-command removes gateway intent and cleans up the target node's timer and service
-artifacts through the gateway.
+Use `schedule:remove` when a recurring task is no longer managed by Orbit.
+The command removes gateway intent. The target node's Orbit Scheduler stops
+evaluating the schedule on its next sync.
 
 ## Usage
 
@@ -33,26 +33,26 @@ orbit schedule:remove backups --node=app-1 --force
 
 ## What Happens
 
-`schedule:remove` resolves the schedule, records removal intent on the gateway,
-removes timer and service artifacts from the target node, and finalizes the
-schedule removal.
+`schedule:remove` resolves the schedule, records removal intent on the
+gateway, and confirms the target node's Orbit Scheduler is reachable so the
+removal is picked up promptly.
 
 It does not remove app code, app process definitions, nodes, scripts outside
 the managed schedule policy, or past run-history records.
 
 ## Output
 
-Human output renders a progress tree while the command confirms removal, writes
-gateway intent, and cleans up artifacts.
+Human output renders a progress tree while the command confirms removal,
+writes gateway intent, and notifies the target node's Orbit Scheduler.
 
-JSON output returns the removed schedule entity and cleanup result.
+JSON output returns the removed schedule entity and scheduler-pickup result.
 
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
 - The caller is authorized to manage the selected schedule scope.
-- The gateway can reach the target node to remove timer and service artifacts.
+- The target node's Orbit Scheduler is registered and the runtime backend is reachable.
 - Destructive consent is required: confirmation in interactive mode or
   `--force` in non-interactive mode.
 

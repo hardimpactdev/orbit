@@ -51,13 +51,14 @@ invocation model.
 - Reads one durable run-history record for that schedule.
 - Defaults to the latest run when `--run` is absent.
 - Applies the line limit independently to captured stdout and stderr.
-- Does not inspect live timer, service, or backend journal state.
+- Does not inspect live Orbit Scheduler state or scheduler-captured
+  stdout/stderr that has not yet been reported as run history.
 
 ### Scope Boundaries
 
 `schedule-logs` must not create, update, remove, run, fix, adopt, or enact
-schedules. It must not stream live runtime backend logs directly. Live backend
-state and recurring artifact drift belong to
+schedules. It must not stream live runtime backend logs directly. Live
+scheduler state and run-history hook drift belong to
 [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
@@ -79,8 +80,8 @@ state and recurring artifact drift belong to
 ## Doctor Relationship
 
 `schedule-logs` explains past schedule behavior from gateway history.
-[`schedule-doctor.md`](../../schedule-doctor.md) verifies current recurring
-timer and service state against gateway intent.
+[`schedule-doctor.md`](../../schedule-doctor.md) verifies current Orbit
+Scheduler state against gateway intent.
 
 ## Test Mapping
 

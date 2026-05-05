@@ -5,8 +5,8 @@
 Create a recurring Orbit-managed schedule.
 
 Use `schedule:add` when an app or node needs recurring work managed by Orbit.
-The command records schedule intent on the gateway, then enacts the timer and
-service artifacts on the resolved target node through the gateway.
+The command records schedule intent on the gateway. The Orbit Scheduler on
+the target node picks up the new schedule on its next sync.
 
 ## Usage
 
@@ -45,25 +45,27 @@ this public command only creates app-scoped or node-scoped schedules.
 ## What Happens
 
 `schedule:add` validates the target, validates the execution source and
-interval, writes gateway schedule intent, renders the timer/service artifacts,
-and enables the recurring schedule on the target node.
+interval, writes gateway schedule intent, and confirms the target node's
+Orbit Scheduler is reachable. The scheduler picks up the new schedule on
+its next sync and begins evaluating it on each minute boundary.
 
 It does not create apps, nodes, app process definitions, proxy routes, firewall
 rules, or backend-only schedules outside gateway intent.
 
 ## Output
 
-Human output renders a progress tree while the command validates input, writes
-gateway intent, renders artifacts, and enables the schedule.
+Human output renders a progress tree while the command validates input,
+writes gateway intent, and confirms the target node's Orbit Scheduler is
+reachable.
 
-JSON output returns the created schedule entity and enactment result.
+JSON output returns the created schedule entity and scheduler-pickup result.
 
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway, or the command runs on the
   gateway.
 - The caller is authorized to manage schedules for the resolved app or node.
-- The gateway can reach the target node to enact timer and service artifacts.
+- The target node's Orbit Scheduler is registered and the runtime backend is reachable.
 - Script sources must resolve to readable script files according to the
   gateway-owned schedule policy.
 

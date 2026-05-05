@@ -48,10 +48,11 @@ gateway-owned and enacted through gateway-to-node transport.
 - Resolves the schedule by name and optional app or node disambiguation from
   gateway schedule intent.
 - Fails before side effects when no visible schedule matches.
-- Records removal intent on the gateway before backend cleanup begins.
-- Removes the timer artifact and service artifact from the target node through
-  the gateway.
-- Finalizes the schedule as removed after cleanup succeeds.
+- Records removal intent on the gateway.
+- Confirms the target node's Orbit Scheduler is reachable so the removal is
+  picked up on the next scheduler tick.
+- Finalizes the schedule as removed once the gateway intent has been
+  written.
 - Retains durable run history unless a future retention command explicitly
   prunes it.
 
@@ -65,8 +66,8 @@ gateway-owned and enacted through gateway-to-node transport.
 ### Scope Boundaries
 
 `schedule-remove` must not remove app code, app process definitions, nodes,
-proxy routes, firewall rules, DNS records, or scripts outside managed schedule
-policy. Backend leftovers after cleanup failure belong to
+proxy routes, firewall rules, DNS records, or scripts outside managed
+schedule policy. Scheduler-side state drift belongs to
 [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
@@ -83,7 +84,7 @@ policy. Backend leftovers after cleanup failure belong to
 | Authorization failed | The caller is not authorized to manage the selected schedule. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
-| Cleanup failed | Gateway removal intent was recorded, but backend timer or service cleanup failed. | `error.code=schedule.cleanup_failed` |
+| Scheduler unreachable | Gateway removal intent was recorded, but the target node's Orbit Scheduler could not be confirmed reachable for prompt pickup. | `error.code=schedule.scheduler_unreachable` |
 
 ## Doctor Relationship
 

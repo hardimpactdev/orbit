@@ -35,8 +35,8 @@ orbit schedule:run backups --node=app-1
 command or script once on the target node through the gateway, and records the
 run output in gateway schedule history.
 
-It does not change the recurring interval, enabled state, timer artifacts, app
-process definitions, or schedule ownership.
+It does not change the recurring interval, enabled state, app process
+definitions, or schedule ownership.
 
 ## Output
 

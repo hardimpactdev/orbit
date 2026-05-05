@@ -47,13 +47,13 @@ invalid filters fail according to the shared invocation model.
 - Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is
   supplied and the caller is authorized to see them.
 - Includes latest durable run-history summary when available.
-- Does not inspect live timer or service backend state.
+- Does not inspect live Orbit Scheduler state.
 
 ### Scope Boundaries
 
 `schedule-list` must not create, update, remove, run, fix, adopt, or enact
-schedules. It must not read backend timer/service state directly. Drift belongs
-to [`schedule-doctor.md`](../../schedule-doctor.md).
+schedules. It must not read scheduler-side state directly. Drift belongs to
+[`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 

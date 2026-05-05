@@ -3,8 +3,18 @@
 Schedule commands manage recurring Orbit-owned work. The command family and
 durable state family are both `schedule`.
 
-Systemd timers and services are the current backend on supported Ubuntu nodes.
-They are not the product model.
+The Orbit Scheduler is the schedule executor. It is a resident
+`orbit-scheduler` Artisan-command daemon supervised by the runtime backend on
+every gateway and app node. Schedule intent and durable run history live on
+the gateway; the scheduler reads intent, dispatches due runs locally, and
+reports run history back over the existing CLI-to-gateway HTTPS edge.
+
+The scheduler evaluates due schedules at least once per minute, aligned to
+wall-clock minute boundaries. Each tick fetches the node's schedule list from
+the gateway, evaluates which schedules are due in the current minute, and
+fires them. Schedule expressions remain minute-resolution; the tick interval
+is an implementation detail. `orbit schedule:run` performs one such tick on
+demand and shares its evaluation logic with the daemon.
 
 ## Domain Rules
 
@@ -23,13 +33,18 @@ They are not the product model.
 - Intervals use Orbit's portable interval language, such as `every 5 minutes`,
   `daily at 09:00`, `weekdays at 09:00`, or
   `weekly on monday at 09:00`.
-- Schedule write commands mutate gateway intent first, then enact timer and
-  service artifacts on the target node through the gateway.
-- Schedule reads use gateway intent and durable run history by default. Live
-  timer/service reality belongs to `doctor --family=schedule`.
-- Backend discovery/import is not part of the schedule command surface.
-  Adoption of observed schedule artifacts must use explicit
-  `doctor --family=schedule --adopt` semantics.
+- Schedule write commands mutate gateway intent first. The Orbit Scheduler
+  on the target node observes the change on its next sync, claims due runs
+  with a local schedule lock, and executes them. There is no per-schedule
+  node-side artifact to enact; the only enacted artifact is the
+  `orbit_scheduler` Supervisor program, which is enacted once per node by
+  node provisioning.
+- Schedule reads use gateway intent and durable run history by default.
+  Live scheduler reality belongs to `doctor --family=schedule`.
+- The schedule family does not adopt arbitrary observed processes as
+  schedules. Adoption is reserved for explicitly selected runs reported by
+  the Orbit Scheduler that match an existing or operator-supplied schedule
+  shape.
 
 ## Schedule JSON Entity
 
@@ -54,6 +69,11 @@ items.
   },
   "enabled": true,
   "status": "expected",
+  "scheduler": {
+    "node": "app-1",
+    "heartbeat_at": "2026-05-02T08:00:01Z",
+    "registry_synced_at": "2026-05-02T07:59:50Z"
+  },
   "last_run": {
     "id": 12,
     "status": "completed",
@@ -77,6 +97,9 @@ items.
 | `execution.value` | string | Inline command or managed script path. |
 | `enabled` | boolean | Whether the recurring schedule should run. |
 | `status` | string | Gateway-intent status, not live backend verification. |
+| `scheduler.node` | string | Node where the Orbit Scheduler responsible for this schedule runs. |
+| `scheduler.heartbeat_at` | string \| null | ISO-8601 of the most recent scheduler heartbeat reported to the gateway. `null` until the first heartbeat is recorded. |
+| `scheduler.registry_synced_at` | string \| null | ISO-8601 of the most recent schedule-intent sync the scheduler completed. `null` until the first sync is recorded. |
 | `last_run` | object \| null | Latest durable run history when available. |
 
 ## Commands

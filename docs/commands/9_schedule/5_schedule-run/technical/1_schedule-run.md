@@ -43,16 +43,25 @@ invocation model.
 
 ## Behavior Contract
 
+`schedule:run` performs one Orbit Scheduler tick on the resolved target node:
+fetch the node's schedule list from the gateway, evaluate which schedules are
+due in the current minute, and fire them. The same logic runs inside the
+resident `orbit-scheduler` daemon at least once per minute. Operators use
+`schedule:run` to fire a tick on demand for testing, troubleshooting, or
+recovery; the daemon's loop is the steady-state path.
+
+When called with a schedule name, `schedule:run [name]` force-runs that one
+schedule regardless of its interval and records the resulting run.
+
 ### One-Off Execution Rules
 
 - Resolves one schedule from gateway intent by name and optional app or node
   disambiguation.
-- Executes the schedule's stored command or script once on the target node
-  through the gateway.
+- Force-runs the schedule's stored command or script once on the target
+  node, regardless of whether the schedule is currently due.
 - Runs app-scoped schedules in the app context on the owning app node.
 - Runs node-scoped schedules in the selected node context.
-- Does not change the recurring interval, enabled state, or timer/service
-  artifacts.
+- Does not change the recurring interval or enabled state.
 
 ### Run History Rules
 
@@ -65,8 +74,9 @@ invocation model.
 ### Scope Boundaries
 
 `schedule-run` must not create, update, remove, fix, adopt, or re-render
-schedule artifacts. It must not infer schedule definitions from backend timers.
-Recurring artifact drift belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
+schedule intent. It must not infer schedule definitions from scheduler-side
+state. Scheduler drift belongs to
+[`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -91,8 +101,8 @@ renderer data.
 ## Doctor Relationship
 
 One-off runs are gateway history. [`schedule-doctor.md`](../../schedule-doctor.md)
-verifies recurring timer and service artifacts against gateway intent, not
-whether an individual manual run succeeded.
+verifies Orbit Scheduler liveness and per-schedule run history, not whether an
+individual manual run succeeded.
 
 ## Test Mapping
 

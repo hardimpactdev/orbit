@@ -60,22 +60,26 @@ Management remains gateway-owned and enacted through gateway-to-node transport.
 - Accepts exactly one execution source: `--command` or `--script`.
 - Stores inline commands as execution type `command`.
 - Stores managed script paths as execution type `script`.
-- Does not create app process definitions or persistent services outside the
-  schedule timer/service pair.
+- Does not create app process definitions, persistent services, or other
+  runtime units. The Orbit Scheduler executes the schedule each minute it
+  is due; no per-schedule node-side artifact is enacted.
 
-### Backend Enactment Rules
+### Pickup Rules
 
-- Writes gateway intent before rendering backend artifacts.
-- Renders one timer artifact and one service artifact for the selected target.
-- Enables the timer through the gateway after artifact rendering succeeds.
-- Reports enactment drift when gateway intent was written but backend artifact
-  rendering, enablement, or verification fails.
+- Writes gateway intent before notifying the target node.
+- Confirms the target node's Orbit Scheduler is registered and the runtime
+  backend is reachable.
+- Reports `schedule.scheduler_unreachable` when gateway intent was written
+  but the scheduler is not currently reachable. The schedule remains valid
+  intent and runs on the next successful scheduler tick that reaches the
+  gateway.
 
 ### Scope Boundaries
 
 `schedule-add` must not create apps, nodes, workspaces, tools, proxy routes,
-firewall rules, DNS records, or backend-only schedules. Backend discovery and
-adoption belong to [`schedule-doctor.md`](../../schedule-doctor.md).
+firewall rules, DNS records, or scheduler-side artifacts beyond gateway
+intent. Drift detection belongs to
+[`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -90,9 +94,9 @@ adoption belong to [`schedule-doctor.md`](../../schedule-doctor.md).
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to manage schedules for the selected scope. | `error.code=authorization_failed` |
 | Name collision | A schedule with the same name already exists in the selected scope. | `error.code=schedule.name_collision` |
-| Interval invalid | The interval cannot be parsed or rendered for the active schedule backend. | `error.code=schedule.interval_invalid` |
+| Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
-| Enactment failed | Gateway intent was written, but backend timer or service enactment failed. | `error.code=schedule.enactment_failed` |
+| Scheduler unreachable | Gateway intent was written, but the target node's Orbit Scheduler is not currently reachable for confirmation. | `error.code=schedule.scheduler_unreachable` |
 
 ## Doctor Relationship
 
