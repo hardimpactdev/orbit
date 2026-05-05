@@ -384,6 +384,34 @@ describe('node:new', function (): void {
             ->and(DB::table('nodes')->where('name', 'mini')->value('platform'))->toBe(nodeNewExpectedLocalPlatform());
     });
 
+    it('shows first-gateway bootstrap platform fields through node:show json', function (): void {
+        ($this->fakeFirstGatewayProcesses)($this->mockCaCert);
+        ($this->fakeGatewayApiVerification)();
+
+        Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        DB::table('nodes')->where('name', 'mini')->update(['is_local' => false]);
+        DB::table('nodes')->where('name', 'gateway-1')->update(['is_local' => true]);
+
+        $gatewayExitCode = Artisan::call('node:show', ['name' => 'gateway-1', '--json' => true]);
+        $gatewayPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $controlExitCode = Artisan::call('node:show', ['name' => 'mini', '--json' => true]);
+        $controlPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($gatewayExitCode)->toBe(0)
+            ->and($gatewayPayload['success']['data']['node']['platform'])->toBe('ubuntu_24-04')
+            ->and($controlExitCode)->toBe(0)
+            ->and($controlPayload['success']['data']['node']['platform'])->toBe(nodeNewExpectedLocalPlatform());
+    });
+
     it('fails before local onboarding persistence when platform detection fails', function (): void {
         ($this->fakeFirstGatewayProcesses)(
             bootstrapOutput: $this->mockCaCert,
@@ -414,6 +442,26 @@ describe('node:new', function (): void {
                     ],
                 ],
             ])
+            ->and(DB::table('nodes')->count())->toBe(0);
+    });
+
+    it('renders platform detection failure in human output', function (): void {
+        ($this->fakeFirstGatewayProcesses)(
+            bootstrapOutput: $this->mockCaCert,
+            gatewayPlatformOutput: '',
+            gatewayPlatformExitCode: 1,
+        );
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-platform-fail',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.15',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(Artisan::output())->toContain("Gateway host '192.0.2.15' could not detect its platform.")
             ->and(DB::table('nodes')->count())->toBe(0);
     });
 
