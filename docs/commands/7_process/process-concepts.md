@@ -16,17 +16,21 @@ not override the [Blueprint](../../BLUEPRINT.md).
 
 ## Runtime Artifacts
 
-- **Runtime unit:** Physical artifact derived from app, optional workspace, and
-  process intent. Not the product model. One runtime unit is rendered for the
-  main app instance and one for each workspace of that app per process
-  definition.
-- **Runtime unit filename:** `orbit_<app>_<workspace|main>_<process>.service`.
-  The `orbit_` prefix marks Orbit ownership; underscores are reserved as
-  backend segment delimiters.
+- **Runtime unit:** Abstract product noun for an Orbit-managed long-running
+  process derived from app, optional workspace, and process intent. The
+  product model. One runtime unit is rendered for the main app instance and
+  one for each workspace of that app per process definition. Each runtime
+  unit is enacted by the runtime backend as a Supervisor program.
+- **Runtime unit filename:** `orbit_<app>_<workspace|main>_<process>`. The
+  `orbit_` prefix marks Orbit ownership; underscores are reserved as backend
+  segment delimiters. The rendered Supervisor program uses the same name.
 - **Runtime unit environment:** Predictable runtime environment exposed to
   derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
   and Orbit-managed TLS path variables. Separate from workspace lifecycle step
   environment.
+- **Supervisor program:** Backend-specific rendering of a runtime unit. The
+  program is supervised by the node's runtime backend and starts the process
+  command in the resolved app or workspace context.
 
 ## Policy
 

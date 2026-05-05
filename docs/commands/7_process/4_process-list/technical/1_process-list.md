@@ -41,7 +41,7 @@ or workspace context.
 | --- | --- | --- |
 | `control` | `valid` | Read gateway-owned process intent through the gateway API when authorized. |
 | `gateway` | `valid` | Read gateway-owned process intent locally when authorized. |
-| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The app-node CLI does not probe systemd or read node-local runtime state. |
+| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The app-node CLI does not probe the runtime backend or read node-local runtime state. |
 | `unknown` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
 
 ## Input Mode Contracts

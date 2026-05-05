@@ -44,7 +44,7 @@ resolved app or workspace context.
 | --- | --- | --- |
 | `control` | `valid` | Forward the runtime action to the gateway API when authorized. |
 | `gateway` | `valid` | Start the derived runtime unit on the owning app node through `RemoteShell`. |
-| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The gateway performs the runtime action; the app-node CLI does not operate systemd directly. |
+| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The gateway performs the runtime action; the app-node CLI does not operate the runtime backend directly. |
 | `unknown` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
 
 ## Input Mode Contracts
@@ -100,7 +100,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessStartCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, named and all-process selection, process-order execution, runtime-unit derivation, successful start, durable started event recording, partial bulk failure reporting, no process intent mutation, no direct app-node systemd operation, runtime action failure, and authorization failure. |
+| `tests/Feature/Commands/Processes/ProcessStartCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, named and all-process selection, process-order execution, runtime-unit derivation, successful start, durable started event recording, partial bulk failure reporting, no process intent mutation, no direct app-node runtime backend operation, runtime action failure, and authorization failure. |
 | `tests/Feature/Commands/Processes/ProcessStartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

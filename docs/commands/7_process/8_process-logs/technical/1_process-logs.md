@@ -45,7 +45,7 @@ resolved app or workspace context.
 | --- | --- | --- |
 | `control` | `valid` | Forward the log read to the gateway API when authorized. |
 | `gateway` | `valid` | Read logs from the owning app node through `RemoteShell`. |
-| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The gateway reads logs; the app-node CLI does not read journald directly. |
+| `app` | `valid` | Resolve local app or workspace context when available, then call the gateway API. The gateway reads logs; the app-node CLI does not read runtime backend logs directly. |
 | `unknown` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
 
 ## Input Mode Contracts
@@ -97,7 +97,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, bounded log reads, follow-mode streaming, line count validation, `--json` with `--follow` rejection, no process intent mutation, no direct app-node journald read, log read failure, and authorization failure. |
+| `tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for context resolution, app-node caller allowance through the gateway, unknown-role denial before prompts or side effects, bounded log reads, follow-mode streaming, line count validation, `--json` with `--follow` rejection, no process intent mutation, no direct app-node runtime backend log read, log read failure, and authorization failure. |
 | `tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

@@ -20,10 +20,11 @@ node.
 - Process definitions have a stable app-local order. `process:add` appends new
   definitions after existing definitions. Read and bulk lifecycle commands use
   that order.
-- Runtime unit filenames use
-  `orbit_<app>_<workspace|main>_<process>.service`. The `orbit_` prefix marks
+- Runtime unit names use
+  `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks
   Orbit ownership; underscores are reserved as backend segment delimiters and
-  are not allowed in identity slugs.
+  are not allowed in identity slugs. The rendered Supervisor program uses the
+  same name.
 - Restart policy is process intent. Each derived main-app or workspace runtime
   unit uses the process definition's `never`, `on_failure`, or `always` policy.
   Manual `process:restart` actions do not change that policy.
@@ -45,14 +46,15 @@ node.
   reports an exit.
 - Default process read commands report gateway intent plus latest durable
   process events. They do not synchronously SSH to app nodes or run live
-  `systemctl` probes. Live runtime verification belongs to
+  runtime backend probes. Live runtime verification belongs to
   [`doctor --family=process`](process-doctor.md); live event delivery belongs
   to the internal event stream.
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
   When `[name]` is omitted, `process:start`, `process:stop`, and
   `process:restart` operate on all process definitions for the resolved app or
   workspace context in process order.
-- Logs come from the node runtime backend.
+- Logs come from the runtime backend's stdout/stderr capture for the
+  rendered Supervisor program.
 - Create commands may use positional arguments for required identity or payload
   fields. Edit commands use named options for editable fields so omitted fields
   can mean "preserve the current value." This is why `process:add` accepts the
@@ -76,8 +78,8 @@ or command side effects.
 - Local app-node context may resolve app or workspace defaults, but it is not
   authorization.
 - Allowed app-node process commands still call the gateway typed API. The
-  app-node CLI never writes process intent, reads journald directly, or operates
-  systemd directly.
+  app-node CLI never writes process intent, reads runtime backend logs
+  directly, or operates the runtime backend directly.
 
 ## Runtime Unit Environment
 
@@ -87,7 +89,7 @@ workspace setup and teardown step environment. Runtime units do not receive
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `PATH` | Predictable command lookup path including user-local tool directories | Lets commands resolve tools such as `vp`, `bun`, and project-local binaries under systemd. |
+| `PATH` | Predictable command lookup path including user-local tool directories | Lets commands resolve tools such as `vp`, `bun`, and project-local binaries under the runtime backend. |
 | `HOME` | Runtime user's home directory | Lets tools find home-relative config and caches. |
 | `APP_URL` | Resolved app or workspace HTTPS URL | Gives Laravel/runtime code the canonical public URL. |
 | `VITE_APP_URL` | Resolved app or workspace HTTPS URL | Keeps Vite-aware processes aligned with the runtime URL. |
