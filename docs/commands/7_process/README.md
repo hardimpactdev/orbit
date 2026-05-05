@@ -15,8 +15,14 @@ node.
   they cannot start or end with a hyphen and are limited to 64 characters.
 - Runtime units are physical artifacts derived from app, optional workspace, and
   process intent. They are not the product model.
-- Each process definition renders one runtime unit for the main app instance and
-  one runtime unit for each workspace of that app.
+- Each process definition renders one runtime unit for the main app
+  instance and one runtime unit for each workspace of that app. Each
+  rendered runtime unit is a separate Supervisor program with its own
+  program name, working directory, environment, and log paths. The
+  process definition supplies the shared fields (command, restart policy,
+  crash notification policy); the rendering context (main vs. workspace,
+  resolved app or workspace path and URL) supplies the per-instance
+  fields.
 - Process definitions have a stable app-local order. `process:add` appends new
   definitions after existing definitions. Read and bulk lifecycle commands use
   that order.

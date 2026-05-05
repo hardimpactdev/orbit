@@ -533,6 +533,12 @@ RPC, does not own fleet intent, and does not orchestrate other nodes. It
 authenticates to the gateway API with the same WireGuard node identity used
 by the CLI client.
 
+This subsection defines the **product contract** for the runtime backend
+and the Orbit Scheduler. The implementation shape — the daemon's sleep
+loop, Supervisor program names, host-init handoff details — lives in
+[Building Blocks: Runtime Backend And Scheduler](BUILDING-BLOCKS.md#runtime-backend-and-scheduler).
+Edits here must be reflected there and vice versa.
+
 ### Workspaces
 
 A workspace belongs to an app. The workspace name is the canonical workspace and

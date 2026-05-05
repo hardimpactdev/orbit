@@ -31,9 +31,16 @@ canonical name, and owns one workspace route lifecycle.
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
 - Workspaces inherit app process definitions as runtime units. Each
-  inherited runtime unit is rendered by the runtime backend as a Supervisor
-  program owned by the workspace. Runtime unit convergence belongs to the
-  `process` family.
+  inherited runtime unit is rendered by the runtime backend as a separate
+  Supervisor program owned by the workspace, with its own program name,
+  working directory, environment block, and log paths — distinct from the
+  main app instance and from sibling workspaces. The parent app's process
+  definition supplies the shared fields (command, restart policy, crash
+  notification policy); the workspace context supplies the per-instance
+  fields (working directory derived from the workspace path, environment
+  with workspace-specific URL and Orbit-managed TLS material, log paths
+  scoped to the workspace's program name). Runtime unit convergence
+  belongs to the `process` family.
 - Workspace setup and teardown step definitions are gateway-owned workspace
   policy. Adding, listing, removing, and ordering those definitions are explicit
   workspace commands, not doctor repair actions.

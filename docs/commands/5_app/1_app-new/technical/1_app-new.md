@@ -113,6 +113,11 @@ Execute the convergent behavior shared with `app:register`:
   may still need project setup steps before it is healthy, and durable runtime
   health belongs to `doctor --family=app`.
 
+`app:new` does not create schedules. The Laravel scheduler (a per-minute
+`php artisan schedule:run`) is added explicitly with `schedule:add` after
+the app exists when the operator wants it. Apps that do not run scheduled
+work do not need that schedule at all.
+
 ### 4. Production Activation
 If `--domain` is supplied:
 - Record production domain intent.

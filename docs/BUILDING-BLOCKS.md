@@ -274,6 +274,13 @@ enactor/probe code or command contract when exposed to users.
 
 ## Runtime Backend And Scheduler
 
+This subsection defines the **implementation shape** of the runtime
+backend and the Orbit Scheduler. The product contract — what the
+scheduler must do for users and how it sits inside Orbit's architecture —
+lives in
+[Blueprint: Runtime Backend And Orbit Scheduler](BLUEPRINT.md#runtime-backend-and-orbit-scheduler).
+Edits here must be reflected there and vice versa.
+
 Supervisor (`supervisord`) is the runtime backend on every gateway and app
 node. It supervises Orbit-managed long-running processes — one Supervisor
 program per runtime unit — and the `orbit_scheduler` program that runs the
