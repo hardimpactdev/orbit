@@ -132,6 +132,26 @@ it('creates an app through provisioned gateway and converges real runtime artifa
             ->and($payload['success']['data']['app']['node'])->toBe('app-dev-1')
             ->and($payload['success']['meta']['warnings'] ?? [])->toBe([]);
 
+        $appRegister = E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            sprintf(
+                'cd /home/%s/orbit && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                $config->controlUser,
+                escapeshellarg($name),
+                escapeshellarg("/home/orbit/apps/{$name}"),
+            ),
+            timeoutSeconds: 600,
+        );
+
+        $registerPayload = json_decode(trim($appRegister->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($registerPayload['success']['data']['result']['action'])->toBe('converged')
+            ->and($registerPayload['success']['data']['app']['name'])->toBe($name)
+            ->and($registerPayload['success']['data']['app']['node'])->toBe('app-dev-1')
+            ->and($registerPayload['success']['meta']['warnings'] ?? [])->toBe([]);
+
         E2ECommand::ssh(
             $app,
             $config->bootstrapUser,

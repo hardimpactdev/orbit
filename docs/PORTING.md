@@ -1169,7 +1169,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
           `app.php_version_unavailable` warning.
         - [x] Provisioning-lane E2E for real PHP-FPM, proxy route, and process
           artifact convergence after source creation.
-- [~] Port `app:register`.
+- [x] Port `app:register`.
   - [x] Gateway-local JSON/non-interactive adoption and convergence slice:
     validates static input, rejects app-role callers before side effects,
     verifies the target path over gateway-owned `RemoteShell`, writes or refreshes
@@ -1185,7 +1185,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Production activation retry warnings: production-domain registration
     persists intent and returns retryable `proxy.domain_inactive` warnings that
     point back to `app:register`.
-  - [ ] Provisioning-lane registration refresh gate.
+  - [x] Provisioning-lane registration refresh gate.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.
