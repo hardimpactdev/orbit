@@ -258,9 +258,11 @@ yet satisfy the full product contracts.
   - App-caller cwd inference slice implemented: omitted targets on app callers
     use the current working directory as a gateway-authorized path selector, and
     `GET /api/profile` resolves visible app records by absolute app paths.
+  - Interactive selector slice implemented: when no explicit target or cwd app
+    context resolves, interactive callers can choose from visible app targets
+    through the documented `profile.app` datatable prompt.
   - Contract gaps:
-    - workspace cwd inference.
-    - interactive app selector.
+    - workspace cwd inference is blocked until workspace schema/models exist.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.
     - paired E2E gate for an observable profile target.
 - [~] `node:list`

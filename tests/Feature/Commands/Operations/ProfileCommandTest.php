@@ -10,6 +10,8 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -368,6 +370,76 @@ it('sends the current working directory as the app caller profile target when ta
     expect($exitCode)->toBe(0)
         ->and($payload['success']['data']['origin'])->toBe('gateway')
         ->and($payload['success']['data']['target']['app'])->toBe('docs');
+});
+
+it('prompts for an app when an interactive gateway caller omits the target outside an app path', function (): void {
+    $gateway = Node::factory()->create([
+        'name' => 'gateway',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+    $firstNode = Node::factory()->create(['name' => 'app-dev-1', 'role' => 'app']);
+    $secondNode = Node::factory()->create(['name' => 'app-dev-2', 'role' => 'app']);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $firstNode->id,
+        'domain' => 'docs.test',
+        'path' => '/srv/docs',
+        'repository' => 'git@example.com:docs.git',
+    ]);
+    App::factory()->create([
+        'name' => 'blog',
+        'node_id' => $secondNode->id,
+        'domain' => 'blog.test',
+        'path' => '/srv/blog',
+        'repository' => 'git@example.com:blog.git',
+    ]);
+
+    app()->instance(RequestProfiler::class, new class implements RequestProfiler
+    {
+        public function profile(string $url, array $headers = []): array
+        {
+            return [
+                'request' => [
+                    'method' => 'GET',
+                    'url' => $url,
+                    'uri' => '/',
+                    'status' => 200,
+                    'bytes' => 1200,
+                    'completed' => true,
+                ],
+                'timings' => [
+                    'dns_ms' => 1.0,
+                    'connect_ms' => 3.0,
+                    'tls_ms' => 7.0,
+                    'ttfb_ms' => 50.0,
+                    'download_ms' => 2.0,
+                    'total_ms' => 52.0,
+                ],
+                'error' => null,
+                'response_headers' => [],
+            ];
+        }
+    });
+
+    $outsidePath = sys_get_temp_dir().'/orbit-profile-outside-'.bin2hex(random_bytes(4));
+    mkdir($outsidePath, 0777, true);
+    $originalCwd = getcwd();
+    DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
+
+    try {
+        chdir($outsidePath);
+
+        $exitCode = Artisan::call('profile');
+    } finally {
+        if (is_string($originalCwd)) {
+            chdir($originalCwd);
+        }
+    }
+
+    expect($exitCode)->toBe(0);
+    expect(Artisan::output())->toContain('GET https://blog.test/ 200');
 });
 
 it('falls back to gateway-origin profiling for control callers when caller-origin profiling fails', function (): void {

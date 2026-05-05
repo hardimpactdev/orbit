@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Profile\ShowProfile;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Http\Gateway\Requests\Profile\ShowProfileRequest;
 use App\Models\App;
@@ -16,6 +17,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
+
+use function Laravel\Prompts\datatable;
 
 #[Signature('profile
     {target? : Domain, app hostname, full URL, or absolute app path}
@@ -83,6 +86,7 @@ class ProfileCommand extends Command
         }
 
         $selector = $appOption ?? $target;
+        $selectorWasOmitted = $selector === null;
         $nodeConstraint = $this->stringOption('node');
 
         if ($callerRole === 'gateway' && $nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
@@ -118,6 +122,10 @@ class ProfileCommand extends Command
             $selector = is_string($cwd) ? $cwd : null;
         }
 
+        if ($selector === null && $this->canPromptForApp()) {
+            $selector = $this->promptForApp($callerRole, $nodeConstraint);
+        }
+
         if ($selector === null) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -131,6 +139,18 @@ class ProfileCommand extends Command
 
         if ($callerRole === 'app') {
             $gatewayResult = $this->profileThroughGateway($selector, $uri, $nodeConstraint);
+
+            if (
+                $selectorWasOmitted
+                && $gatewayResult instanceof GatewayApiException
+                && $gatewayResult->errorCode() === 'app.not_found'
+                && $this->canPromptForApp()
+            ) {
+                $selected = $this->promptForApp($callerRole, $nodeConstraint);
+                $gatewayResult = $selected !== null
+                    ? $this->profileThroughGateway($selected, $uri, $nodeConstraint)
+                    : $gatewayResult;
+            }
 
             if ($gatewayResult instanceof GatewayApiException) {
                 return $this->failCommand(
@@ -153,21 +173,37 @@ class ProfileCommand extends Command
             $app = $this->resolveLocalApp($selector, $nodeConstraint);
 
             if (! $app instanceof App) {
-                return $this->failCommand(
-                    code: 'target_not_found',
-                    message: 'No linked app found for the requested profile target.',
-                    meta: ['target' => $selector],
-                );
-            }
+                if ($selectorWasOmitted && $this->canPromptForApp()) {
+                    $selected = $this->promptForApp($callerRole, $nodeConstraint);
+                    $app = $selected !== null ? $this->resolveLocalApp($selected, $nodeConstraint) : null;
+                }
 
-            $url = $this->profileUrl($app, $uri);
-            $targetPayload = [
-                'app' => $app->name,
-                'workspace' => null,
-                'node' => $app->node?->name,
-                'domain' => $this->appDomain($app),
-            ];
-            $origin = 'gateway';
+                if ($app instanceof App) {
+                    $url = $this->profileUrl($app, $uri);
+                    $targetPayload = [
+                        'app' => $app->name,
+                        'workspace' => null,
+                        'node' => $app->node?->name,
+                        'domain' => $this->appDomain($app),
+                    ];
+                    $origin = 'gateway';
+                } else {
+                    return $this->failCommand(
+                        code: 'target_not_found',
+                        message: 'No linked app found for the requested profile target.',
+                        meta: ['target' => $selector],
+                    );
+                }
+            } else {
+                $url = $this->profileUrl($app, $uri);
+                $targetPayload = [
+                    'app' => $app->name,
+                    'workspace' => null,
+                    'node' => $app->node?->name,
+                    'domain' => $this->appDomain($app),
+                ];
+                $origin = 'gateway';
+            }
         } else {
             $gatewayResult = $this->fetchGatewayApp($selector);
 
@@ -313,6 +349,94 @@ class ProfileCommand extends Command
         }
 
         return $localRole;
+    }
+
+    private function canPromptForApp(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function promptForApp(string $callerRole, ?string $nodeConstraint): ?string
+    {
+        $apps = $this->fetchPromptApps($callerRole, $nodeConstraint);
+
+        if ($apps === [] || $apps instanceof GatewayApiException) {
+            return null;
+        }
+
+        $rows = [];
+
+        foreach ($apps as $app) {
+            $name = is_string($app['name'] ?? null) && $app['name'] !== '' ? $app['name'] : null;
+
+            if ($name === null) {
+                continue;
+            }
+
+            $host = $this->domainFromPayload($app, $name);
+            $rows[$name] = [
+                $host,
+                is_string($app['node'] ?? null) ? $app['node'] : '-',
+                is_string($app['repository'] ?? null) ? $app['repository'] : '-',
+            ];
+        }
+
+        if ($rows === []) {
+            return null;
+        }
+
+        $selected = datatable(
+            headers: ['Host', 'Node', 'Repository'],
+            rows: $rows,
+            label: 'Select an app to profile',
+            hint: 'Press / to search',
+        );
+
+        return is_string($selected) && $selected !== '' ? $selected : null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    private function fetchPromptApps(string $callerRole, ?string $nodeConstraint): array|GatewayApiException
+    {
+        if ($callerRole === 'gateway') {
+            return App::query()
+                ->with('node')
+                ->when($nodeConstraint !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $nodeConstraint)))
+                ->get()
+                ->sort(fn (App $first, App $second): int => [
+                    mb_strtolower((string) $first->node?->name),
+                    mb_strtolower($first->name),
+                ] <=> [
+                    mb_strtolower((string) $second->node?->name),
+                    mb_strtolower($second->name),
+                ])
+                ->values()
+                ->map(fn (App $app): array => [
+                    'name' => $app->name,
+                    'node' => $app->node?->name,
+                    'url' => $app->url(),
+                    'repository' => $app->repository,
+                ])
+                ->all();
+        }
+
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ListAppsRequest(node: $nodeConstraint))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException(
+                message: 'Gateway connection is required to list profile targets.',
+                errorCode: 'gateway_unavailable',
+                errorMeta: [],
+            );
+        }
+
+        return $dto->apps;
     }
 
     private function stringArgument(string $name): ?string
