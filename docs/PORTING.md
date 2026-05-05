@@ -472,19 +472,16 @@ Workstream command gaps are cleared.
 
 #### Next Manual Candidates
 
-1. `E2E-IMAGE-WALLTIME-1` (todo 279) — measure prepared topology cold/warm
-   rebuild wall time and run `composer test:e2e:topology-contract`.
+1. `E2E-IMAGE-WALLTIME-1` (todo 279/298) — measured and instrumented. The
+   Incus warm rebuild still misses the old 3-minute target, but this is no
+   longer an app-read blocker now that Docker is the default feature E2E lane.
 2. `E2E-PROVISION-VERIFY-1` (todo 290) — unlock the stale Solo lease, then run
    and fix the full `composer test:e2e:provision` lane.
-3. `E2E-AUTHOR-NODENEW-GATEWAY-CA-VERIFY-1` (todo 292), then gate todo 273.
-4. `E2E-AUTHOR-NODENEW-GATEWAY-API-VERIFY-1` (todo 293), then gate todo 291.
-5. `NODE-DEFAULT-VALIDATION-1` — contract-aligned `node:default` set/choose
-   validation through visible gateway development app nodes while preserving
-   the local preference storage contract. Do not revive command forwarding
-   unless product docs change first.
-6. `NODE-API-GRANT-1` (todo 289), then create the matching
-   `NODE-GRANT-FWD-1` command-forwarding todo after the API lands.
-7. Continue the remaining Node family command gaps, including `node:revoke`,
+3. Gate todos 273/291 — first-gateway CA/API provisioning E2E. Authoring todos
+   292/293 are complete; only the real run remains.
+4. `NODE-GRANT-FWD-1` — command forwarding now that `NODE-API-GRANT-1` is on
+   `main`.
+5. Continue the remaining Node family command gaps, including `node:revoke`,
    `node:remove`, interactive/default-resolution gaps, and their paired E2E
    gates where the Pairing Rule applies.
 
@@ -536,7 +533,9 @@ commands. Order matters because each adds a new write API endpoint:
 4. `NODE-DEFAULT-FWD-1` is invalidated/deferred: the current command contract
    keeps `node:default` as a control-node-local preference. Do not wire command
    forwarding unless the command docs are intentionally changed first.
-5. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
+5. `NODE-API-GRANT-1` is implemented: gateway-side `POST /api/nodes/grant` +
+   `GrantNodeRequest`. Next: `NODE-GRANT-FWD-1` command forwarding (paired E2E
+   only).
 6. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
 7. `NODE-API-REMOVE-1` + `NODE-REMOVE-FWD-1` — `node:remove` (paired E2E only,
    coordinate with WireGuard peer teardown blocker).
@@ -619,7 +618,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - interactive input mode (prompting for name and field selection).
     - artifact re-enactment after intent update.
     - paired ephemeral E2E gate for the control-caller forwarding path.
-- [~] Port `node:default`.
+- [x] Port `node:default`.
   - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`
   - Current docs: `docs/commands/1_node/9_node-default`
   - Current tests:
@@ -631,13 +630,11 @@ exist. Those families wait for the node/gateway/app foundations.
   - Gateway API slice implemented: gateway-side show/set/clear endpoints and typed `DefaultNodeRequest`.
     This API exists on `main`, but command forwarding is not part of the active
     product contract.
-  - Contract gaps:
-    - Set/choose should validate against visible development app nodes through
-      the gateway instead of only the local registry.
-    - Interactive choose path requires real gateway node list
-      (`gateway_unavailable` is a stub bootstrap gap).
-    - No command-forwarding todo is currently valid for `node:default` without
-      a product-doc change.
+  - Gateway-visible validation implemented: configured control callers validate
+    `set` and discover interactive `choose` options through `ListNodesRequest`
+    while keeping default storage local.
+  - No command-forwarding todo is currently valid for `node:default` without a
+    product-doc change.
 - [~] Port `node:grant`.
   - Current implementation: `app/Console/Commands/NodeGrantCommand.php`
   - Current docs: `docs/commands/1_node/5_node-grant`
@@ -646,8 +643,10 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: gateway-local grant creation, idempotence, node-not-found validation, self-grant policy enforcement, caller role rejection, human and JSON renderer contracts, split contract tests.
+  - Gateway API prerequisite implemented: `POST /api/nodes/grant` plus typed
+    `GrantNodeRequest` for future control-caller forwarding.
   - Contract gaps:
-    - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
+    - control-caller gateway forwarding through the new `GrantNodeRequest`.
     - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
     - `NodeGrantOnControlNodeContractTest.php` blocked by gateway forwarding.
 - [~] Port `node:revoke`.
@@ -896,13 +895,15 @@ decision evidence and tracker status only.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
 - [~] Port node API controllers and typed client requests.
-  - Bootstrap slice implemented: `GET /api/nodes` and `GET /api/nodes/{node}` endpoints
-    with `NodeListController` and `NodeShowController`, `WireGuardIdentity`
+  - Bootstrap slice implemented: `GET /api/nodes`, `GET /api/nodes/{node}`,
+    and `POST /api/nodes/grant` endpoints with `NodeListController`,
+    `NodeShowController`, `NodeGrantController`, `WireGuardIdentity`
     middleware enforcement, the success/error gateway JSON envelope, and typed
-    request classes (`ListNodesRequest`, `ShowNodeRequest`) using the
-    `GatewayRequestSender` convention.
+    request classes (`ListNodesRequest`, `ShowNodeRequest`,
+    `GrantNodeRequest`) using the `GatewayRequestSender` convention.
   - Tests: `NodeListControllerTest`, `NodeShowControllerTest`,
-    `ListNodesRequestTest`, `ShowNodeRequestTest`.
+    `NodeGrantControllerTest`, `ListNodesRequestTest`, `ShowNodeRequestTest`,
+    `GrantNodeRequestTest`.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
 - [ ] Port process API controllers and typed client requests.
@@ -1001,8 +1002,12 @@ decision evidence and tracker status only.
   - [x] Wall-time check on Beast completed for
     `e2e:prepare-topology -- --force control-gateway-dev-prod`: first
     successful rebuild roughly 3m03s; timed warm rebuild `real 205.71s`.
-    Cold target passed; warm target missed by about 26s and is tracked in
-    Solo todo 298 (`E2E-TOPOLOGY-WARM-OPT-1`).
+    Cold target passed; warm target missed by about 26s. Follow-up
+    instrumentation landed via Solo todo 298 and measured `real 219.33s`, with
+    copy/start plus initial Incus agent readiness as the confirmed bottleneck.
+    Because Docker is now the default feature E2E lane, Incus warm-topology
+    optimization is treated as future performance work rather than a blocker
+    for app read-command porting.
   - [x] Re-run topology contracts on Beast against the new lane
     (`control-gateway-dev-prod` contract passed with 28 assertions).
   - [x] Rework `e2e-provision` tests that previously launched from
@@ -1016,12 +1021,13 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Finish Testing Infrastructure open gates:
-   `E2E-IMAGE-WALLTIME-1`, `E2E-PROVISION-VERIFY-1`, and the first-gateway
-   CA/API provisioning E2E authoring + run gates.
-2. Finish the Node family command gaps before apps: contract-aligned
-   `node:default` gateway validation, `node:grant` API/forwarding, then
-   `node:revoke` and `node:remove` parity.
+1. Finish Testing Infrastructure run gates: first-gateway CA/API provisioning
+   E2E (todos 273/291) and `E2E-PROVISION-VERIFY-1` (todo 290). The Incus
+   warm-topology target is measured/instrumented and product-deferred because
+   Docker is the default feature E2E lane for app reads.
+2. Finish the Node family command gaps before apps: `NODE-GRANT-FWD-1`, then
+   `node:revoke` and `node:remove` API/forwarding parity, plus remaining
+   `node:list`/`node:show` authorization/default-resolution gaps.
 3. Keep Docker feature E2E ready for later app read gates, but do not dispatch
    app work yet.
 4. Start the App workstream only after the previous two items are cleared:
