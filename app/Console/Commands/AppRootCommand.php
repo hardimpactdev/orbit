@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\EnactAppRuntime;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\UpdateAppRootRequest;
+use App\Http\Gateway\Responses\Apps\AppRootUpdateResponse;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('app:root
     {app? : App name or hostname}
@@ -42,11 +47,7 @@ class AppRootCommand extends Command
         }
 
         if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to update app roots.',
-                meta: [],
-            );
+            return $this->forwardUpdate($selector, $root);
         }
 
         $app = $this->resolveApp($selector);
@@ -76,6 +77,35 @@ class AppRootCommand extends Command
         $warnings = $enactAppRuntime->handle($app);
 
         return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+    }
+
+    private function forwardUpdate(string $selector, string $root): int
+    {
+        try {
+            /** @var AppRootUpdateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new UpdateAppRootRequest(app: $selector, root: $root))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to update app roots.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update app roots.',
+                meta: [],
+            );
+        }
+
+        $app = $dto->data['app'] ?? [];
+        $nodeName = is_array($app) && is_string($app['node'] ?? null) ? $app['node'] : '';
+
+        return $this->successPayload($dto->data, $dto->warnings, $nodeName, $dto->artifactsReenacted);
     }
 
     private function resolveApp(string $selector): ?App
@@ -187,24 +217,36 @@ class AppRootCommand extends Command
      */
     private function successCommand(App $app, bool $changed, array $warnings): int
     {
+        return $this->successPayload([
+            'app' => $this->appPayload($app),
+            'result' => [
+                'hostname' => parse_url($app->url(), PHP_URL_HOST) ?: $app->name,
+                'changed' => $changed,
+            ],
+        ], $warnings, (string) $app->node?->name, $changed);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $warnings
+     */
+    private function successPayload(array $data, array $warnings, string $nodeName, bool $artifactsReenacted): int
+    {
         if (! $this->wantsJson()) {
-            $this->line("Document root for '{$app->name}' updated to '{$app->document_root}'.");
+            /** @var array{name?: string, root?: string} $app */
+            $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+
+            $this->line("Document root for '".(string) ($app['name'] ?? '')."' updated to '".(string) ($app['root'] ?? '')."'.");
 
             return self::SUCCESS;
         }
 
         $this->line(json_encode([
             'success' => [
-                'data' => [
-                    'app' => $this->appPayload($app),
-                    'result' => [
-                        'hostname' => parse_url($app->url(), PHP_URL_HOST) ?: $app->name,
-                        'changed' => $changed,
-                    ],
-                ],
+                'data' => $data,
                 'meta' => [
-                    'node' => $app->node?->name,
-                    'artifacts_reenacted' => $changed,
+                    'node' => $nodeName,
+                    'artifacts_reenacted' => $artifactsReenacted,
                     'warnings' => $warnings,
                 ],
             ],

@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Apps\UpdateAppRootRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('updates app root intent and re-enacts runtime artifacts from a gateway caller', function (): void {
     Node::factory()->create([
@@ -163,6 +171,64 @@ it('denies app callers before side effects', function (): void {
     expect($exitCode)->toBe(1)
         ->and($remoteShell->scripts)->toBe([])
         ->and($payload['error']['code'])->toBe('caller_role_not_allowed');
+});
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $remoteShell = new AppRootSequencedRemoteShell([]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        UpdateAppRootRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'web',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'result' => [
+                        'hostname' => 'docs.test',
+                        'changed' => true,
+                    ],
+                ],
+                'meta' => [
+                    'node' => 'app-1',
+                    'artifacts_reenacted' => true,
+                    'warnings' => [],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('app:root', [
+        'app' => 'docs',
+        'root' => 'web',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['app']['root'])->toBe('web')
+        ->and(App::query()->count())->toBe(0)
+        ->and($remoteShell->scripts)->toBe([]);
 });
 
 final class AppRootSequencedRemoteShell implements RemoteShell
