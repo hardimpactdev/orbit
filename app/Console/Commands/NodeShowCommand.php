@@ -9,6 +9,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeShowResponse;
 use App\Models\Node;
+use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -208,10 +209,7 @@ class NodeShowCommand extends Command
                 'wireguard' => $nodeData['wireguard_address']
                     ?? ($nodeData['addresses']['wireguard'] ?? ($nodeData['host'] ?? '')),
             ],
-            'agent_ide' => [
-                'adapter' => null,
-                'source' => 'default',
-            ],
+            'agent_ide' => $this->agentIdePayloadFromGatewayData($nodeData),
             'grants' => [
                 'consuming_nodes' => $nodeData['grants']['consuming_nodes'] ?? [],
                 'serving_nodes' => $nodeData['grants']['serving_nodes'] ?? [],
@@ -227,7 +225,7 @@ class NodeShowCommand extends Command
      *     environment: string|null,
      *     platform: string,
      *     addresses: array{wireguard: string},
-     *     agent_ide: array{adapter: null, source: string},
+     *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
      * }
      */
@@ -242,10 +240,7 @@ class NodeShowCommand extends Command
             'addresses' => [
                 'wireguard' => $node->wireguard_address ?? $node->host,
             ],
-            'agent_ide' => [
-                'adapter' => null,
-                'source' => 'default',
-            ],
+            'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
             'grants' => [
                 'consuming_nodes' => $node->consumingNodes()->pluck('name')->all(),
                 'serving_nodes' => $node->servingNodes()->pluck('name')->all(),
@@ -261,7 +256,7 @@ class NodeShowCommand extends Command
      *     environment: string|null,
      *     platform: string,
      *     addresses: array{wireguard: string},
-     *     agent_ide: array{adapter: null, source: string},
+     *     agent_ide: array{adapter: string|null, source: string},
      *     grants: array{consuming_nodes: array<int, string>, serving_nodes: array<int, string>}
      * }  $node
      */
@@ -285,6 +280,27 @@ class NodeShowCommand extends Command
         $servingStr = $serving !== [] ? implode(', ', $serving) : '(none)';
         $this->line("  Consuming: {$consumingStr}");
         $this->line("  Serving: {$servingStr}");
+    }
+
+    /**
+     * @param  array<string, mixed>  $nodeData
+     * @return array{adapter: string|null, source: string}
+     */
+    private function agentIdePayloadFromGatewayData(array $nodeData): array
+    {
+        $agentIde = $nodeData['agent_ide'] ?? null;
+
+        if (is_array($agentIde)) {
+            return [
+                'adapter' => is_string($agentIde['adapter'] ?? null) ? $agentIde['adapter'] : null,
+                'source' => is_string($agentIde['source'] ?? null) ? $agentIde['source'] : 'default',
+            ];
+        }
+
+        return [
+            'adapter' => null,
+            'source' => 'default',
+        ];
     }
 
     /**

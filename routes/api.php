@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\MeController;
+use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeDefaultController;
 use App\Http\Controllers\Api\NodeGrantController;
 use App\Http\Controllers\Api\NodeListController;
@@ -37,6 +38,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/nodes/default', [NodeDefaultController::class, 'clear']);
         Route::post('/nodes/grant', NodeGrantController::class);
         Route::post('/nodes/revoke', NodeRevokeController::class);
+        Route::post('/nodes/{name}/agent-ide', NodeAgentIdeController::class);
         Route::delete('/nodes/{name}', NodeRemoveController::class);
         Route::put('/nodes/{name}', NodeUpdateController::class);
         Route::get('/nodes/{name}', NodeShowController::class);

@@ -30,6 +30,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'node-update',
         'node-revoke',
         'node-remove',
+        'node-agent-ide',
     ];
 
     /**

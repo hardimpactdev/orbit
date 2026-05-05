@@ -164,9 +164,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/10_node-agent-ide/technical/1_node-agent-ide.md' => <<<'MD'
+# Technical Contract: `orbit node:agent-ide [name] [agent_ide]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(7);
+    expect($findings)->toHaveCount(8);
 });

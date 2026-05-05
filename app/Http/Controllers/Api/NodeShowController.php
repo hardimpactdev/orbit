@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -46,10 +47,7 @@ final class NodeShowController implements Loggable
                         'addresses' => [
                             'wireguard' => $node->wireguard_address ?? $node->host,
                         ],
-                        'agent_ide' => [
-                            'adapter' => null,
-                            'source' => 'default',
-                        ],
+                        'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
                         'grants' => [
                             'consuming_nodes' => $node->consumingNodes()->pluck('name')->all(),
                             'serving_nodes' => $node->servingNodes()->pluck('name')->all(),

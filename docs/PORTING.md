@@ -746,7 +746,24 @@ exist. Those families wait for the node/gateway/app foundations.
     - WireGuard peer teardown (peer model/migration exist but teardown logic not yet implemented; `wireguard_peer_removed: false` in JSON response).
     - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
-- [ ] Port `node:agent-ide`.
+- [~] Port `node:agent-ide`.
+  - Current implementation: `app/Console/Commands/NodeAgentIdeCommand.php`
+  - Current docs: `docs/commands/1_node/10_node-agent-ide`
+  - Current tests:
+    - `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` (command contract)
+    - `tests/Feature/Http/Api/NodeAgentIdeControllerTest.php` (gateway API and activity)
+    - `tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php` (node-show agent IDE metadata)
+    - `tests/Feature/Http/Api/NodeShowControllerTest.php` (gateway API show metadata)
+  - Bootstrap slice implemented: gateway-local set/clear/converged writes,
+    configured control forwarding through `GatewayConnector` and typed
+    `SetNodeAgentIdeRequest`, gateway API endpoint, unsupported-adapter and
+    node-not-found errors, app-caller denial, node-show metadata, and activity
+    logging.
+  - Contract gaps:
+    - interactive input prompting.
+    - extension-registered adapter registry beyond the core adapters
+      (`opencode`, `polyscope`) and reserved `none` token.
+    - paired E2E feature gate for the control-caller forwarding path.
 - [~] Port `node:new`.
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
     fresh gateway host.
@@ -949,7 +966,7 @@ sweep, so the section reflects the same per-command product decisions
 that produced the controller's Loggable wiring.
 
 - [x] `17_activity` (`activity:list`, `activity:show` — allowlisted).
-- [ ] `1_node` (`node:new`, `node:list`, `node:show`, `node:update`,
+- [x] `1_node` (`node:new`, `node:list`, `node:show`, `node:update`,
   `node:default`, `node:grant`, `node:revoke`, `node:remove`,
   `node:agent-ide`).
 - [ ] `2_gateway`.
@@ -970,7 +987,7 @@ that produced the controller's Loggable wiring.
 
 ### Implementation Slice
 
-- [~] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family
+- [x] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family
   while migrating node commands to Saloon. `node:grant`, `node:revoke`,
   `node:remove`, `node:update`, and `node:default` are the first
   candidates. Pair each command with its tech-contract Activity Logging
@@ -999,8 +1016,10 @@ that produced the controller's Loggable wiring.
     Loggable contract, and is enforced by `ActivityLoggingContractRule`.
     First-gateway local CLI emission remains separate because that path can run
     before a gateway activity sink exists.
-  - [ ] Backfill and wire remaining node write/destructive command activity
-    contracts as their Saloon/API slices are touched.
+  - [x] `node:agent-ide` now declares its `## Activity Logging` tech contract,
+    emits `effect=write` metadata through the gateway API
+    `POST /api/nodes/{name}/agent-ide` Loggable contract, and is enforced by
+    `ActivityLoggingContractRule`.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the
@@ -1330,9 +1349,9 @@ for the Saloon-based gateway transport pattern.
 ## Next Priorities
 
 1. **Continue activity metadata rollout.**
-   - `ACTIVITY-NODE-FAMILY-1` is the next implementation step. Pair each
-     node command with its `## Activity Logging` tech-contract backfill and
-     add the command to `ActivityLoggingContractRule::ENFORCED_COMMANDS`.
+   - `ACTIVITY-NODE-FAMILY-1` is resolved for the converted node-family
+     commands. Keep the remaining activity command read surface moving next,
+     especially `activity:show` command coverage.
    - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
      exceptions go in the command's tech-contract section.
    - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`

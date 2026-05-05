@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $gateway_endpoint
  * @property string|null $public_ipv4
  * @property string|null $public_ipv6
+ * @property array<string, mixed>|null $agent_ide_config
  * @property string $ssh_user
  * @property string|null $user
  * @property string $orbit_path
@@ -41,6 +42,7 @@ class Node extends Model
         'gateway_endpoint',
         'public_ipv4',
         'public_ipv6',
+        'agent_ide_config',
         'ssh_user',
         'user',
         'orbit_path',
@@ -53,6 +55,7 @@ class Node extends Model
     {
         return [
             'is_local' => 'boolean',
+            'agent_ide_config' => 'array',
         ];
     }
 

@@ -28,6 +28,7 @@ function apiShowNodeRow(array $overrides = []): array
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
+        'agent_ide_config' => null,
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -216,6 +217,20 @@ describe('NodeShowController', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('returns explicit node agent IDE defaults', function (): void {
+        DB::table('nodes')->insert([
+            apiShowNodeRow([
+                'agent_ide_config' => json_encode(['adapter' => 'polyscope'], JSON_THROW_ON_ERROR),
+            ]),
+        ]);
+
+        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.node.agent_ide.adapter', 'polyscope')
+            ->assertJsonPath('success.data.node.agent_ide.source', 'node');
     });
 
     it('returns real grants data', function (): void {

@@ -154,6 +154,19 @@ path in `app:agent-ide`.
 No-op sets (already matching) are successful with `action: "converged"`, not
 failure.
 
+## Activity Logging
+
+Emitted through the cross-cutting Loggable contract. See
+[`activity-concepts.md`](../../../17_activity/activity-concepts.md).
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /nodes/{name}/agent-ide` |
+| Effect | `write` |
+| Subject | The target `Node` model when the node exists; `null` for pre-target failures. |
+| Properties | `target_node`, `agent_ide`, and `action`. `agent_ide` is the resulting adapter, or `null` when cleared with `none`. |
+| Description | `Node <name> agent IDE set to <adapter>`, `Node <name> agent IDE cleared`, or `Node <name> agent IDE already set to <adapter>`. |
+
 ## Doctor Relationship
 
 - `doctor --family=node` verifies node-owned agent IDE default configuration

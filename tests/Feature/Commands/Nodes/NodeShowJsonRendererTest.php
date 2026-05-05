@@ -30,6 +30,7 @@ function nodeShowJsonRow(array $overrides = []): array
         'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
+        'agent_ide_config' => null,
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -194,6 +195,21 @@ describe('node:show JSON renderer contract', function (): void {
             'adapter' => null,
             'source' => 'default',
         ]);
+    });
+
+    it('returns explicit node agent_ide defaults from gateway registry', function (): void {
+        DB::table('nodes')->insert(nodeShowJsonRow([
+            'agent_ide_config' => json_encode(['adapter' => 'opencode'], JSON_THROW_ON_ERROR),
+        ]));
+
+        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['agent_ide'])->toBe([
+                'adapter' => 'opencode',
+                'source' => 'node',
+            ]);
     });
 
     it('returns grants with empty consuming_nodes and serving_nodes arrays', function (): void {
