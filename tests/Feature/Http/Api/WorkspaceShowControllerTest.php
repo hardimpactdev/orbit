@@ -1,0 +1,139 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Enums\ProcessCrashNotification;
+use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Process;
+use App\Models\ProxyRoute;
+use App\Models\Workspace;
+use App\Models\WorkspaceRun;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const WORKSPACE_SHOW_CALLER_WG_IP = '10.6.0.96';
+
+function createWorkspaceShowCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => WORKSPACE_SHOW_CALLER_WG_IP,
+        'wireguard_address' => WORKSPACE_SHOW_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantWorkspaceShowAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('WorkspaceShowController', function (): void {
+    it('returns registry details for a visible workspace', function (): void {
+        $caller = createWorkspaceShowCallerNode();
+        $node = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'host' => '1.2.3.4',
+            'tld' => 'test',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+        grantWorkspaceShowAccess($caller, $node);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => null,
+            'php_version' => '8.5',
+        ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'path' => '/home/orbit/apps/docs/workspaces/feature-docs',
+        ]);
+
+        Process::query()->create([
+            'app_id' => $app->id,
+            'name' => 'vite',
+            'command' => 'npm run dev',
+            'restart_policy' => ProcessRestartPolicy::Always,
+            'crash_notification' => ProcessCrashNotification::None,
+            'sort_order' => 1,
+        ]);
+        ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'feature-docs.docs.test',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+        WorkspaceRun::factory()->create([
+            'workspace_id' => $workspace->id,
+            'status' => 'completed',
+            'completed_at' => now()->setMicrosecond(0),
+        ]);
+
+        $response = $this->call('GET', '/api/workspaces/feature-docs?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.meta.registry_only', true)
+            ->assertJsonPath('success.data.workspace.name', 'feature-docs')
+            ->assertJsonPath('success.data.workspace.app', 'docs')
+            ->assertJsonPath('success.data.workspace.node.name', 'app-1')
+            ->assertJsonPath('success.data.workspace.node.host', '1.2.3.4')
+            ->assertJsonPath('success.data.workspace.agent_ide.adapter', 'opencode')
+            ->assertJsonPath('success.data.workspace.agent_ide.inherited_from', 'node')
+            ->assertJsonPath('success.data.workspace.runtime_expectations.php_version', '8.5')
+            ->assertJsonPath('success.data.workspace.runtime_expectations.php_version_inherited_from', 'app')
+            ->assertJsonPath('success.data.workspace.inherited_processes.0.name', 'vite')
+            ->assertJsonPath('success.data.workspace.route.host', 'feature-docs.docs.test')
+            ->assertJsonPath('success.data.workspace.latest_setup_run.status', 'completed');
+    });
+
+    it('returns ambiguous name errors when app is omitted', function (): void {
+        createWorkspaceShowCallerNode(['role' => 'gateway']);
+        $firstNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $secondNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+        $docs = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
+        $api = App::factory()->create(['name' => 'api', 'node_id' => $secondNode->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
+
+        $response = $this->call('GET', '/api/workspaces/feature-docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'workspace.ambiguous_name')
+            ->assertJsonPath('error.meta.name', 'feature-docs')
+            ->assertJsonPath('error.meta.apps', ['docs', 'api']);
+    });
+
+    it('returns not found for hidden workspaces', function (): void {
+        createWorkspaceShowCallerNode();
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
+
+        $response = $this->call('GET', '/api/workspaces/hidden', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
+    it('rejects unauthenticated requests', function (): void {
+        $response = $this->getJson('/api/workspaces/feature-docs');
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
+    });
+});
