@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 require_once __DIR__.'/E2E/Support/Pest.php';
@@ -19,6 +20,9 @@ require_once __DIR__.'/E2E/Support/Pest.php';
 
 pest()->extend(TestCase::class)
     ->in('Feature');
+
+pest()->extend(TestCase::class, RefreshDatabase::class)
+    ->in('Unit/Services/WireGuard');
 
 pest()->extend(TestCase::class)
     ->beforeEach(function (): void {

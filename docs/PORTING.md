@@ -683,7 +683,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - control-caller gateway forwarding (requires typed gateway request sender / GatewayClient).
     - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
     - `NodeRemoveOnControlNodeContractTest.php` blocked by gateway forwarding.
-    - WireGuard peer teardown (no WireGuard peer management infrastructure in clean repo yet; `wireguard_peer_removed: false` in JSON response).
+    - WireGuard peer teardown (peer model/migration exist but teardown logic not yet implemented; `wireguard_peer_removed: false` in JSON response).
     - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [ ] Port `node:agent-ide`.
@@ -710,7 +710,9 @@ exist. Those families wait for the node/gateway/app foundations.
   - [ ] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
   - [~] SSH bootstrap
-  - [ ] WireGuard enrollment
+  - [~] WireGuard enrollment
+    - [x] `WireGuardPeer` model, migration, and `WireGuardKeyGenerator` service (todo 271).
+    - [ ] Node enrollment hook and gateway interface configuration.
   - [~] gateway registry writes
   - [~] local node role and identity persistence
   - [ ] Orbit API vhost provisioning
