@@ -1228,6 +1228,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Reshape workspace docs to reference inherited runtime units rendered
   as Supervisor programs by the runtime backend. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
+- [x] Create workspace implementation abstraction seed.
 - [ ] Port workspace schema and models.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
