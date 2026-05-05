@@ -113,29 +113,31 @@ it('keeps reusable e2e support code free of Pest-only expectations', function ()
 it('exposes the hcloud e2e resource reaper', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['e2e:reap-hcloud'])->toBe('@php artisan e2e:reap-hcloud');
+    expect($composer['scripts']['e2e:reap-hcloud'])->toBe('@php artisan e2e:reap-hcloud @additional_args');
 });
 
 it('exposes e2e preflight, preparation, and cleanup helpers', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['e2e:preflight'])->toBe('@php artisan e2e:preflight')
+    expect($composer['scripts']['e2e:preflight'])->toBe('@php artisan e2e:preflight @additional_args')
         ->and($composer['scripts']['e2e:prepare-docker-runtime'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            '@php artisan e2e:prepare-docker-runtime',
+            '@php artisan e2e:prepare-docker-runtime @additional_args',
         ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            '@php artisan e2e:prepare-docker-topology',
+            '@php artisan e2e:prepare-docker-topology @additional_args',
         ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            '@php artisan e2e:prepare-docker-hosts',
+            '@php artisan e2e:prepare-docker-hosts @additional_args',
         ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            '@php artisan e2e:prepare-base-image',
+            '@php artisan e2e:prepare-base-image @additional_args',
         ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
-            '@php artisan e2e:prepare-topology',
-        ])->and($composer['scripts'])->not->toHaveKey('e2e:prepare-hcloud-images');
+            '@php artisan e2e:prepare-topology @additional_args',
+        ])->and($composer['scripts']['e2e:reap-incus'])->toBe('@php artisan e2e:reap-incus @additional_args')
+        ->and($composer['scripts']['e2e:reap-docker'])->toBe('@php artisan e2e:reap-docker @additional_args')
+        ->and($composer['scripts'])->not->toHaveKey('e2e:prepare-hcloud-images');
 });
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
