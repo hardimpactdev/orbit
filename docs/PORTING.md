@@ -1194,7 +1194,15 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Gateway API endpoint and configured control-caller forwarding.
   - [x] Interactive input mode and human renderer progress tree.
   - [x] E2E root refresh gate.
-- [ ] Port `app:remove`.
+- [~] Port `app:remove`.
+  - [x] Gateway-local JSON/non-interactive intent removal slice: requires
+    destructive consent, resolves apps from gateway state, deletes app intent,
+    removes currently implemented app-owned proxy/process intent, attempts
+    node artifact cleanup through the gateway-owned RemoteShell edge, and
+    reports retryable cleanup drift as success warnings after intent removal.
+  - [ ] Gateway API endpoint and configured control-caller forwarding.
+  - [ ] Interactive input mode and human renderer progress tree.
+  - [ ] E2E removal cleanup gate.
 - [ ] Port `app:prune`.
 - [ ] Port `app:agent-ide`.
 - [ ] Decide whether legacy app helper commands such as `app:link`,
