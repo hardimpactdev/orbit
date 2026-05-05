@@ -169,6 +169,21 @@ If `--domain` is supplied:
 - **Convergence:** `doctor --family=app --fix` repairs missing or divergent
   FPM/runtime configuration.
 
+## Activity Logging
+
+Emitted through the gateway API Loggable contract when the forwarded control
+path lands. The initial gateway-local implementation slice is tracked in
+`docs/PORTING.md`; API activity emission remains part of the control-forwarding
+slice.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /apps` |
+| Effect | `write` |
+| Subject | Created `App` when registry intent is written; `none` for validation, authorization, source-creation, or transport failures before an app row exists. |
+| Properties | `name` (string or null), `node` (string or null), `environment` (`development`, `production`, or null), `domain` (string or null), `repository` (boolean), `source_created` (boolean). No secrets, raw repository credentials, SSH command text, or node-side command output. |
+| Description | `derived`, for example `"Created app docs on app-1."` |
+
 ## Test Mapping
 
 | Path | Coverage |

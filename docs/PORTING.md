@@ -583,8 +583,8 @@ commands. Order matters because each adds a new write API endpoint:
    `UpdateNodeRequest`.
 2. `NODE-UPDATE-FWD-1` is implemented: configured control callers forward
    `node:update` through `UpdateNodeRequest`, preserve structured gateway API
-   errors, and avoid local target-node writes. The paired E2E gate remains
-   deferred.
+   errors, avoid local target-node writes, and have paired Docker feature E2E
+   coverage.
 3. `NODE-API-DEFAULT-1` is implemented: gateway-side `GET|PUT|DELETE
    /api/nodes/default` + `DefaultNodeRequest`.
 4. `NODE-DEFAULT-FWD-1` is invalidated/deferred: the current command contract
@@ -593,7 +593,8 @@ commands. Order matters because each adds a new write API endpoint:
 5. `NODE-API-GRANT-1` is implemented: gateway-side `POST /api/nodes/grant` +
    `GrantNodeRequest`.
 6. `NODE-GRANT-FWD-1` is implemented: configured control callers forward
-   `node:grant` through `GrantNodeRequest`; paired E2E remains open.
+   `node:grant` through `GrantNodeRequest`; paired Docker feature E2E coverage
+   verifies the forwarded grant and read-back path.
 7. `NODE-API-REVOKE-1` and `NODE-REVOKE-FWD-1` are implemented: configured
    control callers forward through `RevokeNodeRequest`, preserve structured
    gateway API errors, and do not require local target-node rows.
@@ -1125,7 +1126,17 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
 - [x] Port `app:show`.
 - [x] Port minimal `RemoteShell` foundation needed by gateway-owned app writes.
-- [ ] Port `app:new`.
+- [~] Port `app:new`.
+  - [x] Gateway-local JSON/non-interactive slice: validates static input,
+    creates source on the target app node through `RemoteShell`, writes gateway
+    app intent only after source creation succeeds, returns the documented JSON
+    success/error envelope, and preserves failure-before-write behavior for
+    source creation errors.
+  - [ ] Gateway API endpoint and configured control-caller forwarding.
+  - [ ] Interactive input mode and full progress-tree human renderer.
+  - [ ] Registration pipeline artifact convergence (PHP-FPM, proxy route,
+    process artifacts) and related warning handoffs.
+  - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
@@ -1420,10 +1431,10 @@ for the Saloon-based gateway transport pattern.
    - `APP-REMOTE-SHELL-1` gives app writes a gateway-owned SSH edge for
      node-side artifact enactment without giving control callers direct SSH
      behavior.
-   - Do not start `app:new`, `app:register`, `app:root`, `app:remove`,
-     `app:prune`, or `app:agent-ide` until the required node
-     write-forwarding/provisioning safety gates are either complete or
-     explicitly deferred with rationale.
+   - `APP-NEW-GATEWAY-LOCAL-1` is in progress as the first write slice. Keep
+     `app:register`, `app:root`, `app:remove`, `app:prune`, and
+     `app:agent-ide` blocked until `app:new` has its gateway API/control
+     forwarding and real source-creation E2E gates.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.
