@@ -46,11 +46,19 @@ PHP;
         E2ECommand::exec($gateway, 'chmod 600 /root/.ssh/id_ed25519', 'Could not install root SSH key on gateway');
     }
 
-    public static function start(E2EInstance $gateway, string $label): void
+    public static function restart(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit'): void
     {
+        self::stop($gateway);
+        self::start($gateway, $label, $orbitPath);
+    }
+
+    public static function start(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit'): void
+    {
+        $orbitPathArgument = escapeshellarg($orbitPath);
+
         E2ECommand::orbit(
             $gateway,
-            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf('10.6.0.2'); echo 'issued';"),
+            "cd {$orbitPathArgument} && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf('10.6.0.2'); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -58,13 +66,13 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript()."\nPHP",
+            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath)."\nPHP",
             'Could not write gateway TLS test server',
         );
 
         E2ECommand::exec(
             $gateway,
-            'cd /home/orbit/orbit && nohup php artisan serve --host=10.6.0.2 --port=80 > /tmp/orbit-gateway-http.log 2>&1 &',
+            "cd {$orbitPathArgument} && nohup php artisan serve --host=10.6.0.2 --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -72,6 +80,21 @@ PHP;
             $gateway,
             "nohup php {$scriptPath} > /tmp/orbit-gateway-tls.log 2>&1 &",
             'Could not start gateway TLS test server',
+        );
+    }
+
+    public static function stop(E2EInstance $gateway): void
+    {
+        E2ECommand::exec(
+            $gateway,
+            "pkill -f 'php artisan serve --host=10.6.0.2 --port=80' >/dev/null 2>&1 || true",
+            'Could not stop gateway HTTP API',
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            "pkill -f '/tmp/orbit-.*-tls.php' >/dev/null 2>&1 || true",
+            'Could not stop gateway TLS test server',
         );
     }
 
@@ -137,10 +160,9 @@ PHP;
         return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
     }
 
-    private static function tlsServerScript(): string
+    private static function tlsServerScript(string $orbitPath): string
     {
-        return <<<'PHP'
-<?php
+        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\n".<<<'PHP'
 
 function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
 {
@@ -167,10 +189,21 @@ function read_request_body($connection, array $headers): string
     return $body;
 }
 
+function run_orbit_command(string $command): array
+{
+    global $orbitPath;
+
+    $output = [];
+    $exitCode = 0;
+    exec('cd '.escapeshellarg($orbitPath).' && '.$command.' 2>&1', $output, $exitCode);
+
+    return [$exitCode, implode("\n", $output)];
+}
+
 function run_node_new(array $input): array
 {
     $parts = [
-        'cd /home/orbit/orbit && php artisan node:new',
+        'php artisan node:new',
         escapeshellarg((string) ($input['name'] ?? '')),
         '--role='.escapeshellarg((string) ($input['role'] ?? '')),
         '--host='.escapeshellarg((string) ($input['host'] ?? '')),
@@ -183,11 +216,12 @@ function run_node_new(array $input): array
         $parts[] = '--tld='.escapeshellarg((string) $input['tld']);
     }
 
-    $output = [];
-    $exitCode = 0;
-    exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
+    return run_orbit_command(implode(' ', $parts));
+}
 
-    return [$exitCode, implode("\n", $output)];
+function run_node_show(string $name): array
+{
+    return run_orbit_command('php artisan node:show '.escapeshellarg($name).' --json');
 }
 
 $identityPayload = json_encode([
@@ -217,8 +251,8 @@ $identityPayload = json_encode([
 
 $context = stream_context_create([
     'ssl' => [
-        'local_cert' => '/home/orbit/orbit/storage/app/orbit/certs/10.6.0.2.crt',
-        'local_pk' => '/home/orbit/orbit/storage/app/orbit/certs/10.6.0.2.key',
+        'local_cert' => $orbitPath.'/storage/app/orbit/certs/10.6.0.2.crt',
+        'local_pk' => $orbitPath.'/storage/app/orbit/certs/10.6.0.2.key',
         'allow_self_signed' => true,
         'verify_peer' => false,
     ],
@@ -264,7 +298,7 @@ while ($connection = @stream_socket_accept($server, -1)) {
             parse_str($queryString, $query);
         }
 
-        $parts = ['cd /home/orbit/orbit && php artisan node:list --json'];
+        $parts = ['php artisan node:list --json'];
 
         foreach (['role', 'environment'] as $option) {
             $value = $query[$option] ?? null;
@@ -274,10 +308,16 @@ while ($connection = @stream_socket_accept($server, -1)) {
             }
         }
 
-        $output = [];
-        $exitCode = 0;
-        exec(implode(' ', $parts).' 2>&1', $output, $exitCode);
-        respond($connection, $exitCode === 0 ? 200 : 422, implode("\n", $output));
+        [$exitCode, $output] = run_orbit_command(implode(' ', $parts));
+        respond($connection, $exitCode === 0 ? 200 : 422, $output);
+        fclose($connection);
+
+        continue;
+    }
+
+    if (preg_match('#^GET /api/nodes/([^ ?]+)#', $requestLine, $matches) === 1) {
+        [$exitCode, $output] = run_node_show(urldecode($matches[1]));
+        respond($connection, $exitCode === 0 ? 200 : 422, $output);
         fclose($connection);
 
         continue;

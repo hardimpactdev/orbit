@@ -514,24 +514,30 @@ VPS-adjacent behavior.
    calls the merged `NodesProbe` primitives through a node doctor summary
    builder and renders human/JSON summaries on both gateway-local and
    forwarded gateway API paths.
+5. `E2E-NODE-SHOW-GRANT-1` (todo 267) is implemented: the feature E2E
+   overlays the current control and gateway checkouts, seeds real gateway
+   `node_access` rows, asserts populated and empty `node:show` grant metadata,
+   and checks human `(none)` grant rendering. The full Incus feature-lane run is
+   intentionally deferred to the next E2E-testing pass.
 
 If the ready queue is below target, fill with independent read-only Pest,
 documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `E2E-NODE-SHOW-GRANT-1` (todo 267): paired feature E2E for the real
-   `node:show` grant metadata that is now merged locally.
-2. `E2E-PROVISION-REWORK-1` (todo 278): clear stale role-specific
+1. `E2E-PROVISION-REWORK-1` (todo 278): clear stale role-specific
    `E2EImage::Control`/`Gateway` provisioning tests before relying on the
    `e2e-provision` lane for the next first-gateway slices.
-3. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
+2. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
    foundation is merged.
-4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
+3. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
    typed request, after the grant E2E gate lands.
-5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
+4. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
-   Do not start this until the grant E2E slice is on `main`.
+   Do not start this until the grant E2E implementation is on `main`.
+5. Deferred E2E verification pass: run `NodeShowGrant` against the
+   `control-gateway-dev-prod` feature lane before treating the grant E2E as
+   fully verified.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -1001,10 +1007,8 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Run the paired `E2E-NODE-SHOW-GRANT-1` feature gate for the merged
-   `node:show` grant metadata, then leave remaining `node:show` work scoped to
-   access-policy authorization, interactive prompting, and default app-node
-   resolution.
+1. When E2E work resumes, run the deferred `NodeShowGrant` feature lane against
+   `control-gateway-dev-prod` to verify the implemented `node:show` grant gate.
 2. Clear `E2E-PROVISION-REWORK-1` so the provisioning lane no longer depends
    on role-specific ready-image aliases refused by `IncusProvider::aliasFor`.
 3. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
