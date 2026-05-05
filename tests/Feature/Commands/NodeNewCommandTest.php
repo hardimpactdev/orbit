@@ -231,8 +231,17 @@ describe('node:new', function (): void {
                 'host' => '192.0.2.10',
                 'status' => 'complete',
             ])
-            ->and($payload['success']['data']['local_control_node']['name'])->toBe('mini')
-            ->and($payload['success']['data']['local_control_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
+            ->and($payload['success']['data']['local_control_node'])->toMatchArray([
+                'name' => 'mini',
+                'role' => 'control',
+                'environment' => null,
+                'tld' => null,
+                'platform' => nodeNewExpectedLocalPlatform(),
+                'addresses' => [
+                    'wireguard' => '10.6.0.3',
+                ],
+                'status' => 'active',
+            ])
             ->and($payload['success']['data']['local_onboarding'])->toBe([
                 'wireguard' => 'installed',
                 'gateway_trust' => 'trusted',
@@ -245,6 +254,9 @@ describe('node:new', function (): void {
                 'status' => 'trusted',
                 'ca_sha256' => hash('sha256', $mockCaCert),
             ])
+            ->and($payload['success']['data']['next_steps'])->toBe([])
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('ssh_user')
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('gateway:add')
             ->and($payload)->not->toHaveKey('error');
 
         $gateway = DB::table('nodes')->where('name', 'gateway-1')->first();
@@ -368,7 +380,11 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['result']['action'])->toBe('converged')
             ->and($payload['success']['data']['node']['platform'])->toBe('ubuntu_24-04')
             ->and($payload['success']['data']['local_control_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
-            ->and($payload['success']['data']['provisioning']['status'])->toBe('already_provisioned')
+            ->and($payload['success']['data']['provisioning'])->toBe([
+                'transport' => 'none',
+                'host' => '192.0.2.10',
+                'status' => 'already_provisioned',
+            ])
             ->and($payload['success']['data']['local_onboarding'])->toBe([
                 'wireguard' => 'already_installed',
                 'gateway_trust' => 'already_trusted',
@@ -377,6 +393,9 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['gateway_trust']['status'])->toBe('already_trusted')
             ->and($payload['success']['data']['gateway_trust']['ca_sha256'])->toBe(hash('sha256', $mockCaCert))
+            ->and($payload['success']['data']['next_steps'])->toBe([])
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('ssh_user')
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('gateway:add')
             ->and($this->fakeInstaller->trustCalls)->toHaveCount(1)
             ->and(file_get_contents($trustPath))->toBe($firstPem)
             ->and(DB::table('nodes')->count())->toBe(2)

@@ -239,6 +239,7 @@ class NodeNewCommand extends Command
 
         $payload = $this->firstGatewayPayload(
             action: 'converged',
+            provisioningTransport: 'none',
             provisioningStatus: 'already_provisioned',
             name: $name,
             host: $host,
@@ -665,6 +666,7 @@ class NodeNewCommand extends Command
 
         $payload = $this->firstGatewayPayload(
             action: 'created',
+            provisioningTransport: 'ssh',
             provisioningStatus: 'complete',
             name: $name,
             host: $host,
@@ -705,7 +707,7 @@ class NodeNewCommand extends Command
      * @return array{
      *     result: array{action: string},
      *     node: array<string, mixed>,
-     *     provisioning: array<string, string>,
+     *     provisioning: array{transport: string, host: string, status: string},
      *     local_control_node: array<string, mixed>,
      *     local_onboarding: array<string, string>,
      *     gateway_trust: array<string, mixed>,
@@ -714,6 +716,7 @@ class NodeNewCommand extends Command
      */
     private function firstGatewayPayload(
         string $action,
+        string $provisioningTransport,
         string $provisioningStatus,
         string $name,
         string $host,
@@ -742,7 +745,7 @@ class NodeNewCommand extends Command
                 'status' => 'active',
             ],
             'provisioning' => [
-                'transport' => 'ssh',
+                'transport' => $provisioningTransport,
                 'host' => $host,
                 'status' => $provisioningStatus,
             ],

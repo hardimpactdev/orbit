@@ -258,11 +258,10 @@ yet satisfy the full product contracts.
     source and `bin/install-orbit` over SSH, install PHP/Composer/Orbit on the
     gateway host, and persist local bootstrap registry rows for the gateway and
     initiating control node.
-  - Contract gaps are tracked in the node workstream; this is not yet complete
-    first-gateway onboarding because final JSON success-state cleanup is still
-    missing. WireGuard enrollment, gateway CA trust, gateway API reachability,
-    `/api/me` verification, and first-gateway platform detection are implemented
-    but their paired E2E gates remain deferred.
+  - Contract gaps are tracked in the node workstream. First-gateway WireGuard
+    enrollment, gateway CA trust, gateway API reachability, `/api/me`
+    verification, first-gateway platform detection, and documented JSON success
+    state are implemented; their paired E2E gates remain deferred.
 - [-] `node:register` — **DECIDED: Retire as public command; keep as internal bootstrap utility.**
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
@@ -585,8 +584,10 @@ work becomes the active lane:
 4. `NODENEW-PLATFORM-DETECT-1` (todo 274) is implemented: gateway and local
    control platform identifiers are detected and persisted during first-gateway
    bootstrap. The paired provisioning E2E gate remains deferred.
-5. `NODENEW-JSON-SUCCESS-1` — finalize the documented JSON success state only
-   after the WireGuard, API, CA, and platform slices are real.
+5. `NODENEW-JSON-SUCCESS-1` is implemented: first-gateway bootstrap and
+   compatible repeat/convergence JSON success payloads now reflect the
+   documented state, including no SSH transport claim for already-provisioned
+   convergence.
 
 #### Gateway Forwarding Chain (Unlocks After Read-Forwarding Chain)
 
@@ -755,7 +756,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [ ] Gateway-connected forwarding from configured control nodes.
   - [ ] Gateway-local app and control enrollment paths.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
-  - [ ] Full documented JSON success state after WireGuard/API work lands.
+  - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
   - [~] SSH bootstrap
   - [~] WireGuard enrollment
