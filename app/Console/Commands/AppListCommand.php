@@ -174,13 +174,13 @@ class AppListCommand extends Command
             return;
         }
 
-        $currentNode = null;
+        $currentNode = (string) ($apps[0]['node'] ?? 'without node');
         $rows = [];
 
         foreach ($apps as $app) {
             $node = (string) ($app['node'] ?? 'without node');
 
-            if ($currentNode !== null && $node !== $currentNode) {
+            if ($node !== $currentNode) {
                 $this->renderNodeTable($currentNode, $rows);
                 $this->newLine();
                 $rows = [];
@@ -195,9 +195,7 @@ class AppListCommand extends Command
             ];
         }
 
-        if ($currentNode !== null) {
-            $this->renderNodeTable($currentNode, $rows);
-        }
+        $this->renderNodeTable($currentNode, $rows);
     }
 
     /**

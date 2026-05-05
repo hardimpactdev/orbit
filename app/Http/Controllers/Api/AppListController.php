@@ -21,6 +21,7 @@ final readonly class AppListController implements Loggable
 
     public function __invoke(Request $request): JsonResponse
     {
+        /** @var mixed $caller */
         $caller = $request->user();
 
         if (! $caller instanceof Node) {

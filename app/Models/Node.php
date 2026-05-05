@@ -8,6 +8,24 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property string $role
+ * @property string|null $environment
+ * @property string|null $tld
+ * @property string|null $platform
+ * @property string $host
+ * @property string|null $wireguard_address
+ * @property string|null $gateway_endpoint
+ * @property string|null $public_ipv4
+ * @property string|null $public_ipv6
+ * @property string $ssh_user
+ * @property string|null $user
+ * @property string $orbit_path
+ * @property string $status
+ * @property bool $is_local
+ */
 class Node extends Model
 {
     use HasFactory;

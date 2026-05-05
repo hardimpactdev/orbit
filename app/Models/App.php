@@ -9,6 +9,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 
+/**
+ * @property string $name
+ * @property int $node_id
+ * @property string $environment
+ * @property string|null $domain
+ * @property string $path
+ * @property string $document_root
+ * @property string|null $repository
+ * @property string $php_version
+ * @property bool $adopted
+ * @property-read Node|null $node
+ */
 class App extends Model
 {
     use HasFactory;
@@ -33,6 +45,9 @@ class App extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<Node, $this>
+     */
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
