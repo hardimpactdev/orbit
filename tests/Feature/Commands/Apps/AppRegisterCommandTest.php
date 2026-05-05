@@ -274,6 +274,70 @@ it('forwards configured control callers through the typed gateway request', func
         ->and($remoteShell->scripts)->toBe([]);
 });
 
+it('renders the documented human progress tree and adopted success line', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:register docs --node=app-1 --path=/home/orbit/apps/docs')
+        ->expectsConfirmation('Adopt existing app path?', 'yes')
+        ->expectsOutputToContain('┌ Registering App')
+        ->expectsOutputToContain('○ Resolve app intent')
+        ->expectsOutputToContain('○ Register app record or adopt app path')
+        ->expectsOutputToContain('○ Apply and verify app runtime')
+        ->expectsOutputToContain('○ Apply and verify app routing')
+        ->expectsOutputToContain('○ Verify enactment')
+        ->expectsOutputToContain("App 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.")
+        ->expectsOutputToContain('URL: https://docs.test')
+        ->assertExitCode(0);
+});
+
+it('prompts for missing interactive input before adopting an app path', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRegisterSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:register')
+        ->expectsQuestion('App name', 'docs')
+        ->expectsChoice('Target app node', 'app-1', ['app-1'])
+        ->expectsQuestion('App path on node', '/home/orbit/apps/docs')
+        ->expectsConfirmation('Adopt existing app path?', 'yes')
+        ->expectsOutputToContain("App 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.")
+        ->assertExitCode(0);
+});
+
 final class AppRegisterSequencedRemoteShell implements RemoteShell
 {
     /**

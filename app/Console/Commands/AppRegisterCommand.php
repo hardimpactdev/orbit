@@ -78,8 +78,20 @@ class AppRegisterCommand extends Command
 
         $path = $input['path'] ?? $existingApp?->path;
 
+        if ((! is_string($path) || $path === '') && $this->isInteractiveInput()) {
+            $path = trim((string) $this->ask('App path on node'));
+        }
+
         if (! is_string($path) || $path === '') {
             return $this->failValidation('path', 'The --path option is required when registering an unmanaged app.');
+        }
+
+        if (! str_starts_with($path, '/')) {
+            return $this->failValidation('path', 'Path must be absolute.');
+        }
+
+        if (! $existingApp instanceof App && $this->isInteractiveInput() && ! $this->confirm('Adopt existing app path?', true)) {
+            return $this->failValidation('path', 'App path adoption was cancelled.');
         }
 
         $pathProbe = app(RemoteShell::class)->run($node, sprintf('test -d %s', escapeshellarg($path)));
@@ -214,6 +226,9 @@ class AppRegisterCommand extends Command
     private function resolveInput(): array|int
     {
         $name = $this->stringArgument('name');
+        if ($name === null && $this->isInteractiveInput()) {
+            $name = trim((string) $this->ask('App name'));
+        }
 
         if ($name === null) {
             return $this->failValidation('name', 'App name is required.');
@@ -270,14 +285,19 @@ class AppRegisterCommand extends Command
             $nodeNames = Node::query()
                 ->where('role', 'app')
                 ->where('status', 'active')
+                ->orderBy('name')
                 ->pluck('name')
                 ->all();
 
-            if (count($nodeNames) !== 1) {
+            if ($this->isInteractiveInput() && $nodeNames !== []) {
+                $nodeName = (string) $this->choice('Target app node', $nodeNames);
+            }
+
+            if ($nodeName === null && count($nodeNames) !== 1) {
                 return $this->failValidation('node', 'The --node option is required when the target app node cannot be inferred.');
             }
 
-            $nodeName = (string) $nodeNames[0];
+            $nodeName ??= (string) $nodeNames[0];
         }
 
         $node = Node::query()->where('name', $nodeName)->first();
@@ -382,6 +402,11 @@ class AppRegisterCommand extends Command
         return $this->option('json') === true;
     }
 
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -409,14 +434,29 @@ class AppRegisterCommand extends Command
         if (! $this->wantsJson()) {
             /** @var array{name?: string, url?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+            $action = (string) ($data['result']['action'] ?? '');
 
             $this->line('┌ Registering App');
-            $this->line('○ Resolve app path');
-            $this->line('○ Apply and verify app registration');
-            $this->line('○ Apply PHP-FPM configuration');
-            $this->line('○ Apply proxy routes');
+            $this->line('○ Resolve app intent');
+            $this->line('○ Register app record or adopt app path');
+            $this->line('○ Apply and verify app runtime');
+            $this->line('○ Apply and verify app routing');
+            $this->line('○ Verify enactment');
             $this->line("└ App '".(string) ($app['name'] ?? '')."' registered");
+            $this->line($this->successLine($action, $app));
             $this->line('URL: '.(string) ($app['url'] ?? ''));
+
+            if ($warnings !== []) {
+                $this->line('Warnings:');
+
+                foreach ($warnings as $warning) {
+                    $this->line('- '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+
+                    if (isset($warning['next_command']) && is_string($warning['next_command'])) {
+                        $this->line('  Retry with: orbit '.$warning['next_command']);
+                    }
+                }
+            }
 
             return self::SUCCESS;
         }
@@ -432,6 +472,22 @@ class AppRegisterCommand extends Command
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $app
+     */
+    private function successLine(string $action, array $app): string
+    {
+        $name = (string) ($app['name'] ?? '');
+        $node = (string) ($app['node'] ?? '');
+        $path = (string) ($app['path'] ?? '');
+
+        return match ($action) {
+            'adopted' => "App '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'converged' => "App '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            default => "App '{$name}' successfully registered on node '{$node}'.",
+        };
     }
 
     /**

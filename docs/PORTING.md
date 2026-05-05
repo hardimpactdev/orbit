@@ -1180,7 +1180,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     configured control callers now use a typed gateway request, the gateway API
     authorizes target app-node access, and gateway-local registration remains the
     only SSH edge to app nodes.
-  - [ ] Interactive input mode and human renderer progress tree.
+  - [x] Interactive input mode and human renderer progress tree.
   - [ ] Production activation retry warnings and E2E registration/adoption gate.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
