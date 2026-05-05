@@ -74,7 +74,7 @@ Run `vendor/bin/pint --dirty --format agent` when PHP changes.
 
 ### E2E Lane
 
-- lane=<e2e-provisioning|e2e-feature|none>
+- lane=<e2e-provision|e2e-feature|none>
 - Commands: <exact commands or accepted deferral>
 - Safety: <ephemeral requirement or no-runtime reason>
 

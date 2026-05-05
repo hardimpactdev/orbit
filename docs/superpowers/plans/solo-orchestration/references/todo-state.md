@@ -41,7 +41,7 @@ Use exact labels in todo comments:
 - `CHANGES_REQUESTED`
 - `NEEDS_DIRECTION`
 - `RUBBER_DUCK_PROPOSAL agent=<name> verdict=PATH|NEEDS_USER_DIRECTION`
-- `E2E_DISPATCHED process=<id> lane=<e2e-provisioning|e2e-feature|none>`
+- `E2E_DISPATCHED process=<id> lane=<e2e-provision|e2e-feature|none>`
 - `E2E_DONE status=PASSED|FAILED|SKIPPED lane=<name>`
 - `ORCHESTRATOR_CLOSED`
 - `PROCESS_CLOSED process=<id> reason=<role>`
@@ -97,11 +97,15 @@ Use exact labels in todo comments:
   `review-ready`. Orchestrator dispatches E2E.
 - `E2E_DONE status=PASSED` after `REVIEW_APPROVED`: keep `verified`.
   Reconciler picks up.
-- `E2E_DONE status=PASSED|SKIPPED` on an `e2e-gate` todo -> add `verified`.
+- `E2E_DONE status=PASSED|SKIPPED` on an `e2e-gate` todo -> remove
+  `in-progress`, add `verified`.
 - `E2E_DONE status=FAILED` on an implementation todo: remove `verified`, add
   `in-progress`. E2E `send_input`s the long-lived implementer with the
   failure comment id.
-- `E2E_DONE status=FAILED` on an `e2e-gate` todo: route by scope.
+- `E2E_DONE status=FAILED` on an `e2e-gate` todo: remove `in-progress`, then
+  add `e2e-failed` when the failure is actionable within the gate scope, or
+  `needs-direction` when ownership, prerequisites, or infrastructure are
+  unclear.
 - `E2E_DONE status=SKIPPED reason=merge-conflict`: keep `verified`. E2E
   already `send_input`'d the long-lived implementer to rebase. Next cycle
   reruns E2E.

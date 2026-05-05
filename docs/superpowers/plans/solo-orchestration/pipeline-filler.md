@@ -44,7 +44,7 @@ The orchestrator waits for your terminal label before dispatching implementers.
    candidates from `docs/PORTING.md` to reach the target. Skip entries already
    present as held drafts (record the skip as `gap_reason`). Create each as
    `draft` using `worker-todo-template.md`. Command ports need a paired E2E
-   gate todo with `lane=e2e-provisioning`, `lane=e2e-feature`, or `lane=none`.
+   gate todo with `lane=e2e-provision`, `lane=e2e-feature`, or `lane=none`.
    Family-review candidates also use `family-review-todo-template.md`.
 
 7. **Spawn scouts.** For each newly created or step-5-invalidated draft, spawn

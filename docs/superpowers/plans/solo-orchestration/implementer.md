@@ -60,7 +60,7 @@ reconciler closes you when your branch is merged to `main`.
    ```
 
 9. Run or record the assigned E2E lane locally:
-   - `e2e-provisioning`: disposable VM provisioning/destructive flow;
+   - `e2e-provision`: disposable VM provisioning/destructive flow;
    - `e2e-feature`: prepared ephemeral topology feature flow with this
      worktree's checkout overlaid;
    - `none`: cite the todo's reason.
@@ -80,7 +80,7 @@ orchestrator routing duck resolution:
    ```bash
    cd "<path>"
    git fetch origin
-   git pull --rebase origin main
+   git rebase main
    ```
    If conflicts arise, resolve them only within owned scope. If a conflict is
    outside owned scope, abort the rebase, post
@@ -109,7 +109,7 @@ changed_files:
 gates:
   - <command>: exit=<code>, elapsed=<seconds>
 e2e:
-  - lane=<e2e-provisioning|e2e-feature|none>
+  - lane=<e2e-provision|e2e-feature|none>
   - <command or deferral reason>
 scope:
   - owned_scope_ok=<yes|no>

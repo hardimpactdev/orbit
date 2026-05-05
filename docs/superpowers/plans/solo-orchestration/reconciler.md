@@ -99,7 +99,7 @@ Initial rules. Expand here as the loop matures.
    ```text
    Reconciler: branch <branch> is behind main and cannot fast-forward. Inside your worktree run:
      git fetch origin
-     git pull --rebase origin main
+     git rebase main
    Resolve any conflicts, rerun your focused gate, post a fresh WORKER_DONE, and stay open.
    ```
 

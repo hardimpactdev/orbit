@@ -168,7 +168,7 @@ Current docs decide product behavior. Current implementation and the old repo
 are evidence, not automatic authority.
 
 The orchestration loop should create Pest E2E work using
-`composer test:e2e:provisioning`, `composer test:e2e:features`, and
+`composer test:e2e:provision`, `composer test:e2e:features`, and
 `composer e2e:prepare-topology`, or create a docs-refresh todo when the tracker
 needs correction.
 
@@ -233,7 +233,7 @@ Use exact labels so future cycles can resume from durable evidence:
 - `CHANGES_REQUESTED`
 - `RUBBER_DUCK_PROPOSAL agent=<name> verdict=PATH|NEEDS_USER_DIRECTION`
 - `RUBBER_DUCK_RESOLVED status=AGREED|ESCALATED`
-- `E2E_DISPATCHED process=<id> lane=<e2e-provisioning|e2e-feature|none>`
+- `E2E_DISPATCHED process=<id> lane=<e2e-provision|e2e-feature|none>`
 - `E2E_DONE status=PASSED|FAILED|SKIPPED lane=<name>`
 - `ORCHESTRATOR_CLOSED`
 - `PROMPT_RECOVERY status=STALLED|RETRIED|REPLACED process=<id>`

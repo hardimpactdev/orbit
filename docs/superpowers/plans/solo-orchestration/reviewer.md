@@ -23,7 +23,7 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    ```bash
    cd "<path>"
    git fetch origin
-   git pull --rebase origin main
+   git rebase main
    ```
    On rebase conflict:
    - `git rebase --abort`;
