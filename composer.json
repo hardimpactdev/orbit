@@ -83,6 +83,10 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-docker-topology"
         ],
+        "e2e:prepare-docker-hosts": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan e2e:prepare-docker-hosts"
+        ],
         "e2e:prepare-base-image": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-base-image"

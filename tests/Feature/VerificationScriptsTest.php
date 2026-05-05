@@ -97,6 +97,9 @@ it('exposes e2e preflight, preparation, and cleanup helpers', function (): void 
         ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
             'Composer\\Config::disableProcessTimeout',
             '@php artisan e2e:prepare-docker-topology',
+        ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            '@php artisan e2e:prepare-docker-hosts',
         ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
             'Composer\\Config::disableProcessTimeout',
             '@php artisan e2e:prepare-base-image',

@@ -308,6 +308,10 @@ composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
+# Prepare Docker feature topology images on every configured Docker host
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+
 # Reap stale E2E resources
 composer e2e:reap-incus
 composer e2e:reap-hcloud
@@ -404,6 +408,18 @@ The local machine only needs the Docker CLI and SSH access; the prepared Docker
 images must exist on every configured Docker host. The Docker provider checks
 `docker image inspect` against the selected daemon because `DOCKER_HOST=ssh://...`
 forwards every CLI call.
+
+Use the aggregate host preparation command to build fresh runtime and topology
+images across the configured Docker host pool:
+
+```bash
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+```
+
+When `ORBIT_E2E_DOCKER_HOST_SLOTS` is set, the command prepares each unique slot
+host once. Otherwise it uses `ORBIT_E2E_DOCKER_HOSTS`. Use
+`--runtime-only` or `--topology-only` when only one image layer needs refreshing.
 
 If Docker resources accumulate from interrupted runs, prefer the reaper:
 
