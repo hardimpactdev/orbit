@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivityListController;
+use App\Http\Controllers\Api\ActivityShowController;
 use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\CaRootController;
@@ -25,6 +26,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
 
     Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
+        Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/me', MeController::class);
         Route::get('/apps', AppListController::class);
         Route::get('/apps/{app}', AppShowController::class);

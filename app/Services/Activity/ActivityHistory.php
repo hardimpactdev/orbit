@@ -62,6 +62,59 @@ final class ActivityHistory
     }
 
     /**
+     * @return array{
+     *     activity: array<string, mixed>,
+     *     related: list<array<string, mixed>>,
+     *     meta: array{related_count: int}
+     * }|null
+     */
+    public function show(int $id): ?array
+    {
+        $activity = Activity::query()
+            ->with(['causer', 'subject'])
+            ->find($id);
+
+        if (! $activity instanceof Activity) {
+            return null;
+        }
+
+        $related = $this->relatedActivities($activity);
+
+        return [
+            'activity' => $this->activityPayload($activity, includeDetails: true),
+            'related' => $related,
+            'meta' => [
+                'related_count' => count($related),
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function relatedActivities(Activity $activity): array
+    {
+        if (! is_string($activity->batch_uuid) || $activity->batch_uuid === '') {
+            return [];
+        }
+
+        return Activity::query()
+            ->with(['causer', 'subject'])
+            ->where('batch_uuid', $activity->batch_uuid)
+            ->whereKeyNot($activity->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Activity $related): array => [
+                'id' => $related->id,
+                'occurred_at' => $related->created_at?->toIso8601String(),
+                'type' => $related->event,
+                'effect' => $related->properties->get('type'),
+            ])
+            ->all();
+    }
+
+    /**
      * @param  Builder<Activity>  $query
      * @return Builder<Activity>
      */
@@ -97,7 +150,15 @@ final class ActivityHistory
      */
     private function activityPayloads(Collection $activities): array
     {
-        return $activities->map(fn (Activity $activity): array => [
+        return $activities->map(fn (Activity $activity): array => $this->activityPayload($activity))->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activityPayload(Activity $activity, bool $includeDetails = false): array
+    {
+        $payload = [
             'id' => $activity->id,
             'occurred_at' => $activity->created_at?->toIso8601String(),
             'correlation_id' => $activity->batch_uuid,
@@ -107,7 +168,15 @@ final class ActivityHistory
             'actor' => $this->actorPayload($activity->causer),
             'command' => $activity->properties->get('command'),
             'summary' => $activity->description,
-        ])->all();
+        ];
+
+        if ($includeDetails) {
+            $payload['details'] = $activity->properties
+                ->except(['type', 'command'])
+                ->toArray();
+        }
+
+        return $payload;
     }
 
     /**

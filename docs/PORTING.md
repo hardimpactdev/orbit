@@ -1015,6 +1015,9 @@ that produced the controller's Loggable wiring.
 - [x] Pest: gateway API activity list read supports destructive filtering,
   normalized JSON metadata, `has_more`, validation, and `activity.listed`
   logging through `tests/Feature/Http/Api/ActivityListControllerTest.php`.
+- [x] Pest: gateway API activity show read supports selected activity details,
+  related entries, not-found and validation failures, and `activity.shown`
+  logging through `tests/Feature/Http/Api/ActivityShowControllerTest.php`.
 - [~] Pest: `activity:list` and `activity:show` command tests under
   `tests/Feature/Commands/Activity/Activity*Test.php` (the moved tech
   contracts already point at the `Activity` namespace).

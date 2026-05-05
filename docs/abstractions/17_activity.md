@@ -25,6 +25,9 @@ especially `activity-concepts.md`.
   doctrine field named `correlation_id`.
 - `activity:list` returns individual rows. Correlation metadata groups related
   rows but must not collapse them into synthetic entries.
+- `activity:show` resolves one selected activity by id, then returns other
+  visible entries from the same `batch_uuid` as related history. The selected
+  activity remains distinct from related entries.
 
 ## Read Surface Pattern
 
@@ -41,6 +44,8 @@ especially `activity-concepts.md`.
   require a more specific timestamp tie-breaker.
 - `limit` queries should fetch one extra row so the response can report
   `has_more` without running a second count query.
+- Detail reads return related entries ordered by `created_at` ascending, then
+  id ascending, so correlated operation flow is readable.
 - Gateway-local command and API reads share `App\Services\Activity\ActivityHistory`
   so filters, DTO shape, `has_more`, and subject/actor formatting do not drift.
 - Control and app callers forward `activity:list` through the typed Saloon
