@@ -386,6 +386,11 @@ PHP;
             );
         }
 
+        function run_app_remove(string $name): array
+        {
+            return run_orbit_command('php artisan app:remove '.escapeshellarg($name).' --force --json');
+        }
+
         function run_activity_list(array $query): array
         {
             $parts = ['php artisan activity:list --json'];
@@ -669,6 +674,16 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_app_root(urldecode($matches[1]), $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^DELETE /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
+                read_request_body($connection, $headers);
+
+                [$exitCode, $output] = run_app_remove(urldecode($matches[1]));
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 
