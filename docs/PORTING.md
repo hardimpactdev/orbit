@@ -930,8 +930,10 @@ names and adds `destructive` to the effect set.
   response payload and `activity:list --effect` filter.
   - [x] PHP `ActivityLogType` enum and activity middleware logging now support
     `destructive`.
-  - [ ] Complete `activity:list --effect=destructive` runtime filtering when
-    the activity command/API read surface is ported.
+  - [x] Gateway API activity history reads now surface `effect` in the response
+    payload and support destructive filtering through `GET /api/activity`.
+  - [ ] Complete CLI `activity:list --effect=destructive` runtime filtering on
+    top of the gateway API read surface.
 
 ### Per-Command Tech Contract Backfill
 
@@ -1004,6 +1006,9 @@ that produced the controller's Loggable wiring.
 - [ ] Pest: Loggable contract per Loggable controller plus correlation
   generation through `LogActivity` middleware (foundation covered;
   expand per family as Loggable lands).
+- [x] Pest: gateway API activity list read supports destructive filtering,
+  normalized JSON metadata, `has_more`, validation, and `activity.listed`
+  logging through `tests/Feature/Http/Api/ActivityListControllerTest.php`.
 - [ ] Pest: `activity:list` and `activity:show` command tests under
   `tests/Feature/Commands/Activity/Activity*Test.php` (the moved tech
   contracts already point at the `Activity` namespace).
