@@ -11,7 +11,6 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 use function Laravel\Prompts\text;
 
@@ -49,17 +48,7 @@ class NodeShowCommand extends Command
 
         if ($callerRole !== 'gateway') {
             try {
-                $gatewayData = $this->fetchFromGateway($name);
-
-                $payload = ['node' => $this->restructureGatewayData($gatewayData)];
-
-                if ($this->wantsJson()) {
-                    return $this->jsonSuccess($payload);
-                }
-
-                $this->renderHuman($payload['node']);
-
-                return self::SUCCESS;
+                $response = GatewayRequestSender::make()->send(new ShowNodeRequest($name));
             } catch (\Throwable) {
                 return $this->failCommand(
                     code: 'gateway_unavailable',
@@ -67,6 +56,24 @@ class NodeShowCommand extends Command
                     meta: [],
                 );
             }
+
+            if (! $response->isSuccess()) {
+                return $this->failCommand(
+                    code: $response->errorCode() ?? 'gateway_unavailable',
+                    message: $response->errorMessage() ?? 'Gateway connection is required to show node details.',
+                    meta: $response->errorMeta(),
+                );
+            }
+
+            $payload = ['node' => $this->restructureGatewayData($response->data())];
+
+            if ($this->wantsJson()) {
+                return $this->jsonSuccess($payload);
+            }
+
+            $this->renderHuman($payload['node']);
+
+            return self::SUCCESS;
         }
 
         $node = Node::query()
@@ -175,20 +182,6 @@ class NodeShowCommand extends Command
             ->exists();
 
         return $exists ? null : "Node '{$name}' not found or not visible.";
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function fetchFromGateway(string $name): array
-    {
-        $response = GatewayRequestSender::make()->send(new ShowNodeRequest($name));
-
-        if (! $response->isSuccess()) {
-            throw new RuntimeException($response->errorMessage() ?? 'Gateway request failed.');
-        }
-
-        return $response->data();
     }
 
     /**

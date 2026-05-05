@@ -404,6 +404,32 @@ describe('node:list control-caller forwarding', function (): void {
             ->and($payload['error']['code'])->toBe('gateway_unavailable');
     });
 
+    it('preserves authorization failures from the gateway', function (): void {
+        Http::fake([
+            '*' => Http::response([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => 'This node is not authorized to read the node registry.',
+                    'meta' => [
+                        'node' => 'local-control',
+                    ],
+                ],
+            ], 403),
+        ]);
+
+        $exitCode = Artisan::call('node:list', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe([
+                'code' => 'authorization_failed',
+                'message' => 'This node is not authorized to read the node registry.',
+                'meta' => [
+                    'node' => 'local-control',
+                ],
+            ]);
+    });
+
     it('handles forwarding error with human message', function (): void {
         Http::fake([
             '*' => Http::response([
@@ -415,7 +441,7 @@ describe('node:list control-caller forwarding', function (): void {
         ]);
 
         $this->artisan('node:list')
-            ->expectsOutputToContain('Gateway connection is required to list nodes.')
+            ->expectsOutputToContain('Gateway is unreachable.')
             ->assertFailed();
     });
 });

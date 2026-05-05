@@ -192,6 +192,73 @@ describe('node:show role paths', function (): void {
             ->and($payload['error']['code'])->toBe('gateway_unavailable');
     });
 
+    it('preserves gateway authorization failures for control callers', function (): void {
+        setupNodeShowRolePathControlCaller();
+
+        Http::fake([
+            '*' => Http::response([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => "Node 'private-app' is not visible to this caller.",
+                    'meta' => [
+                        'node' => 'private-app',
+                    ],
+                ],
+            ], 403),
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['name' => 'private-app', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe([
+                'code' => 'authorization_failed',
+                'message' => "Node 'private-app' is not visible to this caller.",
+                'meta' => [
+                    'node' => 'private-app',
+                ],
+            ]);
+    });
+
+    it('uses the local default development app node before forwarding control caller show requests', function (): void {
+        setupNodeShowRolePathControlCaller();
+
+        DB::table('local_node_defaults')->insert([
+            'default_node_name' => 'default-app',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://10.6.0.1/api/nodes/default-app' => Http::response([
+                'success' => [
+                    'data' => [
+                        'node' => [
+                            'name' => 'default-app',
+                            'role' => 'app',
+                            'status' => 'active',
+                            'environment' => 'development',
+                            'platform' => 'ubuntu_24-04',
+                            'wireguard_address' => '10.6.0.8',
+                            'grants' => [
+                                'consuming_nodes' => [],
+                                'serving_nodes' => [],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('node:show', ['--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['name'])->toBe('default-app');
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://10.6.0.1/api/nodes/default-app');
+    });
+
     it('handles gateway forwarding error for app caller', function (): void {
         setupNodeShowRolePathAppCaller();
 

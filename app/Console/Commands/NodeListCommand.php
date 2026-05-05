@@ -6,13 +6,14 @@ namespace App\Console\Commands;
 
 use App\Models\Node;
 use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\GatewayResponse;
 use App\Services\Gateway\Requests\ListNodesRequest;
 use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
-use RuntimeException;
+use Throwable;
 
 #[Signature('node:list
     {--role= : Filter by role (gateway|app|control)}
@@ -59,8 +60,15 @@ class NodeListCommand extends Command
                 doctor: $doctor,
                 doctorSummary: $doctorSummary,
             );
-        } catch (RuntimeException $e) {
-            return $this->failForwarding($e->getMessage());
+        } catch (Throwable) {
+            return $this->failForwarding();
+        }
+
+        if ($result instanceof GatewayResponse) {
+            return $this->failGatewayResponse(
+                response: $result,
+                fallbackMessage: 'Gateway connection is required to list nodes.',
+            );
         }
 
         $payload = ['nodes' => $result['nodes']];
@@ -83,9 +91,9 @@ class NodeListCommand extends Command
      * @return array{
      *     nodes: list<array<string, mixed>>,
      *     meta: array<string, mixed>,
-     * }
+     * }|GatewayResponse
      */
-    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array
+    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array|GatewayResponse
     {
         if ($this->isGatewayCaller()) {
             return $this->fetchLocalNodes(
@@ -103,7 +111,7 @@ class NodeListCommand extends Command
         ));
 
         if (! $response->isSuccess()) {
-            throw new RuntimeException($response->errorMessage() ?? 'Gateway request failed.');
+            return $response;
         }
 
         $data = $response->data();
@@ -324,20 +332,42 @@ class NodeListCommand extends Command
         return (bool) $this->option('doctor');
     }
 
-    private function failForwarding(string $message): int
+    private function failForwarding(): int
+    {
+        return $this->failGatewayError(
+            code: 'gateway_unavailable',
+            message: 'Gateway connection is required to list nodes.',
+            meta: [],
+        );
+    }
+
+    private function failGatewayResponse(GatewayResponse $response, string $fallbackMessage): int
+    {
+        return $this->failGatewayError(
+            code: $response->errorCode() ?? 'gateway_unavailable',
+            message: $response->errorMessage() ?? $fallbackMessage,
+            meta: $response->errorMeta(),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function failGatewayError(string $code, string $message, array $meta): int
     {
         if ($this->wantsJson()) {
             $this->line(json_encode([
                 'error' => [
-                    'code' => 'gateway_unavailable',
-                    'message' => 'Gateway connection is required to list nodes.',
+                    'code' => $code,
+                    'message' => $message,
+                    'meta' => empty($meta) ? (object) [] : $meta,
                 ],
             ], JSON_THROW_ON_ERROR));
 
             return self::FAILURE;
         }
 
-        $this->error('Gateway connection is required to list nodes.');
+        $this->error($message);
 
         return self::FAILURE;
     }
