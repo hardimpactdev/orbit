@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn (): null => MockClient::destroyGlobal());
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -57,6 +63,16 @@ function setupNodeRemoveControlCaller(): void
         'gateway_wg_ip' => '10.6.0.2',
         'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
     ])->save();
+}
+
+/**
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeNodeRemoveGateway(array|string $body, int $status = 200): MockClient
+{
+    return MockClient::global([
+        RemoveNodeRequest::class => MockResponse::make($body, $status),
+    ]);
 }
 
 describe('node:remove base contract', function (): void {
@@ -277,18 +293,16 @@ describe('node:remove control forwarding', function (): void {
     it('forwards configured control-node removals to the gateway without local target rows', function (): void {
         setupNodeRemoveControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'success' => [
-                    'data' => [
-                        'name' => 'app-1',
-                        'action' => 'removed',
-                        'removed_self' => false,
-                        'wireguard_peer_removed' => false,
-                        'grants_removed' => 2,
-                    ],
+        $mock = fakeNodeRemoveGateway([
+            'success' => [
+                'data' => [
+                    'name' => 'app-1',
+                    'action' => 'removed',
+                    'removed_self' => false,
+                    'wireguard_peer_removed' => false,
+                    'grants_removed' => 2,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:remove', [
@@ -310,27 +324,26 @@ describe('node:remove control forwarding', function (): void {
             ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
             ->and(DB::table('node_access')->count())->toBe(0);
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://10.6.0.2/api/nodes/app-1'
-            && $request['destructive_consent'] === true
-            && $request['destructive_consent_source'] === 'force');
+        $mock->assertSent(fn (RemoveNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes/app-1'
+            && $request->body()->all() === [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ]);
     });
 
     it('renders forwarded success with human output', function (): void {
         setupNodeRemoveControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'success' => [
-                    'data' => [
-                        'name' => 'app-1',
-                        'action' => 'removed',
-                        'removed_self' => false,
-                        'wireguard_peer_removed' => false,
-                        'grants_removed' => 0,
-                    ],
+        fakeNodeRemoveGateway([
+            'success' => [
+                'data' => [
+                    'name' => 'app-1',
+                    'action' => 'removed',
+                    'removed_self' => false,
+                    'wireguard_peer_removed' => false,
+                    'grants_removed' => 0,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:remove', [
@@ -345,18 +358,16 @@ describe('node:remove control forwarding', function (): void {
     it('preserves structured gateway authorization failures', function (): void {
         setupNodeRemoveControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'error' => [
-                    'code' => 'authorization_failed',
-                    'message' => 'This control node is not authorized to remove nodes.',
-                    'meta' => [
-                        'required_node' => 'gateway-1',
-                        'caller_role' => 'control',
-                    ],
+        fakeNodeRemoveGateway([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'This control node is not authorized to remove nodes.',
+                'meta' => [
+                    'required_node' => 'gateway-1',
+                    'caller_role' => 'control',
                 ],
-            ], 403),
-        ]);
+            ],
+        ], 403);
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'app-1',
@@ -378,7 +389,9 @@ describe('node:remove control forwarding', function (): void {
     it('validates missing --force locally before forwarding in non-interactive mode', function (): void {
         setupNodeRemoveControlCaller();
 
-        Http::fake();
+        $mock = fakeNodeRemoveGateway([
+            'success' => ['data' => ['name' => 'app-1']],
+        ]);
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'app-1',
@@ -391,7 +404,7 @@ describe('node:remove control forwarding', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force');
 
-        Http::assertNothingSent();
+        $mock->assertNothingSent();
     });
 
     it('does not mutate local Node or NodeAccess for forwarded control calls', function (): void {
@@ -407,18 +420,16 @@ describe('node:remove control forwarding', function (): void {
             'serving_node_id' => $appNodeId,
         ]);
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'success' => [
-                    'data' => [
-                        'name' => 'app-1',
-                        'action' => 'removed',
-                        'removed_self' => false,
-                        'wireguard_peer_removed' => false,
-                        'grants_removed' => 1,
-                    ],
+        fakeNodeRemoveGateway([
+            'success' => [
+                'data' => [
+                    'name' => 'app-1',
+                    'action' => 'removed',
+                    'removed_self' => false,
+                    'wireguard_peer_removed' => false,
+                    'grants_removed' => 1,
                 ],
-            ]),
+            ],
         ]);
 
         Artisan::call('node:remove', [

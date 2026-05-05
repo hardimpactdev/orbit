@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
+use App\Http\Gateway\Responses\Nodes\NodeUpdateResponse;
 use App\Models\Node;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\Requests\UpdateNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -141,8 +143,17 @@ class NodeUpdateCommand extends Command
         $this->renderProgressTree();
 
         try {
-            $response = GatewayRequestSender::make()->send(
-                new UpdateNodeRequest($name, $providedFields),
+            /** @var NodeUpdateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new UpdateNodeRequest($name, $providedFields))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to update a node.',
+                meta: $e->errorMeta(),
             );
         } catch (Throwable) {
             return $this->failCommand(
@@ -152,28 +163,14 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        if (! $response->isSuccess()) {
-            return $this->failCommand(
-                code: $response->errorCode() ?? 'gateway_unavailable',
-                message: $response->errorMessage() ?? 'Gateway connection is required to update a node.',
-                meta: $response->errorMeta(),
-            );
-        }
-
-        return $this->respondForwardedSuccess($name, $response->data());
+        return $this->respondForwardedSuccess($name, $dto);
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function respondForwardedSuccess(string $fallbackName, array $data): int
+    private function respondForwardedSuccess(string $fallbackName, NodeUpdateResponse $dto): int
     {
-        $name = $data['name'] ?? $fallbackName;
-        $changed = $data['changed'] ?? [];
-
         return $this->respondSuccess(
-            is_string($name) && $name !== '' ? $name : $fallbackName,
-            is_array($changed) ? array_values(array_filter($changed, is_string(...))) : [],
+            $dto->name !== '' ? $dto->name : $fallbackName,
+            $dto->changed,
         );
     }
 

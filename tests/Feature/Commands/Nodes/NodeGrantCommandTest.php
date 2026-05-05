@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\GrantNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn (): null => MockClient::destroyGlobal());
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -58,6 +63,16 @@ function setupGrantControlCaller(): void
         'gateway_wg_ip' => '10.6.0.2',
         'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
     ])->save();
+}
+
+/**
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeNodeGrantGateway(array|string $body, int $status = 200): MockClient
+{
+    return MockClient::global([
+        GrantNodeRequest::class => MockResponse::make($body, $status),
+    ]);
 }
 
 describe('node:grant base contract', function (): void {
@@ -238,17 +253,15 @@ describe('node:grant control forwarding', function (): void {
     it('forwards configured control-node grants to the gateway without local target rows', function (): void {
         setupGrantControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/grant' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'granted',
-                        'already_granted' => false,
-                    ],
+        $mock = fakeNodeGrantGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => false,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:grant', [
@@ -269,26 +282,25 @@ describe('node:grant control forwarding', function (): void {
             ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
             ->and(DB::table('node_access')->count())->toBe(0);
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://10.6.0.2/api/nodes/grant'
-            && $request['consuming_node'] === 'control-1'
-            && $request['serving_node'] === 'app-1');
+        $mock->assertSent(fn (GrantNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes/grant'
+            && $request->body()->all() === [
+                'consuming_node' => 'control-1',
+                'serving_node' => 'app-1',
+            ]);
     });
 
     it('renders forwarded already-granted success with human output', function (): void {
         setupGrantControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/grant' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'granted',
-                        'already_granted' => true,
-                    ],
+        fakeNodeGrantGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'granted',
+                    'already_granted' => true,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:grant', [
@@ -303,11 +315,7 @@ describe('node:grant control forwarding', function (): void {
     it('preserves structured gateway errors when forwarding', function (array $error): void {
         setupGrantControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/grant' => Http::response([
-                'error' => $error,
-            ], 422),
-        ]);
+        fakeNodeGrantGateway(['error' => $error], 422);
 
         $exitCode = Artisan::call('node:grant', [
             'consuming_node' => 'control-1',

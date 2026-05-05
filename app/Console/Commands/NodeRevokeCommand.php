@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\RevokeNodeRequest;
+use App\Http\Gateway\Responses\Nodes\NodeRevokeResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\Requests\RevokeNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -104,8 +106,17 @@ class NodeRevokeCommand extends Command
         }
 
         try {
-            $response = GatewayRequestSender::make()->send(
-                new RevokeNodeRequest($consumerName, $servingName),
+            /** @var NodeRevokeResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new RevokeNodeRequest($consumerName, $servingName))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to revoke a grant.',
+                meta: $e->errorMeta(),
             );
         } catch (Throwable) {
             return $this->failCommand(
@@ -115,32 +126,7 @@ class NodeRevokeCommand extends Command
             );
         }
 
-        if (! $response->isSuccess()) {
-            return $this->failCommand(
-                code: $response->errorCode() ?? 'gateway_unavailable',
-                message: $response->errorMessage() ?? 'Gateway connection is required to revoke a grant.',
-                meta: $response->errorMeta(),
-            );
-        }
-
-        return $this->respondForwardedSuccess($consumerName, $servingName, $response->data());
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function respondForwardedSuccess(string $fallbackConsumerName, string $fallbackServingName, array $data): int
-    {
-        $consumerName = is_string($data['consuming_node'] ?? null) && $data['consuming_node'] !== ''
-            ? $data['consuming_node']
-            : $fallbackConsumerName;
-        $servingName = is_string($data['serving_node'] ?? null) && $data['serving_node'] !== ''
-            ? $data['serving_node']
-            : $fallbackServingName;
-        $alreadyAbsent = $data['already_absent'] ?? false;
-        $selfLockout = $data['self_lockout'] ?? false;
-
-        return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $selfLockout);
+        return $this->respondSuccess($dto->consumingNode, $dto->servingNode, $dto->alreadyAbsent, $dto->selfLockout);
     }
 
     private function respondSuccess(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): int

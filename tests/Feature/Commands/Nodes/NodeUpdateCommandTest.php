@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn (): null => MockClient::destroyGlobal());
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -63,6 +68,16 @@ function setupControlCallerForNodeUpdate(): void
         'gateway_wg_ip' => '10.6.0.2',
         'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
     ])->save();
+}
+
+/**
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeNodeUpdateGateway(array|string $body, int $status = 200): MockClient
+{
+    return MockClient::global([
+        UpdateNodeRequest::class => MockResponse::make($body, $status),
+    ]);
 }
 
 describe('node:update base contract', function (): void {
@@ -247,16 +262,14 @@ describe('node:update control forwarding', function (): void {
     it('forwards configured control-node updates to the gateway without a local target row', function (): void {
         setupControlCallerForNodeUpdate();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'success' => [
-                    'data' => [
-                        'name' => 'app-1',
-                        'changed' => ['host', 'public_ipv4'],
-                        'action' => 'updated',
-                    ],
+        $mock = fakeNodeUpdateGateway([
+            'success' => [
+                'data' => [
+                    'name' => 'app-1',
+                    'changed' => ['host', 'public_ipv4'],
+                    'action' => 'updated',
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:update', [
@@ -276,27 +289,26 @@ describe('node:update control forwarding', function (): void {
             ])
             ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'PUT'
-            && $request->url() === 'https://10.6.0.2/api/nodes/app-1'
-            && $request['host'] === '10.6.0.8'
-            && $request['public_ipv4'] === '203.0.113.10');
+        $mock->assertSent(fn (UpdateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes/app-1'
+            && $request->body()->all() === [
+                'host' => '10.6.0.8',
+                'public_ipv4' => '203.0.113.10',
+            ]);
     });
 
     it('passes through structured gateway authorization failures', function (): void {
         setupControlCallerForNodeUpdate();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/app-1' => Http::response([
-                'error' => [
-                    'code' => 'authorization_failed',
-                    'message' => 'This control node is not authorized to update nodes.',
-                    'meta' => [
-                        'required_node' => 'gateway-1',
-                        'caller_role' => 'control',
-                    ],
+        fakeNodeUpdateGateway([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'This control node is not authorized to update nodes.',
+                'meta' => [
+                    'required_node' => 'gateway-1',
+                    'caller_role' => 'control',
                 ],
-            ], 403),
-        ]);
+            ],
+        ], 403);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -318,7 +330,9 @@ describe('node:update control forwarding', function (): void {
     it('validates control-node input locally before forwarding', function (): void {
         setupControlCallerForNodeUpdate();
 
-        Http::fake();
+        $mock = fakeNodeUpdateGateway([
+            'success' => ['data' => ['name' => 'app-1']],
+        ]);
 
         $exitCode = Artisan::call('node:update', [
             'name' => 'app-1',
@@ -332,7 +346,7 @@ describe('node:update control forwarding', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('environment');
 
-        Http::assertNothingSent();
+        $mock->assertNothingSent();
     });
 });
 

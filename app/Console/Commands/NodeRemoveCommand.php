@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
+use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
-use App\Services\Gateway\GatewayRequestSender;
-use App\Services\Gateway\Requests\RemoveNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -167,8 +169,17 @@ class NodeRemoveCommand extends Command
         }
 
         try {
-            $response = GatewayRequestSender::make()->send(
-                new RemoveNodeRequest($name, $this->option('force') ? 'force' : 'interactive_confirm'),
+            /** @var NodeRemoveResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new RemoveNodeRequest($name, $this->option('force') ? 'force' : 'interactive_confirm'))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to remove a node.',
+                meta: $e->errorMeta(),
             );
         } catch (Throwable) {
             return $this->failCommand(
@@ -178,33 +189,17 @@ class NodeRemoveCommand extends Command
             );
         }
 
-        if (! $response->isSuccess()) {
-            return $this->failCommand(
-                code: $response->errorCode() ?? 'gateway_unavailable',
-                message: $response->errorMessage() ?? 'Gateway connection is required to remove a node.',
-                meta: $response->errorMeta(),
-            );
-        }
-
-        return $this->respondForwardedSuccess($name, $isSelfRemoval, $response->data());
+        return $this->respondForwardedSuccess($name, $isSelfRemoval, $dto);
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function respondForwardedSuccess(string $fallbackName, bool $fallbackIsSelfRemoval, array $data): int
+    private function respondForwardedSuccess(string $fallbackName, bool $fallbackIsSelfRemoval, NodeRemoveResponse $dto): int
     {
-        $name = $data['name'] ?? $fallbackName;
-        $removedSelf = $data['removed_self'] ?? $fallbackIsSelfRemoval;
-        $grantsRemoved = $data['grants_removed'] ?? 0;
-        $peerRemoved = $data['wireguard_peer_removed'] ?? false;
-
         $responseData = [
-            'name' => is_string($name) && $name !== '' ? $name : $fallbackName,
+            'name' => $dto->name !== '' ? $dto->name : $fallbackName,
             'action' => 'removed',
-            'removed_self' => is_bool($removedSelf) ? $removedSelf : $fallbackIsSelfRemoval,
-            'wireguard_peer_removed' => is_bool($peerRemoved) ? $peerRemoved : false,
-            'grants_removed' => is_int($grantsRemoved) ? $grantsRemoved : 0,
+            'removed_self' => $dto->removedSelf,
+            'wireguard_peer_removed' => $dto->wireguardPeerRemoved,
+            'grants_removed' => $dto->grantsRemoved,
         ];
 
         if ($this->wantsJson()) {
