@@ -643,7 +643,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] Node doctor technical contract and `NodesProbe` primitives.
   - [x] `--doctor` secondary operation.
   - [x] caller visibility/access-policy behavior.
-  - [x] gateway forwarding (control/app CLI callers use typed GatewayClient;
+  - [x] gateway forwarding (control/app CLI callers use typed GatewayConnector;
     E2E gate todo 254 complete).
   - [x] doctor handoff behavior.
 - [~] Complete `node:show` contract gaps:
@@ -652,7 +652,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] Human renderer contract (field order, grants section, failure prose).
   - [x] caller-role resolution.
   - [x] access-policy authorization.
-  - [x] gateway forwarding (control/app CLI callers use typed GatewayClient;
+  - [x] gateway forwarding (control/app CLI callers use typed GatewayConnector;
     E2E gate todo 254 complete).
   - [ ] interactive prompting.
   - [x] default development app-node resolution.
@@ -670,7 +670,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: gateway-local update with progress tree, field validation, role-incompatibility checks, and split contract tests.
   - Gateway forwarding slice implemented: configured control callers forward
-    through `GatewayRequestSender` and typed `UpdateNodeRequest`; gateway API
+    through `GatewayConnector` and typed `UpdateNodeRequest`; gateway API
     structured errors are preserved, and forwarded writes do not require or
     mutate a local target-node row.
   - Contract gaps:
@@ -705,7 +705,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - Gateway API prerequisite implemented: `POST /api/nodes/grant` plus typed
     `GrantNodeRequest`.
   - Gateway forwarding slice implemented: configured control callers forward
-    through `GatewayRequestSender` and typed `GrantNodeRequest`; gateway API
+    through `GatewayConnector` and typed `GrantNodeRequest`; gateway API
     structured errors are preserved, and forwarded grants do not require or
     mutate a local target-node row.
   - Contract gaps:
@@ -721,7 +721,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - Gateway API prerequisite implemented: `POST /api/nodes/revoke` plus typed
     `RevokeNodeRequest`.
   - Gateway forwarding slice implemented: configured control callers forward
-    through `GatewayRequestSender` and typed `RevokeNodeRequest`; gateway API
+    through `GatewayConnector` and typed `RevokeNodeRequest`; gateway API
     structured errors are preserved, and forwarded revocations do not require
     or mutate a local target-node row.
   - Contract gaps:
@@ -738,7 +738,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - Gateway API prerequisite implemented: `DELETE /api/nodes/{name}` plus typed
     `RemoveNodeRequest`.
   - Gateway forwarding slice implemented: configured control callers forward
-    through `GatewayRequestSender` and typed `RemoveNodeRequest`; gateway API
+    through `GatewayConnector` and typed `RemoveNodeRequest`; gateway API
     structured errors are preserved, and forwarded removals do not require or
     mutate a local target-node row.
   - Contract gaps:
@@ -991,12 +991,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 `Todo Pipeline Hints` for sequencing and verification constraints.
 
 - [x] Convert app command docs into current format.
-- [ ] Create app abstraction reference (`docs/abstractions/5_app.md`).
-- [ ] Port app schema and models needed by documented app commands.
-- [ ] Port gateway API list support (`GET /api/apps` + `ListAppsRequest`).
-- [ ] Port `app:list`.
-- [ ] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
-- [ ] Port `app:show`.
+- [x] Create app abstraction reference (`docs/abstractions/5_app.md`).
+- [x] Port app schema and models needed by documented app commands.
+- [x] Port gateway API list support (`GET /api/apps` + `ListAppsRequest`).
+- [x] Port `app:list`.
+- [x] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
+- [x] Port `app:show`.
 - [ ] Port `app:new`.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
@@ -1286,17 +1286,7 @@ for the Saloon-based gateway transport pattern.
 
 ## Next Priorities
 
-1. **Refresh the cross-cutting Saloon guidance.**
-   - `docs/abstractions/cross-cutting.md` still names the removed
-     `GatewayClient` / `GatewayRequestSender` stack and should be updated to
-     point at `App\Http\Gateway\GatewayConnector`, `GatewayRequest`,
-     `GatewayApiException`, request DTOs, and Saloon `MockClient`.
-2. **Resume App read workstream.**
-   - `APP-ABSTRACTION-1` → `APP-SCHEMA-1` → `APP-API-LIST-1` → `APP-LIST-1` →
-     `APP-API-SHOW-1` → `APP-SHOW-1`.
-   - Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
-     Docker-backed feature E2E.
-3. **Continue activity metadata rollout without blocking App read ports.**
+1. **Continue activity metadata rollout.**
    - `ACTIVITY-NODE-FAMILY-1` is the next implementation step. Pair each
      node command with its `## Activity Logging` tech-contract backfill and
      add the command to `ActivityLoggingContractRule::ENFORCED_COMMANDS`.
@@ -1304,9 +1294,16 @@ for the Saloon-based gateway transport pattern.
      exceptions go in the command's tech-contract section.
    - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
      are the remaining doctrine-alignment implementation tasks.
-4. Keep Node destructive/provisioning follow-ups explicit but out of the
+2. **Keep app writes blocked until write-safety gates are cleared.**
+   - `APP-LIST-1` and `APP-SHOW-1` now have focused Pest and Docker feature
+     E2E coverage.
+   - Do not start `app:new`, `app:register`, `app:root`, `app:remove`,
+     `app:prune`, or `app:agent-ide` until the required node
+     write-forwarding/provisioning safety gates are either complete or
+     explicitly deferred with rationale.
+3. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
    E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths, WireGuard
    peer teardown, and DNS cleanup.
-5. Port `profile` later as a verification helper once app read state exists and
+4. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
