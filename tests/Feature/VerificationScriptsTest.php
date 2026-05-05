@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPreflightCommand;
-use App\Console\Commands\E2EPrepareHcloudImagesCommand;
+use App\Console\Commands\E2EPrepareBaseImageCommand;
+use App\Console\Commands\E2EPrepareDockerRuntimeCommand;
+use App\Console\Commands\E2EPrepareDockerTopologyCommand;
 use App\Console\Commands\E2EPrepareIncusImagesCommand;
 use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapHcloudCommand;
 use App\Console\Commands\E2EReapIncusCommand;
 
@@ -51,23 +54,28 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args',
     ]);
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args',
-    ]);
+    ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
+        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
+        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');
 });
 
-it('documents the two supported verification lanes', function (): void {
+it('documents the supported verification lanes', function (): void {
     $testing = file_get_contents(base_path('TESTING.md'));
 
     expect($testing)
         ->toContain('## In-Memory Pest')
-        ->toContain('## Ephemeral VM E2E')
-        ->toContain('composer test')
+        ->toContain('## Ephemeral E2E')
+        ->toContain('Docker-backed feature E2E')
         ->toContain('composer test:e2e')
+        ->toContain('composer test:e2e:provision')
+        ->toContain('composer test')
+        ->not->toContain('composer test:e2e:features')
         ->not->toContain('composer test:live')
         ->not->toContain('bin/live-smoke')
         ->not->toContain('Standing Live Node Rule');
@@ -79,13 +87,23 @@ it('exposes the hcloud e2e resource reaper', function (): void {
     expect($composer['scripts']['e2e:reap-hcloud'])->toBe('@php artisan e2e:reap-hcloud');
 });
 
-it('exposes guarded hcloud e2e image preparation', function (): void {
+it('exposes e2e preflight, preparation, and cleanup helpers', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['e2e:prepare-hcloud-images'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        '@php artisan e2e:prepare-hcloud-images',
-    ]);
+    expect($composer['scripts']['e2e:preflight'])->toBe('@php artisan e2e:preflight')
+        ->and($composer['scripts']['e2e:prepare-docker-runtime'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            '@php artisan e2e:prepare-docker-runtime',
+        ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            '@php artisan e2e:prepare-docker-topology',
+        ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            '@php artisan e2e:prepare-base-image',
+        ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            '@php artisan e2e:prepare-topology',
+        ])->and($composer['scripts'])->not->toHaveKey('e2e:prepare-hcloud-images');
 });
 
 it('registers ephemeral e2e as a guarded Pest group', function (): void {
@@ -105,8 +123,11 @@ it('registers the e2e artisan commands', function (): void {
     $commands = [
         E2EPreflightCommand::class,
         E2EPrepareIncusImagesCommand::class,
-        E2EPrepareHcloudImagesCommand::class,
+        E2EPrepareBaseImageCommand::class,
         E2EPrepareTopologyCommand::class,
+        E2EPrepareDockerRuntimeCommand::class,
+        E2EPrepareDockerTopologyCommand::class,
+        E2EReapDockerCommand::class,
         E2EReapIncusCommand::class,
         E2EReapHcloudCommand::class,
     ];
@@ -116,6 +137,21 @@ it('registers the e2e artisan commands', function (): void {
 
         $command = app($class);
         expect($command->isHidden())->toBeTrue("{$class} should be hidden");
+    }
+
+    $jsonCommands = [
+        E2EPreflightCommand::class,
+        E2EPrepareIncusImagesCommand::class,
+        E2EPrepareBaseImageCommand::class,
+        E2EPrepareTopologyCommand::class,
+        E2EPrepareDockerTopologyCommand::class,
+        E2EReapDockerCommand::class,
+        E2EReapIncusCommand::class,
+        E2EReapHcloudCommand::class,
+    ];
+
+    foreach ($jsonCommands as $class) {
+        $command = app($class);
         expect($command->getDefinition()->hasOption('json'))->toBeTrue("{$class} should accept --json");
     }
 });
@@ -158,51 +194,27 @@ it('documents e2e topology timing event names', function (): void {
         ->toContain('cleanup.<role>');
 });
 
-it('exposes opt-in parallel feature e2e after topology contracts', function (): void {
+it('does not expose stale per-topology feature e2e aliases', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['test:e2e:features:parallel'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        '@test:e2e:topology-contract',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=3',
-    ]);
+    expect($composer['scripts'])
+        ->not->toHaveKey('test:e2e:features:control')
+        ->not->toHaveKey('test:e2e:features:control-gateway')
+        ->not->toHaveKey('test:e2e:features:control-gateway-dev')
+        ->not->toHaveKey('test:e2e:features:control-gateway-dev-prod')
+        ->not->toHaveKey('test:e2e:features:parallel')
+        ->not->toHaveKey('test:e2e:features:docker:control-gateway-dev-prod');
 });
 
-it('exposes feature e2e for each prepared topology shape after its topology contract', function (): void {
+it('runs the topology contract against the Docker full topology by default', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($composer['scripts']['test:e2e:features'])->toBe([
+    expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args',
-    ])->and($composer['scripts']['test:e2e:features:control'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control --exclude-group=e2e-topology-contract @additional_args',
-    ])->and($composer['scripts']['test:e2e:features:control-gateway'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway --exclude-group=e2e-topology-contract @additional_args',
-    ])->and($composer['scripts']['test:e2e:features:control-gateway-dev'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev --exclude-group=e2e-topology-contract @additional_args',
-    ])->and($composer['scripts']['test:e2e:features:control-gateway-dev-prod'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args',
-    ]);
-});
-
-it('exposes docker feature e2e only for topology groups with tests', function (): void {
-    $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
-
-    expect($composer['scripts']['test:e2e:features:docker'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        '@test:e2e:features:docker:control-gateway-dev-prod',
-    ])->and($composer['scripts']['test:e2e:features:docker:control-gateway-dev-prod'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args',
-    ])->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker:control')
-        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker:control-gateway');
+        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @additional_args',
+    ])->and($composer['scripts'])
+        ->not->toHaveKey('test:e2e:topology-contract:control')
+        ->not->toHaveKey('test:e2e:topology-contract:control-gateway')
+        ->not->toHaveKey('test:e2e:topology-contract:control-gateway-dev')
+        ->not->toHaveKey('test:e2e:topology-contract:control-gateway-dev-prod');
 });

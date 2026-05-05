@@ -87,14 +87,8 @@ PHP;
     {
         E2ECommand::exec(
             $gateway,
-            "pkill -f 'php artisan serve --host=10.6.0.2 --port=80' >/dev/null 2>&1 || true",
-            'Could not stop gateway HTTP API',
-        );
-
-        E2ECommand::exec(
-            $gateway,
-            "pkill -f '/tmp/orbit-.*-tls.php' >/dev/null 2>&1 || true",
-            'Could not stop gateway TLS test server',
+            'php -r '.escapeshellarg(self::stopServerScript()),
+            'Could not stop gateway test servers',
         );
     }
 
@@ -348,6 +342,52 @@ while ($connection = @stream_socket_accept($server, -1)) {
 
     respond($connection, 404, '');
     fclose($connection);
+}
+PHP;
+    }
+
+    private static function stopServerScript(): string
+    {
+        return <<<'PHP'
+$matches = static function (string $command): bool {
+    if (str_contains($command, 'php -r')) {
+        return false;
+    }
+
+    $isPhpProcess = str_contains($command, 'php ');
+    $isGatewayHttp = str_contains($command, 'php artisan serve --host=10.6.0.2 --port=80');
+    $isGatewayTls = str_contains($command, '/tmp/orbit-') && str_contains($command, '-tls.php');
+
+    return $isPhpProcess && ($isGatewayHttp || $isGatewayTls);
+};
+
+$pids = [];
+
+foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
+    $pid = (int) basename(dirname($file));
+
+    if ($pid <= 1 || $pid === getmypid()) {
+        continue;
+    }
+
+    $cmdline = @file_get_contents($file);
+
+    if (! is_string($cmdline) || $cmdline === '') {
+        continue;
+    }
+
+    $command = str_replace("\0", ' ', $cmdline);
+
+    if ($matches($command)) {
+        $pids[] = $pid;
+        @posix_kill($pid, 15);
+    }
+}
+
+usleep(200000);
+
+foreach ($pids as $pid) {
+    @posix_kill($pid, 9);
 }
 PHP;
     }

@@ -61,77 +61,17 @@
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args"
+            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args"
         ],
         "test:e2e:topology-contract": [
             "Composer\\Config::disableProcessTimeout",
-            "@test:e2e:topology-contract:control",
-            "@test:e2e:topology-contract:control-gateway",
-            "@test:e2e:topology-contract:control-gateway-dev",
-            "@test:e2e:topology-contract:control-gateway-dev-prod"
-        ],
-        "test:e2e:topology-contract:control": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control --fail-on-empty-test-suite"
-        ],
-        "test:e2e:topology-contract:control-gateway": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway --fail-on-empty-test-suite"
-        ],
-        "test:e2e:topology-contract:control-gateway-dev": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev --fail-on-empty-test-suite"
-        ],
-        "test:e2e:topology-contract:control-gateway-dev-prod": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite"
+            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @additional_args"
         ],
         "test:e2e:provision": [
             "Composer\\Config::disableProcessTimeout",
             "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args"
         ],
-        "test:e2e:provisioning": [
-            "Composer\\Config::disableProcessTimeout",
-            "@test:e2e:provision"
-        ],
-        "test:e2e:features": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args"
-        ],
-        "test:e2e:features:control": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control --fail-on-empty-test-suite @no_additional_args",
-            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control --exclude-group=e2e-topology-contract @additional_args"
-        ],
-        "test:e2e:features:control-gateway": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway --fail-on-empty-test-suite @no_additional_args",
-            "ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway --exclude-group=e2e-topology-contract @additional_args"
-        ],
-        "test:e2e:features:control-gateway-dev": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev --fail-on-empty-test-suite @no_additional_args",
-            "ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev --exclude-group=e2e-topology-contract @additional_args"
-        ],
-        "test:e2e:features:control-gateway-dev-prod": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args",
-            "ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args"
-        ],
-        "test:e2e:features:parallel": [
-            "Composer\\Config::disableProcessTimeout",
-            "@test:e2e:topology-contract",
-            "ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=3"
-        ],
-        "test:e2e:features:docker": [
-            "Composer\\Config::disableProcessTimeout",
-            "@test:e2e:features:docker:control-gateway-dev-prod"
-        ],
-        "test:e2e:features:docker:control-gateway-dev-prod": [
-            "Composer\\Config::disableProcessTimeout",
-            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args",
-            "ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args"
-        ],
+        "e2e:preflight": "@php artisan e2e:preflight",
         "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud",
         "e2e:reap-incus": "@php artisan e2e:reap-incus",
         "e2e:reap-docker": "@php artisan e2e:reap-docker",
@@ -142,10 +82,6 @@
         "e2e:prepare-docker-topology": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan e2e:prepare-docker-topology"
-        ],
-        "e2e:prepare-hcloud-images": [
-            "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-hcloud-images"
         ],
         "e2e:prepare-base-image": [
             "Composer\\Config::disableProcessTimeout",

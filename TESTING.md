@@ -4,11 +4,14 @@ Environment-specific verification for the clean Orbit rebuild.
 
 ## Verification Model
 
-Orbit has two supported test lanes:
+Orbit has three supported test lanes:
 
 1. In-memory Pest tests for deterministic command, service, database, renderer,
    and contract coverage.
-2. Ephemeral VM E2E tests for real SSH, provisioning, image, and host-mutation
+2. Docker-backed feature E2E tests for prepared-topology command, registry,
+   gateway API, and CA trust coverage.
+3. Ephemeral VM E2E tests for real SSH, provisioning, image, WireGuard,
+   systemd-backed runtime, and host-mutation
    coverage.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
@@ -26,24 +29,30 @@ This lane must not require real SSH, hcloud, Incus mutation, or standing
 infrastructure. Fake process, gateway, provider, and transport boundaries in
 Pest when the behavior is a command or contract concern.
 
-## Ephemeral VM E2E
+## Ephemeral E2E
 
-Use ephemeral E2E for full lifecycle, provisioning, destructive, or host
-mutation checks against disposable VMs:
+Use `composer test:e2e` for the default feature E2E lane. It runs
+`e2e-feature` tests against the prepared Docker full topology:
 
 ```bash
 composer test:e2e
-php artisan e2e:preflight
+composer test:e2e:topology-contract
+```
+
+Use VM-backed E2E only when the behavior depends on real provisioning,
+WireGuard, VM networking, OS trust-store mutation, systemd, package
+installation, cloud-init, or host-level daemon behavior:
+
+```bash
+composer e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
 composer e2e:prepare-base-image -- --force
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
-composer test:e2e:topology-contract
-composer test:e2e:features
+composer test:e2e:provision
 ```
 
-The ephemeral E2E harness uses Incus VMs on the configured E2E host
-(`beast` by default). It builds two reusable images plus per-topology
-template snapshots:
+The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
+default). It builds two reusable images plus per-topology template snapshots:
 
 1. **Blank image** (`orbit-blank-ubuntu-26.04`). Built once via
    `php artisan e2e:prepare-incus-images --role=blank --force`. Ubuntu cloud
@@ -111,7 +120,7 @@ The ephemeral E2E suite is split into two explicit lanes at the Pest group level
   ported commands, forwarding chains, or read-only behavior. They must not run
   installer or provisioning commands unless the feature under test explicitly
   requires it. These tests are grouped with `pest()->group('e2e-feature')` at the
-  file level and run via `composer test:e2e:features`.
+  file level and run via `composer test:e2e`. The default provider is Docker.
 
 Each prepared topology has its own contract group:
 
@@ -122,18 +131,16 @@ Each prepared topology has its own contract group:
 | `control-gateway-dev` | `e2e-topology-contract-control-gateway-dev` | `e2e-feature-control-gateway-dev` |
 | `control-gateway-dev-prod` | `e2e-topology-contract-control-gateway-dev-prod` | `e2e-feature-control-gateway-dev-prod` |
 
-A feature lane must run the contract for the smallest topology it needs before
-running that topology's feature assertions. If the relevant topology contract
-fails, the feature lane stops before command assertions can produce misleading
-results. Additional Pest arguments passed to a feature-lane Composer script are
-applied only to the post-contract feature assertions.
+`composer test:e2e:topology-contract` proves the Docker
+`control-gateway-dev-prod` topology contract. It exists as a quick topology
+health check, while `composer test:e2e` excludes topology-contract tests and
+runs feature assertions only.
 
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
 `composer test:e2e` runs only feature assertions in one cached superset process.
-The scenario-specific feature lanes still run their required topology contract
-before feature assertions. Provision tests are intentionally on demand because
-they run real installer/provisioning paths and are much slower than
-prepared-topology feature tests.
+Provision tests are intentionally on demand because they run real
+installer/provisioning paths and are much slower than prepared-topology feature
+tests.
 
 Provision tests clean up on success. On failure they keep tracked VMs/templates
 for inspection and print their names plus a reap command. Set
@@ -195,17 +202,13 @@ code that runs on those nodes.
 
 When `ORBIT_E2E_TOPOLOGY_CACHE=process`, `e2eTopology()` reuses the same
 prepared topology lease for matching requests in the current PHP process and
-cleans it up once at process shutdown. `composer test:e2e` and
-`composer test:e2e:features` enable this cache with
-`ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so the feature regression aggregate pays
-the Incus clone/start cost once for the full topology. They also enable
-`ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout once per
-VM/user and gives each test an isolated hardlink copy with fresh runtime files.
-Because the current aggregate includes gateway-backed `node:list` tests, it also
-sets `ORBIT_E2E_GATEWAY_API=1` and pays the WireGuard/gateway API startup cost
-once. Control-only feature lanes can leave that unset. Individual scenario
-scripts keep their named topology group but also enable both process caches,
-which lets multiple tests in that scenario share a lease.
+cleans it up once at process shutdown. `composer test:e2e` enables this cache
+with `ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so the feature regression aggregate
+pays the Docker container startup cost once for the full topology. It also
+enables `ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout
+once per node/user and gives each test an isolated hardlink copy with fresh
+runtime files. Because the current aggregate includes gateway-backed `node:list`
+tests, it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway API once.
 
 ## Prepared Topology Contract
 
@@ -281,13 +284,9 @@ composer test
 composer test:e2e
 composer test:e2e:provision
 composer test:e2e:topology-contract
-composer test:e2e:features
-composer test:e2e:features:control
-composer test:e2e:features:control-gateway
-composer test:e2e:features:control-gateway-dev
-composer test:e2e:features:control-gateway-dev-prod
-composer test:e2e:features:parallel
-composer test:e2e:features:docker
+
+# E2E readiness check
+composer e2e:preflight
 
 # Build the reusable Incus base image (deps + orbit user, no source).
 # Rebuild only when system deps change.
@@ -302,43 +301,33 @@ composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
-# Prepare Hcloud feature topology images
-composer e2e:prepare-hcloud-images
-
-# Reap stale Incus VMs and images created by E2E tests
+# Reap stale E2E resources
 composer e2e:reap-incus
 composer e2e:reap-hcloud
 composer e2e:reap-docker
 composer e2e:reap-docker -- --force --older-than=0m
 ```
 
-`composer test:e2e` and `composer test:e2e:features` are the fast feature
-regression lanes. They run all `e2e-feature` tests in one PHP process against a
-cached full topology. Use the scenario-specific scripts when you want to prove a
-particular topology shape and its contract.
-
-`composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
-then runs feature assertions with Pest parallel mode and `--processes=3`. The
-recommended Incus pool is `sidecar1,sidecar2`; the host pool chooses the first
-host with prepared templates and enough free Orbit-owned VM slots, so multiple
-workers can share a sidecar when capacity allows. Provisioning E2E remains
-serial by default.
+`composer test:e2e` is the fast feature regression lane. It runs all
+`e2e-feature` tests in one PHP process against a cached Docker full topology.
+Use `composer test:e2e:topology-contract` when you want to prove the prepared
+Docker topology itself. Provisioning E2E remains serial by default.
 
 ### Docker Feature Topologies
 
-Docker is an optional fast provider for `e2e-feature` tests:
+Docker is the default provider for `composer test:e2e`:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
-ORBIT_E2E_TOPOLOGY_PROVIDER=docker composer test:e2e:features:docker
+composer test:e2e
 ```
 
 The recommended local topology is to run Docker containers on `beast` and keep
-Incus feature VMs on `sidecar1` and `sidecar2`. Docker remains explicit because
-it exercises gateway API, certificate, and registry behavior over a
-WireGuard-shaped `10.6.0.0/16` Docker bridge, but it does not exercise real
-WireGuard interfaces, peer routing, VM boot, or systemd.
+Incus feature VMs on `sidecar1` and `sidecar2`. Docker exercises gateway API,
+certificate, and registry behavior over a WireGuard-shaped `10.6.0.0/16` Docker
+bridge, but it does not exercise real WireGuard interfaces, peer routing, VM
+boot, or systemd.
 
 Docker topologies are disposable containers seeded from per-role prepared
 images. They are useful for fast command, registry, gateway API, CA trust,
@@ -359,10 +348,10 @@ restart, or validate systemd-backed runtime units. Registry-only workspace
 views can run on Docker only when they do not inspect live process state,
 execute setup/teardown steps, or assert runtime unit convergence.
 
-`composer test:e2e:features:docker` is serial in the MVP. Parallel Docker E2E
-is not supported while each test creates a fixed `10.6.0.0/16` bridge network;
-parallel support needs non-overlapping subnets or the per-worker network design
-from the Docker topology plan.
+`composer test:e2e` is serial in the MVP. Parallel Docker E2E is not supported
+while each test creates a fixed `10.6.0.0/16` bridge network; parallel support
+needs non-overlapping subnets or the per-worker network design from the Docker
+topology plan.
 
 Tests must reach Docker topology services through topology handles such as
 `$topology->control()->ssh(...)`, not by calling `https://10.6.0.x` directly
@@ -379,7 +368,7 @@ To offload Docker work to `beast`, keep Pest running locally and target the
 remote Docker daemon:
 
 ```bash
-ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker
+ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e
 ```
 
 The local machine only needs the Docker CLI and SSH access; the prepared Docker
@@ -400,8 +389,8 @@ composer e2e:reap-docker -- --force --older-than=0m
 ORBIT_E2E=1                           # Enable ephemeral E2E tests
 ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
 ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
-ORBIT_E2E_TOPOLOGY_PROVIDER=incus     # Prepared topology provider
-ORBIT_E2E_TOPOLOGY_PROVIDERS=incus    # Ordered prepared topology provider pool
+ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for composer test:e2e
+ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
@@ -426,10 +415,9 @@ prepared topology providers for `e2e-feature` tests. Keep provisioning provider
 selection VM-backed when a test proves machine setup, SSH, sudo, package
 installation, trust-store mutation, or system services.
 
-`ORBIT_E2E_TOPOLOGY_PROVIDER=auto` currently expands to `incus`, not Docker.
-Docker can be selected explicitly with `ORBIT_E2E_TOPOLOGY_PROVIDER=docker`;
-only add Docker to `auto` after measured timing data proves it should become
-part of the default feature-lane pool.
+`composer test:e2e` sets `ORBIT_E2E_TOPOLOGY_PROVIDER=docker` explicitly.
+`ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
+or Pest invocations unless the provider selection code is changed.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work
