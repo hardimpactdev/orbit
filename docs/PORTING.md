@@ -584,6 +584,10 @@ before any app write/destructive commands are created:
    implementation todo is promoted. **Implemented:** see
    `docs/abstractions/5_app.md`.
 2. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
+   **Implemented:** app registry schema and `App` model/factory are on `main`
+   with focused model coverage. Current docs:
+   `docs/commands/5_app/README.md` and `docs/commands/5_app/app-concepts.md`.
+   Old evidence: `../orbit-old-may/app/Models/App.php`.
 3. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
 4. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
 5. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.

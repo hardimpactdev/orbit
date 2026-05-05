@@ -1,0 +1,68 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
+
+class App extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'node_id',
+        'environment',
+        'domain',
+        'path',
+        'document_root',
+        'repository',
+        'php_version',
+        'adopted',
+    ];
+
+    #[\Override]
+    protected function casts(): array
+    {
+        return [
+            'adopted' => 'boolean',
+        ];
+    }
+
+    public function node(): BelongsTo
+    {
+        return $this->belongsTo(Node::class);
+    }
+
+    public function url(): string
+    {
+        if (is_string($this->domain) && $this->domain !== '') {
+            return "https://{$this->domain}";
+        }
+
+        $this->loadMissing('node');
+
+        $tld = is_string($this->node?->tld) ? trim($this->node->tld, '.') : '';
+
+        if ($tld === '') {
+            return "https://{$this->name}";
+        }
+
+        return "https://{$this->name}.{$tld}";
+    }
+
+    public function documentRootPath(): string
+    {
+        $root = trim((string) $this->document_root, '/');
+
+        if ($root === '') {
+            return rtrim((string) $this->path, '/');
+        }
+
+        return Str::finish(rtrim((string) $this->path, '/'), '/').$root;
+    }
+}
