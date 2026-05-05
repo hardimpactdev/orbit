@@ -27,7 +27,7 @@ defines the target product and system contract. Command behavior is defined in
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Ubuntu app nodes                                            │
-│ Orbit CLI client, PHP-FPM, Caddy, systemd, Docker, files     │
+│ Orbit CLI client, PHP-FPM, Caddy, Supervisor, Docker, files  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,6 +62,8 @@ The gateway is supported on Ubuntu. It owns:
 - DNS coordination inside the Orbit network;
 - Cloudflare integration when production domains are managed;
 - SSH access to app nodes through `RemoteShell`;
+- the gateway-local Orbit Scheduler instance that runs Orbit-scoped
+  maintenance schedules and gateway-targeted recurring work;
 - `doctor` probes and drift repair/adoption orchestration.
 
 The gateway is the only node that mutates durable fleet intent.
@@ -84,7 +86,8 @@ An app node is supported on Ubuntu. It runs the workload stack:
 - Orbit CLI client for commands initiated from app or workspace paths;
 - PHP-FPM;
 - Caddy;
-- systemd units and timers for Orbit-managed runtime artifacts;
+- Supervisor as the runtime backend for Orbit-managed runtime units;
+- the `orbit_scheduler` Supervisor program running the Orbit Scheduler daemon;
 - Docker services for databases, caches, mail, and supporting tools;
 - app and workspace files;
 - WireGuard and SSH;
@@ -108,8 +111,10 @@ lifecycle events to the gateway, but the gateway remains the writer and enactor.
 | Gateway to app node | SSH through `RemoteShell` |
 | Proxy backend | Caddy |
 | PHP runtime | Native PHP-FPM pools |
-| Process runtime | systemd services and journald |
-| Schedule runtime | systemd timers and services |
+| Host init | systemd on Ubuntu hosts; Docker daemon restart policy in Docker E2E containers (`supervisord` as PID 1, typically under `tini`) |
+| Runtime backend | Supervisor (`supervisord`) on every gateway and app node |
+| Schedule runtime | `orbit-scheduler` Artisan-command daemon supervised by the runtime backend |
+| Runtime logs | Supervisor-managed stdout/stderr log files |
 | Service runtime | Docker Compose for databases, caches, mail, and utilities |
 | Network | WireGuard |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -224,9 +229,9 @@ The permanent product families are named in Orbit terms:
 - `firewall_rule`.
 
 Deployment policy and history belong to apps. Process definitions are app-owned
-intent; derived app/workspace systemd units are physical artifacts, not gateway
-state rows. Process lifecycle events are durable history, not a separate
-process-unit intent table.
+intent; derived app/workspace runtime units are physical artifacts on the
+runtime backend, not gateway state rows. Process lifecycle events are durable
+history, not a separate runtime-unit intent table.
 
 Agent IDE defaults are gateway intent owned by nodes and apps, not a separate
 state family. Adapter implementations are extension points. Core Orbit resolves
@@ -239,9 +244,9 @@ also provide an adopt path for `doctor --adopt`. Public doctor family keys use
 the product names above. Backend-shaped implementation keys are migration
 details, not stable product vocabulary.
 
-Backend-shaped names such as Caddy sites, UFW rules, systemd units, or package
-manager installs belong in renderer, enactor, probe, migration, and contraction
-code. They are not product-level Orbit concepts.
+Backend-shaped names such as Caddy sites, UFW rules, Supervisor programs, or
+package manager installs belong in renderer, enactor, probe, migration, and
+contraction code. They are not product-level Orbit concepts.
 
 Renderers compile gateway-tracked configuration into expected artifacts. They
 must receive all target-specific inputs from gateway intent, resolved target
@@ -259,13 +264,49 @@ Typical app-node artifacts include:
 - app directories and workspace directories;
 - PHP-FPM pool configuration and sockets;
 - Caddy site configuration rendered from `proxy`;
-- systemd service units derived from app-owned process definitions;
-- systemd timer/service pairs for schedules;
+- Supervisor programs derived from app-owned process definitions;
+- the `orbit_scheduler` Supervisor program running the Orbit Scheduler daemon;
 - Docker Compose files for managed tools and services;
 - Orbit-authored hook files that report narrow lifecycle events to the gateway.
 
 Exact paths are backend implementation details and should live with the relevant
 enactor/probe code or command contract when exposed to users.
+
+## Runtime Backend And Scheduler
+
+Supervisor (`supervisord`) is the runtime backend on every gateway and app
+node. It supervises Orbit-managed long-running processes — one Supervisor
+program per runtime unit — and the `orbit_scheduler` program that runs the
+Orbit Scheduler daemon. Host init keeps Supervisor itself alive: the distro
+`supervisor.service` unit on Ubuntu, or the Docker daemon's container
+restart policy in Docker E2E topologies (`supervisord` runs as PID 1
+inside the container, typically under `tini`).
+
+The Orbit Scheduler is a long-running PHP process invoked as
+`php artisan orbit:scheduler:run`. It runs an internal loop that aligns to
+wall-clock minute boundaries, performs one evaluation tick, and sleeps
+until the next boundary:
+
+```text
+loop:
+  sleep until the next wall-clock minute boundary
+  perform one tick   // shared logic with `orbit schedule:run`
+  goto loop
+```
+
+The tick interval is an implementation detail. It may be tightened (for
+example to evaluate at most every ten seconds) without changing the
+schedule expression contract, which remains minute-resolution. Sub-minute
+work belongs in a runtime unit, not in a schedule expression.
+
+Periodic execution comes from the daemon's internal sleep loop, not from
+Supervisor — Supervisor itself does not provide cron-style scheduling. Its
+contributions are: keep the PHP process alive, restart it on crash, and
+capture stdout/stderr for `process:logs orbit_scheduler`.
+
+The daemon's per-tick logic is shared with the `orbit schedule:run`
+command. The daemon is the steady-state path; `schedule:run` is the
+on-demand path used for testing, troubleshooting, and recovery.
 
 ## Installation Shape
 
