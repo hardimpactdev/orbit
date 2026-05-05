@@ -524,24 +524,29 @@ VPS-adjacent behavior.
    per-run bundle, launch from blank/base images, provision control/gateway VMs
    from the base image, and run in the `e2e-provision` lane. The full Incus
    provision-lane run is intentionally deferred to the next E2E-testing pass.
+7. `NODENEW-WIREGUARD-ENROLL-1` (todo 268) is implemented: first-gateway
+   bootstrap now generates gateway/control WireGuard keys, sends the identity
+   payload to the gateway-local bootstrap command over SSH stdin, persists
+   gateway-side peer rows plus the local initiating-control peer, configures
+   `wg-orbit` on the gateway, and covers fresh plus idempotent paths with
+   focused Pest tests. The paired provisioning E2E lane is still deferred.
 
 If the ready queue is below target, fill with independent read-only Pest,
 documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
-   foundation is merged.
-2. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
+1. `NODENEW-GATEWAY-API-VERIFY-1`: verify the gateway API over WireGuard,
+   including `/api/me`, after first-gateway bootstrap.
+2. `NODENEW-GATEWAY-CA-VERIFY-1`: make gateway CA trust verification explicit
+   in the command result and focused tests.
+3. `NODENEW-PLATFORM-DETECT-1`: replace optimistic platform placeholders in the
+   first-gateway bootstrap path.
+4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
    typed request, after the grant E2E gate lands.
-3. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
+5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
    Do not start this until the grant E2E implementation is on `main`.
-4. Deferred E2E verification pass: run `NodeShowGrant` against the
-   `control-gateway-dev-prod` feature lane before treating the grant E2E as
-   fully verified.
-5. Deferred E2E verification pass: run the full `e2e-provision` lane before
-   treating the provisioning rework as infrastructure-verified.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -552,9 +557,11 @@ work becomes the active lane:
 0. `NODENEW-WG-FOUNDATION-1` (todo 271) is merged: `WireGuardPeer`,
    `wireguard_peers`, factories, and `WireGuardKeyGenerator` are available for
    the enrollment slice.
-1. `NODENEW-WIREGUARD-ENROLL-1` — enroll the first gateway in WireGuard and
-   prove the resulting registry and config state with focused Pest coverage;
-   pair with an `e2e-provision` gate.
+1. `NODENEW-WIREGUARD-ENROLL-1` (todo 268) is implemented: first-gateway
+   bootstrap generates gateway/control keys, persists gateway-side peer rows
+   plus the local initiating-control peer, writes the gateway `wg-orbit` config
+   through `orbit:internal:bootstrap-gateway-local`, and starts/enables the
+   interface. The paired `e2e-provision` gate is still deferred.
 2. `NODENEW-GATEWAY-API-VERIFY-1` — verify the gateway API over WireGuard,
    including `/api/me`, after first-gateway bootstrap; pair with an
    `e2e-provision` gate.
@@ -733,7 +740,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [~] SSH bootstrap
   - [~] WireGuard enrollment
     - [x] `WireGuardPeer` model, migration, and `WireGuardKeyGenerator` service (todo 271).
-    - [ ] Node enrollment hook and gateway interface configuration.
+    - [x] Node enrollment hook and gateway interface configuration (todo 268).
   - [~] gateway registry writes
   - [~] local node role and identity persistence
   - [ ] Orbit API vhost provisioning
@@ -1016,9 +1023,9 @@ decision evidence and tracker status only.
    `control-gateway-dev-prod` to verify the implemented `node:show` grant gate.
 2. Run the deferred full `e2e-provision` lane to verify the provisioning test
    rework end to end.
-3. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
-   then pair it with the `e2e-provision` lane before treating first-gateway
-   WireGuard state as complete.
+3. Pair `NODENEW-WIREGUARD-ENROLL-1` with the deferred `e2e-provision` lane
+   before treating first-gateway WireGuard state as infrastructure-verified,
+   then start `NODENEW-GATEWAY-API-VERIFY-1`.
 4. Continue gateway forwarding in the documented order after the grant E2E
    slice: `node:update`, `node:default`, `node:grant`, `node:revoke`, and
    `node:remove`.

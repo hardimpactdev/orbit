@@ -6,9 +6,11 @@ namespace App\Console\Commands;
 
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\WireGuardPeer;
 use App\Services\Gateway\GatewayRequestSender;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\OrbitHostInstaller;
+use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -31,8 +33,11 @@ class NodeNewCommand extends Command
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
-    public function handle(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter): int
-    {
+    public function handle(
+        OrbitHostInstaller $installer,
+        NodeRegistryWriter $registryWriter,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+    ): int {
         $callerRole = $this->callerRole();
 
         if ($callerRole === 'app') {
@@ -110,7 +115,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        return $this->bootstrapFirstGateway($installer, $name);
+        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $name);
     }
 
     /**
@@ -252,8 +257,11 @@ class NodeNewCommand extends Command
         return self::SUCCESS;
     }
 
-    private function bootstrapFirstGateway(OrbitHostInstaller $installer, string $name): int
-    {
+    private function bootstrapFirstGateway(
+        OrbitHostInstaller $installer,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        string $name,
+    ): int {
         $host = $this->stringOption('host');
 
         if ($host === null) {
@@ -275,6 +283,34 @@ class NodeNewCommand extends Command
         $gatewayAddress = '10.6.0.2';
         $controlAddress = $this->nextWireguardAddress(excluding: [$gatewayAddress]);
 
+        try {
+            $gatewayKeys = $wireGuardKeyGenerator->generateKeyPair();
+            $controlKeys = $wireGuardKeyGenerator->generateKeyPair();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to generate WireGuard identity material.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'wireguard_identity',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        $identityJson = json_encode([
+            'gateway' => [
+                'public_key' => $gatewayKeys['public_key'],
+                'private_key' => $gatewayKeys['private_key'],
+            ],
+            'control' => [
+                'name' => $controlName,
+                'wireguard_address' => $controlAddress,
+                'public_key' => $controlKeys['public_key'],
+                'private_key' => $controlKeys['private_key'],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
         $installation = $installer->install($host, $sshUser, 'gateway', $runtimeUser);
 
         if (! $installation->successful) {
@@ -290,7 +326,7 @@ class NodeNewCommand extends Command
         }
 
         $bootstrapCommand = sprintf(
-            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s',
+            'cd %s && php artisan orbit:internal:bootstrap-gateway-local %s %s --identity-json=-',
             escapeshellarg("/home/{$runtimeUser}/orbit"),
             escapeshellarg($name),
             escapeshellarg($gatewayAddress),
@@ -300,7 +336,7 @@ class NodeNewCommand extends Command
             ? $bootstrapCommand
             : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($bootstrapCommand));
 
-        $bootstrap = Process::timeout(120)->run(sprintf(
+        $bootstrap = Process::timeout(120)->input($identityJson)->run(sprintf(
             'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
             escapeshellarg($sshUser),
             escapeshellarg($host),
@@ -360,7 +396,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress): void {
+        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress, $controlKeys): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
             Node::query()->updateOrCreate(
@@ -381,7 +417,7 @@ class NodeNewCommand extends Command
                 ],
             );
 
-            Node::query()->updateOrCreate(
+            $control = Node::query()->updateOrCreate(
                 ['name' => $controlName],
                 [
                     'role' => 'control',
@@ -392,9 +428,19 @@ class NodeNewCommand extends Command
                     'wireguard_address' => $controlAddress,
                     'gateway_endpoint' => $host,
                     'ssh_user' => get_current_user(),
+                    'user' => get_current_user(),
                     'orbit_path' => base_path(),
                     'status' => 'active',
                     'is_local' => true,
+                ],
+            );
+
+            WireGuardPeer::query()->firstOrCreate(
+                ['node_id' => $control->id],
+                [
+                    'public_key' => $controlKeys['public_key'],
+                    'private_key' => $controlKeys['private_key'],
+                    'allowed_ips' => "{$controlAddress}/32",
                 ],
             );
         });
@@ -432,7 +478,7 @@ class NodeNewCommand extends Command
                 'status' => 'active',
             ],
             'local_onboarding' => [
-                'wireguard' => 'pending',
+                'wireguard' => 'installed',
                 'gateway_trust' => 'trusted',
                 'gateway_config' => 'stored',
                 'gateway_api' => 'pending',

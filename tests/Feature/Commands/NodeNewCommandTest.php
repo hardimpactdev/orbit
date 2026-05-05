@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
@@ -35,6 +36,30 @@ describe('node:new', function (): void {
 
         @unlink($tmpKey);
         @unlink($tmpCrt);
+
+        $this->fakeFirstGatewayProcesses = function (string $bootstrapOutput, ?string &$bootstrapInput = null): void {
+            $privateKeys = ['gateway-private-key', 'control-private-key'];
+            $publicKeys = ['gateway-public-key', 'control-public-key'];
+
+            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys) {
+                if ($process->command === 'wg genkey') {
+                    return Process::result(output: array_shift($privateKeys)."\n");
+                }
+
+                if ($process->command === 'wg pubkey') {
+                    return Process::result(output: array_shift($publicKeys)."\n");
+                }
+
+                if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
+                    $bootstrapInput = (string) $process->input;
+
+                    return Process::result(output: $bootstrapOutput."\n");
+                }
+
+                return Process::result(output: '');
+            });
+            Process::preventStrayProcesses();
+        };
     });
 
     afterEach(function (): void {
@@ -82,15 +107,9 @@ describe('node:new', function (): void {
 
     it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
         $mockCaCert = $this->mockCaCert;
+        $bootstrapInput = null;
 
-        Process::fake(function ($process) use ($mockCaCert) {
-            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
-                return Process::result(output: $mockCaCert."\n");
-            }
-
-            return Process::result(output: '');
-        });
-        Process::preventStrayProcesses();
+        ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput);
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
@@ -124,7 +143,7 @@ describe('node:new', function (): void {
             ])
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('mini')
             ->and($payload['success']['data']['local_onboarding'])->toBe([
-                'wireguard' => 'pending',
+                'wireguard' => 'installed',
                 'gateway_trust' => 'trusted',
                 'gateway_config' => 'stored',
                 'gateway_api' => 'pending',
@@ -147,6 +166,29 @@ describe('node:new', function (): void {
             ->and($control->role)->toBe('control')
             ->and((bool) $control->is_local)->toBeTrue();
 
+        $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
+
+        expect(WireGuardPeer::query()->where('node_id', $gateway->id)->exists())->toBeFalse()
+            ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
+            ->and($controlPeer->public_key)->toBe('control-public-key')
+            ->and($controlPeer->private_key)->toBe('control-private-key')
+            ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
+
+        $identity = json_decode((string) $bootstrapInput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($identity)->toMatchArray([
+            'gateway' => [
+                'public_key' => 'gateway-public-key',
+                'private_key' => 'gateway-private-key',
+            ],
+            'control' => [
+                'name' => 'mini',
+                'wireguard_address' => '10.6.0.3',
+                'public_key' => 'control-public-key',
+                'private_key' => 'control-private-key',
+            ],
+        ]);
+
         $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
         expect(file_exists($trustPath))->toBeTrue()
             ->and(file_get_contents($trustPath))->toBe($mockCaCert);
@@ -166,17 +208,14 @@ describe('node:new', function (): void {
             && str_contains($process->command, 'sudo su -'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && str_contains($process->command, 'orbit:internal:bootstrap-gateway-local'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')
+            && str_contains($process->command, '--identity-json=-')
+            && ! str_contains($process->command, 'gateway-private-key')
+            && ! str_contains($process->command, 'control-private-key'));
     });
 
     it('fails when remote bootstrap returns an invalid or empty CA certificate', function (): void {
-        Process::fake(function ($process) {
-            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
-                return Process::result(output: 'Orbit 0.1.0\n');
-            }
-
-            return Process::result(output: '');
-        });
-        Process::preventStrayProcesses();
+        ($this->fakeFirstGatewayProcesses)('Orbit 0.1.0');
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-invalid',
@@ -208,14 +247,7 @@ describe('node:new', function (): void {
     });
 
     it('fails when remote bootstrap returns malformed PEM with valid delimiters', function (): void {
-        Process::fake(function ($process) {
-            if (str_contains($process->command, 'orbit:internal:bootstrap-gateway-local')) {
-                return Process::result(output: "-----BEGIN CERTIFICATE-----\nnot-a-valid-cert\n-----END CERTIFICATE-----\n");
-            }
-
-            return Process::result(output: '');
-        });
-        Process::preventStrayProcesses();
+        ($this->fakeFirstGatewayProcesses)("-----BEGIN CERTIFICATE-----\nnot-a-valid-cert\n-----END CERTIFICATE-----");
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-malformed',
