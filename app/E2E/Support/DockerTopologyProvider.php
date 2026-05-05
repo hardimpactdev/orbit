@@ -6,6 +6,8 @@ namespace App\E2E\Support;
 
 final readonly class DockerTopologyProvider implements E2ETopologyProvider
 {
+    private const int DockerMetadataProbeTimeoutSeconds = 120;
+
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -183,7 +185,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
-            if (! $host->run('docker info >/dev/null', timeoutSeconds: 10)->successful()) {
+            if (! $host->run('docker info >/dev/null', timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
                 $failures[] = "{$hostName}: docker daemon is not reachable";
 
                 continue;
@@ -221,6 +223,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             : $this->config->dockerHosts;
     }
 
+    private function dockerMetadataProbeTimeoutSeconds(): int
+    {
+        return min($this->config->timeoutSeconds, self::DockerMetadataProbeTimeoutSeconds);
+    }
+
     private function acquireResourceLease(): ?E2EResourceLease
     {
         if ($this->config->dockerHostSlots === []) {
@@ -238,7 +245,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         foreach ($this->rolesFor($kind) as $role) {
             $image = $this->imageNameFor($kind, $role);
 
-            if (! $host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: 10)->successful()) {
+            if (! $host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
                 return $image;
             }
         }
@@ -252,7 +259,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             'docker ps --format %s --filter %s',
             escapeshellarg('{{.Names}}'),
             escapeshellarg("name={$this->config->instancePrefix}-"),
-        ), timeoutSeconds: 10);
+        ), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds());
 
         if (! $result->successful()) {
             return $this->config->dockerMaxContainersPerHost + 1;

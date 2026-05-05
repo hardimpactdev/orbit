@@ -131,6 +131,30 @@ it('selects the first docker host with image availability and capacity', functio
     });
 });
 
+it('allows slow remote docker metadata probes during host selection', function (): void {
+    $probeTimeouts = [];
+
+    Process::fake(function ($process) use (&$probeTimeouts) {
+        if ($process->command === 'docker info >/dev/null' || str_starts_with($process->command, 'docker image inspect ') || str_starts_with($process->command, 'docker ps ')) {
+            $probeTimeouts[$process->command] = $process->timeout;
+        }
+
+        return Process::result();
+    });
+
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOSTS' => 'beast',
+        'ORBIT_E2E_TIMEOUT_SECONDS' => '600',
+    ], function () use (&$probeTimeouts): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+        expect($provider->availability(E2ETopologyKind::Control)->available)->toBeTrue()
+            ->and($probeTimeouts['docker info >/dev/null'])->toBe(120)
+            ->and($probeTimeouts["docker image inspect 'orbit-e2e-topology:control-control-current' >/dev/null"])->toBe(120)
+            ->and($probeTimeouts["docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"])->toBe(120);
+    });
+});
+
 it('counts running docker containers with the configured e2e instance prefix', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null') {
