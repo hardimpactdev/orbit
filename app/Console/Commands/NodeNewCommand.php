@@ -10,6 +10,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Gateway\GatewayRequestSender;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\OrbitHostInstaller;
+use App\Services\Platform\PlatformDetector;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
@@ -44,6 +45,7 @@ class NodeNewCommand extends Command
         OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
+        PlatformDetector $platformDetector,
     ): int {
         $callerRole = $this->callerRole();
 
@@ -130,7 +132,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $name);
+        return $this->bootstrapFirstGateway($installer, $wireGuardKeyGenerator, $platformDetector, $name);
     }
 
     private function convergeFirstGateway(string $name): int
@@ -243,6 +245,8 @@ class NodeNewCommand extends Command
             gatewayAddress: (string) $gateway->wireguard_address,
             controlName: $controlName,
             controlAddress: (string) $control->wireguard_address,
+            gatewayPlatform: $gateway->platform ?? 'unknown',
+            controlPlatform: $control->platform ?? 'unknown',
             onboarding: [
                 'wireguard' => 'already_installed',
                 'gateway_trust' => $trustStatus,
@@ -411,6 +415,7 @@ class NodeNewCommand extends Command
     private function bootstrapFirstGateway(
         OrbitHostInstaller $installer,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
+        PlatformDetector $platformDetector,
         string $name,
     ): int {
         $host = $this->stringOption('host');
@@ -532,6 +537,30 @@ class NodeNewCommand extends Command
             );
         }
 
+        $gatewayPlatform = $this->detectRemotePlatform(
+            host: $host,
+            sshUser: $sshUser,
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($gatewayPlatform)) {
+            return $gatewayPlatform;
+        }
+
+        try {
+            $controlPlatform = $platformDetector->detectLocal();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to detect the local control platform.',
+                meta: [
+                    'host' => $host,
+                    'step' => 'platform_detection',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
         $trustPath = storage_path("app/orbit/trust/{$name}-ca.crt");
         File::ensureDirectoryExists(dirname($trustPath));
 
@@ -563,7 +592,7 @@ class NodeNewCommand extends Command
             return $trustStatus;
         }
 
-        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $controlAddress, $controlKeys, $trustPath, $caSha256): void {
+        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
             Node::query()->where('is_local', true)->update(['is_local' => false]);
 
             Node::query()->updateOrCreate(
@@ -572,7 +601,7 @@ class NodeNewCommand extends Command
                     'role' => 'gateway',
                     'environment' => null,
                     'tld' => null,
-                    'platform' => 'unknown',
+                    'platform' => $gatewayPlatform,
                     'host' => $host,
                     'wireguard_address' => $gatewayAddress,
                     'gateway_endpoint' => $host,
@@ -590,7 +619,7 @@ class NodeNewCommand extends Command
                     'role' => 'control',
                     'environment' => null,
                     'tld' => null,
-                    'platform' => 'unknown',
+                    'platform' => $controlPlatform,
                     'host' => '127.0.0.1',
                     'wireguard_address' => $controlAddress,
                     'gateway_endpoint' => $host,
@@ -642,6 +671,8 @@ class NodeNewCommand extends Command
             gatewayAddress: $gatewayAddress,
             controlName: $controlName,
             controlAddress: $controlAddress,
+            gatewayPlatform: $gatewayPlatform,
+            controlPlatform: $controlPlatform,
             onboarding: [
                 'wireguard' => 'installed',
                 'gateway_trust' => $trustStatus,
@@ -689,6 +720,8 @@ class NodeNewCommand extends Command
         string $gatewayAddress,
         string $controlName,
         string $controlAddress,
+        string $gatewayPlatform,
+        string $controlPlatform,
         array $onboarding,
         array $gatewayTrust,
     ): array {
@@ -701,7 +734,7 @@ class NodeNewCommand extends Command
                 'role' => 'gateway',
                 'environment' => null,
                 'tld' => null,
-                'platform' => 'unknown',
+                'platform' => $gatewayPlatform,
                 'addresses' => [
                     'wireguard' => $gatewayAddress,
                     'gateway_endpoint' => $host,
@@ -718,7 +751,7 @@ class NodeNewCommand extends Command
                 'role' => 'control',
                 'environment' => null,
                 'tld' => null,
-                'platform' => 'unknown',
+                'platform' => $controlPlatform,
                 'addresses' => [
                     'wireguard' => $controlAddress,
                 ],
@@ -770,6 +803,53 @@ class NodeNewCommand extends Command
         }
 
         return 'trusted';
+    }
+
+    private function detectRemotePlatform(string $host, string $sshUser, string $runtimeUser): string|int
+    {
+        $detectCommand = sprintf(
+            'cd %s && php artisan orbit:internal:detect-platform --update-local-node',
+            escapeshellarg("/home/{$runtimeUser}/orbit"),
+        );
+
+        $command = $sshUser === $runtimeUser
+            ? $detectCommand
+            : sprintf('sudo su - %s -c %s', escapeshellarg($runtimeUser), escapeshellarg($detectCommand));
+
+        $detection = Process::timeout(30)->run(sprintf(
+            'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new %s@%s %s',
+            escapeshellarg($sshUser),
+            escapeshellarg($host),
+            escapeshellarg($command),
+        ));
+
+        if (! $detection->successful()) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' could not detect its platform.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'platform_detection',
+                    'error' => trim($detection->errorOutput()) ?: trim($detection->output()) ?: null,
+                ],
+            );
+        }
+
+        $platform = trim($detection->output());
+
+        if ($platform === '') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "Gateway host '{$host}' returned an empty platform identifier.",
+                meta: [
+                    'host' => $host,
+                    'step' => 'platform_detection',
+                    'error' => 'Remote platform detection did not output a platform identifier.',
+                ],
+            );
+        }
+
+        return $platform;
     }
 
     /**

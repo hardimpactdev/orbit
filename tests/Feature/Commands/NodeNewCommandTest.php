@@ -16,6 +16,15 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
+function nodeNewExpectedLocalPlatform(): string
+{
+    return match (PHP_OS_FAMILY) {
+        'Darwin' => 'macos_15-4',
+        'Linux' => 'ubuntu_24-04',
+        default => 'unknown',
+    };
+}
+
 describe('node:new', function (): void {
     beforeEach(function (): void {
         $this->tempStorage = sys_get_temp_dir().'/orbit-node-new-test-'.uniqid();
@@ -96,11 +105,16 @@ describe('node:new', function (): void {
             ]);
         };
 
-        $this->fakeFirstGatewayProcesses = function (string $bootstrapOutput, ?string &$bootstrapInput = null): void {
+        $this->fakeFirstGatewayProcesses = function (
+            string $bootstrapOutput,
+            ?string &$bootstrapInput = null,
+            string $gatewayPlatformOutput = 'ubuntu_24-04',
+            int $gatewayPlatformExitCode = 0,
+        ): void {
             $privateKeys = ['gateway-private-key', 'control-private-key'];
             $publicKeys = ['gateway-public-key', 'control-public-key'];
 
-            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys) {
+            Process::fake(function ($process) use ($bootstrapOutput, &$bootstrapInput, &$privateKeys, &$publicKeys, $gatewayPlatformOutput, $gatewayPlatformExitCode) {
                 if ($process->command === 'wg genkey') {
                     return Process::result(output: array_shift($privateKeys)."\n");
                 }
@@ -113,6 +127,22 @@ describe('node:new', function (): void {
                     $bootstrapInput = (string) $process->input;
 
                     return Process::result(output: $bootstrapOutput."\n");
+                }
+
+                if (str_contains($process->command, 'orbit:internal:detect-platform')) {
+                    return Process::result(
+                        output: $gatewayPlatformOutput === '' ? '' : $gatewayPlatformOutput."\n",
+                        errorOutput: $gatewayPlatformExitCode === 0 ? '' : 'platform unavailable',
+                        exitCode: $gatewayPlatformExitCode,
+                    );
+                }
+
+                if ($process->command === 'sw_vers -productVersion') {
+                    return Process::result(output: "15.4\n");
+                }
+
+                if ($process->command === 'cat /etc/os-release') {
+                    return Process::result(output: "ID=ubuntu\nVERSION_ID=\"24.04\"\n");
                 }
 
                 return Process::result(output: '');
@@ -189,7 +219,7 @@ describe('node:new', function (): void {
                 'role' => 'gateway',
                 'environment' => null,
                 'tld' => null,
-                'platform' => 'unknown',
+                'platform' => 'ubuntu_24-04',
                 'addresses' => [
                     'wireguard' => '10.6.0.2',
                     'gateway_endpoint' => '192.0.2.10',
@@ -202,6 +232,7 @@ describe('node:new', function (): void {
                 'status' => 'complete',
             ])
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('mini')
+            ->and($payload['success']['data']['local_control_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
             ->and($payload['success']['data']['local_onboarding'])->toBe([
                 'wireguard' => 'installed',
                 'gateway_trust' => 'trusted',
@@ -221,6 +252,7 @@ describe('node:new', function (): void {
 
         expect($gateway)->not->toBeNull()
             ->and($gateway->role)->toBe('gateway')
+            ->and($gateway->platform)->toBe('ubuntu_24-04')
             ->and($gateway->host)->toBe('192.0.2.10')
             ->and($gateway->wireguard_address)->toBe('10.6.0.2')
             ->and($gateway->gateway_endpoint)->toBe('192.0.2.10')
@@ -230,6 +262,7 @@ describe('node:new', function (): void {
             ->and((bool) $gateway->is_local)->toBeFalse()
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
+            ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform())
             ->and((bool) $control->is_local)->toBeTrue();
 
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
@@ -291,6 +324,8 @@ describe('node:new', function (): void {
             && str_contains($process->command, '--identity-json=-')
             && ! str_contains($process->command, 'gateway-private-key')
             && ! str_contains($process->command, 'control-private-key'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
+            && str_contains($process->command, 'orbit:internal:detect-platform --update-local-node'));
 
         Http::assertSent(fn ($request): bool => $request->method() === 'GET'
             && $request->url() === 'https://10.6.0.2/api/me');
@@ -331,6 +366,8 @@ describe('node:new', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['result']['action'])->toBe('converged')
+            ->and($payload['success']['data']['node']['platform'])->toBe('ubuntu_24-04')
+            ->and($payload['success']['data']['local_control_node']['platform'])->toBe(nodeNewExpectedLocalPlatform())
             ->and($payload['success']['data']['provisioning']['status'])->toBe('already_provisioned')
             ->and($payload['success']['data']['local_onboarding'])->toBe([
                 'wireguard' => 'already_installed',
@@ -341,7 +378,43 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['gateway_trust']['status'])->toBe('already_trusted')
             ->and($payload['success']['data']['gateway_trust']['ca_sha256'])->toBe(hash('sha256', $mockCaCert))
             ->and($this->fakeInstaller->trustCalls)->toHaveCount(1)
-            ->and(file_get_contents($trustPath))->toBe($firstPem);
+            ->and(file_get_contents($trustPath))->toBe($firstPem)
+            ->and(DB::table('nodes')->count())->toBe(2)
+            ->and(DB::table('nodes')->where('name', 'gateway-1')->value('platform'))->toBe('ubuntu_24-04')
+            ->and(DB::table('nodes')->where('name', 'mini')->value('platform'))->toBe(nodeNewExpectedLocalPlatform());
+    });
+
+    it('fails before local onboarding persistence when platform detection fails', function (): void {
+        ($this->fakeFirstGatewayProcesses)(
+            bootstrapOutput: $this->mockCaCert,
+            gatewayPlatformOutput: '',
+            gatewayPlatformExitCode: 1,
+        );
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-platform-fail',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.15',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => "Gateway host '192.0.2.15' could not detect its platform.",
+                    'meta' => [
+                        'host' => '192.0.2.15',
+                        'step' => 'platform_detection',
+                        'error' => 'platform unavailable',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->count())->toBe(0);
     });
 
     it('fails when first gateway API verification fails after local onboarding state is stored', function (): void {

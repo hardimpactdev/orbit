@@ -259,9 +259,9 @@ yet satisfy the full product contracts.
     gateway host, and persist local bootstrap registry rows for the gateway and
     initiating control node.
   - Contract gaps are tracked in the node workstream; this is not yet complete
-    first-gateway onboarding because real platform detection and final JSON
-    success-state cleanup are still missing. WireGuard enrollment, gateway CA
-    trust, gateway API reachability, and `/api/me` verification are implemented
+    first-gateway onboarding because final JSON success-state cleanup is still
+    missing. WireGuard enrollment, gateway CA trust, gateway API reachability,
+    `/api/me` verification, and first-gateway platform detection are implemented
     but their paired E2E gates remain deferred.
 - [-] `node:register` — **DECIDED: Retire as public command; keep as internal bootstrap utility.**
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
@@ -548,8 +548,10 @@ documentation, or E2E support work only.
    trust-store installer, persists local gateway trust settings, exposes
    `gateway_trust` evidence in JSON output, and converges repeat runs without
    duplicate trust installation.
-3. `NODENEW-PLATFORM-DETECT-1`: replace optimistic platform placeholders in the
-   first-gateway bootstrap path.
+3. `NODENEW-PLATFORM-DETECT-1` (todo 274) is implemented: first-gateway
+   bootstrap now detects the gateway platform through the bootstrapped remote
+   Orbit command, detects the initiating control platform locally, persists both
+   platform identifiers, and keeps repeat convergence runs stable.
 4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
    typed request, after the grant E2E gate lands.
 5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
@@ -578,8 +580,9 @@ work becomes the active lane:
    bootstrap verifies and installs gateway CA trust, stores local trust
    metadata, exposes JSON trust evidence, and keeps repeat runs idempotent.
    The paired provisioning E2E gate remains deferred.
-4. `NODENEW-PLATFORM-DETECT-1` — replace optimistic platform placeholders with
-   real platform detection for the gateway bootstrap path.
+4. `NODENEW-PLATFORM-DETECT-1` (todo 274) is implemented: gateway and local
+   control platform identifiers are detected and persisted during first-gateway
+   bootstrap. The paired provisioning E2E gate remains deferred.
 5. `NODENEW-JSON-SUCCESS-1` — finalize the documented JSON success state only
    after the WireGuard, API, CA, and platform slices are real.
 
@@ -744,7 +747,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [ ] Interactive input mode.
   - [ ] Gateway-connected forwarding from configured control nodes.
   - [ ] Gateway-local app and control enrollment paths.
-  - [ ] Real platform detection.
+  - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [ ] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
   - [~] SSH bootstrap
