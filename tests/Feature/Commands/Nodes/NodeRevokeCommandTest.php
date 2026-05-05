@@ -42,6 +42,22 @@ function setupNodeRevokeGatewayCaller(): void
     ]));
 }
 
+function setupRevokeControlCaller(): void
+{
+    DB::table('nodes')->insert(nodeRevokeRow([
+        'name' => 'control-1',
+        'role' => 'control',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+}
+
 describe('node:revoke base contract', function (): void {
     it('revokes a grant and returns successfully', function (): void {
         setupNodeRevokeGatewayCaller();
@@ -289,6 +305,220 @@ describe('node:revoke base contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force');
+    });
+});
+
+describe('node:revoke control forwarding', function (): void {
+    it('forwards configured control-node revokes to the gateway without local target rows', function (): void {
+        setupRevokeControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'consuming_node' => 'control-1',
+                'serving_node' => 'app-1',
+                'action' => 'revoked',
+                'already_absent' => false,
+                'self_lockout' => false,
+            ])
+            ->and(DB::table('node_access')->count())->toBe(0);
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://10.6.0.2/api/nodes/revoke'
+            && $request['consuming_node'] === 'control-1'
+            && $request['serving_node'] === 'app-1'
+            && $request['force'] === true);
+    });
+
+    it('renders forwarded already-absent success with human output', function (): void {
+        setupRevokeControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'revoked',
+                        'already_absent' => true,
+                        'self_lockout' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        expect(Artisan::output())->toContain("Access from 'control-1' to 'app-1' was already revoked");
+    });
+
+    it('renders forwarded self-lockout success with human output', function (): void {
+        setupRevokeControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'gateway-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => true,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'gateway-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        expect(Artisan::output())->toContain("Access from 'control-1' to 'gateway-1' revoked")
+            ->and(Artisan::output())->toContain('This machine no longer has Orbit gateway access.');
+    });
+
+    it('preserves structured gateway errors when forwarding', function (array $error): void {
+        setupRevokeControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'error' => $error,
+            ], 422),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error'])->toBe($error);
+    })->with([
+        'authorization failure' => [[
+            'code' => 'authorization_failed',
+            'message' => 'This control node is not authorized to revoke grants.',
+            'meta' => [
+                'required_node' => 'gateway-1',
+                'caller_role' => 'control',
+            ],
+        ]],
+        'not found' => [[
+            'code' => 'node.not_found',
+            'message' => "Consuming node 'missing' not found.",
+            'meta' => [
+                'field' => 'consuming_node',
+                'name' => 'missing',
+            ],
+        ]],
+        'missing force' => [[
+            'code' => 'validation_failed',
+            'message' => 'Use --force to revoke this grant.',
+            'meta' => [
+                'field' => 'force',
+            ],
+        ]],
+    ]);
+
+    it('does not mutate local node_access for forwarded control calls', function (): void {
+        setupRevokeControlCaller();
+        DB::table('nodes')->insert(nodeRevokeRow([
+            'name' => 'app-1',
+            'role' => 'app',
+        ]));
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        expect(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('fails with validation_failed before gateway call when force is missing for control callers', function (): void {
+        setupRevokeControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/revoke' => Http::response([
+                'success' => [
+                    'data' => [
+                        'consuming_node' => 'control-1',
+                        'serving_node' => 'app-1',
+                        'action' => 'revoked',
+                        'already_absent' => false,
+                        'self_lockout' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('force');
+
+        Http::assertNotSent(fn ($request): bool => $request->url() === 'https://10.6.0.2/api/nodes/revoke');
     });
 });
 

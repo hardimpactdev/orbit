@@ -6,9 +6,12 @@ namespace App\Console\Commands;
 
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\RevokeNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;
@@ -46,6 +49,65 @@ class NodeRevokeCommand extends Command
         }
 
         if ($callerRole === 'control') {
+            return $this->handleControl();
+        }
+
+        return $this->handleGatewayLocal();
+    }
+
+    private function handleControl(): int
+    {
+        $consumerName = $this->argument('consuming_node');
+        if ($consumerName === null) {
+            if ($this->isInteractiveInput()) {
+                $consumerName = text(label: 'Consuming node', required: true);
+            } else {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Consuming node is required.',
+                    meta: ['field' => 'consuming_node'],
+                );
+            }
+        }
+
+        $servingName = $this->argument('serving_node');
+        if ($servingName === null) {
+            if ($this->isInteractiveInput()) {
+                $servingName = text(label: 'Serving node', required: true);
+            } else {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Serving node is required.',
+                    meta: ['field' => 'serving_node'],
+                );
+            }
+        }
+
+        if (! $this->option('force')) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Use --force to revoke this grant.',
+                    meta: ['field' => 'force'],
+                );
+            }
+
+            $confirmMessage = $this->confirmationMessage($consumerName, $servingName, false);
+
+            if (! confirm($confirmMessage, default: false)) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
+        }
+
+        try {
+            $response = GatewayRequestSender::make()->send(
+                new RevokeNodeRequest($consumerName, $servingName),
+            );
+        } catch (Throwable) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required to revoke a grant.',
@@ -53,7 +115,57 @@ class NodeRevokeCommand extends Command
             );
         }
 
-        return $this->handleGatewayLocal();
+        if (! $response->isSuccess()) {
+            return $this->failCommand(
+                code: $response->errorCode() ?? 'gateway_unavailable',
+                message: $response->errorMessage() ?? 'Gateway connection is required to revoke a grant.',
+                meta: $response->errorMeta(),
+            );
+        }
+
+        return $this->respondForwardedSuccess($consumerName, $servingName, $response->data());
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function respondForwardedSuccess(string $fallbackConsumerName, string $fallbackServingName, array $data): int
+    {
+        $consumerName = is_string($data['consuming_node'] ?? null) && $data['consuming_node'] !== ''
+            ? $data['consuming_node']
+            : $fallbackConsumerName;
+        $servingName = is_string($data['serving_node'] ?? null) && $data['serving_node'] !== ''
+            ? $data['serving_node']
+            : $fallbackServingName;
+        $alreadyAbsent = $data['already_absent'] ?? false;
+        $selfLockout = $data['self_lockout'] ?? false;
+
+        return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $selfLockout);
+    }
+
+    private function respondSuccess(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): int
+    {
+        $data = [
+            'consuming_node' => $consumerName,
+            'serving_node' => $servingName,
+            'action' => 'revoked',
+            'already_absent' => $alreadyAbsent,
+            'self_lockout' => $isSelfLockout,
+        ];
+
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'success' => [
+                    'data' => $data,
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
+
+        $this->renderProgressTree($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
+
+        return self::SUCCESS;
     }
 
     private function handleGatewayLocal(): int
@@ -134,25 +246,7 @@ class NodeRevokeCommand extends Command
             ->where('serving_node_id', $serving->id)
             ->delete();
 
-        $data = [
-            'consuming_node' => $consumerName,
-            'serving_node' => $servingName,
-            'action' => 'revoked',
-            'already_absent' => $alreadyAbsent,
-            'self_lockout' => $isSelfLockout,
-        ];
-
-        if ($this->wantsJson()) {
-            $this->line(json_encode([
-                'success' => [
-                    'data' => $data,
-                ],
-            ], JSON_THROW_ON_ERROR));
-
-            return self::SUCCESS;
-        }
-
-        return self::SUCCESS;
+        return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
     }
 
     private function resolveNode(string $name, string $field): Node|int
