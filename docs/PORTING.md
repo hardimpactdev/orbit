@@ -655,6 +655,14 @@ before any app write/destructive commands are created:
    `composer test:e2e -- --filter='App(List|Show)'`. Current docs:
    `docs/commands/5_app/4_app-show`. Old evidence:
    `../orbit-old-may/app/Console/Commands/AppShowCommand.php`.
+7. `APP-REMOTE-SHELL-1` — minimal gateway-owned `RemoteShell` foundation for
+   app write enactment.
+   **Implemented:** `RemoteShell` contract, `SshRemoteShell` implementation,
+   structured result/exception types, local-node bash execution, remote SSH
+   execution using clean `Node` registry fields (`wireguard_address`,
+   `ssh_user`, `host`), focused result/service coverage, and container binding
+   are on `main`. Current docs: `docs/commands/5_app/1_app-new`. Old evidence:
+   `../orbit-old-may/app/Services/RemoteShell/SshRemoteShell.php`.
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until
 the read pair is verified. Do not create workspace, process, tool, proxy,
@@ -1116,6 +1124,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Port `app:list`.
 - [x] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
 - [x] Port `app:show`.
+- [x] Port minimal `RemoteShell` foundation needed by gateway-owned app writes.
 - [ ] Port `app:new`.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
@@ -1408,6 +1417,9 @@ for the Saloon-based gateway transport pattern.
 1. **Keep app writes blocked until write-safety gates are cleared.**
    - `APP-LIST-1` and `APP-SHOW-1` now have focused Pest and Docker feature
      E2E coverage.
+   - `APP-REMOTE-SHELL-1` gives app writes a gateway-owned SSH edge for
+     node-side artifact enactment without giving control callers direct SSH
+     behavior.
    - Do not start `app:new`, `app:register`, `app:root`, `app:remove`,
      `app:prune`, or `app:agent-ide` until the required node
      write-forwarding/provisioning safety gates are either complete or
@@ -1415,7 +1427,7 @@ for the Saloon-based gateway transport pattern.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.
-3. Continue `profile` as a verification helper: add gateway-mediated target
-   resolution/request origin coverage, Toolbar-enriched output, and a paired
-   E2E gate against an observable app route before using it to unblock broader
-   app write work.
+3. `profile` is available as an app verification helper: gateway-mediated target
+   resolution/request origin coverage, Toolbar-enriched output, and paired
+   Docker feature E2E are implemented. The only remaining profile blocker is
+   workspace cwd inference, which waits for workspace schema/models.
