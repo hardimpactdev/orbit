@@ -432,7 +432,7 @@ VPS-adjacent behavior.
 - Count `e2e-ready` todos separately from `worker-ready`; both tags consume
   pipeline capacity but dispatch through different orchestrator paths.
 
-#### Current Short Queue (After Node Read-Forwarding)
+#### Current Short Queue (After Saloon Node Family)
 
 1. The read-forwarding chain is complete: `NODE-SHOW-CONTRACT-1` (todo 251),
    `NODE-READ-FWD-1` (todo 253), and `E2E-NODE-READ-1` (todo 254) are verified.
@@ -465,11 +465,22 @@ VPS-adjacent behavior.
    gateway-side peer rows plus the local initiating-control peer, configures
    `wg-orbit` on the gateway, and covers fresh plus idempotent paths with
    focused Pest tests plus the passing `NodeNewWireGuard` provisioning E2E.
+8. `SALOON-NODE-FAMILY-1` is complete: all existing node gateway client calls
+   now use Saloon v4 request/DTO classes under `App\Http\Gateway`, including
+   `node:list`, `node:show`, `node:grant`, `node:revoke`, `node:remove`,
+   `node:update`, `node:default` app-node discovery, and `node:new` app-node
+   creation forwarding.
+9. The legacy `App\Services\Gateway\GatewayClient`,
+   `GatewayRequestSender`, `GatewayResponse`, `GatewayResponseParser`, and
+   old `App\Services\Gateway\Requests\*` stack has been removed. The remaining
+   `app/Services/Gateway` files are intentionally pre-trust/runtime helpers
+   (`FetchGatewayRootCa`, `GatewayApiRuntimeInstaller`, `RootCaFetchResult`).
 
-Manual orchestration status: the active Testing Infrastructure and Node-family
-blockers for app read-command porting are cleared. Keep remaining provisioning,
-WireGuard teardown, and destructive-command follow-ups explicit, but they do
-not block the App read workstream.
+Manual orchestration status: the active Testing Infrastructure, Saloon
+transport, activity foundation, and Node-family blockers for app read-command
+porting are cleared. Keep remaining provisioning, WireGuard teardown,
+destructive-command E2E, and node activity-metadata follow-ups explicit, but
+they do not block the App read workstream.
 
 #### Recently Cleared Manual Items
 
@@ -554,24 +565,15 @@ commands. Order matters because each adds a new write API endpoint:
 Do not create future FWD-* todos until the matching API-* todo is on `main`.
 Do not create more than 2 of these chains in flight at once.
 
-#### App Workstream Entry Point (Blocked)
+#### App Workstream Entry Point (Unblocked)
 
-Blocked until Saloon node-family migration and activity-log foundation are
-complete. The previous "ready for read commands" status is reversed because:
+Unblocked. Saloon node-family migration and the activity-log foundation are now
+on `main`. App family ports must use the Saloon `GatewayConnector` /
+`GatewayRequest` / typed DTO pattern and add activity metadata as part of each
+slice where the command/API surface is loggable.
 
-1. **Saloon is a prerequisite for App family porting.** The current
-   `GatewayClient`/`GatewayRequestSender` hand-rolled abstraction must be
-   replaced with Saloon before app gateway API endpoints and typed requests are
-   authored. Porting app read commands on top of the old abstraction would
-   create migration debt that immediately needs rewriting.
-2. **Activity logging must be in place before App.** The old repo's
-   `spatie/laravel-activitylog` integration provided command attribution,
-   audit trails, and correlation headers for every write and many read
-   operations. Future family ports should add activity log metadata while being
-   ported, not as a catch-up exercise at the end.
-
-When unblocked, the first app slices should stay read-only and use Docker-backed
-feature E2E before any app write/destructive commands are created:
+The first app slices should stay read-only and use Docker-backed feature E2E
+before any app write/destructive commands are created:
 
 1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
    docs, old app evidence, and cross-cutting patterns before any app
@@ -593,8 +595,8 @@ exist. Those families wait for the node/gateway/app foundations.
   first-gateway provisioning prerequisites are clear.
 - Keep workspace, process, and downstream families blocked until app read
   foundations exist.
-- Keep app read commands blocked until Saloon node-family migration and
-  activity-log foundation are complete.
+- App read commands are unblocked; keep them read-only until `APP-LIST-1` and
+  `APP-SHOW-1` pass their paired Pest + Docker feature E2E gates.
 - Keep app write/destructive commands blocked until app read commands and the
   required node write-forwarding/provisioning safety gates are clear.
 
@@ -832,19 +834,19 @@ exist. Those families wait for the node/gateway/app foundations.
 
 ## Activity Logging Workstream
 
-Activity logging must be in place before the App workstream resumes. The old
-repo used `spatie/laravel-activitylog` v4 with Orbit-specific attribution
+Activity logging foundation is now in place, and future family ports should add
+metadata while being ported. The old repo used `spatie/laravel-activitylog` v4
+with Orbit-specific attribution
 metadata (command, action, subject, properties, description) on every write
-command and many read commands. Future family ports should add activity log
-metadata while being ported, not as a catch-up exercise at the end.
+command and many read commands.
 
-- [ ] `ACTIVITY-FOUNDATION-1` — install and configure `spatie/laravel-activitylog`
+- [x] `ACTIVITY-FOUNDATION-1` — install and configure `spatie/laravel-activitylog`
   v4.12.3, publish config/migrations, and establish the activity log table.
-- [ ] `ACTIVITY-CORRELATION-1` — port `ActivityLogCorrelation` service and
+- [x] `ACTIVITY-CORRELATION-1` — port `ActivityLogCorrelation` service and
   `X-Orbit-Request-Id` header propagation (gateway API and CLI command
   correlation). This is a prerequisite for the Saloon `HasCorrelationHeader`
   plugin.
-- [ ] `ACTIVITY-CLI-TRAITS-1` — define the activity-log interface/traits that
+- [x] `ACTIVITY-CLI-TRAITS-1` — define the activity-log interface/traits that
   commands implement to declare their `activityLogType()`, `activityLogAction()`,
   `activityLogSubject()`, `activityLogProperties()`, and `activityLogDescription()`.
   Old evidence: `../orbit-old-may/app/Console/Commands/` (search `activityLogType`).
@@ -857,9 +859,8 @@ metadata while being ported, not as a catch-up exercise at the end.
 
 ## App Workstream
 
-Blocked until Saloon node-family migration and activity-log foundation are
-complete. See `App Workstream Entry Point` in `Todo Pipeline Hints` for
-unblocking criteria.
+Unblocked for read-only slices. See `App Workstream Entry Point` in
+`Todo Pipeline Hints` for sequencing and verification constraints.
 
 - [x] Convert app command docs into current format.
 - [ ] Create app abstraction reference (`docs/abstractions/5_app.md`).
@@ -959,29 +960,26 @@ for the Saloon-based gateway transport pattern.
 ### Remaining Workstream Items
 
 - [x] Decide the clean-rebuild transport approach before adding packages.
-- [x] Create thin `GatewayClient` wrapper (pre-requisite for typed calls).
+- [x] Create thin `GatewayClient` wrapper (superseded by Saloon and removed).
 - [x] Port gateway API envelope conventions.
 - [x] Port request correlation header support.
 - [x] Port typed gateway request sender.
 - [x] Port WireGuard identity middleware.
 - [x] Port `/api/me`.
-- [~] Migrate gateway transport from hand-rolled `GatewayClient` /
+- [x] Migrate gateway transport from hand-rolled `GatewayClient` /
   `GatewayRequestSender` to Saloon (`saloonphp/saloon` v4.0.0). Single
   `GatewayConnector` with abstract `GatewayRequest` base handles envelope
   unwrapping and typed `GatewayApiException`. Per-endpoint Saloon `Request`
   subclasses return typed DTOs from `App\Http\Gateway\Responses\<Family>\`.
-- [~] Port node API controllers and typed client requests.
-  - Bootstrap slice implemented: `GET /api/nodes`, `GET /api/nodes/{node}`,
-    and `POST /api/nodes/grant` endpoints with `NodeListController`,
-    `NodeShowController`, `NodeGrantController`, `WireGuardIdentity`
-    middleware enforcement, the success/error gateway JSON envelope, and typed
-    request classes (`ListNodesRequest`, `ShowNodeRequest`,
-    `GrantNodeRequest`) using the `GatewayRequestSender` convention.
-  - Tests: `NodeListControllerTest`, `NodeShowControllerTest`,
-    `NodeGrantControllerTest`, `ListNodesRequestTest`, `ShowNodeRequestTest`,
-    `GrantNodeRequestTest`.
-  - Migration note: these request classes will be replaced by Saloon
-    equivalents during the `SALOON-NODE-FAMILY-1` workstream.
+- [x] Port node API controllers and typed client requests.
+  - Implemented with Saloon request/DTO classes for list, show, create,
+    grant, revoke, remove, update, and default-node API shapes.
+  - Command forwarding paths covered: `node:list`, `node:show`, `node:new`
+    app-node creation forwarding, `node:grant`, `node:revoke`, `node:remove`,
+    `node:update`, and `node:default` app-node discovery/validation.
+  - The old hand-rolled client/request/parser tests have been deleted in favor
+    of `tests/Unit/Http/Gateway/Requests/Nodes/*` plus command feature tests
+    using Saloon `MockClient`.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
 - [ ] Port process API controllers and typed client requests.
@@ -1099,28 +1097,19 @@ for the Saloon-based gateway transport pattern.
 
 ## Next Priorities
 
-1. **Finish Saloon foundation + node family migration.**
-   - Complete `SALOON-NODE-FAMILY-1`: migrate all existing node gateway requests
-     (`ListNodesRequest`, `ShowNodeRequest`, `GrantNodeRequest`,
-     `RevokeNodeRequest`, `RemoveNodeRequest`, `UpdateNodeRequest`,
-     `DefaultNodeRequest`) from the hand-rolled `GatewayRequestSender`
-     convention to Saloon v4.0.0 connector/request/DTO classes.
-   - Delete old `GatewayClient`, `GatewayRequestSender`, `GatewayResponseParser`,
-     and hand-rolled request DTOs once all callers are migrated.
-   - Update `docs/abstractions/cross-cutting.md` with the Saloon transport
-     pattern.
-2. **Finish activity logging foundation.**
-   - `ACTIVITY-FOUNDATION-1` → `ACTIVITY-CORRELATION-1` →
-     `ACTIVITY-CLI-TRAITS-1`.
-   - `ACTIVITY-NODE-FAMILY-1` adds activity metadata to node commands during
-     the Saloon migration.
-3. **Resume App read workstream.**
-   - Only after Saloon node-family migration and activity-log foundation are
-     complete.
+1. **Refresh the cross-cutting Saloon guidance.**
+   - `docs/abstractions/cross-cutting.md` still names the removed
+     `GatewayClient` / `GatewayRequestSender` stack and should be updated to
+     point at `App\Http\Gateway\GatewayConnector`, `GatewayRequest`,
+     `GatewayApiException`, request DTOs, and Saloon `MockClient`.
+2. **Resume App read workstream.**
    - `APP-ABSTRACTION-1` → `APP-SCHEMA-1` → `APP-API-LIST-1` → `APP-LIST-1` →
      `APP-API-SHOW-1` → `APP-SHOW-1`.
    - Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
      Docker-backed feature E2E.
+3. **Continue activity metadata rollout without blocking App read ports.**
+   - `ACTIVITY-NODE-FAMILY-1` and `ACTIVITY-READ-AUDIT-1` remain follow-ups for
+     node command/API metadata decisions.
 4. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
    E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths, WireGuard
