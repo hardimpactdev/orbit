@@ -19,4 +19,4 @@ This contract defines behavior when `app:register` is invoked from a **gateway n
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/RegisterAppOnGatewayNodeTest.php` | Gateway caller local orchestration without HTTPS forwarding, active app-node target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-node path resolution over gateway-owned SSH, and app-node artifact enactment through `RemoteShell`. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway caller local orchestration without HTTPS forwarding, active app-node target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-node path resolution over gateway-owned SSH, and app-node artifact enactment through `RemoteShell`. |

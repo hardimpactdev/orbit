@@ -177,7 +177,7 @@ See also:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Actions/Apps/RegisterAppActionTest.php` | Intent convergence, adoption logic, path-collision rejection, and enactment dispatch. |
-| `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Input resolution, role-based rejection, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Input resolution, role-based rejection, interactive prompting, `result.action` selection across `registered`/`adopted`/`converged` paths, and warning payload shape for `success.meta.warnings[]`. |
 | `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-enactment refresh. |
 | `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |

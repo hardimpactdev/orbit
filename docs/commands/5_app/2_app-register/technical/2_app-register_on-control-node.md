@@ -15,4 +15,4 @@ This contract defines behavior when `app:register` is invoked from a **control n
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Verification of gateway client request and identity propagation. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Verification of gateway client request and identity propagation. |

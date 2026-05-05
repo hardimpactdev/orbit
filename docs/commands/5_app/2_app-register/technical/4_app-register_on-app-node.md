@@ -17,4 +17,4 @@ This contract defines behavior when `app:register` is invoked from an **app node
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/RegisterAppCommandTest.php` | Assertion that app-role callers receive an immediate caller-role failure. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Assertion that app-role callers receive an immediate caller-role failure. |

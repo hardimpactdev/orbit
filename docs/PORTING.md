@@ -1126,7 +1126,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Port gateway API show support (`GET /api/apps/{name}` + `ShowAppRequest`).
 - [x] Port `app:show`.
 - [x] Port minimal `RemoteShell` foundation needed by gateway-owned app writes.
-- [~] Port `app:new`.
+- [x] Port `app:new`.
   - [x] Gateway-local JSON/non-interactive slice: validates static input,
     creates source on the target app node through `RemoteShell`, writes gateway
     app intent only after source creation succeeds, returns the documented JSON
@@ -1169,7 +1169,16 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
           `app.php_version_unavailable` warning.
         - [x] Provisioning-lane E2E for real PHP-FPM, proxy route, and process
           artifact convergence after source creation.
-- [ ] Port `app:register`.
+- [~] Port `app:register`.
+  - [x] Gateway-local JSON/non-interactive adoption and convergence slice:
+    validates static input, rejects app-role callers before side effects,
+    verifies the target path over gateway-owned `RemoteShell`, writes or refreshes
+    gateway app intent, preserves repository metadata, surfaces path collisions,
+    and reuses the app runtime enactment pipeline for PHP-FPM/proxy/process
+    warnings.
+  - [ ] Gateway API endpoint and configured control-caller forwarding.
+  - [ ] Interactive input mode and human renderer progress tree.
+  - [ ] Production activation retry warnings and E2E registration/adoption gate.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.
