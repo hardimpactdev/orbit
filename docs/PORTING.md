@@ -928,6 +928,20 @@ across the process and schedule families.
   blueprint, mission, building blocks, concepts, process docs, schedule
   docs, and workspace docs. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
+- [x] Cross-family coherence cleanup: add `supervisor` as a Required
+  Baseline tool catalog entry (closing the doctor handoff loop from
+  process / schedule), document the host-services-as-Supervisor-peers
+  rule, add deploy `Cross-family invocation` so deploy steps can call
+  `process:restart`, document `app:new` does not auto-create the
+  Laravel scheduler, and distinguish the Orbit Scheduler daemon from
+  the `orbit_scheduler` Supervisor program in `CONCEPTS.md`.
+- [x] Mitigate BLUEPRINT / BUILDING-BLOCKS drift on the runtime backend +
+  scheduler with explicit co-edit cross-references and a one-line
+  contract / implementation split note in both files.
+- [x] Make per-workspace Supervisor config explicit: each workspace's
+  inherited runtime units render as separate Supervisor programs with
+  workspace-specific working directory, environment, and log paths
+  derived from the parent app's process definition.
 - [ ] Add Supervisor installation to gateway and app node provisioning.
 - [ ] Add the runtime backend reachability probe shared by process and
   schedule doctor.
