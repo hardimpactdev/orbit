@@ -128,7 +128,7 @@ it('reports retired incus ready images as unavailable instead of throwing', func
 
 it('leases configured incus host slots before checking availability', function (): void {
     $seenHost = null;
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -143,6 +143,7 @@ it('leases configured incus host slots before checking availability', function (
     try {
         withE2EProviderEnvironment([
             'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1,sidecar2:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function () use (&$seenHost): void {
             $provider = new IncusProvider(E2EConfig::fromEnvironment());
 
@@ -158,7 +159,7 @@ it('leases configured incus host slots before checking availability', function (
 });
 
 it('releases configured incus host slots during run cleanup', function (): void {
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -170,6 +171,7 @@ it('releases configured incus host slots during run cleanup', function (): void 
     try {
         withE2EProviderEnvironment([
             'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
             $provider = new IncusProvider(E2EConfig::fromEnvironment());
@@ -192,7 +194,7 @@ it('releases configured incus host slots during run cleanup', function (): void 
 });
 
 it('leases configured hcloud location slots before checking availability', function (): void {
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -207,6 +209,7 @@ it('leases configured hcloud location slots before checking availability', funct
         withE2EProviderEnvironment([
             'ORBIT_E2E_PROVIDER' => 'hcloud',
             'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:1,fsn1:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function (): void {
             $provider = new HcloudProvider(E2EConfig::fromEnvironment());
 
@@ -221,7 +224,7 @@ it('leases configured hcloud location slots before checking availability', funct
 });
 
 it('applies configured hcloud resource slots before checking availability', function (): void {
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -236,6 +239,7 @@ it('applies configured hcloud resource slots before checking availability', func
         withE2EProviderEnvironment([
             'ORBIT_E2E_PROVIDER' => 'hcloud',
             'ORBIT_E2E_HCLOUD_RESOURCE_SLOTS' => 'nbg1/cx23/ubuntu-24.04:1,fsn1/cpx31/ubuntu-24.04:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function (): void {
             $provider = new HcloudProvider(E2EConfig::fromEnvironment());
 
@@ -252,7 +256,7 @@ it('applies configured hcloud resource slots before checking availability', func
 });
 
 it('releases configured hcloud location slots during run cleanup', function (): void {
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -264,6 +268,7 @@ it('releases configured hcloud location slots during run cleanup', function (): 
         withE2EProviderEnvironment([
             'ORBIT_E2E_PROVIDER' => 'hcloud',
             'ORBIT_E2E_HCLOUD_LOCATION_SLOTS' => 'nbg1:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
             $provider = new HcloudProvider(E2EConfig::fromEnvironment());

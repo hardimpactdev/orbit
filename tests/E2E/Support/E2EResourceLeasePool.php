@@ -14,13 +14,25 @@ final readonly class E2EResourceLeasePool
         private int $staleSeconds,
     ) {}
 
-    public static function fromEnvironment(): self
+    public static function fromEnvironment(?int $waitSeconds = null, ?int $staleSeconds = null): self
     {
         return new self(
-            directory: storage_path('framework/e2e/leases'),
-            waitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
-            staleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
+            directory: self::envString('ORBIT_E2E_LEASE_DIRECTORY', self::defaultDirectoryFor(base_path())),
+            waitSeconds: $waitSeconds ?? self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
+            staleSeconds: $staleSeconds ?? self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
         );
+    }
+
+    public static function defaultDirectoryFor(string $basePath): string
+    {
+        $root = self::sharedRepositoryRoot($basePath) ?? rtrim($basePath, '/');
+
+        return $root.'/storage/framework/e2e/leases';
+    }
+
+    public function directory(): string
+    {
+        return $this->directory;
     }
 
     /**
@@ -152,6 +164,73 @@ final readonly class E2EResourceLeasePool
     private function sanitize(string $value): string
     {
         return preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? $value;
+    }
+
+    private static function sharedRepositoryRoot(string $basePath): ?string
+    {
+        $basePath = rtrim($basePath, '/');
+        $gitPath = "{$basePath}/.git";
+
+        if (is_dir($gitPath)) {
+            return $basePath;
+        }
+
+        if (! is_file($gitPath)) {
+            return null;
+        }
+
+        $contents = trim((string) file_get_contents($gitPath));
+
+        if (! preg_match('/^gitdir:\s*(?<gitdir>.+)$/', $contents, $matches)) {
+            return null;
+        }
+
+        $gitDirectory = self::normalizePath(
+            str_starts_with($matches['gitdir'], '/')
+                ? $matches['gitdir']
+                : "{$basePath}/{$matches['gitdir']}",
+        );
+
+        if (basename(dirname($gitDirectory)) !== 'worktrees') {
+            return null;
+        }
+
+        $commonGitDirectory = dirname(dirname($gitDirectory));
+
+        return dirname($commonGitDirectory);
+    }
+
+    private static function normalizePath(string $path): string
+    {
+        $segments = explode('/', str_replace('\\', '/', $path));
+        $normalized = [];
+
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                array_pop($normalized);
+
+                continue;
+            }
+
+            $normalized[] = $segment;
+        }
+
+        return (str_starts_with($path, '/') ? '/' : '').implode('/', $normalized);
+    }
+
+    private static function envString(string $key, string $default): string
+    {
+        $value = getenv($key);
+
+        if (! is_string($value) || $value === '') {
+            return $default;
+        }
+
+        return $value;
     }
 
     private static function envInt(string $key, int $default): int

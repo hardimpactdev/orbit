@@ -88,8 +88,7 @@ final class HcloudDockerE2ERunner
             return null;
         }
 
-        return new E2EResourceLeasePool(
-            directory: storage_path('framework/e2e/leases'),
+        return E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $options->slotWaitSeconds,
             staleSeconds: $options->slotStaleSeconds,
         )->acquire('hcloud-docker', $options->resourceSlots);

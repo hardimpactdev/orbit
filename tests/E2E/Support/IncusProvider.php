@@ -208,8 +208,7 @@ final class IncusProvider implements E2EProvider
             return;
         }
 
-        $this->resourceLease = new E2EResourceLeasePool(
-            directory: storage_path('framework/e2e/leases'),
+        $this->resourceLease = E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
         )->acquire('incus', $this->config->incusHostSlots);

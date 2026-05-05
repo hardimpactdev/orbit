@@ -45,12 +45,27 @@ You are the one-shot worktree setup helper for one Solo todo.
    cd "$path"
    composer install
    test -f .env || cp .env.example .env
+   main_repo="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+   test -f .env.e2e || { test ! -f "$main_repo/.env.e2e" || ln -s "$main_repo/.env.e2e" .env.e2e; }
    grep -q '^APP_KEY=base64:' .env || php artisan key:generate --no-interaction
    mkdir -p database
    touch database/database.sqlite
    php artisan migrate --force --no-interaction
    php artisan test --compact tests/Feature/VerificationScriptsTest.php
    ```
+
+   E2E notes:
+
+   - `composer test:e2e`, `composer test:e2e:provision`, and
+     `composer test:e2e:hcloud-docker` source `.env.e2e` when it exists.
+   - The preferred worktree setup is a symlink to the main checkout's
+     `.env.e2e`, so every worktree uses the same Docker, Incus, and provider
+     pool configuration.
+   - E2E slot leases are shared across worktrees by default. The lease
+     directory resolves to the main checkout's
+     `storage/framework/e2e/leases`, not the individual worktree's storage
+     directory. Override with `ORBIT_E2E_LEASE_DIRECTORY` only when intentionally
+     isolating a run.
 
 7. Update the todo's `Worktree Assignment` section, then post exactly one
    terminal label:

@@ -114,6 +114,6 @@ it('exposes composer script for hcloud docker e2e', function (): void {
 
     expect($composer['scripts']['test:e2e:hcloud-docker'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        '@php artisan e2e:test-hcloud-docker @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test-hcloud-docker @additional_args',
     ]);
 });

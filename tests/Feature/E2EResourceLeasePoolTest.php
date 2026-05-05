@@ -72,3 +72,33 @@ it('reclaims stale leases before acquiring', function (): void {
 
     $fresh->release();
 });
+
+it('uses an explicit lease directory from the environment', function (): void {
+    withE2EEnvironment([], [
+        'ORBIT_E2E_LEASE_DIRECTORY' => $this->leaseDirectory,
+        'ORBIT_E2E_SLOT_WAIT_SECONDS' => '3',
+        'ORBIT_E2E_SLOT_STALE_SECONDS' => '4',
+    ], function (): void {
+        $pool = E2EResourceLeasePool::fromEnvironment();
+
+        expect($pool->directory())->toBe($this->leaseDirectory);
+    });
+});
+
+it('uses the main checkout lease directory for git worktrees', function (): void {
+    $main = storage_path('framework/e2e/fake-main-'.bin2hex(random_bytes(4)));
+    $worktree = storage_path('framework/e2e/fake-worktree-'.bin2hex(random_bytes(4)));
+    $gitWorktreeDirectory = "{$main}/.git/worktrees/feature";
+
+    mkdir($gitWorktreeDirectory, 0777, true);
+    mkdir($worktree, 0777, true);
+    file_put_contents("{$worktree}/.git", "gitdir: {$gitWorktreeDirectory}\n");
+
+    try {
+        expect(E2EResourceLeasePool::defaultDirectoryFor($worktree))
+            ->toBe("{$main}/storage/framework/e2e/leases");
+    } finally {
+        exec('rm -rf '.escapeshellarg($main));
+        exec('rm -rf '.escapeshellarg($worktree));
+    }
+});

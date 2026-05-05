@@ -385,8 +385,11 @@ With that example, up to two workers can lease `sidecar1`, two can lease
 `sidecar2`, and three can lease `beast`. The mapping is a blocking lease pool,
 not a worker-number map: a worker takes the first free Docker slot, waits when
 all slots are busy, and releases its slot during topology cleanup. Stale lease
-files under `storage/framework/e2e/leases` are reclaimed after
-`ORBIT_E2E_SLOT_STALE_SECONDS`.
+files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`. Lease files are
+shared across Git worktrees by default: worktree runs resolve the lease
+directory to the main checkout's `storage/framework/e2e/leases`. Set
+`ORBIT_E2E_LEASE_DIRECTORY` only when a run should intentionally use an
+isolated lease pool.
 
 Each Pest worker gets a non-overlapping Docker subnet. Non-parallel runs keep
 the canonical `10.6.0.0/16` topology. Parallel workers use `10.61.0.0/16`,
@@ -461,6 +464,12 @@ composer e2e:reap-docker -- --force --older-than=0m
 
 ## Environment
 
+The Composer E2E scripts source `.env.e2e` when that file exists, then apply
+the lane-specific defaults shown in `composer.json`. Copy `.env.e2e.example` to
+`.env.e2e` in the main checkout for local machine pool settings. Worktrees
+should symlink their `.env.e2e` back to the main checkout so every worktree uses
+the same slot configuration.
+
 ```bash
 ORBIT_E2E=1                           # Enable ephemeral E2E tests
 ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
@@ -479,6 +488,7 @@ ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04
 ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=2  # Pest workers for composer test:e2e:provision
 ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
 ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
+ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
@@ -508,10 +518,11 @@ create paid Hetzner resources.
 `ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
 or Pest invocations unless the provider selection code is changed.
 
-`composer test:e2e` and `composer test:e2e:provision` use separate local lease
-pools. Docker feature tests read `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus
-provisioning tests read `ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud
-provisioning tests read `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
+`composer test:e2e` and `composer test:e2e:provision` use separate lease
+namespaces in the same shared lease directory. Docker feature tests read
+`ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus provisioning tests read
+`ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud provisioning tests read
+`ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
 `ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. A busy Docker slot does not block an Incus or
 Hetzner provisioning worker, and a busy provisioning slot does not block a
 Docker feature worker.

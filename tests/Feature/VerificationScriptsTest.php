@@ -54,12 +54,12 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=${ORBIT_E2E_PARALLEL_PROCESSES:-2} @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=${ORBIT_E2E_PARALLEL_PROCESSES:-2} @additional_args',
     ]);
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-2} @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-2} @additional_args',
     ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');
@@ -214,7 +214,7 @@ it('runs the topology contract against the Docker full topology by default', fun
 
     expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @additional_args',
     ])->and($composer['scripts'])
         ->not->toHaveKey('test:e2e:topology-contract:control')
         ->not->toHaveKey('test:e2e:topology-contract:control-gateway')

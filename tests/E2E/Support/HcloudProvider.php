@@ -279,8 +279,7 @@ YAML;
         }
 
         if ($this->config->hcloudResourceSlots !== []) {
-            $this->resourceLease = new E2EResourceLeasePool(
-                directory: storage_path('framework/e2e/leases'),
+            $this->resourceLease = E2EResourceLeasePool::fromEnvironment(
                 waitSeconds: $this->config->slotWaitSeconds,
                 staleSeconds: $this->config->slotStaleSeconds,
             )->acquire('hcloud', $this->config->hcloudResourceSlots);
@@ -294,8 +293,7 @@ YAML;
             return;
         }
 
-        $this->resourceLease = new E2EResourceLeasePool(
-            directory: storage_path('framework/e2e/leases'),
+        $this->resourceLease = E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
         )->acquire('hcloud', $this->config->hcloudLocationSlots);

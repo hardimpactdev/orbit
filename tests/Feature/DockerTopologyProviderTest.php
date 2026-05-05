@@ -221,7 +221,7 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
 
 it('leases docker host slots independently from the parallel worker token', function (): void {
     $networkHost = null;
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -267,6 +267,7 @@ it('leases docker host slots independently from the parallel worker token', func
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2,beast:3',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
         ], function () use (&$networkHost): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
@@ -286,7 +287,7 @@ it('leases docker host slots independently from the parallel worker token', func
 });
 
 it('releases docker host slots during topology cleanup', function (): void {
-    $leaseDirectory = storage_path('framework/e2e/leases');
+    $leaseDirectory = storage_path('framework/e2e/test-leases-'.bin2hex(random_bytes(4)));
 
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
@@ -305,6 +306,7 @@ it('releases docker host slots during topology cleanup', function (): void {
     try {
         withE2EConfigEnvironment([
             'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:1',
+            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());

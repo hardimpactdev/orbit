@@ -227,8 +227,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             return null;
         }
 
-        return new E2EResourceLeasePool(
-            directory: storage_path('framework/e2e/leases'),
+        return E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
         )->acquire('docker', $this->config->dockerHostSlots);
