@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\RequestProfiler;
 use App\Http\Gateway\GatewayConnector;
 use App\Services\ActivityLogCorrelation;
+use App\Services\CurlRequestProfiler;
 use App\Services\Dns\LocalResolver;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
@@ -25,6 +27,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);
+        $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
 
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);

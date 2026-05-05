@@ -228,6 +228,26 @@ yet satisfy the full product contracts.
     gateway-to-mini `Permission denied (publickey)` symptom reflected an
     implementation that targeted the mini control node; under the clarified
     contract, mini is excluded from remote targets entirely.
+- [~] `profile`
+  - Current implementation:
+    - `app/Console/Commands/ProfileCommand.php`
+    - `app/Actions/Profile/ShowProfile.php`
+    - `app/Services/CurlRequestProfiler.php`
+  - Current docs: `docs/commands/11_operation/4_profile`
+  - Current tests:
+    - `tests/Feature/Commands/Operations/ProfileCommandTest.php` (gateway-local baseline JSON, validation, non-2xx success)
+    - `tests/Feature/Commands/Operations/ProfileHumanRendererTest.php` (baseline human renderer)
+    - `tests/Unit/Services/CurlRequestProfilerTest.php` (baseline HTTP timing extraction)
+  - Bootstrap slice implemented: gateway-local app/domain/path/full-URL target
+    resolution, `--node` scoping validation, baseline cURL timing capture,
+    request id and Toolbar auth headers, baseline JSON envelope, baseline human
+    output, and completed non-2xx success semantics.
+  - Contract gaps:
+    - control/app caller gateway resolution and request-origin selection.
+    - app/workspace cwd inference beyond gateway-local app paths.
+    - interactive app selector.
+    - Toolbar-enriched renderer details beyond attaching decoded summary data.
+    - paired E2E gate for an observable profile target.
 - [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
@@ -1375,5 +1395,7 @@ for the Saloon-based gateway transport pattern.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.
-3. Port `profile` later as a verification helper once app read state exists and
-   can support useful target resolution.
+3. Continue `profile` as a verification helper: add gateway-mediated target
+   resolution/request origin coverage, Toolbar-enriched output, and a paired
+   E2E gate against an observable app route before using it to unblock broader
+   app write work.
