@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('creates source on the target app node before writing gateway app intent', function (): void {
     Node::factory()->create([
@@ -166,6 +174,57 @@ it('fails before remote work when the app name is already registered', function 
             'name' => 'docs',
             'node' => 'app-1',
         ]);
+});
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        CreateAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                ],
+                'meta' => ['warnings' => []],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['app']['name'])->toBe('docs')
+        ->and(App::query()->count())->toBe(0)
+        ->and($remoteShell->runs)->toBe([]);
 });
 
 final class RecordingRemoteShell implements RemoteShell

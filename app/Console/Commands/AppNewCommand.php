@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\CreateAppSourceOnNode;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\CreateAppRequest;
+use App\Http\Gateway\Responses\Apps\AppCreateResponse;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('app:new
     {name? : App name}
@@ -48,18 +53,14 @@ class AppNewCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway forwarding is required to create apps from a control node.',
-                meta: [],
-            );
-        }
-
         $input = $this->resolveInput();
 
         if (is_int($input)) {
             return $input;
+        }
+
+        if ($callerRole === 'control') {
+            return $this->forwardCreate($input);
         }
 
         $node = $this->resolveTargetNode($input['node']);
@@ -120,6 +121,42 @@ class AppNewCommand extends Command
             'result' => ['action' => 'created'],
             'app' => $this->appPayload($app),
         ]);
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function forwardCreate(array $input): int
+    {
+        try {
+            /** @var AppCreateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new CreateAppRequest(
+                    name: $input['name'],
+                    node: $input['node'],
+                    repository: $input['repository'],
+                    root: $input['root'],
+                    phpVersion: $input['php_version'],
+                    domain: $input['domain'],
+                ))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to create apps.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to create apps.',
+                meta: [],
+            );
+        }
+
+        return $this->successCommand($dto->data, $dto->warnings);
     }
 
     private function callerRole(): string
@@ -286,8 +323,9 @@ class AppNewCommand extends Command
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $warnings
      */
-    private function successCommand(array $data): int
+    private function successCommand(array $data, array $warnings = []): int
     {
         if (! $this->wantsJson()) {
             /** @var array{name?: string, node?: string, environment?: string, url?: string} $app */
@@ -307,7 +345,7 @@ class AppNewCommand extends Command
         $this->line(json_encode([
             'success' => [
                 'data' => $data,
-                'meta' => ['warnings' => []],
+                'meta' => ['warnings' => $warnings],
             ],
         ], JSON_THROW_ON_ERROR));
 
