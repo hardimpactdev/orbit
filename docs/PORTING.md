@@ -597,7 +597,9 @@ before any app write/destructive commands are created:
 4. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
    **Implemented:** command, human/JSON renderers, typed gateway forwarding,
    focused in-memory Pest coverage, and Docker feature E2E coverage are on
-   `main`. Current docs: `docs/commands/5_app/3_app-list`. Old evidence:
+   `main`. Docker feature E2E passed with
+   `composer test:e2e -- --filter='App(List|Show)'`. Current docs:
+   `docs/commands/5_app/3_app-list`. Old evidence:
    `../orbit-old-may/app/Console/Commands/AppListCommand.php`.
 5. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
    **Implemented:** gateway API show endpoint, typed Saloon request/DTO,
@@ -609,7 +611,9 @@ before any app write/destructive commands are created:
 6. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
    **Implemented:** command, human/JSON renderers, typed gateway forwarding,
    focused in-memory Pest coverage, and Docker feature E2E coverage are on
-   `main`. Current docs: `docs/commands/5_app/4_app-show`. Old evidence:
+   `main`. Docker feature E2E passed with
+   `composer test:e2e -- --filter='App(List|Show)'`. Current docs:
+   `docs/commands/5_app/4_app-show`. Old evidence:
    `../orbit-old-may/app/Console/Commands/AppShowCommand.php`.
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until

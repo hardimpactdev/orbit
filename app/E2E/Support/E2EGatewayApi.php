@@ -271,6 +271,11 @@ PHP;
         {
             return run_orbit_command('php artisan node:show '.escapeshellarg($name).' --json');
         }
+
+        function run_app_show(string $name): array
+        {
+            return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -365,6 +370,40 @@ PHP;
         
             if (preg_match('#^GET /api/nodes/([^ ?]+)#', $requestLine, $matches) === 1) {
                 [$exitCode, $output] = run_node_show(urldecode($matches[1]));
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+        
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'GET /api/apps ') || str_starts_with($requestLine, 'GET /api/apps?')) {
+                $path = explode(' ', $requestLine)[1] ?? '/api/apps';
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+        
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+        
+                $parts = ['php artisan app:list --json'];
+        
+                foreach (['node', 'environment'] as $option) {
+                    $value = $query[$option] ?? null;
+        
+                    if (is_string($value) && $value !== '') {
+                        $parts[] = "--{$option}=".escapeshellarg($value);
+                    }
+                }
+        
+                [$exitCode, $output] = run_orbit_command(implode(' ', $parts));
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+        
+                continue;
+            }
+        
+            if (preg_match('#^GET /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
+                [$exitCode, $output] = run_app_show(urldecode($matches[1]));
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
