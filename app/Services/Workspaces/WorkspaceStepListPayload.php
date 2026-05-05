@@ -36,4 +36,21 @@ class WorkspaceStepListPayload
             ->values()
             ->all();
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function forStep(WorkspaceStep $step): array
+    {
+        $step->loadMissing('app');
+
+        return [
+            'id' => $step->id,
+            'app' => $step->app?->name,
+            'phase' => $step->phase->value,
+            'order' => $step->sort_order,
+            'command' => $step->command,
+            'timeout_seconds' => $step->timeoutSeconds(),
+        ];
+    }
 }

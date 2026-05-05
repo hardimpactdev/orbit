@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
 use App\Http\Controllers\Api\WorkspaceShowController;
 use App\Http\Controllers\Api\WorkspaceStepListController;
+use App\Http\Controllers\Api\WorkspaceStepStoreController;
 use App\Http\Middleware\CorrelationHeader;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\WireGuardIdentity;
@@ -45,6 +46,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/workspaces/history/resolve-by-path', [WorkspaceHistoryController::class, 'fromPath']);
         Route::get('/workspaces/runs/{run}/log', WorkspaceLogController::class);
         Route::get('/workspaces/steps/{phase}', WorkspaceStepListController::class);
+        Route::post('/workspaces/steps/{phase}', WorkspaceStepStoreController::class);
         Route::get('/workspaces/resolve-by-path', [WorkspaceShowController::class, 'fromPath']);
         Route::get('/workspaces/{name}/history', WorkspaceHistoryController::class);
         Route::get('/workspaces/{name}', WorkspaceShowController::class);

@@ -1261,7 +1261,10 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     gateway-local registry reads, typed gateway API forwarding, app/path
     resolution, human/JSON renderers, focused Pest coverage, and read-only
     Docker feature E2E gate.
-  - [ ] `workspace-setup-step:add` and `workspace-teardown-step:add`.
+  - [x] `workspace-setup-step:add` and `workspace-teardown-step:add`
+    gateway-owned policy writes, typed gateway API forwarding, app/path
+    resolution, insertion ordering, human/JSON renderers, focused Pest coverage,
+    and Docker feature E2E gate.
   - [ ] `workspace-setup-step:remove` and `workspace-teardown-step:remove`.
 - [x] Port workspace history and log commands.
   - [x] `workspace:history` registry read, typed gateway API forwarding,
@@ -1430,6 +1433,8 @@ for the Saloon-based gateway transport pattern.
   - [x] `workspace:history` API controller plus Saloon request/DTO.
   - [x] `workspace:log` API controller plus Saloon request/DTO.
   - [x] `workspace-setup-step:list` and `workspace-teardown-step:list` API
+    controller plus Saloon request/DTO.
+  - [x] `workspace-setup-step:add` and `workspace-teardown-step:add` API
     controller plus Saloon request/DTO.
 - [ ] Port process API controllers and typed client requests.
 - [ ] Port tool/service API controllers and typed client requests after tool

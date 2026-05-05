@@ -454,7 +454,30 @@ PHP;
             }
 
             $parts[] = '--json';
+        
+            return run_orbit_command(implode(' ', $parts));
+        }
 
+        function run_workspace_step_add(string $phase, array $input): array
+        {
+            $parts = ["php artisan workspace-{$phase}-step:add"];
+
+            foreach ([
+                'app' => 'app',
+                'command' => 'command',
+                'timeout' => 'timeout',
+                'before' => 'before',
+                'after' => 'after',
+            ] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            $parts[] = '--json';
+        
             return run_orbit_command(implode(' ', $parts));
         }
         
@@ -743,6 +766,29 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_workspace_steps($matches[1], $query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^POST /api/workspaces/steps/(setup|teardown)#', $requestLine, $matches) === 1) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_workspace_step_add($matches[1], $input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 
