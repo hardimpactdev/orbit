@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -75,6 +76,19 @@ describe('NodeStoreController', function (): void {
             ->and($node->environment)->toBe('development')
             ->and($node->tld)->toBe('test')
             ->and($node->wireguard_address)->toBe('10.6.0.4');
+
+        $entry = Activity::query()
+            ->where('event', 'node.created')
+            ->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->log_name)->toBe('api');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->subject?->name)->toBe('app-dev-1');
+        expect($entry->properties->get('name'))->toBe('app-dev-1');
+        expect($entry->properties->get('role'))->toBe('app');
+        expect($entry->properties->get('environment'))->toBe('development');
+        expect($entry->properties->get('tld'))->toBe('test');
 
         Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
             && str_contains($process->command, 'app')

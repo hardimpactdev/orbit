@@ -949,7 +949,7 @@ sweep, so the section reflects the same per-command product decisions
 that produced the controller's Loggable wiring.
 
 - [x] `17_activity` (`activity:list`, `activity:show` — allowlisted).
-- [ ] `1_node` (`node:register`, `node:list`, `node:show`, `node:update`,
+- [ ] `1_node` (`node:new`, `node:list`, `node:show`, `node:update`,
   `node:default`, `node:grant`, `node:revoke`, `node:remove`,
   `node:agent-ide`).
 - [ ] `2_gateway`.
@@ -994,6 +994,11 @@ that produced the controller's Loggable wiring.
   - [x] `node:remove` now declares its `## Activity Logging` tech contract,
     emits `effect=destructive` removal metadata through the gateway Loggable
     contract, and is enforced by `ActivityLoggingContractRule`.
+  - [x] `node:new` now declares its `## Activity Logging` tech contract,
+    emits `effect=write` metadata through the gateway API `POST /api/nodes`
+    Loggable contract, and is enforced by `ActivityLoggingContractRule`.
+    First-gateway local CLI emission remains separate because that path can run
+    before a gateway activity sink exists.
   - [ ] Backfill and wire remaining node write/destructive command activity
     contracts as their Saloon/API slices are touched.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands

@@ -236,6 +236,24 @@ Output renderer behavior is split out of the canonical command contract:
   envelope, data shape, error codes, error messages, error metadata, validation
   errors, and partial-provisioning errors.
 
+## Activity Logging
+
+Emitted through the cross-cutting Loggable contract. See
+[`activity-concepts.md`](../../../17_activity/activity-concepts.md).
+
+| Field | Value |
+| --- | --- |
+| Channel | `api` (gateway controller) for gateway API node creation requests. |
+| Type | `node.created` |
+| Effect | `write` |
+| Subject | The created, enrolled, provisioned, adopted, or converged `Node` when the node record exists; otherwise `null` for early validation or authorization failures. |
+| Properties | `name` (string\|null), `role` (`gateway`\|`app`\|`control`\|null), `environment` (`development`\|`production`\|null), `tld` (string\|null). No secrets, no raw argv, no SSH bootstrap user. |
+| Description | `derived`, for example `"Created node app-dev-1."` |
+
+The first-gateway bootstrap path can run before a gateway API activity sink is
+available; that local CLI emission is tracked separately from this gateway API
+contract.
+
 ## Failure Semantics
 
 - Exit `0` on success or compatible idempotent convergence.

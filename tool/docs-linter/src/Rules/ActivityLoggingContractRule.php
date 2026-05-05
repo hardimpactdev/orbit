@@ -22,6 +22,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'app-show',
         'activity-list',
         'activity-show',
+        'node-new',
         'node-list',
         'node-show',
         'node-grant',
