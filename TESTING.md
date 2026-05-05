@@ -547,6 +547,11 @@ create paid Hetzner resources.
 `ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
 or Pest invocations unless the provider selection code is changed.
 
+`composer test:e2e:provision` runs serially when
+`ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1`. Set the value above `1` to enable
+Pest parallel mode for provision tests; every worker still acquires a
+provisioning lease before creating Incus or Hetzner resources.
+
 `composer test:e2e` and `composer test:e2e:provision` use separate lease
 namespaces in the same shared lease directory. Docker feature tests read
 `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus provisioning tests read

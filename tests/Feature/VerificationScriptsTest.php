@@ -59,7 +59,7 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-2} @additional_args',
+        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; processes=${ORBIT_E2E_PROVISION_PARALLEL_PROCESSES:-1}; if [ "$processes" -gt 1 ]; then ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --parallel --processes="$processes" @additional_args; else ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args; fi',
     ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
         ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');
