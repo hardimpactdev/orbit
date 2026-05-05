@@ -141,7 +141,10 @@ Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
 worker process gets one cached Docker superset topology and reuses it for the
 tests assigned to that worker. Provision tests are intentionally on demand
 because they run real installer/provisioning paths and are much slower than
-prepared-topology feature tests.
+prepared-topology feature tests. They run with Pest parallel mode by default,
+limited by `ORBIT_E2E_PROVISION_PARALLEL_PROCESSES`, and each worker must
+acquire an Incus slot from `ORBIT_E2E_INCUS_HOST_SLOTS` before it creates a
+disposable VM.
 
 Provision tests clean up on success. On failure they keep tracked VMs/templates
 for inspection and print their names plus a reap command. Set
@@ -323,7 +326,9 @@ composer e2e:reap-docker -- --force --older-than=0m
 `e2e-feature` tests in parallel against cached Docker full topologies, one
 topology per Pest worker process.
 Use `composer test:e2e:topology-contract` when you want to prove the prepared
-Docker topology itself. Provisioning E2E remains serial by default.
+Docker topology itself. Provisioning E2E runs in parallel too, but it leases
+Incus slots and remains intentionally on demand because it exercises real
+machine setup.
 
 ### Docker Feature Topologies
 
@@ -367,8 +372,8 @@ Docker host capacity: a full topology uses four containers, so a host with
 workers. Add Docker hosts with `ORBIT_E2E_DOCKER_HOSTS=beast,sidecar1,sidecar2`
 or raise the per-host container limit when the runner can handle more.
 
-For deterministic multi-host parallelism, use host slots and set the Pest worker
-count to the total slot count:
+For multi-host parallelism, use host slots and set the Pest worker count to the
+total slot count:
 
 ```bash
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
@@ -376,9 +381,12 @@ ORBIT_E2E_PARALLEL_PROCESSES=7 \
 composer test:e2e
 ```
 
-With that example, workers 1-2 run on `sidecar1`, workers 3-4 run on
-`sidecar2`, and workers 5-7 run on `beast`. Slotting is deterministic and avoids
-multiple Pest workers racing to select the same currently-empty Docker host.
+With that example, up to two workers can lease `sidecar1`, two can lease
+`sidecar2`, and three can lease `beast`. The mapping is a blocking lease pool,
+not a worker-number map: a worker takes the first free Docker slot, waits when
+all slots are busy, and releases its slot during topology cleanup. Stale lease
+files under `storage/framework/e2e/leases` are reclaimed after
+`ORBIT_E2E_SLOT_STALE_SECONDS`.
 
 Each Pest worker gets a non-overlapping Docker subnet. Non-parallel runs keep
 the canonical `10.6.0.0/16` topology. Parallel workers use `10.61.0.0/16`,
@@ -438,10 +446,14 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for composer 
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3  # Deterministic worker-to-host map
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3  # Docker feature-test lease pool
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
 ORBIT_E2E_PARALLEL_PROCESSES=2        # Pest workers for composer test:e2e
 ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
+ORBIT_E2E_INCUS_HOST_SLOTS=sidecar1:1,sidecar2:1  # Incus provisioning-test lease pool
+ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=2  # Pest workers for composer test:e2e:provision
+ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
+ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
@@ -465,6 +477,12 @@ installation, trust-store mutation, or system services.
 `composer test:e2e` sets `ORBIT_E2E_TOPOLOGY_PROVIDER=docker` explicitly.
 `ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
 or Pest invocations unless the provider selection code is changed.
+
+`composer test:e2e` and `composer test:e2e:provision` use separate local lease
+pools. Docker feature tests read `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus
+provisioning tests read `ORBIT_E2E_INCUS_HOST_SLOTS`. A busy Docker slot does
+not block an Incus provisioning worker, and a busy Incus slot does not block a
+Docker feature worker.
 
 Provisioning and topology clones use independent resource budgets. Image
 preparation and provisioning E2E keep `ORBIT_E2E_CPUS=2` because installer work

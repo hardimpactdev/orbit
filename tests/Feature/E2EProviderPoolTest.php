@@ -7,6 +7,7 @@ use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2EInstance;
 use Tests\E2E\Support\E2EProvider;
+use Tests\E2E\Support\E2EResourceLeasePool;
 use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\E2ETopologyKind;
 use Tests\E2E\Support\E2ETopologyLease;
@@ -123,6 +124,71 @@ it('reports retired incus ready images as unavailable instead of throwing', func
 
     expect($availability->available)->toBeFalse()
         ->and($availability->message)->toContain('Role-specific ready images have been replaced');
+});
+
+it('leases configured incus host slots before checking availability', function (): void {
+    $seenHost = null;
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake(function ($process) use (&$seenHost) {
+        if (str_contains($process->command, "'sidecar1'")) {
+            $seenHost = 'sidecar1';
+        }
+
+        return Process::result();
+    });
+
+    try {
+        withE2EProviderEnvironment([
+            'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1,sidecar2:1',
+        ], function () use (&$seenHost): void {
+            $provider = new IncusProvider(E2EConfig::fromEnvironment());
+
+            $availability = $provider->availability([E2EImage::Base]);
+
+            expect($availability->available)->toBeTrue()
+                ->and($provider->config()->host)->toBe('sidecar1')
+                ->and($seenHost)->toBe('sidecar1');
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+    }
+});
+
+it('releases configured incus host slots during run cleanup', function (): void {
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake([
+        '*rm -rf*mkdir -p*' => Process::result(),
+        '*rm -rf*' => Process::result(),
+    ]);
+
+    try {
+        withE2EProviderEnvironment([
+            'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1',
+            'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
+        ], function () use ($leaseDirectory): void {
+            $provider = new IncusProvider(E2EConfig::fromEnvironment());
+            $run = $provider->startRun('lease release');
+            $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+            expect($pool->snapshot('incus', ['sidecar1' => 1]))->toMatchArray([
+                ['host' => 'sidecar1', 'slot' => 1, 'leased' => true],
+            ]);
+
+            $run->cleanup();
+
+            expect($pool->snapshot('incus', ['sidecar1' => 1]))->toMatchArray([
+                ['host' => 'sidecar1', 'slot' => 1, 'leased' => false],
+            ]);
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+    }
 });
 
 function fakeE2EProvider(string $name, bool $available): E2EProvider

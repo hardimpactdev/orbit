@@ -103,7 +103,7 @@ it('defaults docker max containers per host', function (): void {
     });
 });
 
-it('parses docker host slots for deterministic parallel workers', function (): void {
+it('parses docker host slots for the lease pool', function (): void {
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2, sidecar2:2, beast:3',
     ], function (): void {
@@ -118,5 +118,44 @@ it('parses docker host slots for deterministic parallel workers', function (): v
             'sidecar2' => 2,
             'beast' => 3,
         ]);
+    });
+});
+
+it('parses incus host slots for the lease pool', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1, sidecar2:2',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->incusHostSlots)->toBe([
+            'sidecar1' => 1,
+            'sidecar2' => 2,
+        ])->and($config->forHost('sidecar1')->incusHostSlots)->toBe([
+            'sidecar1' => 1,
+            'sidecar2' => 2,
+        ]);
+    });
+});
+
+it('defaults e2e slot wait and stale seconds', function (): void {
+    withE2EConfigEnvironment([], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->slotWaitSeconds)->toBe(900)
+            ->and($config->slotStaleSeconds)->toBe(7200)
+            ->and($config->forHost('sidecar1')->slotWaitSeconds)->toBe(900)
+            ->and($config->forHost('sidecar1')->slotStaleSeconds)->toBe(7200);
+    });
+});
+
+it('reads e2e slot wait and stale seconds from the environment', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_SLOT_WAIT_SECONDS' => '30',
+        'ORBIT_E2E_SLOT_STALE_SECONDS' => '120',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->slotWaitSeconds)->toBe(30)
+            ->and($config->slotStaleSeconds)->toBe(120);
     });
 });

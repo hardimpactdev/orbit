@@ -8,6 +8,7 @@ use Tests\E2E\Support\DockerInstance;
 use Tests\E2E\Support\DockerTopologyProvider;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2EPhaseTimer;
+use Tests\E2E\Support\E2EResourceLeasePool;
 use Tests\E2E\Support\E2ETopologyAcquisitionOptions;
 use Tests\E2E\Support\E2ETopologyCapabilities;
 use Tests\E2E\Support\E2ETopologyKind;
@@ -218,8 +219,11 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
     }
 });
 
-it('assigns parallel docker workers to configured host slots', function (): void {
+it('leases docker host slots independently from the parallel worker token', function (): void {
     $networkHost = null;
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
 
     Process::fake(function ($process) use (&$networkHost) {
         $host = $process->environment['DOCKER_HOST'] ?? 'local';
@@ -268,14 +272,57 @@ it('assigns parallel docker workers to configured host slots', function (): void
 
             $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
 
-            expect($networkHost)->toBe('ssh://beast');
+            expect($networkHost)->toBe('ssh://sidecar1');
         });
     } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
+
         if ($previous === false) {
             putenv('TEST_TOKEN');
         } else {
             putenv("TEST_TOKEN={$previous}");
         }
+    }
+});
+
+it('releases docker host slots during topology cleanup', function (): void {
+    $leaseDirectory = storage_path('framework/e2e/leases');
+
+    exec('rm -rf '.escapeshellarg($leaseDirectory));
+
+    Process::fake([
+        '*command -v docker*' => Process::result(),
+        '*docker info*' => Process::result(),
+        '*docker image inspect*' => Process::result(),
+        '*docker ps*' => Process::result(),
+        '*docker network create*' => Process::result(),
+        '*docker run -d*' => Process::result(output: "container-id\n"),
+        '*docker exec*' => Process::result(),
+        '*docker rm -f*' => Process::result(),
+        '*docker network rm*' => Process::result(),
+    ]);
+
+    try {
+        withE2EConfigEnvironment([
+            'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:1',
+            'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
+        ], function () use ($leaseDirectory): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+            $lease = $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+            $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+            expect($pool->snapshot('docker', ['sidecar1' => 1]))->toMatchArray([
+                ['host' => 'sidecar1', 'slot' => 1, 'leased' => true],
+            ]);
+
+            $lease->cleanup();
+
+            expect($pool->snapshot('docker', ['sidecar1' => 1]))->toMatchArray([
+                ['host' => 'sidecar1', 'slot' => 1, 'leased' => false],
+            ]);
+        });
+    } finally {
+        exec('rm -rf '.escapeshellarg($leaseDirectory));
     }
 });
 
