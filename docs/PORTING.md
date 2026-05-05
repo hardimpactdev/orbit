@@ -1207,8 +1207,8 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - Blocked until workspace schema/models and workspace removal semantics exist.
     `app:prune` discovers stale workspace intent and delegates removal through
     `workspace:remove`; without gateway-tracked workspaces it cannot satisfy the
-    current command contract. Next concrete action: port `app:agent-ide`
-    app-level adapter intent, then start workspace schema/models.
+    current command contract. Next concrete action: port workspace registry
+    reads and removal semantics, then return to `app:prune`.
 - [~] Port `app:agent-ide`.
   - [x] Gateway-local JSON/non-interactive app adapter intent slice: stores
     app-level adapter overrides, supports `inherit` and `none`, resolves
@@ -1230,6 +1230,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
 - [x] Create workspace implementation abstraction seed.
 - [x] Port workspace schema and models.
+- [~] Port workspace registry read commands.
+  - [x] `workspace:list` gateway-local registry read, typed gateway API
+    forwarding, access-policy filtering, human/JSON renderers, focused Pest
+    coverage, and E2E gate classified as `lane=none` because the command is a
+    fast registry read with no runtime behavior outside Pest.
+  - [ ] `workspace:show`.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
 - [ ] Port workspace history and log commands.
@@ -1387,6 +1393,7 @@ for the Saloon-based gateway transport pattern.
     using Saloon `MockClient`.
 - [ ] Port app API controllers and typed client requests.
 - [ ] Port workspace API controllers and typed client requests.
+  - [x] `workspace:list` API controller plus Saloon request/DTO.
 - [ ] Port process API controllers and typed client requests.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.

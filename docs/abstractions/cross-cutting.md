@@ -102,6 +102,7 @@ and repeated private helpers can diverge.
 - `app/Console/Commands/NodeUpdateCommand.php`
 - `app/Console/Commands/DnsListCommand.php`
 - `app/Console/Commands/DnsResolveTldCommand.php`
+- `app/Services/Nodes/CallerRoleResolver.php`
 
 **Invariants:**
 
@@ -111,11 +112,9 @@ and repeated private helpers can diverge.
   side effects.
 - Command-specific caller-role consequences live in command docs; implementation
   should follow those docs and reuse the same failure vocabulary.
-- The implementation repeats an identical private `callerRole()` helper in
-  every command. `FAMILY-REVIEW-NODE-READ-1` evaluated this against 11 concrete
-  callers and concluded extraction is justified. A shared `CallerRoleResolver`
-  service is tracked as a follow-up implementation todo; do not add new
-  duplicates while that todo is open.
+- New commands use `CallerRoleResolver` instead of adding another private
+  `callerRole()` helper. Existing duplicated helpers remain historical debt and
+  should be migrated opportunistically in bounded follow-up slices.
 
 ## Role-Path Test Shape
 
