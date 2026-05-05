@@ -19,6 +19,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
      */
     private const array ENFORCED_COMMANDS = [
         'app-list',
+        'app-show',
         'activity-list',
         'activity-show',
     ];

@@ -600,6 +600,12 @@ before any app write/destructive commands are created:
    `main`. Current docs: `docs/commands/5_app/3_app-list`. Old evidence:
    `../orbit-old-may/app/Console/Commands/AppListCommand.php`.
 5. `APP-API-SHOW-1` — gateway-side `GET /api/apps/{name}` + `ShowAppRequest`.
+   **Implemented:** gateway API show endpoint, typed Saloon request/DTO,
+   activity logging contract, name-before-hostname resolution, and focused
+   API/request coverage are on `main`. Current docs:
+   `docs/commands/5_app/4_app-show`. Old evidence:
+   `../orbit-old-may/app/Actions/Apps/ShowAppInfo.php` and
+   `../orbit-old-may/app/Http/Saloon/Requests/Apps/ShowAppRequest.php`.
 6. `APP-SHOW-1` — `app:show` command (paired in-memory Pest + ephemeral Pest E2E).
 
 Do not create app write commands (`app:new`, `app:remove`, `app:prune`) until

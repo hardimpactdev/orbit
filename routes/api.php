@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\AppListController;
+use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeDefaultController;
@@ -24,6 +25,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/apps', AppListController::class);
+        Route::get('/apps/{app}', AppShowController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
         Route::get('/nodes/default', [NodeDefaultController::class, 'show']);

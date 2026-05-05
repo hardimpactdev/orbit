@@ -138,6 +138,19 @@ Operators who need readiness or drift information should run
 See [App Doctor](../../app-doctor.md) for the authoritative app-family probe,
 drift, fix, and adopt contract.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed app
+registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /apps/{app}` |
+| Effect | `read` |
+| Subject | `App` when the app is visible and resolved; `none` for not-found or hidden app responses. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:
