@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareTopologyCommand;
+use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
@@ -240,6 +241,43 @@ it('--force builds the source archive and forwards the bundle path to the builde
 
     expect($forwardedBundle)->toBe('/tmp/orbit-e2e-stage-remote/orbit-e2e-bundle');
     Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
+});
+
+it('--force records prepare topology phase timings', function (): void {
+    fakeBundleProcessing();
+
+    $manifest = [
+        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+    ];
+    $capturedTimer = null;
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('build')
+        ->with(E2ETopologyKind::Control, true)
+        ->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(function (IncusHost $host, E2EPhaseTimer $timer) use ($builder, &$capturedTimer): IncusTopologyBuilder {
+        $capturedTimer = $timer;
+
+        return $builder;
+    });
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+    ])->assertSuccessful();
+
+    $eventNames = array_column($capturedTimer?->events() ?? [], 'name');
+
+    expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
+        ->and($eventNames)->toContain('bundle.local')
+        ->and($eventNames)->toContain('bundle.push')
+        ->and($eventNames)->toContain('builder.build')
+        ->and($eventNames)->toContain('bundle.cleanup.remote')
+        ->and($eventNames)->toContain('bundle.cleanup.local');
 });
 
 it('--branch uses git archive instead of tar', function (): void {

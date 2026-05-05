@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
@@ -116,6 +117,51 @@ it('deletes target template instances before replacing them', function (): void 
 
     expect(fn () => $builder->build(E2ETopologyKind::Control, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory');
+});
+
+it('records phase timings while building topology templates', function (): void {
+    $config = incusTopologyBuilderConfig();
+    $timer = new E2EPhaseTimer;
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
+    $host->shouldReceive('instanceExists')->with('orbit-template-control-control')->andReturn(false);
+    $host->shouldReceive('waitForCloudInit')->with('orbit-template-control-control')->once();
+    $host->shouldReceive('provisionInstance')
+        ->with('orbit-template-control-control', 'control', '/tmp/orbit-e2e-bundle-test', 'control')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('stopInstance')->with('orbit-template-control-control')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('snapshotInstance')->with('orbit-template-control-control', 'clean')->once()->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null): ProcessResult {
+        if (str_starts_with($command, 'mktemp -d ')) {
+            return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
+        }
+
+        if (str_contains($command, 'orbit-template-control-control')) {
+            return incusTopologyBuilderProcessResult("10.201.0.10\n");
+        }
+
+        return incusTopologyBuilderProcessResult();
+    });
+
+    $builder = new IncusTopologyBuilder($host, $timer);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    $builder->build(E2ETopologyKind::Control);
+
+    $eventNames = array_column($timer->events(), 'name');
+
+    expect($eventNames)->toContain('preflight')
+        ->and($eventNames)->toContain('workdir')
+        ->and($eventNames)->toContain('ssh-key')
+        ->and($eventNames)->toContain('control.launch')
+        ->and($eventNames)->toContain('control.cloud-init')
+        ->and($eventNames)->toContain('control.provision')
+        ->and($eventNames)->toContain('control.identity')
+        ->and($eventNames)->toContain('finalize.stop.control')
+        ->and($eventNames)->toContain('finalize.snapshot.control')
+        ->and($eventNames)->toContain('workdir.cleanup');
 });
 
 it('bakes app node registry rows instead of running node:new during prepared topology builds', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
@@ -30,12 +31,12 @@ class E2EPrepareTopologyCommand extends Command
     protected $hidden = true;
 
     /**
-     * @var (Closure(IncusHost): IncusTopologyBuilder)|null
+     * @var (Closure(IncusHost, E2EPhaseTimer): IncusTopologyBuilder)|null
      */
     private ?Closure $builderFactory = null;
 
     /**
-     * @param  Closure(IncusHost): IncusTopologyBuilder  $factory
+     * @param  Closure(IncusHost, E2EPhaseTimer): IncusTopologyBuilder  $factory
      */
     public function setBuilderFactory(Closure $factory): void
     {
@@ -103,28 +104,31 @@ class E2EPrepareTopologyCommand extends Command
 
         $bundleDir = null;
         $remoteBundle = null;
+        $timer = new E2EPhaseTimer;
 
         try {
-            $bundleDir = $this->buildLocalBundle();
-            $remoteBundle = $host->pushBundle($bundleDir);
+            $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());
+            $remoteBundle = $timer->measure('bundle.push', fn (): string => $host->pushBundle($bundleDir));
 
             $builder = $this->builderFactory !== null
-                ? ($this->builderFactory)($host)
-                : new IncusTopologyBuilder($host);
+                ? ($this->builderFactory)($host, $timer)
+                : new IncusTopologyBuilder($host, $timer);
 
             $builder->useBundle($remoteBundle);
 
-            $manifest = $builder->build($kind, replaceExisting: true);
+            $manifest = $timer->measure('builder.build', fn (): array => $builder->build($kind, replaceExisting: true));
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         } finally {
             if ($remoteBundle !== null) {
-                $host->cleanupBundle($remoteBundle);
+                $timer->measure('bundle.cleanup.remote', fn () => $host->cleanupBundle($remoteBundle));
             }
 
             if ($bundleDir !== null && is_dir($bundleDir)) {
-                Process::run('rm -rf '.escapeshellarg($bundleDir));
+                $timer->measure('bundle.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $bundleDir)));
             }
+
+            $timer->flush('prepare-topology');
         }
 
         $result = [
