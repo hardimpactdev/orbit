@@ -1037,13 +1037,15 @@ that produced the controller's Loggable wiring.
 - [x] Pest: gateway API activity show read supports selected activity details,
   related entries, not-found and validation failures, and `activity.shown`
   logging through `tests/Feature/Http/Api/ActivityShowControllerTest.php`.
-- [~] Pest: `activity:list` and `activity:show` command tests under
+- [x] Pest: `activity:list` and `activity:show` command tests under
   `tests/Feature/Commands/Activity/Activity*Test.php` (the moved tech
   contracts already point at the `Activity` namespace).
   - [x] `activity:list` command coverage for local gateway reads, typed gateway
     forwarding, destructive filtering, validation, empty human output, and typed
     gateway request DTO parsing.
-  - [ ] `activity:show` command coverage.
+  - [x] `activity:show` command coverage for local gateway detail reads,
+    typed gateway forwarding, validation, not-found, authorization failures,
+    human detail output, and typed gateway request DTO parsing.
 - [ ] E2E gate: standing live-node smoke read of `activity:list` against
   the gateway after a few writes; read-only.
 
@@ -1350,8 +1352,9 @@ for the Saloon-based gateway transport pattern.
 
 1. **Continue activity metadata rollout.**
    - `ACTIVITY-NODE-FAMILY-1` is resolved for the converted node-family
-     commands. Keep the remaining activity command read surface moving next,
-     especially `activity:show` command coverage.
+     commands. `activity:list` and `activity:show` command coverage is now in
+     place; the remaining activity rollout work is the read-only E2E smoke gate
+     and broader Loggable correlation expansion.
    - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
      exceptions go in the command's tech-contract section.
    - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
