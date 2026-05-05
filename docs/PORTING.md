@@ -644,11 +644,13 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: gateway-local grant creation, idempotence, node-not-found validation, self-grant policy enforcement, caller role rejection, human and JSON renderer contracts, split contract tests.
   - Gateway API prerequisite implemented: `POST /api/nodes/grant` plus typed
-    `GrantNodeRequest` for future control-caller forwarding.
+    `GrantNodeRequest`.
+  - Gateway forwarding slice implemented: configured control callers forward
+    through `GatewayRequestSender` and typed `GrantNodeRequest`; gateway API
+    structured errors are preserved, and forwarded grants do not require or
+    mutate a local target-node row.
   - Contract gaps:
-    - control-caller gateway forwarding through the new `GrantNodeRequest`.
-    - `authorization_failed` runtime check (requires gateway API auth; currently a stub bootstrap gap tested via reflection).
-    - `NodeGrantOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - paired ephemeral E2E gate for the control-caller forwarding path.
 - [~] Port `node:revoke`.
   - Current implementation: `app/Console/Commands/NodeRevokeCommand.php`
   - Current tests:

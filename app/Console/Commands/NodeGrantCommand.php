@@ -6,9 +6,12 @@ namespace App\Console\Commands;
 
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\GrantNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('node:grant
     {consuming_node : Name of the node requesting access}
@@ -42,6 +45,22 @@ class NodeGrantCommand extends Command
         }
 
         if ($callerRole === 'control') {
+            return $this->forwardGrant();
+        }
+
+        return $this->handleGatewayLocal();
+    }
+
+    private function forwardGrant(): int
+    {
+        $consumerName = (string) $this->argument('consuming_node');
+        $servingName = (string) $this->argument('serving_node');
+
+        try {
+            $response = GatewayRequestSender::make()->send(
+                new GrantNodeRequest($consumerName, $servingName),
+            );
+        } catch (Throwable) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway connection is required to grant node access.',
@@ -49,7 +68,15 @@ class NodeGrantCommand extends Command
             );
         }
 
-        return $this->handleGatewayLocal();
+        if (! $response->isSuccess()) {
+            return $this->failCommand(
+                code: $response->errorCode() ?? 'gateway_unavailable',
+                message: $response->errorMessage() ?? 'Gateway connection is required to grant node access.',
+                meta: $response->errorMeta(),
+            );
+        }
+
+        return $this->respondForwardedSuccess($consumerName, $servingName, $response->data());
     }
 
     private function handleGatewayLocal(): int
@@ -87,6 +114,27 @@ class NodeGrantCommand extends Command
 
         $alreadyGranted = ! $grant->wasRecentlyCreated;
 
+        return $this->respondSuccess($consumerName, $servingName, $alreadyGranted);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function respondForwardedSuccess(string $fallbackConsumerName, string $fallbackServingName, array $data): int
+    {
+        $consumerName = $data['consuming_node'] ?? $fallbackConsumerName;
+        $servingName = $data['serving_node'] ?? $fallbackServingName;
+        $alreadyGranted = $data['already_granted'] ?? false;
+
+        return $this->respondSuccess(
+            is_string($consumerName) && $consumerName !== '' ? $consumerName : $fallbackConsumerName,
+            is_string($servingName) && $servingName !== '' ? $servingName : $fallbackServingName,
+            is_bool($alreadyGranted) ? $alreadyGranted : false,
+        );
+    }
+
+    private function respondSuccess(string $consumerName, string $servingName, bool $alreadyGranted): int
+    {
         $data = [
             'consuming_node' => $consumerName,
             'serving_node' => $servingName,
