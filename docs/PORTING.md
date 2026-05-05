@@ -988,6 +988,9 @@ that produced the controller's Loggable wiring.
   - [x] `node:revoke` now declares its `## Activity Logging` tech contract,
     emits `effect=destructive` grant-revocation metadata through the gateway
     Loggable contract, and is enforced by `ActivityLoggingContractRule`.
+  - [x] `node:remove` now declares its `## Activity Logging` tech contract,
+    emits `effect=destructive` removal metadata through the gateway Loggable
+    contract, and is enforced by `ActivityLoggingContractRule`.
   - [ ] Backfill and wire remaining node write/destructive command activity
     contracts as their Saloon/API slices are touched.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands

@@ -197,6 +197,19 @@ already-absent node remains a validation failure.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed node
+removals.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /nodes/{name}` |
+| Effect | `destructive` |
+| Subject | Target `Node` when the node is resolved; `none` when validation or lookup fails before target resolution. |
+| Properties | `target_node` is the requested node name; `removed_self` records whether the removed node was the caller; `grants_removed` records removed access edges; `wireguard_peer_removed` records whether the gateway peer detach completed. |
+| Description | `Node <name> removed` |
+
 ## Test Mapping
 
 Primary test owners:

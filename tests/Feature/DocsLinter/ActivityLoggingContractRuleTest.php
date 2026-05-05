@@ -159,9 +159,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/8_node-remove/technical/1_node-remove.md' => <<<'MD'
+# Technical Contract: `orbit node:remove [name]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(6);
+    expect($findings)->toHaveCount(7);
 });

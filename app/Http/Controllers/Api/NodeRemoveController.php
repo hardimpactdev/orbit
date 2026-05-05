@@ -4,16 +4,31 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\RemoveNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
-final readonly class NodeRemoveController
+final class NodeRemoveController implements Loggable
 {
+    private ?Node $activitySubject = null;
+
+    private ?string $activityTargetName = null;
+
+    private bool $activityRemovedSelf = false;
+
+    private int $activityGrantsRemoved = 0;
+
+    private bool $activityWireGuardPeerRemoved = false;
+
     public function __invoke(RemoveNodeApiRequest $request, string $name): JsonResponse
     {
+        $this->activityTargetName = $name;
+
         /** @var mixed $resolvedUser */
         $resolvedUser = $request->user();
         $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
@@ -62,6 +77,8 @@ final readonly class NodeRemoveController
             );
         }
 
+        $this->activitySubject = $node;
+
         if ($node->role === 'gateway') {
             return $this->error(
                 code: 'node.gateway_removal_denied',
@@ -75,6 +92,8 @@ final readonly class NodeRemoveController
         }
 
         $removedSelf = $caller->name === $node->name;
+        $this->activityRemovedSelf = $removedSelf;
+
         $grantsRemoved = DB::transaction(function () use ($node): int {
             $grantsRemoved = NodeAccess::query()
                 ->where('consumer_node_id', $node->id)
@@ -86,6 +105,7 @@ final readonly class NodeRemoveController
 
             return $grantsRemoved;
         });
+        $this->activityGrantsRemoved = $grantsRemoved;
 
         return response()->json([
             'success' => [
@@ -161,5 +181,37 @@ final readonly class NodeRemoveController
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Destructive;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:DELETE /nodes/{name}';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [
+            'target_node' => $this->activityTargetName ?? (string) request()->route('name'),
+            'removed_self' => $this->activityRemovedSelf,
+            'grants_removed' => $this->activityGrantsRemoved,
+            'wireguard_peer_removed' => $this->activityWireGuardPeerRemoved,
+        ];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        $target = $this->activityTargetName ?? (string) request()->route('name');
+
+        return $target !== '' ? "Node {$target} removed" : null;
     }
 }

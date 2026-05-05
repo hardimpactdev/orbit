@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -133,6 +135,35 @@ describe('NodeRemoveController', function (): void {
                 ->where('consumer_node_id', $callerId)
                 ->where('serving_node_id', $otherId)
                 ->exists())->toBeTrue();
+    });
+
+    it('logs activity for a successful node removal', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        $targetId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow());
+        grantRemoveNodeAccess($callerId, $targetId);
+        grantRemoveNodeAccess($targetId, $gatewayId);
+
+        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:DELETE /nodes/{name}');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe($targetId);
+        expect($entry->description)->toBe('Node app-1 removed');
+        expect($entry->properties->get('type'))->toBe('destructive');
+        expect($entry->properties->get('target_node'))->toBe('app-1');
+        expect($entry->properties->get('removed_self'))->toBeFalse();
+        expect($entry->properties->get('grants_removed'))->toBe(2);
+        expect($entry->properties->get('wireguard_peer_removed'))->toBeFalse();
     });
 
     it('removes the authenticated control caller and marks removed_self', function (): void {
