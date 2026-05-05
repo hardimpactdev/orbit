@@ -42,6 +42,22 @@ function setupNodeRemoveGatewayCaller(): void
     ]));
 }
 
+function setupNodeRemoveControlCaller(): void
+{
+    DB::table('nodes')->insert(nodeRemoveRow([
+        'name' => 'control-1',
+        'role' => 'control',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+}
+
 describe('node:remove base contract', function (): void {
     it('removes a node and returns successfully', function (): void {
         setupNodeRemoveGatewayCaller();
@@ -152,7 +168,7 @@ describe('node:remove base contract', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 
-    it('rejects control-node callers with gateway_unavailable', function (): void {
+    it('rejects unconfigured control-node callers with gateway_unavailable', function (): void {
         DB::table('nodes')->insert(nodeRemoveRow([
             'name' => 'control-1',
             'role' => 'control',
@@ -253,6 +269,162 @@ describe('node:remove base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.not_found');
+    });
+});
+
+describe('node:remove control forwarding', function (): void {
+    it('forwards configured control-node removals to the gateway without local target rows', function (): void {
+        setupNodeRemoveControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'success' => [
+                    'data' => [
+                        'name' => 'app-1',
+                        'action' => 'removed',
+                        'removed_self' => false,
+                        'wireguard_peer_removed' => false,
+                        'grants_removed' => 2,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'name' => 'app-1',
+                'action' => 'removed',
+                'removed_self' => false,
+                'wireguard_peer_removed' => false,
+                'grants_removed' => 2,
+            ])
+            ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
+            ->and(DB::table('node_access')->count())->toBe(0);
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+            && $request->url() === 'https://10.6.0.2/api/nodes/app-1'
+            && $request['destructive_consent'] === true
+            && $request['destructive_consent_source'] === 'force');
+    });
+
+    it('renders forwarded success with human output', function (): void {
+        setupNodeRemoveControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'success' => [
+                    'data' => [
+                        'name' => 'app-1',
+                        'action' => 'removed',
+                        'removed_self' => false,
+                        'wireguard_peer_removed' => false,
+                        'grants_removed' => 0,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        expect(Artisan::output())->toContain("Node 'app-1' removed");
+    });
+
+    it('preserves structured gateway authorization failures', function (): void {
+        setupNodeRemoveControlCaller();
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => 'This control node is not authorized to remove nodes.',
+                    'meta' => [
+                        'required_node' => 'gateway-1',
+                        'caller_role' => 'control',
+                    ],
+                ],
+            ], 403),
+        ]);
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('authorization_failed')
+            ->and($payload['error']['message'])->toBe('This control node is not authorized to remove nodes.')
+            ->and($payload['error']['meta'])->toBe([
+                'required_node' => 'gateway-1',
+                'caller_role' => 'control',
+            ]);
+    });
+
+    it('validates missing --force locally before forwarding in non-interactive mode', function (): void {
+        setupNodeRemoveControlCaller();
+
+        Http::fake();
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('force');
+
+        Http::assertNothingSent();
+    });
+
+    it('does not mutate local Node or NodeAccess for forwarded control calls', function (): void {
+        setupNodeRemoveControlCaller();
+        DB::table('nodes')->insert(nodeRemoveRow([
+            'name' => 'app-1',
+        ]));
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
+
+        Http::fake([
+            'https://10.6.0.2/api/nodes/app-1' => Http::response([
+                'success' => [
+                    'data' => [
+                        'name' => 'app-1',
+                        'action' => 'removed',
+                        'removed_self' => false,
+                        'wireguard_peer_removed' => false,
+                        'grants_removed' => 1,
+                    ],
+                ],
+            ]),
+        ]);
+
+        Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+        expect(DB::table('node_access')->count())->toBe(1);
     });
 });
 

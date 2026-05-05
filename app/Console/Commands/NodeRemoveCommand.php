@@ -6,9 +6,12 @@ namespace App\Console\Commands;
 
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\RemoveNodeRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;
@@ -44,19 +47,6 @@ class NodeRemoveCommand extends Command
             );
         }
 
-        if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to remove a node.',
-                meta: [],
-            );
-        }
-
-        return $this->handleGatewayLocal();
-    }
-
-    private function handleGatewayLocal(): int
-    {
         $name = $this->argument('name');
         if ($name === null) {
             if ($this->isInteractiveInput()) {
@@ -71,22 +61,6 @@ class NodeRemoveCommand extends Command
         }
 
         $name = (string) $name;
-
-        $node = $this->resolveNode($name);
-        if (is_int($node)) {
-            return $node;
-        }
-
-        if ($node->role === 'gateway') {
-            return $this->failCommand(
-                code: 'node.gateway_removal_denied',
-                message: 'The gateway node cannot be removed with this command.',
-                meta: [
-                    'name' => $name,
-                    'role' => 'gateway',
-                ],
-            );
-        }
 
         $localNodeName = Node::query()
             ->where('is_local', true)
@@ -113,6 +87,36 @@ class NodeRemoveCommand extends Command
                     meta: [],
                 );
             }
+        }
+
+        if ($callerRole === 'control') {
+            return $this->forwardRemove($name, $isSelfRemoval);
+        }
+
+        $node = $this->resolveNode($name);
+        if (is_int($node)) {
+            return $node;
+        }
+
+        if ($node->role === 'gateway') {
+            return $this->failCommand(
+                code: 'node.gateway_removal_denied',
+                message: 'The gateway node cannot be removed with this command.',
+                meta: [
+                    'name' => $name,
+                    'role' => 'gateway',
+                ],
+            );
+        }
+
+        return $this->handleGatewayLocal($name, $isSelfRemoval);
+    }
+
+    private function handleGatewayLocal(string $name, bool $isSelfRemoval): int
+    {
+        $node = $this->resolveNode($name);
+        if (is_int($node)) {
+            return $node;
         }
 
         if (! $this->wantsJson()) {
@@ -150,6 +154,72 @@ class NodeRemoveCommand extends Command
         $this->line("Node '{$name}' removed");
 
         if ($isSelfRemoval) {
+            $this->line('  This machine no longer has Orbit gateway access.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function forwardRemove(string $name, bool $isSelfRemoval): int
+    {
+        if (! $this->wantsJson()) {
+            $this->renderProgressTree($name);
+        }
+
+        try {
+            $response = GatewayRequestSender::make()->send(
+                new RemoveNodeRequest($name, $this->option('force') ? 'force' : 'interactive_confirm'),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to remove a node.',
+                meta: [],
+            );
+        }
+
+        if (! $response->isSuccess()) {
+            return $this->failCommand(
+                code: $response->errorCode() ?? 'gateway_unavailable',
+                message: $response->errorMessage() ?? 'Gateway connection is required to remove a node.',
+                meta: $response->errorMeta(),
+            );
+        }
+
+        return $this->respondForwardedSuccess($name, $isSelfRemoval, $response->data());
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function respondForwardedSuccess(string $fallbackName, bool $fallbackIsSelfRemoval, array $data): int
+    {
+        $name = $data['name'] ?? $fallbackName;
+        $removedSelf = $data['removed_self'] ?? $fallbackIsSelfRemoval;
+        $grantsRemoved = $data['grants_removed'] ?? 0;
+        $peerRemoved = $data['wireguard_peer_removed'] ?? false;
+
+        $responseData = [
+            'name' => is_string($name) && $name !== '' ? $name : $fallbackName,
+            'action' => 'removed',
+            'removed_self' => is_bool($removedSelf) ? $removedSelf : $fallbackIsSelfRemoval,
+            'wireguard_peer_removed' => is_bool($peerRemoved) ? $peerRemoved : false,
+            'grants_removed' => is_int($grantsRemoved) ? $grantsRemoved : 0,
+        ];
+
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'success' => [
+                    'data' => $responseData,
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
+
+        $this->line("Node '{$responseData['name']}' removed");
+
+        if ($responseData['removed_self']) {
             $this->line('  This machine no longer has Orbit gateway access.');
         }
 
