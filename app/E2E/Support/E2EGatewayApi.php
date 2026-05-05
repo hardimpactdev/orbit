@@ -243,7 +243,8 @@ PHP;
         
             $output = [];
             $exitCode = 0;
-            exec('cd '.escapeshellarg($orbitPath).' && '.$command.' 2>&1', $output, $exitCode);
+            $script = 'cd '.escapeshellarg($orbitPath).' && '.$command;
+            exec('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', $output, $exitCode);
         
             return [$exitCode, implode("\n", $output)];
         }
@@ -331,6 +332,28 @@ PHP;
         function run_app_show(string $name): array
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
+        }
+
+        function run_app_new(array $input): array
+        {
+            $parts = [
+                'php artisan app:new',
+                escapeshellarg((string) ($input['name'] ?? '')),
+                '--node='.escapeshellarg((string) ($input['node'] ?? '')),
+                '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
+                '--php-version='.escapeshellarg((string) ($input['php_version'] ?? '8.5')),
+                '--json',
+            ];
+
+            foreach (['repository' => 'repo', 'domain' => 'domain'] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            return run_orbit_command(implode(' ', $parts));
         }
 
         function run_activity_list(array $query): array
@@ -596,6 +619,29 @@ PHP;
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/apps ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_app_new($input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
         

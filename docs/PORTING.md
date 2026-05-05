@@ -1161,7 +1161,14 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       missing Supervisor/runtime-unit enactment is surfaced as process-family
       warnings. No undocumented default process definitions are created by
       `app:new`.
-  - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
+      - [~] E2E gates for real source creation and registration convergence.
+        - [x] Docker feature E2E for real source creation from a control caller
+          through the gateway API and gateway-owned `RemoteShell` SSH edge. The
+          Docker feature lane intentionally lacks PHP-FPM/Caddy runtime realism, so
+          it asserts source creation, durable app intent, and the retryable
+          `app.php_version_unavailable` warning.
+        - [ ] Provisioning-lane E2E for real PHP-FPM, proxy route, and process
+          artifact convergence after source creation.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
 - [ ] Port `app:remove`.

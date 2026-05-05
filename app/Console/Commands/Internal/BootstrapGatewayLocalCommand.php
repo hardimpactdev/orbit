@@ -19,7 +19,8 @@ use RuntimeException;
 #[Signature('orbit:internal:bootstrap-gateway-local
     {name : Gateway node name}
     {wireguard-address : WireGuard address for the gateway}
-    {--identity-json= : Gateway/control WireGuard identity payload; use - to read JSON from STDIN}')]
+    {--identity-json= : Gateway/control WireGuard identity payload; use - to read JSON from STDIN}
+    {--skip-runtime-install : Skip PHP-FPM and Caddy gateway API runtime installation for container-only E2E topology preparation}')]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
 {
@@ -114,7 +115,10 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         $caService->ensureRootCa();
-        $gatewayApiRuntimeInstaller->install($wireguardAddress);
+
+        if (! (bool) $this->option('skip-runtime-install')) {
+            $gatewayApiRuntimeInstaller->install($wireguardAddress);
+        }
 
         $this->line($caService->rootCert());
 

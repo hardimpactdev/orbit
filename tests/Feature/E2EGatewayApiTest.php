@@ -72,3 +72,15 @@ it('installs provisioning SSH keys for gateway API runtime users', function (): 
         @unlink($publicKey);
     }
 });
+
+it('runs gateway api shim commands as the orbit runtime user', function (): void {
+    $reflection = new ReflectionClass(E2EGatewayApi::class);
+    $method = $reflection->getMethod('tlsServerScript');
+    $method->setAccessible(true);
+
+    $script = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2');
+
+    expect($script)
+        ->toContain('sudo -iu orbit bash -lc')
+        ->toContain('$script = \'cd \'.escapeshellarg($orbitPath).\' && \'.$command;');
+});

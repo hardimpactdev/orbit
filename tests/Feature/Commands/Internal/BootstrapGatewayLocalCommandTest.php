@@ -56,6 +56,18 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
     });
 
+    it('can skip gateway api runtime installation for container topology preparation', function (): void {
+        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--skip-runtime-install' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
+            ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe([]);
+    });
+
     it('is idempotent when the gateway node and CA already exist', function (): void {
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
             'name' => 'gateway-1',

@@ -323,7 +323,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
         E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-            'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s',
+            'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install',
             escapeshellarg($gatewayIp),
         ), timeoutSeconds: 120);
         E2EGatewayApi::seedControlIdentity($gateway, $controlIp, 'control', $gatewayIp, $controlIp);

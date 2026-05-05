@@ -41,8 +41,39 @@ it('builds control-gateway prepared images through transient docker resources', 
         ['role' => 'gateway', 'container' => 'orbit-e2e-build-control-gateway-gateway', 'image' => 'orbit-e2e-topology:control-gateway-gateway-current'],
     ]);
 
-    Process::assertRan("docker commit --change 'CMD [\"sleep\", \"infinity\"]' 'orbit-e2e-build-control-gateway-control' 'orbit-e2e-topology:control-gateway-control-current'");
+    Process::assertRan("docker commit --change 'CMD [\"/usr/local/bin/orbit-e2e-container\"]' 'orbit-e2e-build-control-gateway-control' 'orbit-e2e-topology:control-gateway-control-current'");
     Process::assertRan("docker network rm 'orbit-e2e-build-control-gateway' >/dev/null 2>&1 || true");
+});
+
+it('seeds gateway to app node ssh access for remote shell feature tests', function (): void {
+    Process::fake([
+        "docker image inspect 'orbit-e2e-topology-runtime:current' >/dev/null" => Process::result(),
+        "docker network create --subnet '10.6.0.0/16' 'orbit-e2e-build-control-gateway-dev'" => Process::result(),
+        'docker run -d *' => Process::result(output: "container-id\n"),
+        'docker exec --user *migrate*' => Process::result(),
+        'docker exec --user *bootstrap-gateway-local*' => Process::result(),
+        'docker exec *tinker*' => Process::result(),
+        'docker exec *nohup*' => Process::result(),
+        'docker exec --user *curl*' => Process::result(),
+        'docker exec --user *gateway:add*' => Process::result(),
+        'docker exec --user *ssh-keygen*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
+        'docker exec *cat*' => Process::result(),
+        "docker exec 'orbit-e2e-build-control-gateway-dev-dev' sh -lc *authorized_keys*" => Process::result(),
+        'docker exec --user *bake-app-node*' => Process::result(),
+        'docker commit --change *' => Process::result(),
+        'docker rm -f *' => Process::result(),
+        'docker network rm *' => Process::result(),
+    ]);
+
+    (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+        ->build(E2ETopologyKind::ControlGatewayDev);
+
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'ssh-keygen -t ed25519')
+        && str_contains($process->command, 'cat ~/.ssh/id_ed25519.pub'));
+    Process::assertRan(fn ($process): bool => is_string($process->command)
+        && str_contains($process->command, 'authorized_keys')
+        && str_contains($process->command, 'ssh-ed25519 AAAATEST orbit-e2e-gateway'));
 });
 
 it('uses the configured instance prefix for transient resources but stable image tags', function (): void {

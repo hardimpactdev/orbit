@@ -12,10 +12,13 @@ RUN apt-get update \
         libonig-dev \
         libsqlite3-dev \
         libzip-dev \
+        openssh-client \
+        openssh-server \
         sqlite3 \
         sudo \
         unzip \
     && docker-php-ext-install mbstring pdo_sqlite zip \
+    && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -39,6 +42,15 @@ RUN printf '%s\n' \
         > /usr/local/bin/orbit \
     && chmod 755 /usr/local/bin/orbit
 
+RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -e' \
+        'mkdir -p /run/sshd' \
+        '/usr/sbin/sshd' \
+        'exec sleep infinity' \
+        > /usr/local/bin/orbit-e2e-container \
+    && chmod 755 /usr/local/bin/orbit-e2e-container
+
 WORKDIR /opt/orbit-source
 COPY . /opt/orbit-source
 
@@ -51,4 +63,4 @@ RUN install -d -o control -g control /home/control/orbit \
     && sudo -iu control bash -lc 'cd /home/control/orbit && composer install --no-interaction --no-progress --no-dev' \
     && sudo -iu orbit bash -lc 'cd /home/orbit/orbit && composer install --no-interaction --no-progress --no-dev'
 
-CMD ["sleep", "infinity"]
+CMD ["/usr/local/bin/orbit-e2e-container"]

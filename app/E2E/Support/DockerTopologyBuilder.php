@@ -55,7 +55,7 @@ final readonly class DockerTopologyBuilder
                 $this->mustRun(
                     sprintf(
                         'docker commit --change %s %s %s',
-                        escapeshellarg('CMD ["sleep", "infinity"]'),
+                        escapeshellarg('CMD ["/usr/local/bin/orbit-e2e-container"]'),
                         escapeshellarg($container),
                         escapeshellarg($image),
                     ),
@@ -130,12 +130,14 @@ final readonly class DockerTopologyBuilder
 
         $key = new SshKeyPair('/dev/null', '/dev/null');
 
-        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2', timeoutSeconds: 120);
+        E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-runtime-install', timeoutSeconds: 120);
         E2EGatewayApi::seedControlIdentity($gateway, '10.6.0.3', 'control');
         E2EGatewayApi::start($gateway, "docker-build-{$kind->value}");
         E2EGatewayApi::waitForGatewayApi($control, 'control', $key);
         E2EControlIdentity::ensure($control, 'control', $key);
         E2ECommand::ssh($control, 'control', $key, 'cd /home/control/orbit && php artisan gateway:add 10.6.0.2 --json', timeoutSeconds: 600);
+
+        $this->seedRemoteShellSshAccess($gateway, $containers);
 
         if (isset($containers['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=10.6.0.4 --wireguard-address=10.6.0.4 --environment=development --tld=test --gateway-endpoint=10.6.0.2 --ssh-user=orbit --user=orbit', timeoutSeconds: 120);
@@ -144,6 +146,58 @@ final readonly class DockerTopologyBuilder
         if (isset($containers['prod'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=10.6.0.5 --wireguard-address=10.6.0.5 --environment=production --gateway-endpoint=10.6.0.2 --ssh-user=orbit --user=orbit', timeoutSeconds: 120);
         }
+    }
+
+    /**
+     * @param  array<string, DockerBuildInstance>  $containers
+     */
+    private function seedRemoteShellSshAccess(DockerBuildInstance $gateway, array $containers): void
+    {
+        if (! isset($containers['dev']) && ! isset($containers['prod'])) {
+            return;
+        }
+
+        $publicKey = $this->gatewayPublicKey($gateway);
+
+        foreach (['dev', 'prod'] as $role) {
+            if (! isset($containers[$role])) {
+                continue;
+            }
+
+            $this->authorizeGatewaySshKey($containers[$role], $publicKey);
+        }
+    }
+
+    private function gatewayPublicKey(DockerBuildInstance $gateway): string
+    {
+        $result = E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            new SshKeyPair('/dev/null', '/dev/null'),
+            'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-gateway >/dev/null; fi && cat ~/.ssh/id_ed25519.pub',
+            timeoutSeconds: 60,
+        );
+
+        $publicKey = trim($result->output());
+
+        if ($publicKey === '') {
+            throw new RuntimeException('Could not create Docker gateway SSH key for RemoteShell E2E access.');
+        }
+
+        return $publicKey;
+    }
+
+    private function authorizeGatewaySshKey(DockerBuildInstance $instance, string $publicKey): void
+    {
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && touch /home/orbit/.ssh/authorized_keys && chown orbit:orbit /home/orbit/.ssh/authorized_keys && chmod 600 /home/orbit/.ssh/authorized_keys && grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys',
+                escapeshellarg($publicKey),
+            ),
+            "Could not authorize gateway SSH key in {$instance->name()}",
+            timeoutSeconds: 60,
+        );
     }
 
     private function ipForRole(string $role): string

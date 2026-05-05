@@ -45,6 +45,16 @@ it('installs an orbit shim that resolves the current checkout artisan file', fun
         ->toContain('exec php "$HOME/orbit/artisan" "$@"');
 });
 
+it('starts sshd for gateway to app node remote shell coverage', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/e2e/topology/Dockerfile'));
+
+    expect($dockerfile)
+        ->toContain('openssh-client')
+        ->toContain('openssh-server')
+        ->toContain('/usr/sbin/sshd')
+        ->toContain('CMD ["/usr/local/bin/orbit-e2e-container"]');
+});
+
 it('fails clearly when the docker build fails', function (): void {
     Process::fake([
         '*' => Process::result(errorOutput: 'docker build failed', exitCode: 1),
