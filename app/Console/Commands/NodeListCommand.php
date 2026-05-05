@@ -7,14 +7,17 @@ namespace App\Console\Commands;
 use App\Models\Node;
 use App\Services\Gateway\GatewayRequestSender;
 use App\Services\Gateway\Requests\ListNodesRequest;
+use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
 
 #[Signature('node:list
     {--role= : Filter by role (gateway|app|control)}
     {--environment= : Filter by environment (development|production)}
+    {--doctor : Include node doctor checks and summaries}
     {--json : Output as JSON}')]
 #[Description('List nodes registered in the gateway registry')]
 class NodeListCommand extends Command
@@ -23,10 +26,11 @@ class NodeListCommand extends Command
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
-    public function handle(): int
+    public function handle(NodesDoctorSummary $doctorSummary): int
     {
         $role = $this->option('role');
         $environment = $this->option('environment');
+        $doctor = $this->wantsDoctor();
 
         if (is_string($role) && $role !== '') {
             if (! in_array($role, self::VALID_ROLES, true)) {
@@ -49,37 +53,53 @@ class NodeListCommand extends Command
         }
 
         try {
-            $nodes = $this->fetchNodes(
+            $result = $this->fetchNodes(
                 role: is_string($role) && $role !== '' ? $role : null,
                 environment: is_string($environment) && $environment !== '' ? $environment : null,
+                doctor: $doctor,
+                doctorSummary: $doctorSummary,
             );
         } catch (RuntimeException $e) {
             return $this->failForwarding($e->getMessage());
         }
 
-        $payload = ['nodes' => $nodes];
+        $payload = ['nodes' => $result['nodes']];
 
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
+            return $this->jsonSuccess($payload, $result['meta']);
         }
 
-        $this->renderHuman($nodes);
+        $doctorMeta = $result['meta']['doctor'] ?? null;
+
+        $this->renderHuman(
+            nodes: $result['nodes'],
+            doctor: is_array($doctorMeta) ? $doctorMeta : null,
+        );
 
         return self::SUCCESS;
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     nodes: list<array<string, mixed>>,
+     *     meta: array<string, mixed>,
+     * }
      */
-    private function fetchNodes(?string $role, ?string $environment): array
+    private function fetchNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array
     {
         if ($this->isGatewayCaller()) {
-            return $this->fetchLocalNodes($role, $environment);
+            return $this->fetchLocalNodes(
+                role: $role,
+                environment: $environment,
+                doctor: $doctor,
+                doctorSummary: $doctorSummary,
+            );
         }
 
         $response = GatewayRequestSender::make()->send(new ListNodesRequest(
             role: $role,
             environment: $environment,
+            doctor: $doctor,
         ));
 
         if (! $response->isSuccess()) {
@@ -87,8 +107,12 @@ class NodeListCommand extends Command
         }
 
         $data = $response->data();
+        $nodes = $data['nodes'] ?? [];
 
-        return $data['nodes'] ?? [];
+        return [
+            'nodes' => is_array($nodes) ? $nodes : [],
+            'meta' => $response->meta(),
+        ];
     }
 
     private function isGatewayCaller(): bool
@@ -115,9 +139,31 @@ class NodeListCommand extends Command
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     nodes: list<array<string, mixed>>,
+     *     meta: array<string, mixed>,
+     * }
      */
-    private function fetchLocalNodes(?string $role, ?string $environment): array
+    private function fetchLocalNodes(?string $role, ?string $environment, bool $doctor, NodesDoctorSummary $doctorSummary): array
+    {
+        $nodes = $this->fetchLocalNodeModels($role, $environment);
+
+        $meta = [];
+
+        if ($doctor) {
+            $meta['doctor'] = $doctorSummary->forNodes($nodes);
+        }
+
+        return [
+            'nodes' => $nodes->map(fn (Node $node): array => $this->nodePayload($node))->all(),
+            'meta' => $meta,
+        ];
+    }
+
+    /**
+     * @return Collection<int, Node>
+     */
+    private function fetchLocalNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
             ->orderBy('role')
@@ -131,22 +177,32 @@ class NodeListCommand extends Command
             $query->where('environment', $environment);
         }
 
-        return $query->get()->map(fn (Node $node): array => [
+        return $query->get();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function nodePayload(Node $node): array
+    {
+        return [
             'name' => $node->name,
             'role' => $node->role,
             'environment' => $node->role === 'app' ? $node->environment : null,
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
-        ])->all();
+        ];
     }
 
     /**
      * @param  list<array<string, mixed>>  $nodes
+     * @param  array<string, mixed>|null  $doctor
      */
-    private function renderHuman(array $nodes): void
+    private function renderHuman(array $nodes, ?array $doctor): void
     {
         if ($nodes === []) {
             $this->line('No nodes found.');
+            $this->renderDoctorSummary($doctor);
 
             return;
         }
@@ -161,17 +217,70 @@ class NodeListCommand extends Command
                 $node['status'],
             ], $nodes),
         );
+
+        $this->renderDoctorSummary($doctor);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $doctor
+     */
+    private function renderDoctorSummary(?array $doctor): void
+    {
+        if ($doctor === null) {
+            return;
+        }
+
+        $this->newLine();
+
+        $issues = (int) ($doctor['issues'] ?? 0);
+
+        if ($issues === 0) {
+            $this->line('Doctor: All nodes healthy.');
+
+            return;
+        }
+
+        $issueLabel = $issues === 1 ? 'issue' : 'issues';
+
+        $this->line("Doctor: {$issues} {$issueLabel} found.");
+
+        $failures = $doctor['failures'] ?? [];
+
+        if (! is_array($failures)) {
+            $failures = [];
+        }
+
+        foreach ($failures as $failure) {
+            if (! is_array($failure)) {
+                continue;
+            }
+
+            $node = $failure['node'] ?? 'unknown';
+            $message = $failure['message'] ?? 'Node doctor issue detected.';
+            $code = $failure['code'] ?? 'node.unknown';
+
+            $this->line("  {$node}: {$message} ({$code})");
+        }
+
+        $this->line('  Run `orbit doctor --family=node --fix` to repair.');
     }
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
      */
-    private function jsonSuccess(array $data): int
+    private function jsonSuccess(array $data, array $meta = []): int
     {
+        $success = [
+            'data' => $data,
+        ];
+
+        if ($meta !== []) {
+            $success['meta'] = $meta;
+        }
+
         $this->line(json_encode([
-            'success' => [
-                'data' => $data,
-            ],
+            'success' => $success,
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
@@ -208,6 +317,11 @@ class NodeListCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function wantsDoctor(): bool
+    {
+        return (bool) $this->option('doctor');
     }
 
     private function failForwarding(string $message): int

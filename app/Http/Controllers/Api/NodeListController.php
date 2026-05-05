@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Models\Node;
+use App\Services\Nodes\NodesDoctorSummary;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,10 +16,11 @@ final readonly class NodeListController
 
     private const array VALID_ENVIRONMENTS = ['development', 'production'];
 
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request, NodesDoctorSummary $doctorSummary): JsonResponse
     {
         $role = $request->query('role');
         $environment = $request->query('environment');
+        $doctor = (bool) filter_var($request->query('doctor', false), FILTER_VALIDATE_BOOLEAN);
 
         if (is_string($role) && $role !== '') {
             if (! in_array($role, self::VALID_ROLES, true)) {
@@ -51,24 +54,32 @@ final readonly class NodeListController
             }
         }
 
-        $nodes = $this->fetchNodes(
+        $nodes = $this->fetchNodeModels(
             role: is_string($role) && $role !== '' ? $role : null,
             environment: is_string($environment) && $environment !== '' ? $environment : null,
         );
 
-        return response()->json([
-            'success' => [
-                'data' => [
-                    'nodes' => $nodes,
-                ],
+        $success = [
+            'data' => [
+                'nodes' => $this->nodePayloads($nodes),
             ],
+        ];
+
+        if ($doctor) {
+            $success['meta'] = [
+                'doctor' => $doctorSummary->forNodes($nodes),
+            ];
+        }
+
+        return response()->json([
+            'success' => $success,
         ]);
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return Collection<int, Node>
      */
-    private function fetchNodes(?string $role, ?string $environment): array
+    private function fetchNodeModels(?string $role, ?string $environment): Collection
     {
         $query = Node::query()
             ->orderBy('role')
@@ -82,7 +93,16 @@ final readonly class NodeListController
             $query->where('environment', $environment);
         }
 
-        return $query->get()->map(fn (Node $node): array => [
+        return $query->get();
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return list<array<string, mixed>>
+     */
+    private function nodePayloads(Collection $nodes): array
+    {
+        return $nodes->map(fn (Node $node): array => [
             'name' => $node->name,
             'role' => $node->role,
             'host' => $node->host,

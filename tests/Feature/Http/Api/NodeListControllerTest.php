@@ -208,4 +208,22 @@ describe('NodeListController', function (): void {
                 ],
             ]);
     });
+
+    it('attaches doctor meta when doctor query is present', function (): void {
+        DB::table('nodes')->insert([
+            apiNodeRow([
+                'name' => 'incomplete-app',
+                'wireguard_address' => null,
+            ]),
+        ]);
+
+        $response = $this->call('GET', '/api/nodes?doctor=1&role=app', [], [], [], ['REMOTE_ADDR' => CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.meta.doctor.checked', 1)
+            ->assertJsonPath('success.meta.doctor.issues', 1)
+            ->assertJsonPath('success.meta.doctor.failures.0.node', 'incomplete-app')
+            ->assertJsonPath('success.meta.doctor.failures.0.code', 'node.record_incomplete')
+            ->assertJsonPath('success.meta.doctor.failures.0.family', 'node');
+    });
 });

@@ -24,6 +24,7 @@ function nodeListJsonRow(array $overrides = []): array
         'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -41,6 +42,7 @@ describe('node:list JSON renderer contract', function (): void {
             'is_local' => true,
             'environment' => null,
             'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -281,5 +283,50 @@ describe('node:list JSON renderer contract', function (): void {
         expect($error['code'])->toBe('validation_failed');
         expect($error['meta'])->toHaveKey('field')
             ->and($error['meta']['field'])->toBe('environment');
+    });
+
+    it('attaches doctor meta when --doctor is present and issues are found', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow([
+            'name' => 'incomplete-app',
+            'wireguard_address' => null,
+        ]));
+
+        $exitCode = Artisan::call('node:list', [
+            '--json' => true,
+            '--doctor' => true,
+            '--role' => 'app',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+
+        $doctor = $payload['success']['meta']['doctor'];
+
+        expect($doctor['checked'])->toBe(1)
+            ->and($doctor['issues'])->toBe(1)
+            ->and($doctor['failures'])->toHaveCount(1)
+            ->and($doctor['failures'][0])->toMatchArray([
+                'node' => 'incomplete-app',
+                'code' => 'node.record_incomplete',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --fix',
+            ]);
+    });
+
+    it('attaches healthy doctor meta without failures when --doctor finds no issues', function (): void {
+        DB::table('nodes')->insert(nodeListJsonRow(['name' => 'healthy-app']));
+
+        $exitCode = Artisan::call('node:list', [
+            '--json' => true,
+            '--doctor' => true,
+            '--role' => 'app',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['doctor'])->toBe([
+                'checked' => 1,
+                'issues' => 0,
+            ]);
     });
 });

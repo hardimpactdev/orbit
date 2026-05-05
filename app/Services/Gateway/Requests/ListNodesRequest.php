@@ -11,6 +11,7 @@ final readonly class ListNodesRequest implements GatewayRequest
     public function __construct(
         private ?string $role = null,
         private ?string $environment = null,
+        private bool $doctor = false,
     ) {}
 
     public function method(): string
@@ -31,6 +32,7 @@ final readonly class ListNodesRequest implements GatewayRequest
         return array_filter([
             'role' => $this->role,
             'environment' => $this->environment,
+            'doctor' => $this->doctor ? true : null,
         ]);
     }
 

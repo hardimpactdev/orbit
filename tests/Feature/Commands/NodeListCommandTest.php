@@ -27,6 +27,7 @@ function nodeListRow(array $overrides = []): array
         'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -259,6 +260,7 @@ describe('node:list control-caller forwarding', function (): void {
             'is_local' => true,
             'environment' => null,
             'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.2',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -334,6 +336,54 @@ describe('node:list control-caller forwarding', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['nodes'])->toHaveCount(1)
             ->and($payload['success']['data']['nodes'][0]['name'])->toBe('app-1');
+    });
+
+    it('forwards doctor flag to gateway request and renders returned meta', function (): void {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/nodes?doctor=1')) {
+                return Http::response([
+                    'success' => [
+                        'data' => [
+                            'nodes' => [
+                                [
+                                    'name' => 'gateway-1',
+                                    'role' => 'gateway',
+                                    'environment' => null,
+                                    'platform' => 'ubuntu_24-04',
+                                    'status' => 'active',
+                                ],
+                            ],
+                        ],
+                        'meta' => [
+                            'doctor' => [
+                                'checked' => 1,
+                                'issues' => 1,
+                                'failures' => [
+                                    [
+                                        'node' => 'gateway-1',
+                                        'code' => 'node.record_incomplete',
+                                        'message' => 'Node record for gateway-1 is missing required fields.',
+                                        'family' => 'node',
+                                        'next_command' => 'doctor --family=node --fix',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([
+                'success' => ['data' => ['nodes' => []]],
+            ], 200);
+        });
+
+        $exitCode = Artisan::call('node:list', ['--json' => true, '--doctor' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['doctor']['checked'])->toBe(1)
+            ->and($payload['success']['meta']['doctor']['issues'])->toBe(1);
     });
 
     it('handles forwarding error with JSON envelope', function (): void {

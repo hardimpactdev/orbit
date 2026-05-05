@@ -24,6 +24,7 @@ function nodeListHumanRow(array $overrides = []): array
         'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -41,6 +42,7 @@ describe('node:list human renderer contract', function (): void {
             'is_local' => true,
             'environment' => null,
             'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.1',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -184,5 +186,38 @@ describe('node:list human renderer contract', function (): void {
 
         expect($exitCode)->not->toBe(0);
         expect($output)->toContain('Invalid');
+    });
+
+    it('renders healthy doctor summary when --doctor finds no issues', function (): void {
+        DB::table('nodes')->insert(nodeListHumanRow(['name' => 'healthy-app']));
+
+        $exitCode = Artisan::call('node:list', [
+            '--doctor' => true,
+            '--role' => 'app',
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('healthy-app')
+            ->and($output)->toContain('Doctor: All nodes healthy.');
+    });
+
+    it('renders doctor issue summary without failing the list command', function (): void {
+        DB::table('nodes')->insert(nodeListHumanRow([
+            'name' => 'incomplete-app',
+            'wireguard_address' => null,
+        ]));
+
+        $exitCode = Artisan::call('node:list', [
+            '--doctor' => true,
+            '--role' => 'app',
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Doctor: 1 issue found.')
+            ->and($output)->toContain('incomplete-app')
+            ->and($output)->toContain('node.record_incomplete')
+            ->and($output)->toContain('Run `orbit doctor --family=node --fix` to repair.');
     });
 });

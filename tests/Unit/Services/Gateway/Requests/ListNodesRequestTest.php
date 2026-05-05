@@ -46,6 +46,12 @@ it('includes both filters in query when set', function (): void {
     ]);
 });
 
+it('includes doctor flag in query when requested', function (): void {
+    $request = new ListNodesRequest(doctor: true);
+
+    expect($request->query())->toBe(['doctor' => true]);
+});
+
 it('excludes null filters from query', function (): void {
     $request = new ListNodesRequest(role: 'gateway');
 

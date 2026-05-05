@@ -510,25 +510,28 @@ VPS-adjacent behavior.
      follow-up todo as caller-role extraction.
 3. `NODE-DOCTOR-CONTRACT-1` (todo 252) is merged: the technical contract,
    probe primitives, DTOs, and focused unit tests are on `main`.
-4. Next active doctor work is `NODE-LIST-DOCTOR-1` (todo 270): wire
-   `node:list --doctor` to `NodesProbe` and render the doctor summary.
+4. `NODE-LIST-DOCTOR-1` (todo 270) is complete: `node:list --doctor`
+   calls the merged `NodesProbe` primitives through a node doctor summary
+   builder and renders human/JSON summaries on both gateway-local and
+   forwarded gateway API paths.
 
 If the ready queue is below target, fill with independent read-only Pest,
 documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `node:list --doctor` and doctor handoff implementation (todo 270 `NODE-LIST-DOCTOR-1`).
-2. `E2E-NODE-SHOW-GRANT-1` (todo 267): paired feature E2E for the real
+1. `E2E-NODE-SHOW-GRANT-1` (todo 267): paired feature E2E for the real
    `node:show` grant metadata that is now merged locally.
-3. Refresh broad `NODENEW-GATEWAY-COMPLETE-1` (todo 255) into the first bounded
-   first-gateway provisioning split below instead of promoting todo 255 as-is.
-4. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
+2. `E2E-PROVISION-REWORK-1` (todo 278): clear stale role-specific
+   `E2EImage::Control`/`Gateway` provisioning tests before relying on the
+   `e2e-provision` lane for the next first-gateway slices.
+3. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
    foundation is merged.
+4. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
+   typed request, after the grant E2E gate lands.
 5. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
-   Do not start this until the active doctor handoff and grant E2E slices are on
-   `main`.
+   Do not start this until the grant E2E slice is on `main`.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -607,11 +610,11 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] Human renderer contract.
   - [x] `--role` and `--environment` filters.
   - [x] Node doctor technical contract and `NodesProbe` primitives.
-  - [ ] `--doctor` secondary operation.
+  - [x] `--doctor` secondary operation.
   - [ ] caller visibility/access-policy behavior.
-  - [~] gateway forwarding (control/app CLI callers use typed GatewayClient;
-    E2E gate todo 254 pending).
-  - [ ] doctor handoff behavior.
+  - [x] gateway forwarding (control/app CLI callers use typed GatewayClient;
+    E2E gate todo 254 complete).
+  - [x] doctor handoff behavior.
 - [~] Complete `node:show` contract gaps:
   - [x] modeled `environment`, `platform`, and node agent IDE metadata.
   - [x] JSON renderer contract (envelope shape, field contract, all error codes and metadata).
@@ -998,23 +1001,22 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Wire `node:list --doctor` to the merged `NodesProbe` primitives
-   (todo 270 `NODE-LIST-DOCTOR-1`) and keep it an explicit secondary
-   operation with human and JSON doctor summaries.
-2. Use the full prepared Incus topology lane for node read-forwarding E2E:
-   `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
-   only for container-safe feature checks that do not depend on WireGuard,
-   systemd, SSH provisioning, or VM networking semantics.
-3. Run the paired `E2E-NODE-SHOW-GRANT-1` feature gate for the merged
+1. Run the paired `E2E-NODE-SHOW-GRANT-1` feature gate for the merged
    `node:show` grant metadata, then leave remaining `node:show` work scoped to
    access-policy authorization, interactive prompting, and default app-node
    resolution.
-4. Continue gateway forwarding in the documented order after the active doctor
-   handoff and grant E2E slices: `node:update`, `node:default`, `node:grant`,
-   `node:revoke`, and `node:remove`.
-5. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
+2. Clear `E2E-PROVISION-REWORK-1` so the provisioning lane no longer depends
+   on role-specific ready-image aliases refused by `IncusProvider::aliasFor`.
+3. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
    then pair it with the `e2e-provision` lane before treating first-gateway
    WireGuard state as complete.
+4. Continue gateway forwarding in the documented order after the grant E2E
+   slice: `node:update`, `node:default`, `node:grant`, `node:revoke`, and
+   `node:remove`.
+5. Use the full prepared Incus topology lane for node read-forwarding E2E:
+   `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
+   only for container-safe feature checks that do not depend on WireGuard,
+   systemd, SSH provisioning, or VM networking semantics.
 6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
 7. Complete the documented `update` and `update:all` implementation gaps once
