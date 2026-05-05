@@ -972,6 +972,9 @@ that produced the controller's Loggable wiring.
     `## Activity Logging` tech contracts; `node:show` implements the
     gateway Loggable contract and both commands are enforced by
     `ActivityLoggingContractRule`.
+  - [x] `node:grant` now declares its `## Activity Logging` tech contract,
+    emits `effect=write` through the gateway Loggable contract, and is
+    enforced by `ActivityLoggingContractRule`.
   - [ ] Backfill and wire remaining node write/destructive command activity
     contracts as their Saloon/API slices are touched.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands

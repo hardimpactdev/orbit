@@ -126,7 +126,7 @@ MD,
     expect($rule->check($context))->toBe([]);
 });
 
-it('enforces node read command activity logging contracts', function (): void {
+it('enforces node command activity logging contracts as they are backfilled', function (): void {
     $rule = new ActivityLoggingContractRule;
     $context = activityLoggingContractContext([
         '1_node/3_node-list/technical/1_node-list.md' => <<<'MD'
@@ -139,9 +139,14 @@ MD,
 
 **Owner:** `node`.
 MD,
+        '1_node/5_node-grant/technical/1_node-grant.md' => <<<'MD'
+# Technical Contract: `orbit node:grant [consuming_node] [serving_node]`
+
+**Owner:** `node`.
+MD,
     ]);
 
     $findings = $rule->check($context);
 
-    expect($findings)->toHaveCount(2);
+    expect($findings)->toHaveCount(3);
 });

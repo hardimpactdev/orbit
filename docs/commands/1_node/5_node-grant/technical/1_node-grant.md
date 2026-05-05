@@ -154,6 +154,19 @@ Role-specific behavior is defined in these companion contracts:
 - `node:grant` does not repair drift or adopt node reality; those are doctor
   responsibilities.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed grant
+writes.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /nodes/grant` |
+| Effect | `write` |
+| Subject | Serving `Node` when the serving node is resolved; `none` when validation fails before a serving node can be resolved. |
+| Properties | `consuming_node` is the node receiving access; `serving_node` is the node being made visible to the consuming node. |
+| Description | `<consuming_node> granted access to <serving_node>` |
+
 ## Test Mapping
 
 Primary test owners:

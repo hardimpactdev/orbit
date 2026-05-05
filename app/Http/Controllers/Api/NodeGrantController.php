@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\GrantNodeApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
-final readonly class NodeGrantController
+final readonly class NodeGrantController implements Loggable
 {
     public function __invoke(GrantNodeApiRequest $request): JsonResponse
     {
@@ -178,5 +181,35 @@ final readonly class NodeGrantController
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:POST /nodes/grant';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return Node::query()
+            ->where('name', (string) request('serving_node'))
+            ->first();
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [
+            'consuming_node' => (string) request('consuming_node'),
+            'serving_node' => (string) request('serving_node'),
+        ];
+    }
+
+    public function activityLogDescription(): string
+    {
+        return sprintf('%s granted access to %s', (string) request('consuming_node'), (string) request('serving_node'));
     }
 }

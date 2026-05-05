@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -121,6 +123,40 @@ describe('NodeGrantController', function (): void {
             ->where('consumer_node_id', $consumingId)
             ->where('serving_node_id', $servingId)
             ->exists())->toBeTrue();
+    });
+
+    it('logs activity for a successful grant write', function (): void {
+        $callerId = createGrantCallerNode();
+        $gatewayId = createGrantGatewayNode();
+        grantGatewayManagementAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiGrantNodeRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:POST /nodes/grant');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe($servingId);
+        expect($entry->description)->toBe('control-1 granted access to app-1');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('consuming_node'))->toBe('control-1');
+        expect($entry->properties->get('serving_node'))->toBe('app-1');
     });
 
     it('creates a grant directly for a gateway caller', function (): void {
