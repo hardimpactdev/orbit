@@ -27,6 +27,7 @@ final class E2ETopologyLease
         private ?\Closure $snapshotReset = null,
         private readonly ?\Closure $teardown = null,
         private readonly string $gatewayApiIp = '10.6.0.2',
+        private readonly ?E2EResourceLease $resourceLease = null,
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -64,7 +65,7 @@ final class E2ETopologyLease
         return $this->gatewayApiIp;
     }
 
-    public function cleanup(?E2EPhaseTimer $timer = null): void
+    public function cleanup(?E2EPhaseTimer $timer = null, bool $releaseResourceLease = true): void
     {
         if ($this->cleaned) {
             return;
@@ -86,6 +87,10 @@ final class E2ETopologyLease
                 $timer->measure('cleanup.teardown', fn () => ($this->teardown)($timer));
             }
         } finally {
+            if ($releaseResourceLease) {
+                $this->resourceLease?->release();
+            }
+
             if ($shouldFlush) {
                 $timer->flush('cleanup');
             }
@@ -107,7 +112,7 @@ final class E2ETopologyLease
                 return;
             }
 
-            $this->cleanup($timer);
+            $this->cleanup($timer, releaseResourceLease: false);
             $payload = ($this->rebuild)($timer);
             $instances = $payload['instances'];
 

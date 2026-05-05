@@ -33,10 +33,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
     {
-        $selection = $this->selectHost($kind);
+        $resourceLease = $this->acquireResourceLease();
+        $selection = $this->selectHost($kind, $resourceLease !== null ? [$resourceLease->host()] : null);
         $host = $selection['host'];
 
         if ($host === null) {
+            $resourceLease?->release();
+
             throw new \RuntimeException(implode('; ', $selection['failures']));
         }
 
@@ -69,6 +72,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             }
         } catch (\Throwable $exception) {
             $this->cleanupResources($host, $network, $roles, $runId);
+            $resourceLease?->release();
 
             throw $exception;
         }
@@ -131,6 +135,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             snapshotReset: null,
             teardown: $teardown,
             gatewayApiIp: $networkPlan->ipForRole('gateway'),
+            resourceLease: $resourceLease,
         );
     }
 
@@ -155,14 +160,18 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     /**
      * @return array{host: DockerHost|null, failures: list<string>}
      */
-    private function selectHost(E2ETopologyKind $kind): array
+    /**
+     * @param  list<string>|null  $hostNames
+     * @return array{host: DockerHost|null, failures: list<string>}
+     */
+    private function selectHost(E2ETopologyKind $kind, ?array $hostNames = null): array
     {
         $failures = [];
         $requestedContainers = count($this->rolesFor($kind));
-        $hostNames = $this->dockerHostCandidates();
+        $hostNames ??= $this->dockerHostCandidates();
 
         if ($hostNames === []) {
-            return ['host' => null, 'failures' => ['no Docker host slot is configured for this parallel worker']];
+            return ['host' => null, 'failures' => ['no Docker host is configured']];
         }
 
         foreach ($hostNames as $hostName) {
@@ -207,33 +216,22 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function dockerHostCandidates(): array
     {
+        return $this->config->dockerHostSlots !== []
+            ? array_keys($this->config->dockerHostSlots)
+            : $this->config->dockerHosts;
+    }
+
+    private function acquireResourceLease(): ?E2EResourceLease
+    {
         if ($this->config->dockerHostSlots === []) {
-            return $this->config->dockerHosts;
+            return null;
         }
 
-        $token = getenv('TEST_TOKEN');
-
-        if (! is_string($token) || $token === '') {
-            return $this->config->dockerHosts;
-        }
-
-        $worker = (int) $token;
-
-        if ($worker < 1) {
-            return [];
-        }
-
-        $slotOffset = 0;
-
-        foreach ($this->config->dockerHostSlots as $hostName => $slots) {
-            $slotOffset += $slots;
-
-            if ($worker <= $slotOffset) {
-                return [$hostName];
-            }
-        }
-
-        return [];
+        return new E2EResourceLeasePool(
+            directory: storage_path('framework/e2e/leases'),
+            waitSeconds: $this->config->slotWaitSeconds,
+            staleSeconds: $this->config->slotStaleSeconds,
+        )->acquire('docker', $this->config->dockerHostSlots);
     }
 
     private function missingImage(DockerHost $host, E2ETopologyKind $kind): ?string

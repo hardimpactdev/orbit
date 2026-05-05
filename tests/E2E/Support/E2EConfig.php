@@ -36,6 +36,10 @@ final readonly class E2EConfig
         public int $dockerMaxContainersPerHost,
         public bool $keep,
         /** @var array<string, int> */
+        public array $incusHostSlots = [],
+        public int $slotWaitSeconds = 900,
+        public int $slotStaleSeconds = 7200,
+        /** @var array<string, int> */
         public array $dockerHostSlots = [],
     ) {}
 
@@ -64,10 +68,13 @@ final readonly class E2EConfig
             topologyStateSize: self::envString('ORBIT_E2E_TOPOLOGY_STATE_SIZE', '4GiB'),
             incusStoragePool: self::envString('ORBIT_E2E_INCUS_STORAGE_POOL', ''),
             incusMaxVmsPerHost: self::envInt('ORBIT_E2E_INCUS_MAX_VMS_PER_HOST', 4),
+            incusHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_INCUS_HOST_SLOTS', ''), backend: 'Incus'),
             dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
             dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 8),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
-            dockerHostSlots: self::parseDockerHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', '')),
+            slotWaitSeconds: self::envInt('ORBIT_E2E_SLOT_WAIT_SECONDS', 900),
+            slotStaleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
+            dockerHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', ''), backend: 'Docker'),
         );
     }
 
@@ -136,7 +143,7 @@ final readonly class E2EConfig
     /**
      * @return array<string, int>
      */
-    private static function parseDockerHostSlots(string $slots): array
+    private static function parseHostSlots(string $slots, string $backend): array
     {
         $entries = array_values(array_filter(
             array_map('trim', explode(',', $slots)),
@@ -150,13 +157,13 @@ final readonly class E2EConfig
             $host = strtolower($host);
 
             if ($host === '' || $slotCount === '') {
-                throw new \InvalidArgumentException("Invalid Docker host slot entry [{$entry}]. Expected host:slots.");
+                throw new \InvalidArgumentException("Invalid {$backend} host slot entry [{$entry}]. Expected host:slots.");
             }
 
             $slots = (int) $slotCount;
 
             if ((string) $slots !== $slotCount || $slots < 1) {
-                throw new \InvalidArgumentException("Invalid Docker host slot count [{$slotCount}] for host [{$host}].");
+                throw new \InvalidArgumentException("Invalid {$backend} host slot count [{$slotCount}] for host [{$host}].");
             }
 
             $hostSlots[$host] = $slots;
@@ -208,9 +215,12 @@ final readonly class E2EConfig
             topologyStateSize: $this->topologyStateSize,
             incusStoragePool: $this->incusStoragePool,
             incusMaxVmsPerHost: $this->incusMaxVmsPerHost,
+            incusHostSlots: $this->incusHostSlots,
             dockerHosts: $this->dockerHosts,
             dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
+            slotWaitSeconds: $this->slotWaitSeconds,
+            slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
         );
     }

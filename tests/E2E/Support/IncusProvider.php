@@ -6,12 +6,14 @@ namespace Tests\E2E\Support;
 
 use Throwable;
 
-final readonly class IncusProvider implements E2EProvider
+final class IncusProvider implements E2EProvider
 {
     public IncusHost $host;
 
+    private ?E2EResourceLease $resourceLease = null;
+
     public function __construct(
-        public E2EConfig $config,
+        private E2EConfig $config,
     ) {
         $this->host = new IncusHost($config);
     }
@@ -30,6 +32,22 @@ final readonly class IncusProvider implements E2EProvider
      * @param  list<E2EImage>  $images
      */
     public function availability(array $images): ProviderAvailability
+    {
+        $this->ensureResourceLease();
+
+        $availability = $this->inspectAvailability($images);
+
+        if (! $availability->available) {
+            $this->releaseResourceLease();
+        }
+
+        return $availability;
+    }
+
+    /**
+     * @param  list<E2EImage>  $images
+     */
+    private function inspectAvailability(array $images): ProviderAvailability
     {
         if (! $this->host->commandExists('incus')) {
             return ProviderAvailability::unavailable('incus command is not available on the E2E host');
@@ -60,6 +78,8 @@ final readonly class IncusProvider implements E2EProvider
 
     public function startRun(string $label): E2ERun
     {
+        $this->ensureResourceLease();
+
         $safeLabel = E2ERun::safeLabel($label);
         $id = E2ERun::id();
         $remoteDirectory = "/tmp/{$this->config->instancePrefix}-{$id}-{$safeLabel}";
@@ -71,6 +91,8 @@ final readonly class IncusProvider implements E2EProvider
         ));
 
         if (! $result->successful()) {
+            $this->releaseResourceLease();
+
             throw new \RuntimeException("Could not create remote E2E run directory: {$result->errorOutput()}");
         }
 
@@ -127,24 +149,28 @@ final readonly class IncusProvider implements E2EProvider
      */
     public function cleanup(E2ERun $run, array $instances): void
     {
-        if ($this->config->keep) {
-            fwrite(STDERR, "ORBIT_E2E_KEEP=1; keeping E2E run {$run->id} on {$this->config->host}\n");
-
-            return;
-        }
-
-        foreach ($instances as $instance) {
-            try {
-                $instance->delete();
-            } catch (Throwable $exception) {
-                fwrite(STDERR, "Could not delete E2E instance {$instance->name()}: {$exception->getMessage()}\n");
-            }
-        }
-
         try {
-            $this->host->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 120);
-        } catch (Throwable $exception) {
-            fwrite(STDERR, "Could not remove E2E run directory {$run->workDirectory}: {$exception->getMessage()}\n");
+            if ($this->config->keep) {
+                fwrite(STDERR, "ORBIT_E2E_KEEP=1; keeping E2E run {$run->id} on {$this->config->host}\n");
+
+                return;
+            }
+
+            try {
+                foreach ($instances as $instance) {
+                    try {
+                        $instance->delete();
+                    } catch (Throwable $exception) {
+                        fwrite(STDERR, "Could not delete E2E instance {$instance->name()}: {$exception->getMessage()}\n");
+                    }
+                }
+
+                $this->host->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 120);
+            } catch (Throwable $exception) {
+                fwrite(STDERR, "Could not remove E2E run directory {$run->workDirectory}: {$exception->getMessage()}\n");
+            }
+        } finally {
+            $this->releaseResourceLease();
         }
     }
 
@@ -174,5 +200,27 @@ final readonly class IncusProvider implements E2EProvider
                 .'from blank/base and run bin/e2e-provision-node.'
             ),
         };
+    }
+
+    private function ensureResourceLease(): void
+    {
+        if ($this->resourceLease !== null || $this->config->incusHostSlots === []) {
+            return;
+        }
+
+        $this->resourceLease = new E2EResourceLeasePool(
+            directory: storage_path('framework/e2e/leases'),
+            waitSeconds: $this->config->slotWaitSeconds,
+            staleSeconds: $this->config->slotStaleSeconds,
+        )->acquire('incus', $this->config->incusHostSlots);
+
+        $this->config = $this->config->forHost($this->resourceLease->host());
+        $this->host = new IncusHost($this->config);
+    }
+
+    private function releaseResourceLease(): void
+    {
+        $this->resourceLease?->release();
+        $this->resourceLease = null;
     }
 }
