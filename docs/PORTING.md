@@ -1256,7 +1256,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     backend gates tracked below. Next concrete action while blocked: port the
     gateway-owned setup/teardown step policy commands, which are registry reads
     and policy writes that do not require app-node runtime mutation.
-- [ ] Port workspace setup and teardown step commands.
+- [~] Port workspace setup and teardown step commands.
+  - [x] `workspace-setup-step:list` and `workspace-teardown-step:list`
+    gateway-local registry reads, typed gateway API forwarding, app/path
+    resolution, human/JSON renderers, focused Pest coverage, and read-only
+    Docker feature E2E gate.
+  - [ ] `workspace-setup-step:add` and `workspace-teardown-step:add`.
+  - [ ] `workspace-setup-step:remove` and `workspace-teardown-step:remove`.
 - [x] Port workspace history and log commands.
   - [x] `workspace:history` registry read, typed gateway API forwarding,
     pagination filters, human/JSON renderers, focused Pest coverage, and
@@ -1423,6 +1429,8 @@ for the Saloon-based gateway transport pattern.
     registry lookup.
   - [x] `workspace:history` API controller plus Saloon request/DTO.
   - [x] `workspace:log` API controller plus Saloon request/DTO.
+  - [x] `workspace-setup-step:list` and `workspace-teardown-step:list` API
+    controller plus Saloon request/DTO.
 - [ ] Port process API controllers and typed client requests.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.

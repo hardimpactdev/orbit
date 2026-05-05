@@ -440,6 +440,23 @@ PHP;
         {
             return run_orbit_command('php artisan workspace:log '.escapeshellarg($run).' --json');
         }
+
+        function run_workspace_steps(string $phase, array $query): array
+        {
+            $parts = ["php artisan workspace-{$phase}-step:list"];
+            $app = $query['app'] ?? null;
+            $path = $query['path'] ?? null;
+
+            if (is_scalar($app) && (string) $app !== '') {
+                $parts[] = '--app='.escapeshellarg((string) $app);
+            } elseif (is_scalar($path) && (string) $path !== '') {
+                chdir((string) $path);
+            }
+
+            $parts[] = '--json';
+
+            return run_orbit_command(implode(' ', $parts));
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -710,6 +727,22 @@ PHP;
 
             if (preg_match('#^GET /api/workspaces/runs/([^ ?]+)/log#', $requestLine, $matches) === 1) {
                 [$exitCode, $output] = run_workspace_log(urldecode($matches[1]));
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^GET /api/workspaces/steps/(setup|teardown)#', $requestLine, $matches) === 1) {
+                $path = explode(' ', $requestLine)[1] ?? "/api/workspaces/steps/{$matches[1]}";
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_workspace_steps($matches[1], $query);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

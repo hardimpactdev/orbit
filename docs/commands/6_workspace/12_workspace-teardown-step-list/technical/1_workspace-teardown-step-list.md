@@ -162,7 +162,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListCommandTest.php` | Command contract: parent-app resolution (`--app`, `.orbit/config` marker, gateway path-ownership lookup, non-interactive failure), `order ASC` sort, full-dump (no pagination), step-record shape parity with `workspace-teardown-step:add` (`{id, app, phase, order, command, timeout_seconds}`), empty-list behavior for valid apps with no steps, `workspace.app_not_found` for unknown apps, `authorization_failed` for unauthorized callers, and read-only guarantee (no SSH, no intent mutation, no step execution). |
-| `tests/E2E/Read/WorkspaceTeardownStepListTest.php` | Real read-only `workspace-teardown-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
+| `tests/E2E/WorkspaceStepListTest.php` | Real read-only `workspace-teardown-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
 
 Renderer-specific test mapping lives in:
 
