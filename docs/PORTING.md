@@ -1046,8 +1046,10 @@ that produced the controller's Loggable wiring.
   - [x] `activity:show` command coverage for local gateway detail reads,
     typed gateway forwarding, validation, not-found, authorization failures,
     human detail output, and typed gateway request DTO parsing.
-- [ ] E2E gate: standing live-node smoke read of `activity:list` against
-  the gateway after a few writes; read-only.
+- [x] E2E gate: Docker feature read of `activity:list` from control through
+  the gateway API after seeding a few gateway activity entries; read-only from
+  the caller perspective. Standing live-node smoke wording was stale and was
+  replaced because `TESTING.md` sunsets live infrastructure lanes.
 
 ## App Workstream
 

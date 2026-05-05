@@ -276,6 +276,21 @@ PHP;
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
         }
+
+        function run_activity_list(array $query): array
+        {
+            $parts = ['php artisan activity:list --json'];
+
+            foreach (['app', 'node', 'effect', 'correlation', 'limit'] as $option) {
+                $value = $query[$option] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            return run_orbit_command(implode(' ', $parts));
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -339,6 +354,22 @@ PHP;
                 respond($connection, 200, $identityPayload);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'GET /api/activity ') || str_starts_with($requestLine, 'GET /api/activity?')) {
+                $path = explode(' ', $requestLine)[1] ?? '/api/activity';
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_activity_list($query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
         
