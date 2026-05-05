@@ -38,8 +38,16 @@ class AppRootCommand extends Command
         $selector = $this->stringArgument('app');
         $root = $this->stringArgument('root');
 
+        if ($selector === null && $this->isInteractiveInput()) {
+            $selector = trim((string) $this->ask('App name or hostname'));
+        }
+
         if ($selector === null) {
             return $this->failValidation('app', 'App is required.');
+        }
+
+        if ($root === null && $this->isInteractiveInput()) {
+            $root = trim((string) $this->ask('Document root'));
         }
 
         if ($root === null) {
@@ -212,6 +220,11 @@ class AppRootCommand extends Command
         return $this->option('json') === true;
     }
 
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
     /**
      * @param  list<array<string, mixed>>  $warnings
      */
@@ -235,8 +248,29 @@ class AppRootCommand extends Command
         if (! $this->wantsJson()) {
             /** @var array{name?: string, root?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+            $result = is_array($data['result'] ?? null) ? $data['result'] : [];
+            $changed = (bool) ($result['changed'] ?? false);
 
-            $this->line("Document root for '".(string) ($app['name'] ?? '')."' updated to '".(string) ($app['root'] ?? '')."'.");
+            $this->line('┌ Updating App Root');
+            $this->line('○ Apply and verify root change');
+            $this->line('○ Apply PHP-FPM configuration');
+            $this->line('○ Apply proxy routes');
+            $this->line('└ App root updated');
+            $this->line($changed
+                ? "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' updated to '".(string) ($app['root'] ?? '')."'."
+                : "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' is already '".(string) ($app['root'] ?? '')."'.");
+            $this->line("Artifacts successfully re-enacted on node '{$nodeName}'.");
+
+            if ($warnings !== []) {
+                foreach ($warnings as $warning) {
+                    $this->line('WARNING: '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+                    $this->line('  Code:  '.(string) ($warning['code'] ?? 'warning'));
+
+                    if (isset($warning['next_command']) && is_string($warning['next_command'])) {
+                        $this->line('  Next:  orbit '.$warning['next_command']);
+                    }
+                }
+            }
 
             return self::SUCCESS;
         }

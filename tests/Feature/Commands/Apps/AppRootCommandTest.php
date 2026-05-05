@@ -231,6 +231,78 @@ it('forwards configured control callers through the typed gateway request', func
         ->and($remoteShell->scripts)->toBe([]);
 });
 
+it('prompts for missing human input and renders the progress tree', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRootSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:root')
+        ->expectsQuestion('App name or hostname', 'docs')
+        ->expectsQuestion('Document root', 'web')
+        ->expectsOutputToContain('┌ Updating App Root')
+        ->expectsOutputToContain('○ Apply and verify root change')
+        ->expectsOutputToContain('○ Apply PHP-FPM configuration')
+        ->expectsOutputToContain('○ Apply proxy routes')
+        ->expectsOutputToContain("SUCCESS: Document root for app 'docs' updated to 'web'.")
+        ->expectsOutputToContain("Artifacts successfully re-enacted on node 'app-1'.")
+        ->assertExitCode(0);
+});
+
+it('renders converged human output when root intent is unchanged', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRootSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:root docs public')
+        ->expectsOutputToContain("SUCCESS: Document root for app 'docs' is already 'public'.")
+        ->expectsOutputToContain("Artifacts successfully re-enacted on node 'app-1'.")
+        ->assertExitCode(0);
+});
+
 final class AppRootSequencedRemoteShell implements RemoteShell
 {
     /**

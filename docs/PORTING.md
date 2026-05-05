@@ -1192,7 +1192,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     the app path, updates `document_root`, and reuses app runtime enactment for
     PHP-FPM/proxy refresh.
   - [x] Gateway API endpoint and configured control-caller forwarding.
-  - [ ] Interactive input mode and human renderer progress tree.
+  - [x] Interactive input mode and human renderer progress tree.
   - [ ] E2E root refresh gate.
 - [ ] Port `app:remove`.
 - [ ] Port `app:prune`.
