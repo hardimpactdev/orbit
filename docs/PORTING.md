@@ -704,6 +704,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` (command contract)
     - `tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php` (JSON renderer contract)
+    - `tests/E2E/NodeGrantTest.php` (Docker feature E2E for control-caller gateway forwarding)
   - Bootstrap slice implemented: gateway-local grant creation, idempotence, node-not-found validation, self-grant policy enforcement, caller role rejection, human and JSON renderer contracts, split contract tests.
   - Gateway API prerequisite implemented: `POST /api/nodes/grant` plus typed
     `GrantNodeRequest`.
@@ -711,8 +712,9 @@ exist. Those families wait for the node/gateway/app foundations.
     through `GatewayConnector` and typed `GrantNodeRequest`; gateway API
     structured errors are preserved, and forwarded grants do not require or
     mutate a local target-node row.
-  - Contract gaps:
-    - paired ephemeral E2E gate for the control-caller forwarding path.
+  - E2E gate implemented: Docker feature coverage verifies a configured control
+    caller creates a gateway-owned node access grant through the Gateway API and
+    reads the grant back through forwarded `node:show`.
 - [~] Port `node:revoke`.
   - Current implementation: `app/Console/Commands/NodeRevokeCommand.php`
   - Current tests:
@@ -1365,8 +1367,7 @@ for the Saloon-based gateway transport pattern.
      write-forwarding/provisioning safety gates are either complete or
      explicitly deferred with rationale.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
-   critical path: `node:grant`/`node:revoke`/`node:remove` paired E2E gates,
-   advanced `node:new` enrollment paths, WireGuard peer teardown, and DNS
-   cleanup.
+   critical path: `node:revoke`/`node:remove` paired E2E gates, advanced
+   `node:new` enrollment paths, WireGuard peer teardown, and DNS cleanup.
 3. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.

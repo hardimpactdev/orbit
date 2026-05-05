@@ -305,6 +305,15 @@ PHP;
             return run_orbit_command(implode(' ', $parts));
         }
 
+        function run_node_grant(array $input): array
+        {
+            return run_orbit_command(
+                'php artisan node:grant '
+                    .escapeshellarg((string) ($input['consuming_node'] ?? '')).' '
+                    .escapeshellarg((string) ($input['serving_node'] ?? '')).' --json'
+            );
+        }
+
         function run_app_show(string $name): array
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
@@ -457,6 +466,29 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_node_agent_ide(urldecode($matches[1]), $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/nodes/grant ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_node_grant($input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 
