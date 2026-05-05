@@ -1028,9 +1028,11 @@ that produced the controller's Loggable wiring.
 
 ### Test Gates
 
-- [ ] Pest: Loggable contract per Loggable controller plus correlation
-  generation through `LogActivity` middleware (foundation covered;
-  expand per family as Loggable lands).
+- [x] Pest: Loggable contract per Loggable controller plus correlation
+  generation through `LogActivity` middleware. Foundation coverage lives in
+  `tests/Feature/Http/Middleware/LogActivityTest.php`; current activity, app,
+  and node Loggable controllers have focused API tests alongside their
+  implementation slices.
 - [x] Pest: gateway API activity list read supports destructive filtering,
   normalized JSON metadata, `has_more`, validation, and `activity.listed`
   logging through `tests/Feature/Http/Api/ActivityListControllerTest.php`.
@@ -1354,9 +1356,9 @@ for the Saloon-based gateway transport pattern.
 
 1. **Continue activity metadata rollout.**
    - `ACTIVITY-NODE-FAMILY-1` is resolved for the converted node-family
-     commands. `activity:list` and `activity:show` command coverage is now in
-     place; the remaining activity rollout work is the read-only E2E smoke gate
-     and broader Loggable correlation expansion.
+     commands. `activity:list` and `activity:show` command coverage, the
+     read-only E2E smoke gate, and Loggable correlation coverage are now in
+     place for the current activity/app/node API surface.
    - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
      exceptions go in the command's tech-contract section.
    - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
