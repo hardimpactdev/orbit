@@ -570,8 +570,11 @@ Do not create more than 2 of these chains in flight at once.
 
 Unblocked. Saloon node-family migration and the activity-log foundation are now
 on `main`. App family ports must use the Saloon `GatewayConnector` /
-`GatewayRequest` / typed DTO pattern and add activity metadata as part of each
-slice where the command/API surface is loggable.
+`GatewayRequest` / typed DTO pattern, declare a `## Activity Logging` section
+in each command's `technical/1_<command>.md` per
+[`activity-concepts.md`](commands/17_activity/activity-concepts.md), and add
+the command to `ActivityLoggingContractRule::ENFORCED_COMMANDS` as the
+section lands.
 
 The first app slices should stay read-only and use Docker-backed feature E2E
 before any app write/destructive commands are created:
@@ -835,28 +838,124 @@ exist. Those families wait for the node/gateway/app foundations.
 
 ## Activity Logging Workstream
 
-Activity logging foundation is now in place, and future family ports should add
-metadata while being ported. The old repo used `spatie/laravel-activitylog` v4
-with Orbit-specific attribution
-metadata (command, action, subject, properties, description) on every write
-command and many read commands.
+Activity logging is cross-cutting infrastructure that every command and API
+endpoint participates in. Product authority:
+[`docs/commands/17_activity/activity-concepts.md`](commands/17_activity/activity-concepts.md).
+The doctrine requires every ported command's `technical/1_<command>.md` to
+declare a `## Activity Logging` section. The
+`command_docs.activity_logging_contract` lint rule enforces the section on
+an explicit allowlist that grows as commands backfill, so the rule and the
+fleet converge from the activity family outward.
 
-- [x] `ACTIVITY-FOUNDATION-1` — install and configure `spatie/laravel-activitylog`
-  v4.12.3, publish config/migrations, and establish the activity log table.
+The old repo used `spatie/laravel-activitylog` v4 with Orbit-specific
+attribution metadata on every write command and many read commands.
+
+### Foundation
+
+- [x] `ACTIVITY-FOUNDATION-1` — install and configure
+  `spatie/laravel-activitylog` v4.12.3, publish config/migrations, and
+  establish the activity log table.
 - [x] `ACTIVITY-CORRELATION-1` — port `ActivityLogCorrelation` service and
   `X-Orbit-Request-Id` header propagation (gateway API and CLI command
-  correlation). This is a prerequisite for the Saloon `HasCorrelationHeader`
-  plugin.
-- [x] `ACTIVITY-CLI-TRAITS-1` — define the activity-log interface/traits that
-  commands implement to declare their `activityLogType()`, `activityLogAction()`,
-  `activityLogSubject()`, `activityLogProperties()`, and `activityLogDescription()`.
-  Old evidence: `../orbit-old-may/app/Console/Commands/` (search `activityLogType`).
-- [ ] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family while
-  migrating node commands to Saloon. `node:grant`, `node:revoke`, `node:remove`,
-  `node:update`, and `node:default` are the first candidates.
-- [ ] `ACTIVITY-READ-AUDIT-1` — decide which read commands (e.g., `node:list`,
-  `node:show`, `app:list`, `app:show`) log audit entries and at what verbosity.
-  Old evidence shows `node:list` and `node:show` carried `activityLogType::Read`.
+  correlation). Prerequisite for the Saloon `HasCorrelationHeader` plugin.
+- [x] `ACTIVITY-CLI-TRAITS-1` — define the activity-log interface/traits
+  that commands implement to declare their attribution metadata. Old
+  evidence: `../orbit-old-may/app/Console/Commands/` (search
+  `activityLogType`).
+
+### Doctrine And Family Split
+
+- [x] `ACTIVITY-FAMILY-SPLIT-1` — split `activity:list` and `activity:show`
+  into the new top-level `17_activity` family. Adds `activity-concepts.md`
+  doctrine, reconciles `docs/CONCEPTS.md`, `11_operation/README.md`,
+  `11_operation/operation-concepts.md`, and registers `activity` in
+  `NonStateDomainHandoffRule`.
+- [x] `ACTIVITY-EFFECT-DESTRUCTIVE-1` — restore `destructive` as a third
+  effect alongside `read`/`write` in the activity model. Adds
+  `--effect=<read|write|destructive>` filter to `activity:list` and
+  expands the JSON renderer enum on both activity commands.
+- [x] `ACTIVITY-LOGGING-LINT-1` — add
+  `command_docs.activity_logging_contract` rule with allowlist
+  `[activity-list, activity-show]` plus Pest coverage in
+  `tests/Feature/DocsLinter/ActivityLoggingContractRuleTest.php`. The
+  allowlist grows per family as commands backfill.
+
+### Loggable Contract Realignment
+
+The doctrine reshapes the Loggable contract vocabulary:
+
+- Old method names: `activityLogType()` (Read|Write), `activityLogAction()`
+  (string), `activityLogSubject()`, `activityLogProperties()`,
+  `activityLogDescription()`.
+- New doctrine names: `effect()` (read|write|destructive), `type()` (action
+  string like `node.granted`), `subject()`, `properties()`, `description()`.
+
+The vocabulary swap is intentional: doctrine `effect` = old `Type`, doctrine
+`type` = old `Action`. Aligned with the `activity:list` tech contract column
+names and adds `destructive` to the effect set.
+
+- [ ] `ACTIVITY-LOGGABLE-RENAME-1` — rename Loggable contract surface in PHP
+  (`App\Contracts\Loggable`, traits, controllers) to the doctrine names.
+  Keep old method names as thin proxies until callers migrate, then remove.
+- [ ] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect
+  enum to support `destructive` and surface the new value in the gateway
+  response payload and `activity:list --effect` filter.
+
+### Per-Command Tech Contract Backfill
+
+Every converted command's `technical/1_<command>.md` gains a complete
+`## Activity Logging` section per
+`docs/commands/17_activity/activity-concepts.md`: `Type`, `Effect`,
+`Subject`, `Properties`, and `Description`, or an explicit "does not emit"
+declaration with reason. Each command's backfill adds the command name to
+`ActivityLoggingContractRule::ENFORCED_COMMANDS`. Backfilling a family
+should be sequenced inside the family's port slice, not as a separate
+sweep, so the section reflects the same per-command product decisions
+that produced the controller's Loggable wiring.
+
+- [x] `17_activity` (`activity:list`, `activity:show` — allowlisted).
+- [ ] `1_node` (`node:register`, `node:list`, `node:show`, `node:update`,
+  `node:default`, `node:grant`, `node:revoke`, `node:remove`,
+  `node:agent-ide`).
+- [ ] `2_gateway`.
+- [ ] `3_tool`.
+- [ ] `4_firewall`.
+- [ ] `5_app`.
+- [ ] `6_workspace`.
+- [ ] `7_process`.
+- [ ] `8_proxy`.
+- [ ] `9_schedule`.
+- [ ] `10_deploy`.
+- [ ] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
+- [ ] `12_cf`.
+- [ ] `13_vpn`.
+- [ ] `14_php`.
+- [ ] `15_agent-ide`.
+- [ ] `16_dns`.
+
+### Implementation Slice
+
+- [ ] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family
+  while migrating node commands to Saloon. `node:grant`, `node:revoke`,
+  `node:remove`, `node:update`, and `node:default` are the first
+  candidates. Pair each command with its tech-contract Activity Logging
+  backfill.
+- [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
+  (`*:list`, `*:show`) emit with `effect=read`. A specific read may
+  declare `does not emit` only when noise dominates audit value; the
+  exception belongs in the command's `## Activity Logging` section with
+  a reason.
+
+### Test Gates
+
+- [ ] Pest: Loggable contract per Loggable controller plus correlation
+  generation through `LogActivity` middleware (foundation covered;
+  expand per family as Loggable lands).
+- [ ] Pest: `activity:list` and `activity:show` command tests under
+  `tests/Feature/Commands/Activity/Activity*Test.php` (the moved tech
+  contracts already point at the `Activity` namespace).
+- [ ] E2E gate: standing live-node smoke read of `activity:list` against
+  the gateway after a few writes; read-only.
 
 ## App Workstream
 
@@ -1170,8 +1269,13 @@ for the Saloon-based gateway transport pattern.
    - Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
      Docker-backed feature E2E.
 3. **Continue activity metadata rollout without blocking App read ports.**
-   - `ACTIVITY-NODE-FAMILY-1` and `ACTIVITY-READ-AUDIT-1` remain follow-ups for
-     node command/API metadata decisions.
+   - `ACTIVITY-NODE-FAMILY-1` is the next implementation step. Pair each
+     node command with its `## Activity Logging` tech-contract backfill and
+     add the command to `ActivityLoggingContractRule::ENFORCED_COMMANDS`.
+   - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
+     exceptions go in the command's tech-contract section.
+   - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
+     are the remaining doctrine-alignment implementation tasks.
 4. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
    E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths, WireGuard
