@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -38,6 +41,46 @@ function setLocalDefaultCommand(string $name): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+function setupConfiguredControlNodeDefaultCaller(): void
+{
+    DB::table('nodes')->insert(nodeDefaultCommandRow([
+        'name' => 'local-control',
+        'role' => 'control',
+        'environment' => null,
+        'is_local' => true,
+    ]));
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://gateway.test',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+}
+
+function nodeDefaultGatewayResponse(array $nodes): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'nodes' => $nodes,
+            ],
+        ],
+    ];
+}
+
+function expectNodeDefaultListRequest(Request $request): bool
+{
+    $query = [];
+    parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+    return $request->method() === 'GET'
+        && $request->url() !== 'https://gateway.test/api/nodes'
+        && str_starts_with($request->url(), 'https://gateway.test/api/nodes?')
+        && $query === [
+            'role' => 'app',
+            'environment' => 'development',
+        ];
 }
 
 describe('node:default command contract', function (): void {
@@ -211,6 +254,103 @@ describe('node:default command contract', function (): void {
 
         $record = DB::table('local_node_defaults')->first();
         expect($record->default_node_name)->toBe('app-2');
+    });
+
+    it('validates set through gateway-visible development app nodes for configured control callers', function (): void {
+        setupConfiguredControlNodeDefaultCaller();
+
+        Http::fake([
+            'gateway.test/*' => Http::response(nodeDefaultGatewayResponse([
+                [
+                    'name' => 'remote-app',
+                    'role' => 'app',
+                    'environment' => 'development',
+                    'platform' => 'ubuntu_24-04',
+                    'status' => 'active',
+                ],
+            ]), 200),
+        ]);
+
+        $exitCode = Artisan::call('node:default', [
+            'name' => 'remote-app',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data'])->toBe([
+                'action' => 'set',
+                'default_node' => [
+                    'name' => 'remote-app',
+                    'role' => 'app',
+                    'environment' => 'development',
+                ],
+            ])
+            ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app')
+            ->and(DB::table('nodes')->where('name', 'remote-app')->exists())->toBeFalse();
+
+        Http::assertSent(fn (Request $request): bool => expectNodeDefaultListRequest($request));
+    });
+
+    it('discovers interactive choose options through gateway-visible development app nodes', function (): void {
+        setupConfiguredControlNodeDefaultCaller();
+
+        Http::fake([
+            'gateway.test/*' => Http::response(nodeDefaultGatewayResponse([
+                [
+                    'name' => 'remote-app-1',
+                    'role' => 'app',
+                    'environment' => 'development',
+                    'platform' => 'ubuntu_24-04',
+                    'status' => 'active',
+                ],
+                [
+                    'name' => 'remote-app-2',
+                    'role' => 'app',
+                    'environment' => 'development',
+                    'platform' => 'ubuntu_24-04',
+                    'status' => 'active',
+                ],
+            ]), 200),
+        ]);
+
+        $this->artisan('node:default')
+            ->expectsChoice(
+                'Default development app node',
+                'remote-app-2',
+                [
+                    'remote-app-1' => 'remote-app-1 (development)',
+                    'remote-app-2' => 'remote-app-2 (development)',
+                ],
+            )
+            ->assertExitCode(0);
+
+        expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app-2')
+            ->and(DB::table('nodes')->whereIn('name', ['remote-app-1', 'remote-app-2'])->exists())->toBeFalse();
+
+        Http::assertSent(fn (Request $request): bool => expectNodeDefaultListRequest($request));
+    });
+
+    it('keeps show and clear local-only for configured control callers', function (): void {
+        setupConfiguredControlNodeDefaultCaller();
+        setLocalDefaultCommand('stale-local-app');
+
+        Http::fake();
+
+        $showExitCode = Artisan::call('node:default', ['--json' => true]);
+        $showPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $clearExitCode = Artisan::call('node:default', ['--clear' => true, '--json' => true]);
+        $clearPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($showExitCode)->toBe(0)
+            ->and($showPayload['success']['data']['action'])->toBe('show')
+            ->and($showPayload['success']['data']['default_node']['name'])->toBe('stale-local-app')
+            ->and($clearExitCode)->toBe(0)
+            ->and($clearPayload['success']['data']['action'])->toBe('clear')
+            ->and(DB::table('local_node_defaults')->value('default_node_name'))->toBeNull();
+
+        Http::assertNothingSent();
     });
 
     it('does not mutate node registry on set', function (): void {

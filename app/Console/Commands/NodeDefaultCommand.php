@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\LocalGatewaySettings;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
+use App\Services\Gateway\GatewayRequestSender;
+use App\Services\Gateway\Requests\ListNodesRequest;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\ConnectionException;
+use RuntimeException;
 
 use function Laravel\Prompts\select;
 
@@ -135,7 +140,11 @@ class NodeDefaultCommand extends Command
 
     private function chooseDefault(): int
     {
-        $nodes = $this->fetchDevelopmentAppNodes();
+        try {
+            $nodes = $this->fetchDevelopmentAppNodes();
+        } catch (ConnectionException|RuntimeException) {
+            return $this->failGatewayUnavailable();
+        }
 
         if ($nodes === []) {
             return $this->failCommand(
@@ -178,12 +187,24 @@ class NodeDefaultCommand extends Command
 
     private function validateTargetNode(string $name): ?int
     {
+        try {
+            $nodes = $this->fetchDevelopmentAppNodes();
+        } catch (ConnectionException|RuntimeException) {
+            return $this->failGatewayUnavailable();
+        }
+
+        $target = collect($nodes)->firstWhere('name', $name);
+
+        if (is_array($target)) {
+            return null;
+        }
+
         $node = Node::query()
             ->where('name', $name)
             ->where('status', 'active')
             ->first();
 
-        if (! $node instanceof Node) {
+        if ($this->hasConfiguredGateway() || ! $node instanceof Node) {
             return $this->failCommand(
                 code: 'node.not_found',
                 message: "Node '{$name}' not found or not visible.",
@@ -213,6 +234,49 @@ class NodeDefaultCommand extends Command
      */
     private function fetchDevelopmentAppNodes(): array
     {
+        if ($this->hasConfiguredGateway()) {
+            return $this->fetchGatewayDevelopmentAppNodes();
+        }
+
+        return $this->fetchLocalDevelopmentAppNodes();
+    }
+
+    /**
+     * @return list<array{name: string, role: string, environment: string}>
+     */
+    private function fetchGatewayDevelopmentAppNodes(): array
+    {
+        $response = GatewayRequestSender::make()->send(new ListNodesRequest(
+            role: 'app',
+            environment: 'development',
+        ));
+
+        if (! $response->isSuccess()) {
+            throw new RuntimeException($response->errorMessage() ?? 'Gateway request failed.');
+        }
+
+        $nodes = $response->data()['nodes'] ?? [];
+
+        if (! is_array($nodes)) {
+            return [];
+        }
+
+        return collect($nodes)
+            ->filter(fn (mixed $node): bool => $this->isDevelopmentAppNodePayload($node))
+            ->map(fn (array $node): array => [
+                'name' => $node['name'],
+                'role' => 'app',
+                'environment' => 'development',
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{name: string, role: string, environment: string}>
+     */
+    private function fetchLocalDevelopmentAppNodes(): array
+    {
         return Node::query()
             ->where('role', 'app')
             ->where('environment', 'development')
@@ -225,6 +289,37 @@ class NodeDefaultCommand extends Command
                 'environment' => $node->environment,
             ])
             ->all();
+    }
+
+    private function hasConfiguredGateway(): bool
+    {
+        $settings = LocalGatewaySettings::query()->first();
+
+        return $settings instanceof LocalGatewaySettings
+            && is_string($settings->gateway_url)
+            && $settings->gateway_url !== '';
+    }
+
+    private function isDevelopmentAppNodePayload(mixed $node): bool
+    {
+        if (! is_array($node)) {
+            return false;
+        }
+
+        return isset($node['name'])
+            && is_string($node['name'])
+            && $node['name'] !== ''
+            && ($node['role'] ?? null) === 'app'
+            && ($node['environment'] ?? null) === 'development';
+    }
+
+    private function failGatewayUnavailable(): int
+    {
+        return $this->failCommand(
+            code: 'gateway_unavailable',
+            message: 'Gateway connection is required to set a default node.',
+            meta: [],
+        );
     }
 
     private function readDefaultNode(): ?string
@@ -292,6 +387,10 @@ class NodeDefaultCommand extends Command
 
         if (! $this->input->isInteractive()) {
             return false;
+        }
+
+        if (app()->runningUnitTests()) {
+            return true;
         }
 
         return function_exists('stream_isatty') && stream_isatty(STDIN);

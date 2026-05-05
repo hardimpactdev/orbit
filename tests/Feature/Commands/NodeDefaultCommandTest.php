@@ -45,7 +45,7 @@ describe('node:default base invocation', function (): void {
         DB::table('nodes')->insert(nodeDefaultRow());
         setLocalDefault('app-1');
 
-        $this->artisan('node:default')
+        $this->artisan('node:default', ['--no-interaction' => true])
             ->assertSuccessful();
     });
 

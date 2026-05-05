@@ -81,7 +81,7 @@ describe('node:default human renderer contract', function (): void {
             'updated_at' => now(),
         ]);
 
-        $exitCode = Artisan::call('node:default');
+        $exitCode = Artisan::call('node:default', ['--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
@@ -119,7 +119,7 @@ describe('node:default human renderer contract', function (): void {
             'updated_at' => now(),
         ]);
 
-        $exitCode = Artisan::call('node:default');
+        $exitCode = Artisan::call('node:default', ['--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
@@ -153,7 +153,7 @@ describe('node:default human renderer contract', function (): void {
             'updated_at' => now(),
         ]);
 
-        $this->artisan('node:default')
+        $this->artisan('node:default', ['--no-interaction' => true])
             ->expectsOutputToContain('Default development app node: app-1')
             ->assertSuccessful();
     });
@@ -161,7 +161,7 @@ describe('node:default human renderer contract', function (): void {
     it('renders show empty-state prose when no default is set', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
-        $this->artisan('node:default')
+        $this->artisan('node:default', ['--no-interaction' => true])
             ->expectsOutputToContain('No default development app node is set.')
             ->expectsOutputToContain('Run `orbit node:default <name>` to set one.')
             ->assertSuccessful();
