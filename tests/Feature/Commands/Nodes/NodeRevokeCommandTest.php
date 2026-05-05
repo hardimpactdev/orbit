@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -401,10 +402,11 @@ describe('node:revoke control forwarding', function (): void {
             'serving_node' => 'gateway-1',
             '--force' => true,
         ]);
+        $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect(Artisan::output())->toContain("Access from 'control-1' to 'gateway-1' revoked")
-            ->and(Artisan::output())->toContain('This machine no longer has Orbit gateway access.');
+        expect($output)->toContain("Access from 'control-1' to 'gateway-1' revoked")
+            ->and($output)->toContain('This machine no longer has Orbit gateway access.');
     });
 
     it('preserves structured gateway errors when forwarding', function (array $error): void {
@@ -459,9 +461,12 @@ describe('node:revoke control forwarding', function (): void {
             'name' => 'app-1',
             'role' => 'app',
         ]));
+        $controlNodeId = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $appNodeId = DB::table('nodes')->where('name', 'app-1')->value('id');
+
         DB::table('node_access')->insert([
-            'consumer_node_id' => 2,
-            'serving_node_id' => 3,
+            'consumer_node_id' => $controlNodeId,
+            'serving_node_id' => $appNodeId,
         ]);
 
         Http::fake([

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -398,9 +399,12 @@ describe('node:remove control forwarding', function (): void {
         DB::table('nodes')->insert(nodeRemoveRow([
             'name' => 'app-1',
         ]));
+        $controlNodeId = DB::table('nodes')->where('name', 'control-1')->value('id');
+        $appNodeId = DB::table('nodes')->where('name', 'app-1')->value('id');
+
         DB::table('node_access')->insert([
-            'consumer_node_id' => 2,
-            'serving_node_id' => 3,
+            'consumer_node_id' => $controlNodeId,
+            'serving_node_id' => $appNodeId,
         ]);
 
         Http::fake([

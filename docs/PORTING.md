@@ -270,7 +270,8 @@ yet satisfy the full product contracts.
   - Contract gaps are tracked in the node workstream. First-gateway WireGuard
     enrollment, gateway CA trust, gateway API reachability, `/api/me`
     verification, first-gateway platform detection, and documented JSON success
-    state are implemented; their paired E2E gates remain deferred.
+    state are implemented. WireGuard, CA trust, and gateway API verification
+    are covered by the passing `e2e-provision` lane.
 - [-] `node:register` — **DECIDED: Retire as public command; keep as internal bootstrap utility.**
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
@@ -451,39 +452,41 @@ VPS-adjacent behavior.
 5. `E2E-NODE-SHOW-GRANT-1` (todo 267) is implemented: the feature E2E
    overlays the current control and gateway checkouts, seeds real gateway
    `node_access` rows, asserts populated and empty `node:show` grant metadata,
-   and checks human `(none)` grant rendering. The full Incus feature-lane run is
-   intentionally deferred to the next E2E-testing pass.
+   and checks human `(none)` grant rendering. Docker is the default feature
+   lane; Incus feature-lane reruns are no longer an app-read blocker.
 6. `E2E-PROVISION-REWORK-1` (todo 278) is implemented: provisioning E2E tests
    no longer launch role-specific ready control/gateway images. They stage a
    per-run bundle, launch from blank/base images, provision control/gateway VMs
    from the base image, and run in the `e2e-provision` lane. The full Incus
-   provision-lane run is intentionally deferred to the next E2E-testing pass.
+   provision-lane passed via `E2E-PROVISION-VERIFY-1` (todo 290).
 7. `NODENEW-WIREGUARD-ENROLL-1` (todo 268) is implemented: first-gateway
    bootstrap now generates gateway/control WireGuard keys, sends the identity
    payload to the gateway-local bootstrap command over SSH stdin, persists
    gateway-side peer rows plus the local initiating-control peer, configures
    `wg-orbit` on the gateway, and covers fresh plus idempotent paths with
-   focused Pest tests. The paired provisioning E2E lane is still deferred.
+   focused Pest tests plus the passing `NodeNewWireGuard` provisioning E2E.
 
-Manual orchestration priority: keep the active queue on Testing Infrastructure
-and the Node family. Do not create or dispatch app work until the open Testing
-Infrastructure items are complete or explicitly product-deferred and the Node
-Workstream command gaps are cleared.
+Manual orchestration status: the active Testing Infrastructure and Node-family
+blockers for app read-command porting are cleared. Keep remaining provisioning,
+WireGuard teardown, and destructive-command follow-ups explicit, but they do
+not block the App read workstream.
 
-#### Next Manual Candidates
+#### Recently Cleared Manual Items
 
-1. `E2E-IMAGE-WALLTIME-1` (todo 279/298) — measured and instrumented. The
+1. `E2E-IMAGE-WALLTIME-1` (todo 279/298) is measured and instrumented. The
    Incus warm rebuild still misses the old 3-minute target, but this is no
    longer an app-read blocker now that Docker is the default feature E2E lane.
-2. `E2E-PROVISION-VERIFY-1` (todo 290) — unlock the stale Solo lease, then run
-   and fix the full `composer test:e2e:provision` lane.
-3. `NODE-REVOKE-FWD-1` — command forwarding now that `NODE-API-REVOKE-1`
-   is on `main`.
-4. `NODE-REMOVE-FWD-1` — command forwarding now that `NODE-API-REMOVE-1`
-   is on `main`.
-5. Continue the remaining Node family command gaps, including
-   interactive/default-resolution gaps and paired E2E gates where the Pairing
-   Rule applies.
+2. `E2E-PROVISION-VERIFY-1` (todo 290) is complete:
+   `composer test:e2e:provision` passed with 9 tests and 161 assertions.
+3. `NODE-REVOKE-FWD-1` (todo 302) is complete: configured control callers
+   forward through `RevokeNodeRequest` and preserve structured gateway API
+   errors.
+4. `NODE-REMOVE-FWD-1` (todo 303) is complete: configured control callers
+   forward through `RemoveNodeRequest` and preserve structured gateway API
+   errors.
+5. `NODE-READ-AUTH-1` (todo 304) is complete: `node:list`/`node:show` preserve
+   gateway authorization failures, and `node:show` covers default development
+   app-node forwarding.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -498,18 +501,20 @@ work becomes the active lane:
    bootstrap generates gateway/control keys, persists gateway-side peer rows
    plus the local initiating-control peer, writes the gateway `wg-orbit` config
    through `orbit:internal:bootstrap-gateway-local`, and starts/enables the
-   interface. The paired `e2e-provision` gate is still deferred.
+   interface. The paired `e2e-provision` gate passed in the full provision
+   lane.
 2. `NODENEW-GATEWAY-API-VERIFY-1` (todo 283) is implemented: first-gateway
    bootstrap verifies `GET /api/me` over the gateway WireGuard IP after
    WireGuard, CA trust, and local gateway settings are in place. The paired
-   `e2e-provision` gate remains deferred.
+   `e2e-provision` gate passed in the full provision lane.
 3. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
    bootstrap verifies and installs gateway CA trust, stores local trust
    metadata, exposes JSON trust evidence, and keeps repeat runs idempotent.
-   The paired provisioning E2E gate remains deferred.
+   The paired provisioning E2E gate passed in the full provision lane.
 4. `NODENEW-PLATFORM-DETECT-1` (todo 274) is implemented: gateway and local
    control platform identifiers are detected and persisted during first-gateway
-   bootstrap. The paired provisioning E2E gate remains deferred.
+   bootstrap. A dedicated platform-detection provisioning gate remains
+   non-blocking follow-up coverage.
 5. `NODENEW-JSON-SUCCESS-1` is implemented: first-gateway bootstrap and
    compatible repeat/convergence JSON success payloads now reflect the
    documented state, including no SSH transport claim for already-provisioned
@@ -537,22 +542,23 @@ commands. Order matters because each adds a new write API endpoint:
    `GrantNodeRequest`.
 6. `NODE-GRANT-FWD-1` is implemented: configured control callers forward
    `node:grant` through `GrantNodeRequest`; paired E2E remains open.
-7. `NODE-API-REVOKE-1` is implemented: gateway-side `POST /api/nodes/revoke` +
-   `RevokeNodeRequest`. Next: `NODE-REVOKE-FWD-1` command forwarding (paired
-   E2E only).
-8. `NODE-API-REMOVE-1` is implemented: gateway-side `DELETE /api/nodes/{name}` +
-   `RemoveNodeRequest`. Next: `NODE-REMOVE-FWD-1` command forwarding (paired
-   E2E only, coordinate with WireGuard peer teardown blocker).
+7. `NODE-API-REVOKE-1` and `NODE-REVOKE-FWD-1` are implemented: configured
+   control callers forward through `RevokeNodeRequest`, preserve structured
+   gateway API errors, and do not require local target-node rows.
+8. `NODE-API-REMOVE-1` and `NODE-REMOVE-FWD-1` are implemented: configured
+   control callers forward through `RemoveNodeRequest`, preserve structured
+   gateway API errors, and do not require local target-node rows. WireGuard
+   peer teardown and DNS cleanup stay tracked as later destructive cleanup
+   follow-ups.
 
-Do not create the FWD-* todos until the matching API-* todo is on `main`. Do
-not create more than 2 of these chains in flight at once. This chain remains
-part of the Node family gate before app work starts.
+Do not create future FWD-* todos until the matching API-* todo is on `main`.
+Do not create more than 2 of these chains in flight at once.
 
-#### App Workstream Entry Point (Blocked)
+#### App Workstream Entry Point (Ready For Read Commands)
 
-App work starts only after Testing Infrastructure and the Node Workstream are
-cleared or explicitly product-deferred. Do not create app todos until that
-decision is made in this tracker. Once unblocked, the first slice candidates are:
+Testing Infrastructure and the Node work needed for app read-command porting are
+cleared. The first app slices should stay read-only and use Docker-backed
+feature E2E before any app write/destructive commands are created:
 
 1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
    docs, old app evidence, and cross-cutting patterns before any app
@@ -572,8 +578,8 @@ exist. Those families wait for the node/gateway/app foundations.
 
 - Keep gateway-family implementation blocked until the node identity and
   first-gateway provisioning prerequisites are clear.
-- Keep app, workspace, process, and downstream families blocked until Testing
-  Infrastructure and the Node family are clear.
+- Keep workspace, process, and downstream families blocked until app read
+  foundations exist.
 - Keep app write/destructive commands blocked until app read commands and the
   required node write-forwarding/provisioning safety gates are clear.
 
@@ -587,7 +593,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] `--role` and `--environment` filters.
   - [x] Node doctor technical contract and `NodesProbe` primitives.
   - [x] `--doctor` secondary operation.
-  - [ ] caller visibility/access-policy behavior.
+  - [x] caller visibility/access-policy behavior.
   - [x] gateway forwarding (control/app CLI callers use typed GatewayClient;
     E2E gate todo 254 complete).
   - [x] doctor handoff behavior.
@@ -596,11 +602,11 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] JSON renderer contract (envelope shape, field contract, all error codes and metadata).
   - [x] Human renderer contract (field order, grants section, failure prose).
   - [x] caller-role resolution.
-  - [ ] access-policy authorization.
-  - [~] gateway forwarding (control/app CLI callers use typed GatewayClient;
-    E2E gate todo 254 pending).
+  - [x] access-policy authorization.
+  - [x] gateway forwarding (control/app CLI callers use typed GatewayClient;
+    E2E gate todo 254 complete).
   - [ ] interactive prompting.
-  - [ ] default development app-node resolution.
+  - [x] default development app-node resolution.
   - [x] real grant metadata for gateway-local and forwarded reads.
 - [x] Reconcile `node:register` with product command contracts.
   - **Decision:** Retire as public command. `node:register` is an internal
@@ -665,10 +671,12 @@ exist. Those families wait for the node/gateway/app foundations.
   - Bootstrap slice implemented: gateway-local grant revocation, idempotence, node-not-found validation, self-lockout detection, destructive consent (`--force`, interactive confirmation), caller role rejection, human progress tree and JSON renderer contracts, split contract tests.
   - Gateway API prerequisite implemented: `POST /api/nodes/revoke` plus typed
     `RevokeNodeRequest`.
+  - Gateway forwarding slice implemented: configured control callers forward
+    through `GatewayRequestSender` and typed `RevokeNodeRequest`; gateway API
+    structured errors are preserved, and forwarded revocations do not require
+    or mutate a local target-node row.
   - Contract gaps:
-    - control-caller gateway forwarding through `GatewayRequestSender`.
-    - command-side `authorization_failed` response mapping for forwarded calls.
-    - `NodeRevokeOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - paired ephemeral E2E gate for the control-caller forwarding path.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:remove`.
   - Files:
@@ -680,10 +688,12 @@ exist. Those families wait for the node/gateway/app foundations.
   - Bootstrap slice implemented: gateway-local node removal, grant cascade (consumer and serving directions), node-not-found validation (NOT idempotent), gateway-node rejection, destructive consent (`--force`, interactive confirmation), caller role rejection, human progress tree and JSON renderer contracts, split contract tests.
   - Gateway API prerequisite implemented: `DELETE /api/nodes/{name}` plus typed
     `RemoveNodeRequest`.
+  - Gateway forwarding slice implemented: configured control callers forward
+    through `GatewayRequestSender` and typed `RemoveNodeRequest`; gateway API
+    structured errors are preserved, and forwarded removals do not require or
+    mutate a local target-node row.
   - Contract gaps:
-    - control-caller gateway forwarding through `GatewayRequestSender`.
-    - command-side `authorization_failed` response mapping for forwarded calls.
-    - `NodeRemoveOnControlNodeContractTest.php` blocked by gateway forwarding.
+    - paired ephemeral E2E gate for the control-caller forwarding path.
     - WireGuard peer teardown (peer model/migration exist but teardown logic not yet implemented; `wireguard_peer_removed: false` in JSON response).
     - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
@@ -984,10 +994,10 @@ decision evidence and tracker status only.
     `composer test:e2e:topology-contract`.
 - [x] Docker-backed feature E2E exists for future app read-command porting.
   - Use `composer test:e2e -- --filter='AppList'` and
-    `composer test:e2e -- --filter='AppShow'` once app work is unblocked and
-    those tests exist.
-  - This lane does not unlock app work by itself; finish the open Testing
-    Infrastructure and Node gates first.
+    `composer test:e2e -- --filter='AppShow'` once those tests exist.
+  - This lane is the default feature E2E lane for app read commands. Keep
+    provisioning, WireGuard, SSH trust, host mutation, and destructive flows in
+    `e2e-provision`.
 - [~] E2E-IMAGE-ARCH-1: stable base image + per-run Orbit provisioner
   - [x] Provisioner script `bin/e2e-provision-node` + apt-deps helper
     `bin/_e2e-deps.sh` (single source of truth shared with the base preparer).
@@ -1023,26 +1033,23 @@ decision evidence and tracker status only.
   - [x] Rework `e2e-provision` tests that previously launched from
     `E2EImage::Control`/`Gateway` (now refused by `IncusProvider::aliasFor`)
     to base + provisioner. Focused provider tests and stale-reference audit
-    pass; the full Incus provision-lane run remains open via
-    `E2E-PROVISION-VERIFY-1`.
+    pass; the full Incus provision-lane run passed via
+    `E2E-PROVISION-VERIFY-1` (todo 290).
 - [ ] Add provisioning/destructive coverage only in the `e2e-provision` lane
   when working on provisioning, WireGuard, SSH trust, host mutation, or app
   write/destructive commands.
 
 ## Next Priorities
 
-1. Finish Testing Infrastructure run gates: `E2E-PROVISION-VERIFY-1`
-   (todo 290). The focused first-gateway CA/API provisioning E2E gates
-   (todos 273/291) passed, and the Incus warm-topology target is
-   measured/instrumented and product-deferred because Docker is the default
-   feature E2E lane for app reads.
-2. Finish the Node family command gaps before apps: `NODE-REVOKE-FWD-1`,
-   `NODE-REMOVE-FWD-1`, then remaining `node:list`/`node:show`
-   authorization/default-resolution gaps.
-3. Keep Docker feature E2E ready for later app read gates, but do not dispatch
-   app work yet.
-4. Start the App workstream only after the previous two items are cleared:
+1. Start the App read workstream:
    APP-ABSTRACTION-1 → APP-SCHEMA-1 → APP-API-LIST-1 → APP-LIST-1 →
    APP-API-SHOW-1 → APP-SHOW-1.
-5. Port `profile` later as a verification helper once app read state exists and
+2. Pair `APP-LIST-1` and `APP-SHOW-1` with focused in-memory Pest plus
+   Docker-backed feature E2E (`composer test:e2e -- --filter='AppList'` and
+   `composer test:e2e -- --filter='AppShow'`) once the tests exist.
+3. Keep Node destructive/provisioning follow-ups explicit but out of the app
+   read critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove`
+   paired E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths,
+   WireGuard peer teardown, and DNS cleanup.
+4. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
