@@ -281,6 +281,30 @@ PHP;
             );
         }
 
+        function run_node_update(string $name, array $input): array
+        {
+            $parts = [
+                'php artisan node:update',
+                escapeshellarg($name),
+                '--json',
+            ];
+
+            foreach ([
+                'host' => 'host',
+                'environment' => 'environment',
+                'public_ipv4' => 'public-ipv4',
+                'public_ipv6' => 'public-ipv6',
+            ] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            return run_orbit_command(implode(' ', $parts));
+        }
+
         function run_app_show(string $name): array
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
@@ -433,6 +457,29 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_node_agent_ide(urldecode($matches[1]), $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^PUT /api/nodes/([^ ?]+)#', $requestLine, $matches) === 1) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_node_update(urldecode($matches[1]), $input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

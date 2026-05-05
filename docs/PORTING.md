@@ -668,15 +668,18 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` (command contract)
     - `tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php` (JSON renderer contract)
+    - `tests/E2E/NodeUpdateTest.php` (Docker feature E2E for control-caller gateway forwarding)
   - Bootstrap slice implemented: gateway-local update with progress tree, field validation, role-incompatibility checks, and split contract tests.
   - Gateway forwarding slice implemented: configured control callers forward
     through `GatewayConnector` and typed `UpdateNodeRequest`; gateway API
     structured errors are preserved, and forwarded writes do not require or
     mutate a local target-node row.
+  - E2E gate implemented: Docker feature coverage verifies a configured control
+    caller updates gateway-owned app-node metadata through the Gateway API and
+    reads the persisted intent back through forwarded `node:show`.
   - Contract gaps:
     - interactive input mode (prompting for name and field selection).
     - artifact re-enactment after intent update.
-    - paired ephemeral E2E gate for the control-caller forwarding path.
 - [x] Port `node:default`.
   - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`
   - Current docs: `docs/commands/1_node/9_node-default`
@@ -1362,8 +1365,8 @@ for the Saloon-based gateway transport pattern.
      write-forwarding/provisioning safety gates are either complete or
      explicitly deferred with rationale.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
-   critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
-   E2E gates, advanced `node:new` enrollment paths, WireGuard peer teardown,
-   and DNS cleanup.
+   critical path: `node:grant`/`node:revoke`/`node:remove` paired E2E gates,
+   advanced `node:new` enrollment paths, WireGuard peer teardown, and DNS
+   cleanup.
 3. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
