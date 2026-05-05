@@ -4,7 +4,7 @@
 
 **Owner:** `process`.
 
-**Effects:** `write` (gateway process intent and derived node-runtime artifacts).
+**Effects:** `write` (gateway process intent and derived runtime units).
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -50,7 +50,7 @@ app-owned process intent, so only `control` and `gateway` callers are valid.
 | Role | Validity | Consequence |
 | --- | --- | --- |
 | `control` | `valid` | Forward the command to the gateway API when authorized. |
-| `gateway` | `valid` | Execute against gateway-owned process intent and re-enact runtime artifacts through `RemoteShell`. |
+| `gateway` | `valid` | Execute against gateway-owned process intent and re-enact runtime units through `RemoteShell`. |
 | `app` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
 | `unknown` | `invalid` | Deny before prompts or side effects with `error.code=caller_role_not_allowed`. |
 
