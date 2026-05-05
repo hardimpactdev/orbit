@@ -49,4 +49,6 @@ You are one rubber duck in a two-agent blocker review.
      - existing-code: <citation or no relevant guidance>
    ```
 
-4. Close this duck process in Solo.
+4. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=<blocked todo>` and `role=rubber-duck`.

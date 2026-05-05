@@ -71,4 +71,6 @@ You are the one-shot pipeline filler for one Orbit Solo cycle.
    gap_reason: <why no new candidates were created, or none>
    ```
 
-9. Close this pipeline filler process in Solo.
+9. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=coordination_todo` and `role=pipeline-filler`.

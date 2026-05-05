@@ -47,4 +47,6 @@ You are the one-shot scout for exactly one draft Solo todo.
      - <required for non-READY>
    ```
 
-6. Close this scout process in Solo.
+6. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=<assigned todo>` and `role=scout`.

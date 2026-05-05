@@ -94,7 +94,9 @@ reviewer-approved implementation todo.
      infrastructure, missing prerequisite, or unclear ownership. Leave
      detailed routing to the orchestrator's next cycle.
 
-8. Close this E2E process in Solo.
+8. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=<assigned todo>` and `role=e2e`.
 
 ## Report Shape
 

@@ -86,4 +86,6 @@ You are the one-shot worktree setup helper for one Solo todo.
      - <command or collision check>: <short reason>
    ```
 
-8. Close this worktree setup process in Solo.
+8. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=<assigned todo>` and `role=workspace-setup`.

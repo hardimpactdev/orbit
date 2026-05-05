@@ -5,7 +5,7 @@ Human-editable control file for the Orbit Solo orchestration loop.
 ## Control Values
 
 ```yaml
-coordination_todo: 257
+coordination_todo: 286
 
 loop_clock:
   enabled: true

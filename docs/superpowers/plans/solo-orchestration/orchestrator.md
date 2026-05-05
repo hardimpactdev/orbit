@@ -93,4 +93,6 @@ You are the one-shot orchestrator for one Orbit Solo cycle.
       - <remaining ambiguity or none>
     ```
 
-11. Close this orchestrator process in Solo.
+11. Run the self-cleanup sub-procedure at
+    `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+    with `target_todo=coordination_todo` and `role=orchestrator`.

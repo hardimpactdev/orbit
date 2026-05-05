@@ -57,4 +57,6 @@ You are the one-shot reconciler for one Orbit Solo cycle.
    awareness. `NEEDS_DIRECTION` covers a missing parameter or unresolvable
    safety condition.
 
-8. Close this reconciler process in Solo.
+8. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=coordination_todo` and `role=reconciler`.

@@ -69,4 +69,6 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    - `NEEDS_DIRECTION`: post `NEEDS_DIRECTION` with reason, remove
      `review-ready`, add `needs-direction`.
 
-6. Close this reviewer process in Solo.
+6. Run the self-cleanup sub-procedure at
+   `docs/superpowers/plans/solo-orchestration/references/self-cleanup.md`
+   with `target_todo=<assigned todo>` and `role=reviewer`.
