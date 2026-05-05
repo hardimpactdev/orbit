@@ -1354,26 +1354,16 @@ for the Saloon-based gateway transport pattern.
 
 ## Next Priorities
 
-1. **Continue activity metadata rollout.**
-   - `ACTIVITY-NODE-FAMILY-1` is resolved for the converted node-family
-     commands. `activity:list` and `activity:show` command coverage, the
-     read-only E2E smoke gate, and Loggable correlation coverage are now in
-     place for the current activity/app/node API surface.
-   - `ACTIVITY-READ-AUDIT-1` is resolved by doctrine; per-command
-     exceptions go in the command's tech-contract section.
-   - `ACTIVITY-LOGGABLE-RENAME-1` and `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1`
-     are resolved; keep command backfills and remaining activity command read
-     surfaces moving.
-2. **Keep app writes blocked until write-safety gates are cleared.**
+1. **Keep app writes blocked until write-safety gates are cleared.**
    - `APP-LIST-1` and `APP-SHOW-1` now have focused Pest and Docker feature
      E2E coverage.
    - Do not start `app:new`, `app:register`, `app:root`, `app:remove`,
      `app:prune`, or `app:agent-ide` until the required node
      write-forwarding/provisioning safety gates are either complete or
      explicitly deferred with rationale.
-3. Keep Node destructive/provisioning follow-ups explicit but out of the
+2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: `node:update`/`node:grant`/`node:revoke`/`node:remove` paired
-   E2E gates, `node:agent-ide`, advanced `node:new` enrollment paths, WireGuard
-   peer teardown, and DNS cleanup.
-4. Port `profile` later as a verification helper once app read state exists and
+   E2E gates, advanced `node:new` enrollment paths, WireGuard peer teardown,
+   and DNS cleanup.
+3. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
