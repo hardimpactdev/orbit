@@ -58,23 +58,8 @@ from fresh `main`.
 
 ## Initiating The Loop
 
-Use this section when the user asks to start or resume the loop.
-
-1. Read `docs/superpowers/plans/solo-orchestration/control-config.md`.
-2. Read `docs/superpowers/plans/solo-orchestration/references/agent-specs.md`.
-3. Read `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`.
-4. Read `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
-   when family-review todos are in scope.
-5. Ensure `coordination_todo` in `control-config.md` points at a new fresh open Solo todo.
-6. Start or resume exactly one loop-clock agent named `LOOP-CLOCK <run_id>`.
-7. Send it only this prompt:
-
-   ```text
-   You are the Orbit Solo loop clock. Read docs/superpowers/plans/solo-orchestration/loop-clock.md before any other action.
-   ```
-
-The loop clock handles orchestrator spawn and the next timer from
-`control-config.md`.
+When the user asks to start or resume the loop, follow
+`docs/superpowers/plans/solo-orchestration/references/loop-initiation.md`.
 
 ## Control Config
 

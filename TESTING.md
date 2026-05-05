@@ -336,15 +336,28 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker composer test:e2e:features:docker
 
 The recommended local topology is to run Docker containers on `beast` and keep
 Incus feature VMs on `sidecar1` and `sidecar2`. Docker remains explicit because
-it does not exercise WireGuard or VM semantics.
+it exercises gateway API, certificate, and registry behavior over a
+WireGuard-shaped `10.6.0.0/16` Docker bridge, but it does not exercise real
+WireGuard interfaces, peer routing, VM boot, or systemd.
 
 Docker topologies are disposable containers seeded from per-role prepared
-images. They are useful for fast command, registry, gateway API, and forwarding
-assertions. They do not prove real SSH, sudo, OS trust-store mutation, systemd,
-package installation, cloud-init, or VM networking behavior. Tests that need
+images. They are useful for fast command, registry, gateway API, CA trust,
+HTTPS-verification, and forwarding assertions where the command behavior is the
+thing under test. They are not valid for features whose correctness depends on
+the node runtime itself: real SSH daemon behavior, sudo prompts, OS trust-store
+mutation, systemd units or timers, package installation, cloud-init, WireGuard
+interfaces, WireGuard peer routing, or VM networking behavior. Tests that need
 those capabilities must call
 `E2ETopologyFactory::fromEnvironment()->requireCapabilities(E2ETopologyCapabilities::vm())->require(...)`
 so the provider pool refuses Docker for them.
+
+In practice, Docker is a good candidate for read-style feature tests such as
+registry-backed `node:*` reads and gateway API backed commands after the
+topology has been seeded. Incus is required for `process:*` commands, schedule
+runtime assertions, and `workspace:*` flows that create, inspect, start, stop,
+restart, or validate systemd-backed runtime units. Registry-only workspace
+views can run on Docker only when they do not inspect live process state,
+execute setup/teardown steps, or assert runtime unit convergence.
 
 `composer test:e2e:features:docker` is serial in the MVP. Parallel Docker E2E
 is not supported while each test creates a fixed `10.6.0.0/16` bridge network;
