@@ -17,8 +17,10 @@ use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
@@ -219,6 +221,20 @@ class NodeNewCommand extends Command
             'trusted_at' => $settings->trusted_at ?? now(),
         ])->save();
 
+        if (! $this->wantsJson()) {
+            $this->line('○ Verify gateway API');
+        }
+
+        $apiVerification = $this->verifyGatewayApi((string) $gateway->wireguard_address, $settings->ca_pem_path);
+
+        if (array_key_exists('code', $apiVerification)) {
+            return $this->failCommand(
+                code: $apiVerification['code'],
+                message: $apiVerification['message'],
+                meta: $apiVerification['meta'],
+            );
+        }
+
         $payload = $this->firstGatewayPayload(
             action: 'converged',
             provisioningStatus: 'already_provisioned',
@@ -231,7 +247,7 @@ class NodeNewCommand extends Command
                 'wireguard' => 'already_installed',
                 'gateway_trust' => $trustStatus,
                 'gateway_config' => 'already_stored',
-                'gateway_api' => 'pending',
+                'gateway_api' => 'verified',
             ],
             gatewayTrust: [
                 'gateway_url' => $this->gatewayUrl($host),
@@ -604,6 +620,20 @@ class NodeNewCommand extends Command
             ])->save();
         });
 
+        if (! $this->wantsJson()) {
+            $this->line('○ Verify gateway API');
+        }
+
+        $apiVerification = $this->verifyGatewayApi($gatewayAddress, $trustPath);
+
+        if (array_key_exists('code', $apiVerification)) {
+            return $this->failCommand(
+                code: $apiVerification['code'],
+                message: $apiVerification['message'],
+                meta: $apiVerification['meta'],
+            );
+        }
+
         $payload = $this->firstGatewayPayload(
             action: 'created',
             provisioningStatus: 'complete',
@@ -616,7 +646,7 @@ class NodeNewCommand extends Command
                 'wireguard' => 'installed',
                 'gateway_trust' => $trustStatus,
                 'gateway_config' => 'stored',
-                'gateway_api' => 'pending',
+                'gateway_api' => 'verified',
             ],
             gatewayTrust: [
                 'gateway_url' => $this->gatewayUrl($host),
@@ -740,6 +770,56 @@ class NodeNewCommand extends Command
         }
 
         return 'trusted';
+    }
+
+    /**
+     * @return array{}|array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function verifyGatewayApi(string $gatewayIp, string $pemPath): array
+    {
+        try {
+            $response = Http::baseUrl("https://{$gatewayIp}")
+                ->withOptions(['allow_redirects' => false, 'verify' => $pemPath])
+                ->acceptJson()
+                ->timeout(10)
+                ->get('/api/me');
+        } catch (ConnectionException) {
+            return [
+                'code' => 'gateway_unavailable',
+                'message' => "Gateway at {$gatewayIp} is unreachable.",
+                'meta' => [
+                    'gateway_ip' => $gatewayIp,
+                    'endpoint' => '/api/me',
+                ],
+            ];
+        }
+
+        if (! $response->successful()) {
+            return [
+                'code' => 'node.gateway_api_error',
+                'message' => "Gateway at {$gatewayIp} returned HTTP {$response->status()} for /api/me.",
+                'meta' => [
+                    'gateway_ip' => $gatewayIp,
+                    'status' => $response->status(),
+                    'endpoint' => '/api/me',
+                ],
+            ];
+        }
+
+        $self = $response->json('success.data.self');
+
+        if (! is_array($self)) {
+            return [
+                'code' => 'node.gateway_api_error',
+                'message' => "Gateway at {$gatewayIp} returned an invalid identity response.",
+                'meta' => [
+                    'gateway_ip' => $gatewayIp,
+                    'endpoint' => '/api/me',
+                ],
+            ];
+        }
+
+        return [];
     }
 
     private function unsupportedTrustStore(): int

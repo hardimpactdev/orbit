@@ -71,6 +71,31 @@ describe('node:new', function (): void {
 
         app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
 
+        $this->fakeGatewayApiVerification = function (int $status = 200, ?array $payload = null): void {
+            Http::fake([
+                'https://10.6.0.2/api/me' => Http::response($payload ?? [
+                    'success' => [
+                        'data' => [
+                            'self' => [
+                                'name' => 'mini',
+                                'role' => 'control',
+                                'status' => 'active',
+                                'platform' => 'unknown',
+                                'addresses' => ['wireguard' => '10.6.0.3'],
+                            ],
+                            'gateway' => [
+                                'name' => 'gateway-1',
+                                'role' => 'gateway',
+                                'status' => 'active',
+                                'platform' => 'unknown',
+                                'addresses' => ['wireguard' => '10.6.0.2'],
+                            ],
+                        ],
+                    ],
+                ], $status),
+            ]);
+        };
+
         $this->fakeFirstGatewayProcesses = function (string $bootstrapOutput, ?string &$bootstrapInput = null): void {
             $privateKeys = ['gateway-private-key', 'control-private-key'];
             $publicKeys = ['gateway-public-key', 'control-public-key'];
@@ -144,6 +169,7 @@ describe('node:new', function (): void {
         $bootstrapInput = null;
 
         ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput);
+        ($this->fakeGatewayApiVerification)();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
@@ -180,7 +206,7 @@ describe('node:new', function (): void {
                 'wireguard' => 'installed',
                 'gateway_trust' => 'trusted',
                 'gateway_config' => 'stored',
-                'gateway_api' => 'pending',
+                'gateway_api' => 'verified',
             ])
             ->and($payload['success']['data']['gateway_trust'])->toMatchArray([
                 'gateway_url' => 'https://192.0.2.10',
@@ -265,12 +291,16 @@ describe('node:new', function (): void {
             && str_contains($process->command, '--identity-json=-')
             && ! str_contains($process->command, 'gateway-private-key')
             && ! str_contains($process->command, 'control-private-key'));
+
+        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://10.6.0.2/api/me');
     });
 
     it('converges an already bootstrapped first gateway without duplicating trust install', function (): void {
         $mockCaCert = $this->mockCaCert;
 
         ($this->fakeFirstGatewayProcesses)($mockCaCert);
+        ($this->fakeGatewayApiVerification)();
 
         Artisan::call('node:new', [
             'name' => 'gateway-1',
@@ -286,6 +316,7 @@ describe('node:new', function (): void {
 
         Process::fake();
         Process::preventStrayProcesses();
+        ($this->fakeGatewayApiVerification)();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
@@ -305,12 +336,43 @@ describe('node:new', function (): void {
                 'wireguard' => 'already_installed',
                 'gateway_trust' => 'already_trusted',
                 'gateway_config' => 'already_stored',
-                'gateway_api' => 'pending',
+                'gateway_api' => 'verified',
             ])
             ->and($payload['success']['data']['gateway_trust']['status'])->toBe('already_trusted')
             ->and($payload['success']['data']['gateway_trust']['ca_sha256'])->toBe(hash('sha256', $mockCaCert))
             ->and($this->fakeInstaller->trustCalls)->toHaveCount(1)
             ->and(file_get_contents($trustPath))->toBe($firstPem);
+    });
+
+    it('fails when first gateway API verification fails after local onboarding state is stored', function (): void {
+        ($this->fakeFirstGatewayProcesses)($this->mockCaCert);
+        ($this->fakeGatewayApiVerification)(500, ['error' => ['message' => 'down']]);
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--ssh-user' => 'provisioner',
+            '--control-name' => 'mini',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload)->toBe([
+                'error' => [
+                    'code' => 'node.gateway_api_error',
+                    'message' => 'Gateway at 10.6.0.2 returned HTTP 500 for /api/me.',
+                    'meta' => [
+                        'gateway_ip' => '10.6.0.2',
+                        'status' => 500,
+                        'endpoint' => '/api/me',
+                    ],
+                ],
+            ])
+            ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())->toBeTrue()
+            ->and(DB::table('local_gateway_settings')->where('gateway_wg_ip', '10.6.0.2')->exists())->toBeTrue();
     });
 
     it('fails when local gateway CA trust installation fails during first gateway bootstrap', function (): void {

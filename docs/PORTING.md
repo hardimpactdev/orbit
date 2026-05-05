@@ -259,8 +259,10 @@ yet satisfy the full product contracts.
     gateway host, and persist local bootstrap registry rows for the gateway and
     initiating control node.
   - Contract gaps are tracked in the node workstream; this is not yet complete
-    first-gateway onboarding because WireGuard, gateway API, gateway CA trust,
-    real platform detection, and `/api/me` verification are still missing.
+    first-gateway onboarding because real platform detection and final JSON
+    success-state cleanup are still missing. WireGuard enrollment, gateway CA
+    trust, gateway API reachability, and `/api/me` verification are implemented
+    but their paired E2E gates remain deferred.
 - [-] `node:register` — **DECIDED: Retire as public command; keep as internal bootstrap utility.**
   - Current implementation: `app/Console/Commands/NodeRegisterCommand.php`
   - Current tests: `tests/Feature/Commands/NodeRegisterCommandTest.php`
@@ -536,8 +538,11 @@ documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `NODENEW-GATEWAY-API-VERIFY-1`: verify the gateway API over WireGuard,
-   including `/api/me`, after first-gateway bootstrap.
+1. `NODENEW-GATEWAY-API-VERIFY-1` (todo 283) is implemented: first-gateway
+   bootstrap verifies `GET /api/me` over the gateway WireGuard IP using the
+   persisted gateway CA, reports `local_onboarding.gateway_api=verified`, and
+   fails with `node.gateway_api_error` if the verification endpoint does not
+   return a valid identity response.
 2. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
    bootstrap now verifies and installs gateway CA trust through the existing
    trust-store installer, persists local gateway trust settings, exposes
@@ -565,9 +570,10 @@ work becomes the active lane:
    plus the local initiating-control peer, writes the gateway `wg-orbit` config
    through `orbit:internal:bootstrap-gateway-local`, and starts/enables the
    interface. The paired `e2e-provision` gate is still deferred.
-2. `NODENEW-GATEWAY-API-VERIFY-1` — verify the gateway API over WireGuard,
-   including `/api/me`, after first-gateway bootstrap; pair with an
-   `e2e-provision` gate.
+2. `NODENEW-GATEWAY-API-VERIFY-1` (todo 283) is implemented: first-gateway
+   bootstrap verifies `GET /api/me` over the gateway WireGuard IP after
+   WireGuard, CA trust, and local gateway settings are in place. The paired
+   `e2e-provision` gate remains deferred.
 3. `NODENEW-GATEWAY-CA-VERIFY-1` (todo 272) is implemented: first-gateway
    bootstrap verifies and installs gateway CA trust, stores local trust
    metadata, exposes JSON trust evidence, and keeps repeat runs idempotent.
@@ -1029,9 +1035,9 @@ decision evidence and tracker status only.
    `control-gateway-dev-prod` to verify the implemented `node:show` grant gate.
 2. Run the deferred full `e2e-provision` lane to verify the provisioning test
    rework end to end.
-3. Pair `NODENEW-WIREGUARD-ENROLL-1` with the deferred `e2e-provision` lane
-   before treating first-gateway WireGuard state as infrastructure-verified,
-   then start `NODENEW-GATEWAY-API-VERIFY-1`.
+3. Pair `NODENEW-WIREGUARD-ENROLL-1`, `NODENEW-GATEWAY-CA-VERIFY-1`, and
+   `NODENEW-GATEWAY-API-VERIFY-1` with their deferred `e2e-provision` lanes
+   before treating first-gateway onboarding as infrastructure-verified.
 4. Continue gateway forwarding in the documented order after the grant E2E
    slice: `node:update`, `node:default`, `node:grant`, `node:revoke`, and
    `node:remove`.
