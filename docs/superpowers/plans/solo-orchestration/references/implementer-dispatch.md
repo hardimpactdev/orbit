@@ -24,7 +24,7 @@ in step 9 of `orchestrator.md`.
    `WORKTREE-SETUP-<todo_id>` per `dispatch-protocol.md` with this prompt:
 
    ```text
-   You are the Orbit Solo workspace setup helper. Read docs/superpowers/plans/solo-orchestration/references/workspace-setup.md and execute exactly once.
+   You are the Orbit Solo worktree setup helper. Read docs/superpowers/plans/solo-orchestration/references/worktree/setup.md and execute exactly once.
 
    Parameters:
    - todo_id: <todo_id>

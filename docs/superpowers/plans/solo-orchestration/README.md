@@ -37,7 +37,7 @@ Source of truth for Orbit's Solo orchestration loop.
   per new or refreshed draft.
 - `todo-scout.md`: validate exactly one draft todo before it can become
   `worker-ready`.
-- `references/workspace-setup.md`: prepare one todo's isolated git worktree
+- `references/worktree/setup.md`: prepare one todo's isolated git worktree
   before implementation dispatch.
 - `implementer.md`: long-lived. Implement, post `WORKER_DONE`, then stay open
   for `send_input` feedback from reviewer / E2E / duck resolution. Closed by
@@ -330,7 +330,7 @@ before spawning the implementer. If preparation fails, leave the todo
 non-dispatched and route the failure instead of asking the worker to start from
 a broken checkout. The operational command sequence lives in the workspace setup
 prompt at
-`docs/superpowers/plans/solo-orchestration/references/workspace-setup.md`.
+`docs/superpowers/plans/solo-orchestration/references/worktree/setup.md`.
 
 Product authority docs are read-only for normal implementation todos. If the
 assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,
