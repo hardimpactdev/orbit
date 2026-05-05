@@ -1244,6 +1244,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       invalid local-context handling.
     - [x] Full CWD resolution parity for forwarded callers through a typed
       gateway path-resolution request.
+  - [~] `workspace:history`.
+    - [x] Gateway-local and forwarded registry history read, limit/date
+      filters, path resolution, pagination metadata, human/JSON renderers, and
+      focused Pest coverage.
+    - [ ] Read-only E2E gate from the command contract.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
 - [ ] Port workspace history and log commands.
@@ -1404,6 +1409,7 @@ for the Saloon-based gateway transport pattern.
   - [x] `workspace:list` API controller plus Saloon request/DTO.
   - [x] `workspace:show` API controller plus Saloon request/DTO for named
     registry lookup.
+  - [x] `workspace:history` API controller plus Saloon request/DTO.
 - [ ] Port process API controllers and typed client requests.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.

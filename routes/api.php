@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceShowController;
 use App\Http\Middleware\CorrelationHeader;
@@ -39,7 +40,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/profile', ProfileController::class);
         Route::get('/workspaces', WorkspaceListController::class);
+        Route::get('/workspaces/history/resolve-by-path', [WorkspaceHistoryController::class, 'fromPath']);
         Route::get('/workspaces/resolve-by-path', [WorkspaceShowController::class, 'fromPath']);
+        Route::get('/workspaces/{name}/history', WorkspaceHistoryController::class);
         Route::get('/workspaces/{name}', WorkspaceShowController::class);
         Route::get('/apps', AppListController::class);
         Route::post('/apps/register', AppRegisterController::class);
