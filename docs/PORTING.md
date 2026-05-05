@@ -581,7 +581,8 @@ before any app write/destructive commands are created:
 
 1. `APP-ABSTRACTION-1` — create `docs/abstractions/5_app.md` from app command
    docs, old app evidence, and cross-cutting patterns before any app
-   implementation todo is promoted.
+   implementation todo is promoted. **Implemented:** see
+   `docs/abstractions/5_app.md`.
 2. `APP-SCHEMA-1` — port app schema and Eloquent model for the apps table.
 3. `APP-API-LIST-1` — gateway-side `GET /api/apps` + `ListAppsRequest`.
 4. `APP-LIST-1` — `app:list` command (paired in-memory Pest + ephemeral Pest E2E).
