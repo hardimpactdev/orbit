@@ -75,29 +75,29 @@
             "Composer\\Config::disableProcessTimeout",
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test-hcloud-docker @additional_args"
         ],
-        "e2e:preflight": "@php artisan e2e:preflight @additional_args",
-        "e2e:reap-hcloud": "@php artisan e2e:reap-hcloud @additional_args",
-        "e2e:reap-incus": "@php artisan e2e:reap-incus @additional_args",
-        "e2e:reap-docker": "@php artisan e2e:reap-docker @additional_args",
+        "e2e:preflight": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:preflight @additional_args",
+        "e2e:reap-hcloud": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-hcloud @additional_args",
+        "e2e:reap-incus": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-incus @additional_args",
+        "e2e:reap-docker": "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:reap-docker @additional_args",
         "e2e:prepare-docker-runtime": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-docker-runtime @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-runtime @additional_args"
         ],
         "e2e:prepare-docker-topology": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-docker-topology @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-topology @additional_args"
         ],
         "e2e:prepare-docker-hosts": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-docker-hosts @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-docker-hosts @additional_args"
         ],
         "e2e:prepare-base-image": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-base-image @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-base-image @additional_args"
         ],
         "e2e:prepare-topology": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan e2e:prepare-topology @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:prepare-topology @additional_args"
         ],
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
