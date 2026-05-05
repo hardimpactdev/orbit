@@ -238,6 +238,7 @@ yet satisfy the full product contracts.
     - `tests/Feature/Commands/Operations/ProfileCommandTest.php` (gateway-state baseline JSON, validation, non-2xx success)
     - `tests/Feature/Commands/Operations/ProfileHumanRendererTest.php` (baseline human renderer)
     - `tests/Unit/Services/CurlRequestProfilerTest.php` (baseline HTTP timing extraction)
+    - `tests/E2E/ProfileTest.php` (Docker feature E2E for observable control-caller profile target)
   - Bootstrap slice implemented: gateway caller app/domain/path/full-URL target
     resolution against gateway state, `--node` scoping validation, baseline cURL timing capture,
     request id and Toolbar auth headers, baseline JSON envelope, baseline human
@@ -263,9 +264,10 @@ yet satisfy the full product contracts.
     through the documented `profile.app` datatable prompt.
   - Toolbar human renderer slice implemented: decoded Toolbar stages, collection
     overhead, and query summary counts render in human output when available.
+  - Paired Docker feature E2E gate implemented: control callers resolve a
+    registered app through the gateway and profile an observable HTTPS route.
   - Contract gaps:
     - workspace cwd inference is blocked until workspace schema/models exist.
-    - paired E2E gate for an observable profile target.
 - [~] `node:list`
   - Current implementation: `app/Console/Commands/NodeListCommand.php`
   - Current docs: `docs/commands/1_node/3_node-list`
