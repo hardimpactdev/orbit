@@ -68,25 +68,26 @@ Additional target limits:
 Workspace hostnames prepend the workspace slug as its own DNS label to the
 parent app's primary hostname. For a development app this yields
 `{workspace}.{app}.{tld}`. Backend artifacts that combine app and workspace
-slugs, such as PHP-FPM pools or systemd unit names, must validate the generated
-artifact name before writing it.
+slugs, such as PHP-FPM pools or runtime backend program names, must validate
+the generated artifact name before writing it.
 
-Process runtime unit filenames use the app, workspace, and process slugs:
+Process runtime unit names use the app, workspace, and process slugs:
 
 ```text
-orbit_<app>_<workspace|main>_<process>.service
+orbit_<app>_<workspace|main>_<process>
 ```
 
 Examples:
 
 ```text
-orbit_docs_main_vite.service
-orbit_docs_feature-docs_vite.service
+orbit_docs_main_vite
+orbit_docs_feature-docs_vite
 ```
 
-`orbit_` is the Orbit ownership prefix. `_` is reserved as the backend segment
-delimiter and is not allowed in identity slugs. Renderers must validate the final
-unit filename against the backend/system filename limit before writing it.
+`orbit_` is the Orbit ownership prefix. `_` is reserved as the backend
+segment delimiter and is not allowed in identity slugs. Renderers must
+validate the final program name against the runtime backend's name limits
+before writing it.
 
 ## Node Roles
 
@@ -331,10 +332,10 @@ Ideal Orbit has these state families.
 | `node` | Fleet membership, roles, WireGuard identity, SSH reachability, platform capabilities, gateway runtime readiness | WireGuard, SSH, OS probes, gateway PHP-FPM sockets |
 | `app` | App registry, runtime config, production deployment pipeline, app health | PHP-FPM, app directories, app-owned proxy routes |
 | `workspace` | Worktree/workspace intent, workspace URL, FPM pool, inherited process runtime units | Git worktrees, PHP-FPM, workspace-owned proxy routes |
-| `process` | App-owned process definitions rendered into app/workspace runtime units | systemd, journald |
+| `process` | App-owned process definitions rendered into app/workspace runtime units | Supervisor programs, Supervisor logs |
 | `proxy` | Canonical registry of Orbit-owned HTTP ingress | Caddy |
-| `schedule` | Recurring work for apps, nodes, and Orbit-managed tasks | systemd timers/services |
-| `tool` | Expected and managed node tools | package managers, binaries, systemd, Docker |
+| `schedule` | Recurring work for apps, nodes, and Orbit-managed tasks | Orbit Scheduler runs, Supervisor program for `orbit_scheduler` |
+| `tool` | Expected and managed node tools | package managers, binaries, runtime backend, Docker |
 | `firewall_rule` | Expected node network policy | UFW |
 
 The blueprint names only current ideal concepts. Legacy or backend-shaped names
@@ -480,6 +481,55 @@ infer database ownership from names, environment files, conventions, or setup
 step side effects; it must leave possible databases untouched and report them
 as skipped/manual cleanup.
 
+### Runtime Backend And Orbit Scheduler
+
+The runtime backend is the host-level supervisor that owns Orbit-managed
+long-running processes on a node. Supervisor (`supervisord`) is the runtime
+backend on every gateway and app node.
+
+Host init keeps the runtime backend alive. On Ubuntu hosts, systemd plays
+that role through the distro `supervisor.service` unit. In Docker E2E
+topologies, the Docker daemon's container restart policy plays that role
+and `supervisord` runs as PID 1 inside the container (typically under
+`tini` for signal forwarding and zombie reaping). Host init is not the
+product-level process runtime.
+
+Orbit-managed long-running processes are runtime units. A runtime unit is
+the product concept; the rendered Supervisor program is the backend
+artifact. The program name keeps the Orbit identity segments and drops the
+systemd `.service` suffix.
+
+Recurring work is owned by the Orbit Scheduler, a resident `orbit-scheduler`
+Artisan-command daemon supervised by the runtime backend on every gateway
+and app node. The Orbit Scheduler evaluates due schedules at least once per
+minute, aligned to wall-clock minute boundaries. Schedule expressions
+remain minute-resolution; the tick interval is an implementation detail and
+may be tightened in future without changing the schedule expression
+contract. Sub-minute work is not a schedule concern — it belongs in a
+runtime unit. Each tick:
+
+- fetches schedule intent for schedules targeting the local node from the
+  gateway over the existing CLI-to-gateway HTTPS edge;
+- evaluates Orbit interval expressions in the configured timezone against
+  the current minute;
+- claims due runs with local schedule locks stored in the node's local
+  Orbit SQLite;
+- executes command or script schedules in the target context;
+- records `started`, `completed`, `failed`, `skipped`, and `missed` runs as
+  durable gateway history through a typed run-history intake;
+- writes a local heartbeat after the tick completes so doctor can
+  distinguish scheduler-down, scheduler-stuck, and registry-sync-stale
+  states.
+
+The same per-tick evaluation logic is exposed through `orbit schedule:run`
+for ad-hoc operator use. The daemon is essentially a `schedule:run` loop
+aligned to wall-clock minute boundaries.
+
+The Orbit Scheduler is a gateway-client daemon. It does not accept inbound
+RPC, does not own fleet intent, and does not orchestrate other nodes. It
+authenticates to the gateway API with the same WireGuard node identity used
+by the CLI client.
+
 ### Workspaces
 
 A workspace belongs to an app. The workspace name is the canonical workspace and
@@ -527,20 +577,21 @@ adoption.
 A process is an app-owned runtime definition: name, command, ordering, restart
 policy, crash-notification policy, and related execution settings.
 
-Process units are physical systemd artifacts derived from `(app, optional
-workspace, process)`. The concept of a process unit remains, but it is not a
-database entity. Its expected content is rendered from primary state when Orbit
-enacts or probes.
+Process units are runtime units derived from `(app, optional workspace,
+process)`. The product model is the runtime unit; the rendered Supervisor
+program is the backend artifact. Runtime units are not gateway state rows.
+Their expected content is rendered from primary state when Orbit enacts or
+probes.
 
-For each process definition, Orbit expects one derived runtime unit for the main
-app instance and one derived runtime unit for each workspace of that app.
+For each process definition, Orbit expects one runtime unit for the main app
+instance and one runtime unit for each workspace of that app.
 `doctor --family=process --fix` re-renders missing or divergent runtime units
 from gateway-tracked app, workspace, and process configuration.
 
-The rendered systemd service name follows the global runtime-unit naming
-contract: `orbit_<app>_<workspace|main>_<process>.service`.
+The rendered Supervisor program name follows the global runtime-unit naming
+contract: `orbit_<app>_<workspace|main>_<process>`.
 
-Process runtime units have their own systemd environment contract. Runtime-unit
+Runtime units have their own runtime environment contract. Runtime-unit
 environment is distinct from workspace setup and teardown step environment.
 
 Process lifecycle events are durable history, not runtime-unit state. Orbit may
@@ -548,9 +599,9 @@ store `started`, `stopped`, and `crashed` events so browser toolbars, CLI
 streams, and automation can observe changes without materializing process units
 as gateway intent. Default process read commands derive runtime status from
 gateway intent and the latest relevant process events already recorded on the
-gateway. They do not synchronously SSH to app nodes to inspect systemd units.
-Live runtime probes are reserved for `doctor --family=process`, explicit
-runtime lifecycle commands, and dedicated internal event streams.
+gateway. They do not synchronously SSH to app nodes to run live runtime
+backend probes. Live runtime probes are reserved for `doctor --family=process`,
+explicit runtime lifecycle commands, and dedicated internal event streams.
 
 Crash events may be emitted by narrow Orbit-managed app-node hooks that call a
 gateway event intake endpoint. The hook and intake endpoint are implementation
@@ -606,11 +657,14 @@ not its own entity.
 Examples:
 
 - run `php artisan schedule:run` for an app every minute;
-- run a named app command on a systemd timer;
+- run a named app command on a recurring interval;
 - run Orbit-owned recurring node maintenance.
 
-The `schedule` family owns the timer and service artifacts and verifies them
-through doctor.
+Schedule intent lives on the gateway. Schedule run history lives on the
+gateway. The Orbit Scheduler executes due runs on the target node and reports
+run-history events back to the gateway. The `schedule` family owns the
+scheduler liveness, due-run lock health, run-history hook material, and run
+history; doctor verifies these.
 
 ### Tools
 
@@ -749,10 +803,17 @@ adapter code.
 
 These are not part of the ideal model:
 
-- an Orbit daemon or app-node control plane;
+- a control-plane daemon that mutates fleet intent, exposes inbound RPC, or
+  contains independent Orbit business logic outside narrow gateway-client
+  workflows. The Orbit Scheduler is the named exception: it is supervised by
+  the runtime backend, reads schedule intent from the gateway over the
+  existing CLI-to-gateway HTTPS edge, executes due runs locally, and reports
+  run history back through the gateway's typed API. It does not accept
+  inbound RPC, does not orchestrate other nodes, and does not own fleet
+  intent;
 - direct control-node orchestration of app nodes;
-- a generic app-node daemon or RPC channel outside the CLI client and explicit
-  event hooks;
+- a generic app-node daemon or inbound RPC channel outside the CLI client,
+  the Orbit Scheduler, and explicit event hooks;
 - gateway self-calls through its own HTTP API;
 - backend-shaped product families;
 - redundant projection tables that do not carry independent intent, history, or
