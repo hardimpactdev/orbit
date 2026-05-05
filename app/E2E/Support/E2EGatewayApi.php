@@ -386,6 +386,15 @@ PHP;
             );
         }
 
+        function run_app_agent_ide(string $name, array $input): array
+        {
+            return run_orbit_command(
+                'php artisan app:agent-ide '
+                    .escapeshellarg($name).' '
+                    .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
+            );
+        }
+
         function run_app_remove(string $name): array
         {
             return run_orbit_command('php artisan app:remove '.escapeshellarg($name).' --force --json');
@@ -654,6 +663,29 @@ PHP;
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
         
+                continue;
+            }
+
+            if (preg_match('#^POST /api/apps/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_app_agent_ide(urldecode($matches[1]), $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
                 continue;
             }
 

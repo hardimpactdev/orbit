@@ -1217,7 +1217,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Gateway API endpoint and configured control-caller forwarding.
   - [x] Interactive input mode and human renderer.
   - [ ] Workspace cleanup planning once workspace schema/removal exists.
-  - [ ] E2E adapter intent gate.
+  - [x] E2E adapter intent gate.
 - [ ] Decide whether legacy app helper commands such as `app:link`,
   `app:secure`, `app:status`, `app:sync`, and scheduler commands should get
   converted docs or stay retired.
