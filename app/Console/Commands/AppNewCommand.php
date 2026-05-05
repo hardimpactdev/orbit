@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\CreateAppSourceOnNode;
+use App\Actions\Apps\EnactAppRuntime;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
@@ -29,7 +30,7 @@ class AppNewCommand extends Command
 {
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
-    public function handle(CreateAppSourceOnNode $createAppSourceOnNode): int
+    public function handle(CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): int
     {
         $callerRole = $this->callerRole();
 
@@ -116,11 +117,12 @@ class AppNewCommand extends Command
         ]);
 
         $app->setRelation('node', $node);
+        $warnings = $enactAppRuntime->handle($app);
 
         return $this->successCommand([
             'result' => ['action' => 'created'],
             'app' => $this->appPayload($app),
-        ]);
+        ], $warnings);
     }
 
     /**

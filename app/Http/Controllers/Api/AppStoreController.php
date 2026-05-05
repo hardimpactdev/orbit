@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Apps\CreateAppSourceOnNode;
+use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
@@ -20,7 +21,7 @@ final class AppStoreController implements Loggable
 
     private ?App $activitySubject = null;
 
-    public function __invoke(Request $request, CreateAppSourceOnNode $createAppSourceOnNode): JsonResponse
+    public function __invoke(Request $request, CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): JsonResponse
     {
         /** @var mixed $caller */
         $caller = $request->user();
@@ -81,6 +82,7 @@ final class AppStoreController implements Loggable
 
         $app->setRelation('node', $node);
         $this->activitySubject = $app;
+        $warnings = $enactAppRuntime->handle($app);
 
         return response()->json([
             'success' => [
@@ -88,7 +90,7 @@ final class AppStoreController implements Loggable
                     'result' => ['action' => 'created'],
                     'app' => $this->appPayload($app),
                 ],
-                'meta' => ['warnings' => []],
+                'meta' => ['warnings' => $warnings],
             ],
         ]);
     }

@@ -1141,8 +1141,15 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     repository prompt canonicalizes GitHub shorthand, validation failures render
     before the progress tree, and successful human output includes the
     documented progress tree and completion summary.
-  - [ ] Registration pipeline artifact convergence (PHP-FPM, proxy route,
+  - [~] Registration pipeline artifact convergence (PHP-FPM, proxy route,
     process artifacts) and related warning handoffs.
+    - [x] Runtime warning handoff foundation: after durable app intent is
+      written, `app:new` probes PHP-FPM availability on the owning app node and
+      reports retryable `app.php_version_unavailable` warnings without rolling
+      back registry intent.
+    - [ ] PHP-FPM pool rendering/install/reload.
+    - [ ] Proxy route registry/enactment handoff.
+    - [ ] Default process artifact rendering/enactment.
   - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
@@ -1438,11 +1445,12 @@ for the Saloon-based gateway transport pattern.
    - `APP-REMOTE-SHELL-1` gives app writes a gateway-owned SSH edge for
      node-side artifact enactment without giving control callers direct SSH
      behavior.
-   - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, and the `app:new`
-     interactive/human renderer slice are implemented. Keep `app:register`,
-     `app:root`, `app:remove`, `app:prune`, and `app:agent-ide` blocked until
-     `app:new` has real source-creation E2E and registration pipeline
-     convergence coverage.
+   - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, the `app:new`
+     interactive/human renderer slice, and the runtime warning handoff
+     foundation are implemented. Keep `app:register`, `app:root`,
+     `app:remove`, `app:prune`, and `app:agent-ide` blocked until `app:new` has
+     real source-creation E2E and full registration pipeline convergence
+     coverage.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.

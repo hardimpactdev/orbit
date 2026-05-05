@@ -46,7 +46,7 @@ it('creates source on the target app node before writing gateway app intent', fu
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(1)
+        ->and($remoteShell->runs)->toHaveCount(2)
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
         ->and($remoteShell->runs[0]['script'])->toContain("mkdir -p '/home/orbit/apps/docs'")
         ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
@@ -135,6 +135,42 @@ it('does not write gateway app intent when source creation fails', function (): 
         ->and($payload['error']['meta'])->toMatchArray([
             'reason' => 'permission denied',
             'transport' => 'ssh',
+        ]);
+});
+
+it('keeps gateway app intent and reports a warning when runtime enactment needs later convergence', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 127, stdout: '', stderr: "php-fpm missing\n", durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+            'code' => 'app.php_version_unavailable',
+            'family' => 'app',
+            'next_command' => 'doctor --family=app --fix',
         ]);
 });
 
@@ -247,6 +283,33 @@ final class RecordingRemoteShell implements RemoteShell
         ];
 
         return $this->result ?? new RemoteShellResult(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+}
+
+final class SequencedRecordingRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',
             stderr: '',
