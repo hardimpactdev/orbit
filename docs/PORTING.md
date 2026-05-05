@@ -142,18 +142,16 @@ yet satisfy the full product contracts.
   - Bootstrap slice implemented: beast preflight, disposable Ubuntu cloud VM
     launch, ephemeral SSH key injection, SSH readiness check from beast, and VM
     cleanup.
-  - Blank lane implemented: `php artisan e2e:prepare-incus-images --role=blank --force`
-    builds the reusable `orbit-blank-ubuntu-26.04` Incus image; `composer test:e2e`
-    launches from that image and verifies SSH through a non-`orbit` bootstrap user.
-  - Control-ready lane implemented: `php artisan e2e:prepare-incus-images --role=control --force`
-    builds the reusable `orbit-ready-control` Incus image from the blank image by
-    installing Orbit as a non-`orbit` control user, and `composer test:e2e:provision --filter='control'`
-    launches it and verifies `orbit --version` over SSH.
-  - First-gateway provisioning lane implemented: `composer test:e2e:provision --filter='NodeNewGateway'`
-    launches a ready control VM and a blank gateway VM, runs
-    `orbit node:new --role=gateway` from the control VM, and verifies the
-    gateway is provisioned under the steady-state `orbit` user with a working
-    Orbit installation.
+  - Base image lane implemented: `composer e2e:prepare-base-image -- --force`
+    builds the reusable `orbit-base-ubuntu-26.04` Incus image with stable
+    system dependencies.
+  - Provisioning lane implemented: `composer test:e2e:provision` runs
+    installer and host-mutation checks on disposable VMs only. Keep it
+    out of the default feature lane.
+  - First-gateway provisioning lane implemented: `composer test:e2e:provision -- --filter='NodeNewGateway'`
+    launches disposable VMs, runs `orbit node:new --role=gateway`, and verifies
+    the gateway is provisioned under the steady-state `orbit` user with a
+    working Orbit installation.
   - Prepared topology lanes implemented: `composer e2e:prepare-topology -- --force control-gateway-dev-prod`
     builds reusable Incus templates for control, gateway, development app, and
     production app roles; `composer test:e2e:features:control-gateway-dev-prod`
@@ -499,22 +497,20 @@ VPS-adjacent behavior.
 - Count `e2e-ready` todos separately from `worker-ready`; both tags consume
   pipeline capacity but dispatch through different orchestrator paths.
 
-#### Current Short Queue (Node Read-Forwarding Chain)
+#### Current Short Queue (After Node Read-Forwarding)
 
-1. `NODE-SHOW-CONTRACT-1` (todo 251) is complete.
-2. Finish review and fixes for `NODE-READ-FWD-1` (todo 253). This slice must
-   preserve the documented role split: gateway callers execute locally; control
-   and app callers forward through the gateway API and are scoped by
-   gateway-owned access policy.
-3. Then promote and dispatch `E2E-NODE-READ-1` (todo 254) after todo 253 is
-   verified and committed. The earlier topology-matrix prerequisite (todo 250)
-   is already complete.
+1. The read-forwarding chain is complete: `NODE-SHOW-CONTRACT-1` (todo 251),
+   `NODE-READ-FWD-1` (todo 253), and `E2E-NODE-READ-1` (todo 254) are verified.
+2. Create or refresh `FAMILY-REVIEW-NODE-READ-1` as the next review candidate
+   before opening more downstream forwarding work.
+3. Then refresh the node doctor contract/docs slice needed for
+   `node:list --doctor` (todo 252 is the current draft candidate) and split it
+   if the todo is still too broad.
 
-Do not create more downstream node-forwarding todos while todos 253 or 254 are
-still open. If the ready queue is below target during that chain, fill with
-independent read-only Pest, documentation, or E2E support work only.
+If the ready queue is below target during that review, fill with independent
+read-only Pest, documentation, or E2E support work only.
 
-#### After Read-Forwarding Chain Verifies (Next 5 Candidates)
+#### Next 5 Candidates
 
 1. `FAMILY-REVIEW-NODE-READ-1` — review the node read-forwarding shape once
    `NODE-READ-FWD-1`, `E2E-NODE-READ-1`, and the caller-role parity chain
@@ -522,8 +518,7 @@ independent read-only Pest, documentation, or E2E support work only.
    renderer, and Pest/E2E mapping shape. Evaluate caller-role resolution as the
    first shared-service promotion candidate, but extraction is not automatic.
 2. Node doctor contract/docs slice needed for `node:list --doctor` (todo 252 is
-   the current draft candidate; refresh or split it only after the read chain
-   verifies).
+   the current draft candidate; refresh or split it before promotion).
 3. `node:list --doctor` and doctor handoff implementation (with paired Pest and
    E2E gates).
 4. `node:show` real grant metadata / authorization visibility slice (with
@@ -936,19 +931,18 @@ decision evidence and tracker status only.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle check.
   - [x] Create a blank snapshot lane for `e2e-provision` tests.
-  - [x] Add reusable host installer needed by the ready control snapshot.
-  - [x] Create a ready control snapshot lane for `e2e-feature` tests.
-  - [x] Create a ready gateway snapshot lane (`php artisan e2e:prepare-incus-images --role=gateway --force`)
-    that builds a reusable `orbit-ready-gateway` image with bootstrapped
-    gateway identity and root CA.
-  - [x] Add first-gateway provisioning E2E lane (`composer test:e2e:provision --filter='NodeNewGateway'`)
-    that exercises `node:new --role=gateway` from a ready control VM against a
-    blank gateway VM (`e2e-provision`).
-  - [x] Add control-node onboarding E2E lane (`composer test:e2e:provision --filter='GatewayAdd'`) that
-    exercises `gateway:add` from a ready control VM against a ready gateway VM
+  - [x] Add reusable host installer needed by the base/provisioner topology.
+  - [x] Create a stable base image lane for `e2e-feature` tests.
+  - [x] Create a prepared superset topology lane from the base image for
+    control, gateway, development app, and production app roles.
+  - [x] Add first-gateway provisioning E2E lane (`composer test:e2e:provision -- --filter='NodeNewGateway'`)
+    that exercises `node:new --role=gateway` on disposable base-provisioned VMs
     (`e2e-provision`).
-  - [x] Create ready development app topology lane for `e2e-feature` tests.
-  - [x] Create ready production app topology lane for `e2e-feature` tests.
+  - [x] Add control-node onboarding E2E lane (`composer test:e2e:provision -- --filter='GatewayAdd'`)
+    that exercises `gateway:add` on disposable base-provisioned VMs
+    (`e2e-provision`).
+  - [x] Create prepared development app topology lane for `e2e-feature` tests.
+  - [x] Create prepared production app topology lane for `e2e-feature` tests.
 - [x] Add E2E topology for gateway + control + development app + production
   app nodes.
   - Incus-backed authoritative lane:
@@ -987,10 +981,9 @@ decision evidence and tracker status only.
 
 ## Next Priorities
 
-1. Resume the current short queue in the Solo pipeline hints:
-   `NODE-SHOW-CONTRACT-1` (todo 251), then `NODE-READ-FWD-1` (todo 253), then
-   `E2E-NODE-READ-1` (todo 254). Do not create downstream node-forwarding
-   todos until that chain is verified.
+1. Resume from the post-read-forwarding queue in the Solo pipeline hints:
+   create or refresh `FAMILY-REVIEW-NODE-READ-1`, then refresh the
+   `node:list --doctor` contract/docs slice (todo 252) before promotion.
 2. Use the full prepared Incus topology lane for node read-forwarding E2E:
    `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
    only for container-safe feature checks that do not depend on WireGuard,
