@@ -1,0 +1,165 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Requests\Api\RemoveNodeApiRequest;
+use App\Models\Node;
+use App\Models\NodeAccess;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+
+final readonly class NodeRemoveController
+{
+    public function __invoke(RemoveNodeApiRequest $request, string $name): JsonResponse
+    {
+        /** @var mixed $resolvedUser */
+        $resolvedUser = $request->user();
+        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
+
+        if (! $caller instanceof Node) {
+            return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        if ($caller->role === 'app') {
+            return $this->error(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => 'app'],
+                status: 403,
+            );
+        }
+
+        if ($caller->role === 'control') {
+            $authorization = $this->authorizeControlCaller($caller);
+
+            if ($authorization instanceof JsonResponse) {
+                return $authorization;
+            }
+        }
+
+        if (! in_array($caller->role, ['control', 'gateway'], true)) {
+            return $this->error(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => $caller->role],
+                status: 403,
+            );
+        }
+
+        $node = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $node instanceof Node) {
+            return $this->error(
+                code: 'node.not_found',
+                message: "Node '{$name}' not found.",
+                meta: ['name' => $name],
+                status: 404,
+            );
+        }
+
+        if ($node->role === 'gateway') {
+            return $this->error(
+                code: 'node.gateway_removal_denied',
+                message: 'The gateway node cannot be removed with this command.',
+                meta: [
+                    'name' => $name,
+                    'role' => 'gateway',
+                ],
+                status: 422,
+            );
+        }
+
+        $removedSelf = $caller->name === $node->name;
+        $grantsRemoved = DB::transaction(function () use ($node): int {
+            $grantsRemoved = NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->orWhere('serving_node_id', $node->id)
+                ->delete();
+
+            // WireGuard peer teardown and DNS cleanup remain documented bootstrap gaps.
+            $node->delete();
+
+            return $grantsRemoved;
+        });
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'name' => $name,
+                    'action' => 'removed',
+                    'removed_self' => $removedSelf,
+                    'wireguard_peer_removed' => false,
+                    'grants_removed' => $grantsRemoved,
+                ],
+            ],
+        ]);
+    }
+
+    private function authorizeControlCaller(Node $caller): ?JsonResponse
+    {
+        $gateway = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->first();
+
+        if (! $gateway instanceof Node) {
+            return $this->authorizationFailed(
+                message: 'This control node is not authorized to remove nodes.',
+                meta: [
+                    'required_node' => null,
+                    'caller_role' => 'control',
+                ],
+            );
+        }
+
+        $hasGatewayAccess = DB::table('node_access')
+            ->where('consumer_node_id', $caller->id)
+            ->where('serving_node_id', $gateway->id)
+            ->exists();
+
+        if ($hasGatewayAccess) {
+            return null;
+        }
+
+        return $this->authorizationFailed(
+            message: 'This control node is not authorized to remove nodes.',
+            meta: [
+                'required_node' => $gateway->name,
+                'caller_role' => 'control',
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function authorizationFailed(string $message, array $meta = []): JsonResponse
+    {
+        return $this->error(
+            code: 'authorization_failed',
+            message: $message,
+            meta: $meta,
+            status: 403,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function error(string $code, string $message, array $meta, int $status): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ],
+        ], $status);
+    }
+}
