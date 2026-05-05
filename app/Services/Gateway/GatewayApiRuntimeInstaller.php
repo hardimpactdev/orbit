@@ -71,7 +71,6 @@ FPM;
     ): string {
         return <<<CADDY
 https://{$wireguardAddress}:443 {
-    bind {$wireguardAddress}
     tls {$certPath} {$keyPath}
     root * {$orbitPath}/public
     encode zstd gzip

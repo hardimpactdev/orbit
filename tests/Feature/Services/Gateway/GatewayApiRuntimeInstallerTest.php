@@ -64,7 +64,7 @@ describe('GatewayApiRuntimeInstaller', function (): void {
         app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
 
         expect($writtenCaddyfile)->toContain('https://10.6.0.2')
-            ->and($writtenCaddyfile)->toContain('bind 10.6.0.2')
+            ->and($writtenCaddyfile)->not->toContain('bind 10.6.0.2')
             ->and($writtenCaddyfile)->toContain('tls '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.crt '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.key')
             ->and($writtenCaddyfile)->toContain('root * /home/orbit/orbit/public')
             ->and($writtenCaddyfile)->toContain('php_fastcgi unix//run/php/orbit-api.sock')
