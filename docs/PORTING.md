@@ -963,11 +963,17 @@ that produced the controller's Loggable wiring.
 
 ### Implementation Slice
 
-- [ ] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family
+- [~] `ACTIVITY-NODE-FAMILY-1` — add activity logging to the node family
   while migrating node commands to Saloon. `node:grant`, `node:revoke`,
   `node:remove`, `node:update`, and `node:default` are the first
   candidates. Pair each command with its tech-contract Activity Logging
   backfill.
+  - [x] `node:list` and `node:show` read endpoints now declare their
+    `## Activity Logging` tech contracts; `node:show` implements the
+    gateway Loggable contract and both commands are enforced by
+    `ActivityLoggingContractRule`.
+  - [ ] Backfill and wire remaining node write/destructive command activity
+    contracts as their Saloon/API slices are touched.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the

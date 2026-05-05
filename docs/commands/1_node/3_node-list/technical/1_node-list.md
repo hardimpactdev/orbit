@@ -148,6 +148,19 @@ instead of relying on `--doctor` here.
 - See [`node-doctor.md`](../../node-doctor.md) for the authoritative node-family
   probe, drift, fix, and adopt contract.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /nodes` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

@@ -154,6 +154,19 @@ Operators who need readiness or drift information should run
 See [Node Doctor](../../node-doctor.md) for the authoritative node-family
 probe, drift, fix, and adopt contract.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed node
+registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /nodes/{name}` |
+| Effect | `read` |
+| Subject | `Node` when the node is visible and resolved; `none` for not-found or hidden node responses. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

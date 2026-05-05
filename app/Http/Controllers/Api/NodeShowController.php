@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
-final readonly class NodeShowController
+final class NodeShowController implements Loggable
 {
+    private ?Node $activitySubject = null;
+
     public function __invoke(string $name): JsonResponse
     {
         $node = Node::query()
@@ -26,6 +31,8 @@ final readonly class NodeShowController
                 ],
             ], 404);
         }
+
+        $this->activitySubject = $node;
 
         return response()->json([
             'success' => [
@@ -51,5 +58,30 @@ final readonly class NodeShowController
                 ],
             ],
         ]);
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:GET /nodes/{name}';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return null;
     }
 }

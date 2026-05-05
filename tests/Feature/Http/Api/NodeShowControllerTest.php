@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -90,6 +92,30 @@ describe('NodeShowController', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('logs activity for a successful node registry read', function (): void {
+        DB::table('nodes')->insert([
+            apiShowNodeRow([
+                'name' => 'app-1',
+                'role' => 'app',
+            ]),
+        ]);
+
+        $response = $this->call('GET', '/api/nodes/app-1', [], [], [], ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->log_name)->toBe('api');
+        expect($entry->event)->toBe('api:GET /nodes/{name}');
+        expect($entry->subject_type)->toBe(Node::class);
+        expect($entry->subject_id)->toBe(DB::table('nodes')->where('name', 'app-1')->value('id'));
+        expect($entry->properties->get('type'))->toBe('read');
+        expect($entry->properties->get('method'))->toBe('GET');
+        expect($entry->properties->get('path'))->toBe('api/nodes/app-1');
     });
 
     it('returns 404 for non-existent node', function (): void {

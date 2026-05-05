@@ -116,12 +116,32 @@ MD,
 it('ignores commands that are not in the enforced allowlist', function (): void {
     $rule = new ActivityLoggingContractRule;
     $context = activityLoggingContractContext([
-        '1_node/1_node-register/technical/1_node-register.md' => <<<'MD'
-# Technical Contract: `orbit node:register`
+        '3_tool/1_tool-list/technical/1_tool-list.md' => <<<'MD'
+# Technical Contract: `orbit tool:list`
+
+**Owner:** `tool`.
+MD,
+    ]);
+
+    expect($rule->check($context))->toBe([]);
+});
+
+it('enforces node read command activity logging contracts', function (): void {
+    $rule = new ActivityLoggingContractRule;
+    $context = activityLoggingContractContext([
+        '1_node/3_node-list/technical/1_node-list.md' => <<<'MD'
+# Technical Contract: `orbit node:list`
+
+**Owner:** `node`.
+MD,
+        '1_node/4_node-show/technical/1_node-show.md' => <<<'MD'
+# Technical Contract: `orbit node:show [name]`
 
 **Owner:** `node`.
 MD,
     ]);
 
-    expect($rule->check($context))->toBe([]);
+    $findings = $rule->check($context);
+
+    expect($findings)->toHaveCount(2);
 });
