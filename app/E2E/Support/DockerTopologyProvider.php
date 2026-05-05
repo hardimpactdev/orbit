@@ -237,7 +237,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
-        )->acquire('docker', $this->config->dockerHostSlots);
+        )->acquire('docker', $this->config->dockerHostSlots, $this->config->exclusiveHosts);
     }
 
     private function missingImage(DockerHost $host, E2ETopologyKind $kind): ?string

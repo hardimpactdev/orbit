@@ -356,11 +356,14 @@ composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 composer test:e2e
 ```
 
-The recommended local topology is to run Docker containers on `beast` and keep
-Incus feature VMs on `sidecar1` and `sidecar2`. Docker exercises gateway API,
-certificate, and registry behavior over a WireGuard-shaped `10.6.0.0/16` Docker
-bridge, but it does not exercise real WireGuard interfaces, peer routing, VM
-boot, or systemd.
+The recommended local topology is to run Docker containers on `sidecar1` and
+`sidecar2` first, with `beast` as overflow capacity only when it is not running
+Incus provisioning E2E. Incus provisioning runs on `beast` only. Set
+`ORBIT_E2E_EXCLUSIVE_HOSTS=beast` so Docker leases on Beast and Incus leases on
+Beast block each other while still allowing multiple Docker slots on Beast when
+provisioning is idle. Docker exercises gateway API, certificate, and registry
+behavior over a WireGuard-shaped `10.6.0.0/16` Docker bridge, but it does not
+exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
 
 Docker topologies are disposable containers seeded from per-role prepared
 images. They are useful for fast command, registry, gateway API, CA trust,
@@ -381,31 +384,36 @@ restart, or validate systemd-backed runtime units. Registry-only workspace
 views can run on Docker only when they do not inspect live process state,
 execute setup/teardown steps, or assert runtime unit convergence.
 
-`composer test:e2e` runs with Pest parallel mode. The default process count is
-`2`; override it with `ORBIT_E2E_PARALLEL_PROCESSES=<n>`. Keep the value within
-Docker host capacity: a full topology uses four containers, so a host with
+`composer test:e2e` runs with Pest parallel mode. The script fallback process
+count is `2`; the shared local `.env.e2e` uses
+`ORBIT_E2E_PARALLEL_PROCESSES=7` to match the sidecar1, sidecar2, and Beast
+overflow slot pool. Keep the value within Docker host capacity: a full topology
+uses four containers, so a host with
 `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8` can safely run two full-topology
-workers. Add Docker hosts with `ORBIT_E2E_DOCKER_HOSTS=beast,sidecar1,sidecar2`
-or raise the per-host container limit when the runner can handle more.
+workers. Add Docker hosts with
+`ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2,beast` or raise the per-host
+container limit when the runner can handle more.
 
 For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
 
 ```bash
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
 ORBIT_E2E_PARALLEL_PROCESSES=7 \
 composer test:e2e
 ```
 
 With that example, up to two workers can lease `sidecar1`, two can lease
-`sidecar2`, and three can lease `beast`. The mapping is a blocking lease pool,
-not a worker-number map: a worker takes the first free Docker slot, waits when
-all slots are busy, and releases its slot during topology cleanup. Stale lease
-files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`. Lease files are
-shared across Git worktrees by default: worktree runs resolve the lease
-directory to the main checkout's `storage/framework/e2e/leases`. Set
-`ORBIT_E2E_LEASE_DIRECTORY` only when a run should intentionally use an
-isolated lease pool.
+`sidecar2`, and three can lease `beast` when no Incus provisioning lease is
+active on Beast. The mapping is a blocking lease pool, not a worker-number map:
+a worker takes the first free Docker slot, waits when all slots are busy or when
+Beast is reserved by provisioning, and releases its slot during topology
+cleanup. Stale lease files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`.
+Lease files are shared across Git worktrees by default: worktree runs resolve
+the lease directory to the main checkout's `storage/framework/e2e/leases`. Set
+`ORBIT_E2E_LEASE_DIRECTORY` only when a run should intentionally use an isolated
+lease pool.
 
 Each Pest worker gets a non-overlapping Docker subnet. Non-parallel runs keep
 the canonical `10.6.0.0/16` topology. Parallel workers use `10.61.0.0/16`,
@@ -424,11 +432,14 @@ WireGuard addresses. If you also run an Orbit VPN client locally on `10.6.0.x`,
 stop the tunnel before running non-parallel Docker E2E or Docker network
 creation will fail with a subnet overlap error.
 
-To offload Docker work to `beast`, keep Pest running locally and target the
-remote Docker daemon:
+To target a single remote Docker daemon for ad hoc debugging, keep Pest running
+locally and override the Docker host list:
 
 ```bash
-ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e
+ORBIT_E2E_DOCKER_HOSTS=beast \
+ORBIT_E2E_DOCKER_HOST_SLOTS=beast:1 \
+ORBIT_E2E_PARALLEL_PROCESSES=1 \
+composer test:e2e
 ```
 
 The local machine only needs the Docker CLI and SSH access; the prepared Docker
@@ -493,15 +504,16 @@ ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
 ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for composer test:e2e
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
-ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
+ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2,beast  # Recommended Docker daemon pool
 ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3  # Docker feature-test lease pool
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
-ORBIT_E2E_PARALLEL_PROCESSES=2        # Pest workers for composer test:e2e
-ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
-ORBIT_E2E_INCUS_HOST_SLOTS=sidecar1:1,sidecar2:1  # Incus provisioning-test lease pool
+ORBIT_E2E_PARALLEL_PROCESSES=7        # Pest workers for composer test:e2e
+ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
+ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool
 ORBIT_E2E_HCLOUD_LOCATION_SLOTS=nbg1:2,fsn1:1  # Hetzner provisioning-test lease pool
 ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1  # Hetzner location/type/image pool
-ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=2  # Pest workers for composer test:e2e:provision
+ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1  # Pest workers for composer test:e2e:provision
+ORBIT_E2E_EXCLUSIVE_HOSTS=beast       # Prevent Docker/Incus overlap on shared hosts
 ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
 ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
 ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
@@ -540,9 +552,14 @@ namespaces in the same shared lease directory. Docker feature tests read
 `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus provisioning tests read
 `ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud provisioning tests read
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
-`ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. A busy Docker slot does not block an Incus or
-Hetzner provisioning worker, and a busy provisioning slot does not block a
-Docker feature worker.
+`ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. By default those namespaces do not block each
+other. Add a host to `ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears
+in more than one backend pool and the backend families must not overlap. The
+local Beast setup uses `ORBIT_E2E_EXCLUSIVE_HOSTS=beast`, so Beast Docker
+overflow waits while Beast is running Incus provisioning E2E, and provisioning
+waits while Docker is using Beast. Same-backend slots still run concurrently,
+so `beast:3` can host three Docker feature workers when no provisioning lease is
+active.
 
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` treats each key as
 `location/server-type/image` and applies all three values before creating
@@ -564,9 +581,11 @@ ignored — only instances whose name starts with `ORBIT_E2E_INSTANCE_PREFIX` ar
 counted. Recommended baseline:
 
 ```bash
-ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2
+ORBIT_E2E_INCUS_HOSTS=beast
+ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
+ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ```
 
 `ORBIT_E2E_INCUS_STORAGE_POOL` is optional. Leave it empty to use each host's

@@ -23,6 +23,7 @@ function withE2EEnvironment(array $additionalKeys, array $values, Closure $callb
         'ORBIT_E2E_LEASE_DIRECTORY',
         'ORBIT_E2E_SLOT_WAIT_SECONDS',
         'ORBIT_E2E_SLOT_STALE_SECONDS',
+        'ORBIT_E2E_EXCLUSIVE_HOSTS',
     ], $additionalKeys)));
 
     $previous = [];

@@ -164,12 +164,14 @@ yet satisfy the full product contracts.
   - Docker feature topology lane implemented for container-safe E2E:
     `composer e2e:prepare-docker-runtime -- --force`,
     `composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod`,
-    and `composer test:e2e`. The recommended local topology is Beast for
-    Docker offload (`ORBIT_E2E_DOCKER_HOSTS=beast`) and sidecar1/sidecar2 for
-    Incus provisioning VMs (`ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2`). Docker
-    is the default feature provider; Incus remains the VM-realism lane for
-    provisioning, WireGuard, systemd, SSH, package installation, trust-store,
-    and VPS-adjacent behavior.
+    and `composer test:e2e`. The recommended local topology is sidecar1 and
+    sidecar2 as the primary Docker feature pool, with Beast as Docker overflow
+    only when it is not holding an Incus provisioning lease. Incus provisioning
+    runs on Beast only (`ORBIT_E2E_INCUS_HOSTS=beast`,
+    `ORBIT_E2E_INCUS_HOST_SLOTS=beast:1`,
+    `ORBIT_E2E_EXCLUSIVE_HOSTS=beast`). Docker is the default feature provider;
+    Incus remains the VM-realism lane for provisioning, WireGuard, systemd, SSH,
+    package installation, trust-store, and VPS-adjacent behavior.
 - [~] Orbit host installer
   - Current implementation: `bin/install-orbit`
   - Current tests: `tests/Feature/Commands/NodeNewCommandTest.php`
@@ -365,13 +367,14 @@ checkout-overlay support.
 Use this setup before promoting new command-port E2E gates:
 
 1. Build or refresh the stable Incus base image when apt/system dependencies
-   change. For the shared local pool, build once on Beast and import that
-   image onto the sidecars:
+   change. Incus provisioning E2E runs on Beast only:
 
    ```bash
    ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast \
-   ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2 \
+   ORBIT_E2E_INCUS_HOSTS=beast \
+   ORBIT_E2E_INCUS_HOST_SLOTS=beast:1 \
    ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
+   ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
    composer e2e:prepare-base-image -- --force
    ```
 

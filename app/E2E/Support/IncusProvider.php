@@ -191,7 +191,7 @@ final class IncusProvider implements E2EProvider
         $this->resourceLease = E2EResourceLeasePool::fromEnvironment(
             waitSeconds: $this->config->slotWaitSeconds,
             staleSeconds: $this->config->slotStaleSeconds,
-        )->acquire('incus', $this->config->incusHostSlots);
+        )->acquire('incus', $this->config->incusHostSlots, $this->config->exclusiveHosts);
 
         $this->config = $this->config->forHost($this->resourceLease->host());
         $this->host = new IncusHost($this->config);

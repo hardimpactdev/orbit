@@ -51,6 +51,65 @@ it('allocates different slots while prior leases are held', function (): void {
     $second->release();
 });
 
+it('keeps different backends independent on non-exclusive hosts', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+    $incus = $pool->acquire('incus', ['beast' => 1]);
+    $docker = $pool->acquire('docker', ['beast' => 1]);
+
+    expect($incus->host())->toBe('beast')
+        ->and($docker->host())->toBe('beast');
+
+    $incus->release();
+    $docker->release();
+});
+
+it('blocks other backends on configured exclusive hosts while allowing same backend slots', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+    $firstDocker = $pool->acquire('docker', ['beast' => 2], ['beast']);
+    $secondDocker = $pool->acquire('docker', ['beast' => 2], ['beast']);
+
+    expect($firstDocker->slot())->toBe(1)
+        ->and($secondDocker->slot())->toBe(2)
+        ->and($pool->snapshot('incus', ['beast' => 1], ['beast']))->toMatchArray([
+            ['host' => 'beast', 'slot' => 1, 'leased' => true],
+        ]);
+
+    expect(fn () => $pool->acquire('incus', ['beast' => 1], ['beast']))
+        ->toThrow(RuntimeException::class, 'No incus E2E slot became available');
+
+    $firstDocker->release();
+
+    expect(fn () => $pool->acquire('incus', ['beast' => 1], ['beast']))
+        ->toThrow(RuntimeException::class, 'No incus E2E slot became available');
+
+    $secondDocker->release();
+
+    $incus = $pool->acquire('incus', ['beast' => 1], ['beast']);
+
+    expect($incus->host())->toBe('beast');
+
+    $incus->release();
+});
+
+it('blocks docker overflow while incus holds an exclusive host', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
+
+    $incus = $pool->acquire('incus', ['beast' => 1], ['beast']);
+
+    expect(fn () => $pool->acquire('docker', ['beast' => 3], ['beast']))
+        ->toThrow(RuntimeException::class, 'No docker E2E slot became available');
+
+    $incus->release();
+
+    $docker = $pool->acquire('docker', ['beast' => 3], ['beast']);
+
+    expect($docker->slot())->toBe(1);
+
+    $docker->release();
+});
+
 it('waits for unavailable slots and then fails with a useful message', function (): void {
     $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 60);
     $held = $pool->acquire('incus', ['sidecar1' => 1]);

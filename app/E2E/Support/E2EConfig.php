@@ -44,6 +44,8 @@ final readonly class E2EConfig
         /** @var array<string, int> */
         public array $dockerHostSlots = [],
         public string $incusImageBuildHost = '',
+        /** @var list<string> */
+        public array $exclusiveHosts = [],
     ) {}
 
     public static function fromEnvironment(): self
@@ -81,6 +83,7 @@ final readonly class E2EConfig
             slotStaleSeconds: self::envInt('ORBIT_E2E_SLOT_STALE_SECONDS', 7200),
             dockerHostSlots: self::parseHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', ''), backend: 'Docker'),
             incusImageBuildHost: self::envString('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST', $host),
+            exclusiveHosts: self::parseOptionalNames(self::envString('ORBIT_E2E_EXCLUSIVE_HOSTS', '')),
         );
     }
 
@@ -144,6 +147,20 @@ final readonly class E2EConfig
         ));
 
         return $names !== [] ? $names : ['incus'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function parseOptionalNames(string $names): array
+    {
+        return array_values(array_filter(
+            array_map(
+                fn (string $name): string => strtolower(trim($name)),
+                explode(',', $names),
+            ),
+            fn (string $name): bool => $name !== '',
+        ));
     }
 
     /**
@@ -229,6 +246,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            exclusiveHosts: $this->exclusiveHosts,
         );
     }
 
@@ -265,6 +283,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            exclusiveHosts: $this->exclusiveHosts,
         );
     }
 
@@ -307,6 +326,7 @@ final readonly class E2EConfig
             slotStaleSeconds: $this->slotStaleSeconds,
             dockerHostSlots: $this->dockerHostSlots,
             incusImageBuildHost: $this->incusImageBuildHost,
+            exclusiveHosts: $this->exclusiveHosts,
         );
     }
 }

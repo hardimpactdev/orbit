@@ -121,6 +121,17 @@ it('parses docker host slots for the lease pool', function (): void {
     });
 });
 
+it('parses exclusive hosts for cross-backend lease protection', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_EXCLUSIVE_HOSTS' => 'beast, Sidecar1',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->exclusiveHosts)->toBe(['beast', 'sidecar1'])
+            ->and($config->forHost('beast')->exclusiveHosts)->toBe(['beast', 'sidecar1']);
+    });
+});
+
 it('parses incus host slots for the lease pool', function (): void {
     withE2EConfigEnvironment([
         'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1, sidecar2:2',

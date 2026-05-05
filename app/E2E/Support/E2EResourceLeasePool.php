@@ -37,8 +37,9 @@ final readonly class E2EResourceLeasePool
 
     /**
      * @param  array<string, int>  $hostSlots
+     * @param  list<string>  $exclusiveHosts
      */
-    public function acquire(string $backend, array $hostSlots): E2EResourceLease
+    public function acquire(string $backend, array $hostSlots, array $exclusiveHosts = []): E2EResourceLease
     {
         if ($hostSlots === []) {
             throw new RuntimeException("No {$backend} E2E slots are configured.");
@@ -46,13 +47,14 @@ final readonly class E2EResourceLeasePool
 
         $this->ensureDirectory();
         $deadline = microtime(true) + $this->waitSeconds;
+        $exclusiveHostLookup = $this->exclusiveHostLookup($exclusiveHosts);
 
         do {
-            $this->reclaimStaleLeases($backend, $hostSlots);
+            $this->reclaimStaleLeases($backend, $hostSlots, $exclusiveHostLookup);
 
             foreach ($hostSlots as $host => $slots) {
                 for ($slot = 1; $slot <= $slots; $slot++) {
-                    $lease = $this->tryAcquire($backend, $host, $slot);
+                    $lease = $this->tryAcquire($backend, $host, $slot, $exclusiveHostLookup);
 
                     if ($lease !== null) {
                         return $lease;
@@ -72,11 +74,14 @@ final readonly class E2EResourceLeasePool
 
     /**
      * @param  array<string, int>  $hostSlots
+     * @param  list<string>  $exclusiveHosts
      * @return list<array{host: string, slot: int, leased: bool}>
      */
-    public function snapshot(string $backend, array $hostSlots): array
+    public function snapshot(string $backend, array $hostSlots, array $exclusiveHosts = []): array
     {
-        $this->reclaimStaleLeases($backend, $hostSlots);
+        $exclusiveHostLookup = $this->exclusiveHostLookup($exclusiveHosts);
+
+        $this->reclaimStaleLeases($backend, $hostSlots, $exclusiveHostLookup);
 
         $snapshot = [];
 
@@ -85,7 +90,8 @@ final readonly class E2EResourceLeasePool
                 $snapshot[] = [
                     'host' => $host,
                     'slot' => $slot,
-                    'leased' => is_file($this->path($backend, $host, $slot)),
+                    'leased' => is_file($this->path($backend, $host, $slot))
+                        || ($this->isExclusiveHost($host, $exclusiveHostLookup) && $this->hasConflictingHostLease($backend, $host)),
                 ];
             }
         }
@@ -93,7 +99,45 @@ final readonly class E2EResourceLeasePool
         return $snapshot;
     }
 
-    private function tryAcquire(string $backend, string $host, int $slot): ?E2EResourceLease
+    /**
+     * @param  array<string, true>  $exclusiveHostLookup
+     */
+    private function tryAcquire(string $backend, string $host, int $slot, array $exclusiveHostLookup): ?E2EResourceLease
+    {
+        if (! $this->isExclusiveHost($host, $exclusiveHostLookup)) {
+            return $this->tryAcquireSlot($backend, $host, $slot);
+        }
+
+        $mutexOwner = bin2hex(random_bytes(16));
+        $mutexPath = $this->hostMutexPath($host);
+        $mutexHandle = @fopen($mutexPath, 'x');
+
+        if ($mutexHandle === false) {
+            return null;
+        }
+
+        try {
+            $this->writeLeasePayload($mutexHandle, [
+                'backend' => '__host_mutex',
+                'host' => $host,
+                'slot' => 0,
+                'owner' => $mutexOwner,
+                'pid' => getmypid(),
+                'created_at' => time(),
+            ]);
+
+            if ($this->hasConflictingHostLease($backend, $host)) {
+                return null;
+            }
+
+            return $this->tryAcquireSlot($backend, $host, $slot);
+        } finally {
+            fclose($mutexHandle);
+            $this->releaseOwnedPath($mutexPath, $mutexOwner);
+        }
+    }
+
+    private function tryAcquireSlot(string $backend, string $host, int $slot): ?E2EResourceLease
     {
         $owner = bin2hex(random_bytes(16));
         $path = $this->path($backend, $host, $slot);
@@ -104,14 +148,14 @@ final readonly class E2EResourceLeasePool
         }
 
         try {
-            fwrite($handle, json_encode([
+            $this->writeLeasePayload($handle, [
                 'backend' => $backend,
                 'host' => $host,
                 'slot' => $slot,
                 'owner' => $owner,
                 'pid' => getmypid(),
                 'created_at' => time(),
-            ], JSON_THROW_ON_ERROR));
+            ]);
         } finally {
             fclose($handle);
         }
@@ -121,26 +165,77 @@ final readonly class E2EResourceLeasePool
 
     /**
      * @param  array<string, int>  $hostSlots
+     * @param  array<string, true>  $exclusiveHostLookup
      */
-    private function reclaimStaleLeases(string $backend, array $hostSlots): void
+    private function reclaimStaleLeases(string $backend, array $hostSlots, array $exclusiveHostLookup = []): void
     {
         foreach ($hostSlots as $host => $slots) {
+            if ($this->isExclusiveHost($host, $exclusiveHostLookup)) {
+                $this->reclaimStaleLeasePath($this->hostMutexPath($host));
+            }
+
             for ($slot = 1; $slot <= $slots; $slot++) {
-                $path = $this->path($backend, $host, $slot);
-
-                if (! is_file($path)) {
-                    continue;
-                }
-
-                $modifiedAt = filemtime($path);
-
-                if ($modifiedAt === false || (time() - $modifiedAt) < $this->staleSeconds) {
-                    continue;
-                }
-
-                @unlink($path);
+                $this->reclaimStaleLeasePath($this->path($backend, $host, $slot));
             }
         }
+    }
+
+    private function hasConflictingHostLease(string $backend, string $host): bool
+    {
+        foreach ($this->leaseFiles() as $path) {
+            $payload = json_decode((string) file_get_contents($path), true);
+
+            if (! is_array($payload)) {
+                continue;
+            }
+
+            if (($payload['backend'] ?? null) === '__host_mutex') {
+                continue;
+            }
+
+            if (($payload['host'] ?? null) !== $host) {
+                continue;
+            }
+
+            if (($payload['backend'] ?? null) === $backend) {
+                continue;
+            }
+
+            if ($this->reclaimStaleLeasePath($path)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function leaseFiles(): array
+    {
+        $files = glob("{$this->directory}/*.lease");
+
+        return $files === false ? [] : $files;
+    }
+
+    private function reclaimStaleLeasePath(string $path): bool
+    {
+        if (! is_file($path)) {
+            return false;
+        }
+
+        $modifiedAt = filemtime($path);
+
+        if ($modifiedAt === false || (time() - $modifiedAt) < $this->staleSeconds) {
+            return false;
+        }
+
+        @unlink($path);
+
+        return true;
     }
 
     private function ensureDirectory(): void
@@ -159,6 +254,67 @@ final readonly class E2EResourceLeasePool
             $this->sanitize($host),
             $slot,
         ]).'.lease';
+    }
+
+    private function hostMutexPath(string $host): string
+    {
+        return $this->directory.'/'.implode('-', [
+            '__host_mutex',
+            $this->sanitize($host),
+        ]).'.lease';
+    }
+
+    /**
+     * @param  resource  $handle
+     * @param  array{backend: string, host: string, slot: int, owner: string, pid: int|false, created_at: int}  $payload
+     */
+    private function writeLeasePayload($handle, array $payload): void
+    {
+        fwrite($handle, json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    private function releaseOwnedPath(string $path, string $owner): void
+    {
+        if (! is_file($path)) {
+            return;
+        }
+
+        $payload = json_decode((string) file_get_contents($path), true);
+
+        if (is_array($payload) && ($payload['owner'] ?? null) !== $owner) {
+            return;
+        }
+
+        @unlink($path);
+    }
+
+    /**
+     * @param  list<string>  $exclusiveHosts
+     * @return array<string, true>
+     */
+    private function exclusiveHostLookup(array $exclusiveHosts): array
+    {
+        $lookup = [];
+
+        foreach ($exclusiveHosts as $host) {
+            $host = strtolower(trim($host));
+
+            if ($host === '') {
+                continue;
+            }
+
+            $lookup[$host] = true;
+        }
+
+        return $lookup;
+    }
+
+    /**
+     * @param  array<string, true>  $exclusiveHostLookup
+     */
+    private function isExclusiveHost(string $host, array $exclusiveHostLookup): bool
+    {
+        return isset($exclusiveHostLookup[strtolower($host)]);
     }
 
     private function sanitize(string $value): string
