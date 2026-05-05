@@ -183,11 +183,9 @@ class AppNewCommand extends Command
     private function resolveInput(): array|int
     {
         $name = $this->stringArgument('name');
-        $node = $this->stringOption('node');
-        $repository = $this->canonicalRepository($this->stringOption('repo'));
-        $root = $this->stringOption('root') ?? 'public';
-        $phpVersion = $this->stringOption('php-version') ?? '8.5';
-        $domain = $this->stringOption('domain');
+        if ($name === null && $this->isInteractiveInput()) {
+            $name = trim((string) $this->ask('App name (slug)'));
+        }
 
         if ($name === null) {
             return $this->failValidation('name', 'App name is required.');
@@ -197,9 +195,20 @@ class AppNewCommand extends Command
             return $this->failValidation('name', 'App name must be a slug of 40 characters or fewer.');
         }
 
-        if ($node === null) {
-            return $this->failValidation('node', 'The --node option is required in non-interactive mode.');
+        $node = $this->resolveNodeInput();
+        if (is_int($node)) {
+            return $node;
         }
+
+        $repository = $this->stringOption('repo');
+        if ($repository === null && $this->isInteractiveInput() && $this->confirm('Clone from a git repository?', false)) {
+            $repository = trim((string) $this->ask('Repository URL (or GitHub owner/repo)'));
+        }
+
+        $repository = $this->canonicalRepository($repository);
+        $root = $this->stringOption('root') ?? 'public';
+        $phpVersion = $this->stringOption('php-version') ?? '8.5';
+        $domain = $this->stringOption('domain');
 
         if ($repository === false) {
             return $this->failValidation('repo', 'Repository must be a full Git URL or GitHub owner/repo shorthand.');
@@ -225,6 +234,36 @@ class AppNewCommand extends Command
             'php_version' => $phpVersion,
             'domain' => $domain,
         ];
+    }
+
+    private function resolveNodeInput(): string|int
+    {
+        $node = $this->stringOption('node');
+
+        if ($node !== null) {
+            return $node;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failValidation('node', 'The --node option is required in non-interactive mode.');
+        }
+
+        $nodes = Node::query()
+            ->where('role', 'app')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+
+        if ($nodes === []) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'No active app nodes are registered.',
+                meta: ['field' => 'node'],
+            );
+        }
+
+        return (string) $this->choice('Select target app node', $nodes);
     }
 
     private function resolveTargetNode(string $nodeName): Node|int
@@ -303,6 +342,11 @@ class AppNewCommand extends Command
         return $this->option('json') === true;
     }
 
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -331,6 +375,12 @@ class AppNewCommand extends Command
             /** @var array{name?: string, node?: string, environment?: string, url?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
 
+            $this->line('┌ Creating App');
+            $this->line('○ Create app source');
+            $this->line('○ Apply and verify app registration');
+            $this->line('○ Apply PHP-FPM configuration');
+            $this->line('○ Apply proxy routes');
+            $this->line("└ App '".(string) ($app['name'] ?? '')."' created");
             $this->line(sprintf(
                 "App '%s' created successfully on node '%s'.",
                 (string) ($app['name'] ?? ''),

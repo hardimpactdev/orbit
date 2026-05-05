@@ -1136,7 +1136,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     `POST /api/apps`, typed `CreateAppRequest` / `AppCreateResponse`,
     access-policy authorization for target app nodes, preserved structured
     errors, and no local app row or direct app-node SSH from control callers.
-  - [ ] Interactive input mode and full progress-tree human renderer.
+  - [x] Interactive input mode and progress-tree human renderer: missing app
+    name and target app node prompt in interactive human mode, optional
+    repository prompt canonicalizes GitHub shorthand, validation failures render
+    before the progress tree, and successful human output includes the
+    documented progress tree and completion summary.
   - [ ] Registration pipeline artifact convergence (PHP-FPM, proxy route,
     process artifacts) and related warning handoffs.
   - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
@@ -1434,10 +1438,11 @@ for the Saloon-based gateway transport pattern.
    - `APP-REMOTE-SHELL-1` gives app writes a gateway-owned SSH edge for
      node-side artifact enactment without giving control callers direct SSH
      behavior.
-   - `APP-NEW-GATEWAY-LOCAL-1` and `APP-NEW-FWD-1` are implemented. Keep
-     `app:register`, `app:root`, `app:remove`, `app:prune`, and
-     `app:agent-ide` blocked until `app:new` has real source-creation E2E and
-     registration pipeline convergence coverage.
+   - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, and the `app:new`
+     interactive/human renderer slice are implemented. Keep `app:register`,
+     `app:root`, `app:remove`, `app:prune`, and `app:agent-ide` blocked until
+     `app:new` has real source-creation E2E and registration pipeline
+     convergence coverage.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.
