@@ -954,10 +954,18 @@ decision evidence and tracker status only.
 
 ## State Families And Doctor Workstream
 
-- [~] Port family inventory from the blueprint into current docs before
+- [x] Port family inventory from the blueprint into current docs before
   implementation.
   - [x] Node-family public contract and technical `NodesProbe` contract.
-  - [ ] App/workspace/process/proxy/firewall/tool/schedule family inventories.
+  - [x] App family inventory: `docs/commands/5_app/app-doctor.md`.
+  - [x] Workspace family inventory: `docs/commands/6_workspace/workspace-doctor.md`.
+  - [x] Process family inventory: `docs/commands/7_process/process-doctor.md`.
+  - [x] Proxy family inventory: `docs/commands/8_proxy/proxy-doctor.md`.
+  - [x] Firewall-rule family inventory: `docs/commands/4_firewall/firewall-doctor.md`.
+  - [x] Tool family inventory: `docs/commands/3_tool/tool-doctor.md`.
+  - [x] Schedule family inventory: `docs/commands/9_schedule/schedule-doctor.md`.
+  - [x] Global `doctor` technical contract references all eight family
+    contracts.
 - [~] Port node doctor contracts and checks.
   - [x] `NodesProbe` DTOs/enums, technical contract, in-memory registry/access/default checks, and focused unit tests.
   - [ ] `node:list --doctor` command handoff and renderer integration.
