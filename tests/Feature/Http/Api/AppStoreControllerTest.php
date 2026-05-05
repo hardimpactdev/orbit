@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -61,7 +62,7 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->toHaveCount(3);
+            ->and($remoteShell->runs)->toHaveCount(4);
     });
 
     it('rejects app creation when the caller cannot access the target app node', function (): void {
@@ -82,6 +83,40 @@ describe('AppStoreController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->runs)->toBe([]);
+    });
+
+    it('rejects app creation before remote work when the proxy route domain is already registered', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        grantAppStoreAccess($caller, $targetNode);
+
+        ProxyRoute::query()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps', [
+            'name' => 'docs',
+            'node' => 'app-1',
+        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+
+        $response->assertConflict()
+            ->assertJsonPath('error.code', 'proxy.domain_conflict')
+            ->assertJsonPath('error.meta.domain', 'docs.test');
 
         expect(App::query()->count())->toBe(0)
             ->and($remoteShell->runs)->toBe([]);

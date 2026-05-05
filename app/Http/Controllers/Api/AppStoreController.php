@@ -10,6 +10,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,6 +57,19 @@ final class AppStoreController implements Loggable
             return $this->error('app.collision', "App name '{$input['name']}' is already registered in the gateway app registry on node '{$existingApp->node?->name}'.", [
                 'name' => $input['name'],
                 'node' => $existingApp->node?->name,
+            ], 409);
+        }
+
+        $routeDomain = $this->proxyRouteDomain($input, $node);
+        $existingRoute = ProxyRoute::query()
+            ->where('domain', $routeDomain)
+            ->first();
+
+        if ($existingRoute instanceof ProxyRoute) {
+            return $this->error('proxy.domain_conflict', "Proxy route domain '{$routeDomain}' is already registered.", [
+                'domain' => $routeDomain,
+                'owner_type' => $existingRoute->owner_type,
+                'kind' => $existingRoute->kind,
             ], 409);
         }
 
@@ -174,6 +188,24 @@ final class AppStoreController implements Loggable
             ->where('consumer_node_id', $caller->id)
             ->where('serving_node_id', $node->id)
             ->exists();
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function proxyRouteDomain(array $input, Node $node): string
+    {
+        if ($input['domain'] !== null) {
+            return $input['domain'];
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+
+        if ($tld === '') {
+            return $input['name'];
+        }
+
+        return "{$input['name']}.{$tld}";
     }
 
     private function stringInput(Request $request, string $key): ?string

@@ -1150,7 +1150,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     - [x] PHP-FPM pool rendering/install/reload: writes a managed per-app pool
       config on the owning app node and reloads the matching PHP-FPM service
       when the runtime is available.
-    - [ ] Proxy route registry/enactment handoff.
+    - [x] Proxy route registry/enactment handoff: `app:new` now records
+      app-owned `proxy_routes` intent, enacts the Caddy site on the owning app
+      node, preserves intent with `proxy.enactment_failed` warnings when backend
+      enactment needs later convergence, and rejects route-domain conflicts
+      before source creation.
     - [ ] Default process artifact rendering/enactment.
   - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
 - [ ] Port `app:register`.
@@ -1448,11 +1452,11 @@ for the Saloon-based gateway transport pattern.
      node-side artifact enactment without giving control callers direct SSH
      behavior.
    - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, the `app:new`
-     interactive/human renderer slice, runtime warning handoff foundation, and
-     PHP-FPM pool rendering/reload are implemented. Keep `app:register`,
-     `app:root`, `app:remove`, `app:prune`, and `app:agent-ide` blocked until
-     `app:new` has real source-creation E2E and full registration pipeline
-     convergence coverage.
+     interactive/human renderer slice, runtime warning handoff foundation,
+     PHP-FPM pool rendering/reload, and proxy route registry/enactment handoff
+     are implemented. Keep `app:register`, `app:root`, `app:remove`,
+     `app:prune`, and `app:agent-ide` blocked until `app:new` has real
+     source-creation E2E and full registration pipeline convergence coverage.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.

@@ -8,6 +8,7 @@ use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -46,7 +47,7 @@ it('creates source on the target app node before writing gateway app intent', fu
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs)->toHaveCount(3)
+        ->and($remoteShell->runs)->toHaveCount(4)
         ->and($remoteShell->runs[0]['node'])->toBe($targetNode->id)
         ->and($remoteShell->runs[0]['script'])->toContain("mkdir -p '/home/orbit/apps/docs'")
         ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
@@ -209,6 +210,169 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
         ->and($remoteShell->scripts[2])->toContain('[orbit-docs]')
         ->and($remoteShell->scripts[2])->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
         ->and($remoteShell->scripts[2])->toContain('sudo systemctl reload');
+});
+
+it('records and enacts an app-owned proxy route after app intent is durable', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'ssh_user' => 'orbit',
+        'status' => 'active',
+    ]);
+
+    $remoteShell = new SequencedRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $route = ProxyRoute::query()->where('domain', 'docs.test')->first();
+
+    expect($exitCode)->toBe(0)
+        ->and($route)->not->toBeNull()
+        ->and($route?->node_id)->toBe($targetNode->id)
+        ->and($route?->owner_type)->toBe('app')
+        ->and($route?->kind)->toBe('app')
+        ->and($route?->config)->toMatchArray([
+            'document_root' => '/home/orbit/apps/docs/public',
+            'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+            'tls' => 'internal',
+        ])
+        ->and($remoteShell->scripts[3])->toContain('/etc/caddy/sites/docs.test.caddy')
+        ->and($remoteShell->scripts[3])->toContain('docs.test {')
+        ->and($remoteShell->scripts[3])->toContain('tls internal')
+        ->and($remoteShell->scripts[3])->toContain('root * /home/orbit/apps/docs/public')
+        ->and($remoteShell->scripts[3])->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+        ->and($remoteShell->scripts[3])->toContain('sudo systemctl reload caddy');
+});
+
+it('uses the production domain as the app-owned proxy route domain', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'ssh_user' => 'orbit',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new RecordingRemoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--domain' => 'docs.example.com',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0)
+        ->and(ProxyRoute::query()->where('domain', 'docs.example.com')->exists())->toBeTrue()
+        ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse();
+});
+
+it('keeps app and proxy route intent when proxy backend enactment needs later convergence', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'ssh_user' => 'orbit',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new SequencedRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(App::query()->where('name', 'docs')->exists())->toBeTrue()
+        ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeTrue()
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0])->toMatchArray([
+            'code' => 'proxy.enactment_failed',
+            'family' => 'proxy',
+            'next_command' => 'doctor --family=proxy --fix',
+        ]);
+});
+
+it('fails before source creation when the proxy route domain is already registered', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $targetNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    ProxyRoute::query()->create([
+        'node_id' => $targetNode->id,
+        'domain' => 'docs.test',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'source_hash' => str_repeat('a', 64),
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($remoteShell->runs)->toBe([])
+        ->and(App::query()->where('name', 'docs')->exists())->toBeFalse()
+        ->and($payload['error']['code'])->toBe('proxy.domain_conflict')
+        ->and($payload['error']['meta'])->toMatchArray([
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
 });
 
 it('fails before remote work when the app name is already registered', function (): void {

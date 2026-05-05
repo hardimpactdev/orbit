@@ -12,6 +12,7 @@ use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Http\Gateway\Responses\Apps\AppCreateResponse;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -82,6 +83,23 @@ class AppNewCommand extends Command
                 meta: [
                     'name' => $input['name'],
                     'node' => $existingApp->node?->name,
+                ],
+            );
+        }
+
+        $routeDomain = $this->proxyRouteDomain($input, $node);
+        $existingRoute = ProxyRoute::query()
+            ->where('domain', $routeDomain)
+            ->first();
+
+        if ($existingRoute instanceof ProxyRoute) {
+            return $this->failCommand(
+                code: 'proxy.domain_conflict',
+                message: "Proxy route domain '{$routeDomain}' is already registered.",
+                meta: [
+                    'domain' => $routeDomain,
+                    'owner_type' => $existingRoute->owner_type,
+                    'kind' => $existingRoute->kind,
                 ],
             );
         }
@@ -159,6 +177,24 @@ class AppNewCommand extends Command
         }
 
         return $this->successCommand($dto->data, $dto->warnings);
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function proxyRouteDomain(array $input, Node $node): string
+    {
+        if ($input['domain'] !== null) {
+            return $input['domain'];
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+
+        if ($tld === '') {
+            return $input['name'];
+        }
+
+        return "{$input['name']}.{$tld}";
     }
 
     private function callerRole(): string
@@ -390,6 +426,18 @@ class AppNewCommand extends Command
             ));
             $this->line('Environment: '.(string) ($app['environment'] ?? ''));
             $this->line('URL: '.(string) ($app['url'] ?? ''));
+
+            if ($warnings !== []) {
+                $this->line('Warnings:');
+
+                foreach ($warnings as $warning) {
+                    $this->line('- '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+
+                    if (isset($warning['next_command']) && is_string($warning['next_command'])) {
+                        $this->line('  Retry with: orbit '.$warning['next_command']);
+                    }
+                }
+            }
 
             return self::SUCCESS;
         }

@@ -52,11 +52,60 @@ it('renders validation failures without a progress tree', function (): void {
         ->assertExitCode(1);
 });
 
+it('renders warning retry hints in human output', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppNewHumanSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
+    ]));
+
+    $this->artisan('app:new docs --node=app-1')
+        ->expectsConfirmation('Clone from a git repository?', 'no')
+        ->expectsOutputToContain('Warnings:')
+        ->expectsOutputToContain("Proxy route 'docs.test' was recorded, but backend enactment failed.")
+        ->expectsOutputToContain('Retry with: orbit doctor --family=proxy --fix')
+        ->assertExitCode(0);
+});
+
 final class AppNewHumanRecordingRemoteShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+}
+
+final class AppNewHumanSequencedRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',
             stderr: '',

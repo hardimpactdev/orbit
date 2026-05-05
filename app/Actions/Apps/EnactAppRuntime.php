@@ -12,6 +12,7 @@ final readonly class EnactAppRuntime
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private EnsureAppProxyRoute $ensureAppProxyRoute,
     ) {}
 
     /**
@@ -33,7 +34,7 @@ final readonly class EnactAppRuntime
         if ($result->successful()) {
             $this->remoteShell->run($app->node, $this->renderFpmPoolScript($app));
 
-            return [];
+            return $this->ensureAppProxyRoute->handle($app);
         }
 
         return [[
