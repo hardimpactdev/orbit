@@ -67,6 +67,18 @@ describe('workspace:show base contract', function (): void {
             ]);
     });
 
+    it('prompts for a missing workspace name in interactive mode', function (): void {
+        createWorkspaceShowLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+
+        $this->artisan('workspace:show')
+            ->expectsQuestion('Workspace name', 'feature-docs')
+            ->expectsOutputToContain('Workspace: feature-docs')
+            ->assertSuccessful();
+    });
+
     it('fails when a workspace name is ambiguous without app disambiguation', function (): void {
         createWorkspaceShowLocalNode('gateway');
         $docs = App::factory()->create(['name' => 'docs']);
@@ -80,6 +92,30 @@ describe('workspace:show base contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('workspace.ambiguous_name')
             ->and($payload['error']['meta']['apps'])->toBe(['docs', 'api']);
+    });
+
+    it('prompts for parent app when the workspace name is ambiguous in interactive mode', function (): void {
+        createWorkspaceShowLocalNode('gateway');
+        $docs = App::factory()->create(['name' => 'docs']);
+        $api = App::factory()->create(['name' => 'api']);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
+
+        $this->artisan('workspace:show feature-docs')
+            ->expectsChoice('Parent app', 'api', ['docs', 'api'])
+            ->expectsOutputToContain('App:       api')
+            ->assertSuccessful();
+    });
+
+    it('fails before input when local node role is invalid', function (): void {
+        createWorkspaceShowLocalNode('invalid-role');
+
+        $exitCode = Artisan::call('workspace:show', ['name' => 'feature-docs', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('local_context_invalid')
+            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {

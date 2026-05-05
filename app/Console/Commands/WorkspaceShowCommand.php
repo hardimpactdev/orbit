@@ -29,9 +29,26 @@ class WorkspaceShowCommand extends Command
     {
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
+        $callerRole = $this->callerRole();
+
+        if ($callerRole === 'unknown') {
+            return $this->failCommand(
+                code: 'local_context_invalid',
+                message: 'Local node role setting is invalid.',
+                meta: [
+                    'setting' => 'general.local_node_role',
+                    'reason' => 'unsupported_value',
+                    'caller_role' => 'unknown',
+                ],
+            );
+        }
 
         if ($name === null) {
-            $name = $this->resolveNameFromCwd();
+            $name = $this->resolveNameFromCwd($callerRole);
+        }
+
+        if ($name === null && $this->isInteractiveInput()) {
+            $name = $this->promptForName();
         }
 
         if ($name === null) {
@@ -43,13 +60,26 @@ class WorkspaceShowCommand extends Command
         }
 
         try {
-            $workspace = $this->fetchWorkspace($name, $app, $payload);
+            $workspace = $this->fetchWorkspace($name, $app, $payload, $callerRole);
         } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to show workspace details.',
-                meta: $e->errorMeta(),
-            );
+            if ($this->shouldPromptForAmbiguousApp($e, $app)) {
+                $app = $this->promptForApp($e->errorMeta());
+                try {
+                    $workspace = $this->fetchWorkspace($name, $app, $payload, $callerRole);
+                } catch (GatewayApiException $retryException) {
+                    return $this->failCommand(
+                        code: $retryException->errorCode() ?? 'gateway_unavailable',
+                        message: $retryException->getMessage() !== '' ? $retryException->getMessage() : 'Gateway connection is required to show workspace details.',
+                        meta: $retryException->errorMeta(),
+                    );
+                }
+            } else {
+                return $this->failCommand(
+                    code: $e->errorCode() ?? 'gateway_unavailable',
+                    message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to show workspace details.',
+                    meta: $e->errorMeta(),
+                );
+            }
         } catch (Throwable) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
@@ -70,9 +100,9 @@ class WorkspaceShowCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function fetchWorkspace(string $name, ?string $app, WorkspaceShowPayload $payload): array
+    private function fetchWorkspace(string $name, ?string $app, WorkspaceShowPayload $payload, string $callerRole): array
     {
-        if ($this->callerRole() !== 'gateway') {
+        if ($callerRole !== 'gateway') {
             /** @var WorkspaceShowResponse $dto */
             $dto = app(GatewayConnector::class)
                 ->send(new ShowWorkspaceRequest(name: $name, app: $app))
@@ -90,6 +120,15 @@ class WorkspaceShowCommand extends Command
         }
 
         if ($app === null && $matches->count() > 1) {
+            if ($this->isInteractiveInput()) {
+                $app = $this->choice(
+                    'Parent app',
+                    $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
+                );
+
+                return $this->fetchWorkspace($name, $app, $payload, $callerRole);
+            }
+
             throw new GatewayApiException("Workspace name '{$name}' is ambiguous.", 'workspace.ambiguous_name', [
                 'name' => $name,
                 'apps' => $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
@@ -116,9 +155,9 @@ class WorkspaceShowCommand extends Command
             ->get();
     }
 
-    private function resolveNameFromCwd(): ?string
+    private function resolveNameFromCwd(string $callerRole): ?string
     {
-        if ($this->callerRole() !== 'gateway') {
+        if ($callerRole !== 'gateway') {
             return null;
         }
 
@@ -131,6 +170,42 @@ class WorkspaceShowCommand extends Command
 
                 return $workspacePath === $cwd || str_starts_with($cwd, "{$workspacePath}/");
             })?->name;
+    }
+
+    private function promptForName(): ?string
+    {
+        $name = $this->ask('Workspace name');
+
+        return is_string($name) && trim($name) !== '' ? trim($name) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function promptForApp(array $meta): string
+    {
+        $apps = $meta['apps'] ?? [];
+
+        if (! is_array($apps) || $apps === []) {
+            throw new GatewayApiException('Workspace name is ambiguous.', 'workspace.ambiguous_name', $meta);
+        }
+
+        /** @var list<string> $choices */
+        $choices = array_values(array_filter($apps, is_string(...)));
+
+        return $this->choice('Parent app', $choices);
+    }
+
+    private function shouldPromptForAmbiguousApp(GatewayApiException $exception, ?string $app): bool
+    {
+        return $app === null
+            && $exception->errorCode() === 'workspace.ambiguous_name'
+            && $this->isInteractiveInput();
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     /**

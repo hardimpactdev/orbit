@@ -33,7 +33,7 @@ describe('workspace:show human renderer contract', function (): void {
     });
 
     it('renders missing input as prose', function (): void {
-        $exitCode = Artisan::call('workspace:show');
+        $exitCode = Artisan::call('workspace:show', ['--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(1)

@@ -1240,8 +1240,9 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       forwarding, access-policy filtering, JSON/human registry renderers,
       ambiguity/not-found handling, focused Pest coverage, and E2E gate
       classified as `lane=none`.
-    - [ ] Interactive prompt contract, full CWD resolution parity for
-      forwarded callers, and explicit invalid local-context handling.
+    - [x] Interactive missing-name and ambiguous-app prompts, plus explicit
+      invalid local-context handling.
+    - [ ] Full CWD resolution parity for forwarded callers.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
 - [ ] Port workspace history and log commands.
