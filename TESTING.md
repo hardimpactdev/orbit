@@ -118,6 +118,34 @@ ORBIT_E2E_TIMEOUT_SECONDS=600
 ORBIT_E2E_KEEP=1
 ```
 
+## Provider Capability Matrix
+
+| Capability | Docker | Incus |
+| --- | --- | --- |
+| Gateway API and CA trust | yes | yes |
+| Registry-backed command behavior | yes | yes |
+| Supervisor runtime backend | yes | yes |
+| Orbit Scheduler daemon | yes | yes |
+| Real WireGuard interfaces and peer routing | no | yes |
+| VM boot, cloud-init, package install mutation | no | yes |
+| Real SSH daemon and sudo behavior | no | yes |
+| OS trust-store mutation | no | yes |
+| Host init (systemd) on the node itself | no | yes |
+
+### Provider Selection Rules
+
+Use Docker for feature tests whose correctness depends on gateway API, CA
+trust, registry state, the runtime backend, the Orbit Scheduler, or
+Orbit-managed process and schedule lifecycle.
+
+Use Incus for tests whose correctness depends on real VM behavior:
+WireGuard kernel networking, cloud-init, package installation, OS
+trust-store mutation, real SSH daemon behavior, sudo prompts, or host
+init.
+
+Provisioning, installer, and host-mutation tests stay in the
+`e2e-provision` lane on Incus regardless of family.
+
 ## E2E Lanes
 
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
@@ -376,13 +404,13 @@ those capabilities must call
 `E2ETopologyFactory::fromEnvironment()->requireCapabilities(E2ETopologyCapabilities::vm())->require(...)`
 so the provider pool refuses Docker for them.
 
-In practice, Docker is a good candidate for read-style feature tests such as
-registry-backed `node:*` reads and gateway API backed commands after the
-topology has been seeded. Incus is required for `process:*` commands, schedule
-runtime assertions, and `workspace:*` flows that create, inspect, start, stop,
-restart, or validate systemd-backed runtime units. Registry-only workspace
-views can run on Docker only when they do not inspect live process state,
-execute setup/teardown steps, or assert runtime unit convergence.
+Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*`
+runtime assertions because the runtime backend (Supervisor) and the Orbit
+Scheduler run identically inside Docker containers. Incus remains required
+for tests that depend on real VM behavior: cloud-init, package
+installation, real SSH daemon behavior, sudo prompts, OS trust-store
+mutation, real WireGuard interfaces and peer routing, and host init
+itself.
 
 `composer test:e2e` runs with Pest parallel mode. The script fallback process
 count is `2`; the shared local `.env.e2e` uses
