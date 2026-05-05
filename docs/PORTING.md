@@ -599,10 +599,13 @@ commands. Order matters because each adds a new write API endpoint:
    `UpdateNodeRequest`.
 2. `NODE-UPDATE-FWD-1` — wire `node:update` control-caller forwarding (paired
    ephemeral Pest E2E; write command).
-3. `NODE-API-DEFAULT-1` + `NODE-DEFAULT-FWD-1` — same pattern for `node:default`.
-4. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
-5. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
-6. `NODE-API-REMOVE-1` + `NODE-REMOVE-FWD-1` — `node:remove` (paired E2E only,
+3. `NODE-API-DEFAULT-1` is implemented: gateway-side `GET|PUT|DELETE
+   /api/nodes/default` + `DefaultNodeRequest`.
+4. `NODE-DEFAULT-FWD-1` — wire `node:default` control-caller forwarding
+   (paired ephemeral Pest E2E; write command).
+5. `NODE-API-GRANT-1` + `NODE-GRANT-FWD-1` — `node:grant` (paired E2E only).
+6. `NODE-API-REVOKE-1` + `NODE-REVOKE-FWD-1` — `node:revoke` (paired E2E only).
+7. `NODE-API-REMOVE-1` + `NODE-REMOVE-FWD-1` — `node:remove` (paired E2E only,
    coordinate with WireGuard peer teardown blocker).
 
 Do not create the FWD-* todos until the matching API-* todo is on `main`. Do
@@ -685,9 +688,10 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` (JSON renderer contract)
   - Bootstrap slice implemented: local read/show/set/clear sub-actions, human progress tree, JSON envelope shape, caller role rejection, split contract tests.
+  - Gateway API slice implemented: gateway-side show/set/clear endpoints and typed `DefaultNodeRequest`.
   - Contract gaps:
-    - Gateway forwarding for set/choose (requires GatewayClient and gateway API; currently queries local DB only).
-    - Real authorization check against gateway-visible nodes (`authorization_failed` is a stub bootstrap gap).
+    - Gateway forwarding for set/choose (requires wiring the command to GatewayClient).
+    - Real authorization check in the command-side forwarded path; gateway API authorization exists for the API slice.
     - Interactive choose path requires real gateway node list (`gateway_unavailable` is a stub bootstrap gap).
     - `NodeDefaultOnControlNodeContractTest.php` blocked by gateway forwarding.
 - [~] Port `node:grant`.
@@ -1053,8 +1057,8 @@ decision evidence and tracker status only.
    `NODENEW-GATEWAY-API-VERIFY-1` with their deferred `e2e-provision` lanes
    before treating first-gateway onboarding as infrastructure-verified.
 4. Continue gateway forwarding in the documented order after the grant E2E
-   slice: `node:update`, `node:default`, `node:grant`, `node:revoke`, and
-   `node:remove`.
+   slice: `node:update`, `node:default`, then the API/FWD pairs for
+   `node:grant`, `node:revoke`, and `node:remove`.
 5. Use the full prepared Incus topology lane for node read-forwarding E2E:
    `composer test:e2e:features:control-gateway-dev-prod`. Use the Docker lane
    only for container-safe feature checks that do not depend on WireGuard,
