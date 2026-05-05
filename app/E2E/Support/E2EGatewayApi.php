@@ -480,6 +480,27 @@ PHP;
         
             return run_orbit_command(implode(' ', $parts));
         }
+
+        function run_workspace_step_remove(string $phase, string $step, array $query): array
+        {
+            $parts = [
+                "php artisan workspace-{$phase}-step:remove",
+                '--step='.escapeshellarg($step),
+                '--force',
+            ];
+
+            foreach (['app' => 'app'] as $field => $option) {
+                $value = $query[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            $parts[] = '--json';
+        
+            return run_orbit_command(implode(' ', $parts));
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -789,6 +810,23 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_workspace_step_add($matches[1], $input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^DELETE /api/workspaces/steps/(setup|teardown)/([^ ?]+)#', $requestLine, $matches) === 1) {
+                read_request_body($connection, $headers);
+                $path = explode(' ', $requestLine)[1] ?? "/api/workspaces/steps/{$matches[1]}/{$matches[2]}";
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_workspace_step_remove($matches[1], urldecode($matches[2]), $query);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 
