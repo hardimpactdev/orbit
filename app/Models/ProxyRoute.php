@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  * @property int $node_id
  * @property string $domain
  * @property int|null $app_id
+ * @property int|null $workspace_id
  * @property string $owner_type
  * @property string $kind
  * @property string $source_hash
@@ -21,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Node $node
  * @property-read App|null $app
+ * @property-read Workspace|null $workspace
  */
 class ProxyRoute extends Model
 {
@@ -28,6 +30,7 @@ class ProxyRoute extends Model
         'node_id',
         'domain',
         'app_id',
+        'workspace_id',
         'owner_type',
         'kind',
         'source_hash',
@@ -56,5 +59,13 @@ class ProxyRoute extends Model
     public function app(): BelongsTo
     {
         return $this->belongsTo(App::class);
+    }
+
+    /**
+     * @return BelongsTo<Workspace, $this>
+     */
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
     }
 }
