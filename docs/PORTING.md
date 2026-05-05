@@ -519,25 +519,29 @@ VPS-adjacent behavior.
    `node_access` rows, asserts populated and empty `node:show` grant metadata,
    and checks human `(none)` grant rendering. The full Incus feature-lane run is
    intentionally deferred to the next E2E-testing pass.
+6. `E2E-PROVISION-REWORK-1` (todo 278) is implemented: provisioning E2E tests
+   no longer launch role-specific ready control/gateway images. They stage a
+   per-run bundle, launch from blank/base images, provision control/gateway VMs
+   from the base image, and run in the `e2e-provision` lane. The full Incus
+   provision-lane run is intentionally deferred to the next E2E-testing pass.
 
 If the ready queue is below target, fill with independent read-only Pest,
 documentation, or E2E support work only.
 
 #### Next 5 Candidates
 
-1. `E2E-PROVISION-REWORK-1` (todo 278): clear stale role-specific
-   `E2EImage::Control`/`Gateway` provisioning tests before relying on the
-   `e2e-provision` lane for the next first-gateway slices.
-2. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
+1. `NODENEW-WIREGUARD-ENROLL-1` (todo 268), now that the WireGuard peer
    foundation is merged.
-3. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
+2. `NODE-API-UPDATE-1` (todo 276): gateway-side `PUT /api/nodes/{name}` +
    typed request, after the grant E2E gate lands.
-4. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
+3. `CALLER-ROLE-EXTRACT-1` — extract shared `CallerRoleResolver` service and
    shared JSON envelope response trait, then migrate all 11 existing commands.
    Do not start this until the grant E2E implementation is on `main`.
-5. Deferred E2E verification pass: run `NodeShowGrant` against the
+4. Deferred E2E verification pass: run `NodeShowGrant` against the
    `control-gateway-dev-prod` feature lane before treating the grant E2E as
    fully verified.
+5. Deferred E2E verification pass: run the full `e2e-provision` lane before
+   treating the provisioning rework as infrastructure-verified.
 
 #### First-Gateway Provisioning Split Candidates
 
@@ -1000,17 +1004,18 @@ decision evidence and tracker status only.
     `e2e:prepare-topology -- --force control-gateway-dev-prod`.
   - [x] Re-run topology contracts on Beast against the new lane
     (`control-gateway-dev-prod` contract passed with 47 assertions).
-  - [ ] Rework `e2e-provision` tests that previously launched from
+  - [x] Rework `e2e-provision` tests that previously launched from
     `E2EImage::Control`/`Gateway` (now refused by `IncusProvider::aliasFor`)
-    to base + provisioner.
+    to base + provisioner. Focused provider tests and stale-reference audit
+    pass; the full Incus provision-lane run is deferred.
 - [ ] Add provisioning/destructive coverage only in the `e2e-provision` lane.
 
 ## Next Priorities
 
 1. When E2E work resumes, run the deferred `NodeShowGrant` feature lane against
    `control-gateway-dev-prod` to verify the implemented `node:show` grant gate.
-2. Clear `E2E-PROVISION-REWORK-1` so the provisioning lane no longer depends
-   on role-specific ready-image aliases refused by `IncusProvider::aliasFor`.
+2. Run the deferred full `e2e-provision` lane to verify the provisioning test
+   rework end to end.
 3. Build `NODENEW-WIREGUARD-ENROLL-1` on the merged WireGuard peer foundation,
    then pair it with the `e2e-provision` lane before treating first-gateway
    WireGuard state as complete.

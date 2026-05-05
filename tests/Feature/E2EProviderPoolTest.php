@@ -97,6 +97,20 @@ it('discovers prepared hcloud snapshots by logical image label', function (): vo
         ->and($provider->imageReferenceFor(E2EImage::Gateway))->toBe('501');
 });
 
+it('discovers the incus base image by logical image label', function (): void {
+    Process::fake([
+        '*command -v*incus*' => Process::result(),
+        '*incus info*' => Process::result(),
+        '*incus network show incusbr0*' => Process::result(),
+        '*incus image info orbit-base-ubuntu-26.04*' => Process::result(),
+    ]);
+
+    $availability = (new IncusProvider(E2EConfig::fromEnvironment()))
+        ->availability([E2EImage::Base]);
+
+    expect($availability->available)->toBeTrue();
+});
+
 it('reports retired incus ready images as unavailable instead of throwing', function (): void {
     Process::fake([
         '*command -v*incus*' => Process::result(),

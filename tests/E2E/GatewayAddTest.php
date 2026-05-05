@@ -2,30 +2,40 @@
 
 declare(strict_types=1);
 
+use Tests\E2E\Support\E2EBaseProvisioner;
 use Tests\E2E\Support\E2ECommand;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2EGatewayApi;
 use Tests\E2E\Support\E2EImage;
+use Tests\E2E\Support\E2EInstance;
 use Tests\E2E\Support\E2ENetwork;
+use Tests\E2E\Support\E2EProvisioningBundle;
 use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\IncusProvider;
 use Tests\E2E\Support\ProviderPool;
+use Tests\E2E\Support\SshKeyPair;
 
-it('joins a prepared gateway from a ready control VM', function (): void {
+pest()->group('e2e-provision');
+
+it('joins a provisioned gateway from a provisioned control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $selection = (new ProviderPool([new IncusProvider($config)]))->select(E2EImage::Control, E2EImage::Gateway);
+    $provider = new IncusProvider($config);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
     }
 
-    $provider = $selection->provider();
     $run = E2ERun::start($provider, 'gateway-add');
+    $bundle = null;
+    $passed = false;
 
     try {
+        $bundle = E2EProvisioningBundle::stage($provider);
+        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = $run->launchControl('control');
-        $gateway = $run->launchGateway('gateway');
+        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
+        $gateway = e2eProvisionStep('provision gateway from base', fn () => $provisioner->provision($run, 'gateway', 'gateway'));
 
         $control->authorizeSsh($config->controlUser, $key);
         $gateway->authorizeSsh('orbit', $key);
@@ -88,8 +98,10 @@ it('joins a prepared gateway from a ready control VM', function (): void {
         );
 
         expect(trim($localNodeMirrorCount->output()))->toBe('0');
+        $passed = true;
     } finally {
-        $run->cleanup();
+        e2eProvisionCleanup($passed, run: $run);
+        $bundle?->cleanup();
     }
 });
 

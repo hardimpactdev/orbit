@@ -2,29 +2,39 @@
 
 declare(strict_types=1);
 
+use Tests\E2E\Support\E2EBaseProvisioner;
 use Tests\E2E\Support\E2ECommand;
+use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2EGatewayApi;
 use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2ENetwork;
 use Tests\E2E\Support\E2ENodeProbe;
+use Tests\E2E\Support\E2EProvisioningBundle;
 use Tests\E2E\Support\E2ERun;
+use Tests\E2E\Support\IncusProvider;
 use Tests\E2E\Support\ProviderPool;
 
-it('provisions a development app node from a ready control VM through a ready gateway VM', function (): void {
-    $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank, E2EImage::Control, E2EImage::Gateway);
+pest()->group('e2e-provision');
+
+it('provisions a development app node from a provisioned control VM through a provisioned gateway VM', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $provider = new IncusProvider($config);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank, E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
     }
 
-    $provider = $selection->provider();
-    $config = $provider->config();
     $run = E2ERun::start($provider, 'node-new-devapp');
+    $bundle = null;
+    $passed = false;
 
     try {
+        $bundle = E2EProvisioningBundle::stage($provider);
+        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = $run->launchControl('control');
-        $gateway = $run->launchGateway('gateway');
+        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
+        $gateway = e2eProvisionStep('provision gateway from base', fn () => $provisioner->provision($run, 'gateway', 'gateway'));
         $app = $run->launchBlank('app');
 
         $control->authorizeSsh($config->controlUser, $key);
@@ -109,7 +119,9 @@ it('provisions a development app node from a ready control VM through a ready ga
         );
 
         expect(trim($controlNodeCount->output()))->toBe('0');
+        $passed = true;
     } finally {
-        $run->cleanup();
+        e2eProvisionCleanup($passed, run: $run);
+        $bundle?->cleanup();
     }
 });

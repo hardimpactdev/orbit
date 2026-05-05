@@ -49,14 +49,9 @@ final class E2ERun
         return $this->launch(E2EImage::Blank, $suffix);
     }
 
-    public function launchControl(string $suffix): E2EInstance
+    public function launchBase(string $suffix): E2EInstance
     {
-        return $this->launch(E2EImage::Control, $suffix);
-    }
-
-    public function launchGateway(string $suffix): E2EInstance
-    {
-        return $this->launch(E2EImage::Gateway, $suffix);
+        return $this->launch(E2EImage::Base, $suffix);
     }
 
     public function launch(E2EImage $image, string $suffix): E2EInstance

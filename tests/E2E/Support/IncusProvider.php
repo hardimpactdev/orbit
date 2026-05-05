@@ -167,6 +167,7 @@ final readonly class IncusProvider implements E2EProvider
     {
         return match ($image) {
             E2EImage::Blank => $this->config->blankImage,
+            E2EImage::Base => $this->config->baseImage,
             E2EImage::Control, E2EImage::Gateway => throw new \RuntimeException(
                 'Role-specific ready images have been replaced by the base image + per-run provisioner lane. '
                 .'Use IncusTopologyBuilder via e2e:prepare-topology, or rework provisioning tests to launch '

@@ -190,6 +190,7 @@ final readonly class HcloudProvider implements E2EProvider
     {
         $configured = match ($image) {
             E2EImage::Blank => $this->config->hcloudBlankImage,
+            E2EImage::Base => '',
             E2EImage::Control => $this->config->hcloudControlImage,
             E2EImage::Gateway => $this->config->hcloudGatewayImage,
         };
