@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Nodes\NodesDoctorSummary;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class NodeListController
+final readonly class NodeListController implements Loggable
 {
     private const array VALID_ROLES = ['gateway', 'app', 'control'];
 
@@ -110,5 +113,30 @@ final readonly class NodeListController
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status,
         ])->all();
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    public function activityLogAction(): string
+    {
+        return 'api:GET /nodes';
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return null;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return null;
     }
 }

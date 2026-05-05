@@ -13,13 +13,14 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Middleware\CorrelationHeader;
+use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\WireGuardIdentity;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/ca/root', CaRootController::class);
 
-    Route::middleware(WireGuardIdentity::class)->group(function (): void {
+    Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);

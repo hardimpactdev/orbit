@@ -1,0 +1,115 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Concerns;
+
+use App\Enums\ActivityLogType;
+use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\ActivityLogTargets;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
+
+trait LogsCommandActivity
+{
+    private bool $activityLogOwnsCorrelation = false;
+
+    private bool $activityLogWritten = false;
+
+    abstract public function getName(): string;
+
+    public function activityLogType(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogAction(): string
+    {
+        return (string) $this->getName();
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return null;
+    }
+
+    public function activityLogProperties(): array
+    {
+        return [];
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return null;
+    }
+
+    protected function bootActivityLog(): void
+    {
+        $correlation = app(ActivityLogCorrelation::class);
+
+        if ($correlation->current() === null) {
+            $correlation->start();
+            $this->activityLogOwnsCorrelation = true;
+        }
+    }
+
+    /**
+     * Write the activity log entry now. Long-running commands (e.g. a tail loop
+     * that never returns to finally) should call this before entering their
+     * loop so the invocation is recorded even if SIGINT kills the process.
+     * Idempotent.
+     */
+    protected function writeActivityLog(): void
+    {
+        if ($this->activityLogWritten) {
+            return;
+        }
+        $this->activityLogWritten = true;
+
+        $causer = $this->resolveLocalNode();
+        $target = app(ActivityLogTargets::class)->primary();
+
+        $extra = [
+            'client' => 'cli',
+            'actor_name' => $causer?->name ?? gethostname() ?: 'unknown',
+            'actor_wg_ip' => $causer?->wireguard_address,
+            'served_by_name' => $causer?->name ?? gethostname() ?: 'unknown',
+            'served_by_wg_ip' => $causer?->wireguard_address,
+        ];
+
+        if ($target !== null) {
+            $extra['target_node'] = $target->name;
+            $extra['target_wg_ip'] = is_string($target->wireguard_address) ? $target->wireguard_address : null;
+        }
+
+        app(ActivityLogger::class)->log(
+            $this,
+            channel: 'cli',
+            causer: $causer,
+            extraProperties: $extra,
+        );
+    }
+
+    protected function finalizeActivityLog(): void
+    {
+        $this->writeActivityLog();
+
+        if ($this->activityLogOwnsCorrelation) {
+            app(ActivityLogCorrelation::class)->end();
+            $this->activityLogOwnsCorrelation = false;
+        }
+
+        app(ActivityLogTargets::class)->reset();
+    }
+
+    private function resolveLocalNode(): ?Node
+    {
+        if (! Schema::hasTable('nodes')) {
+            return null;
+        }
+
+        return Node::query()->where('is_local', true)->first();
+    }
+}
