@@ -70,22 +70,6 @@ final readonly class EnsureAppProcessRuntimeUnits
 
     private function renderInstallScript(App $app, Process $process): string
     {
-        $programName = $this->renderer->programName($app, $process);
-        $content = $this->renderer->render($app, $process);
-        $path = "/etc/supervisor/conf.d/{$programName}.conf";
-
-        return sprintf(
-            <<<'SH'
-sudo mkdir -p /etc/supervisor/conf.d
-cat <<'ORBIT_SUPERVISOR_PROGRAM' | sudo tee %s >/dev/null
-%s
-ORBIT_SUPERVISOR_PROGRAM
-sudo supervisorctl reread
-sudo supervisorctl update %s
-SH,
-            escapeshellarg($path),
-            $content,
-            escapeshellarg($programName),
-        );
+        return $this->renderer->installScript($app, $process);
     }
 }

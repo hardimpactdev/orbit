@@ -1339,8 +1339,13 @@ across the process and schedule families.
     responsiveness through the existing gateway-owned `RemoteShell` edge.
     Current process runtime-unit enactment uses the probe; process/schedule
     doctor command wiring remains in the family command implementation items.
-- [ ] Add the Supervisor program renderer shared by process and schedule
+- [x] Add the Supervisor program renderer shared by process and schedule
   enactment.
+  - `SupervisorProgramRenderer` now lives under the runtime-backend service
+    boundary and renders reusable Supervisor program definitions plus install
+    scripts. The process-family renderer builds process-specific definitions
+    on top of that shared renderer; scheduler enactment can reuse the same
+    backend renderer when the `orbit_scheduler` daemon slice lands.
 - [ ] Add the `orbit-scheduler` Artisan-command daemon.
 - [ ] Add scheduler local-state schema (locks, heartbeat, last-sync).
 - [ ] Add scheduler-to-gateway authentication using the existing WireGuard
