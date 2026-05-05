@@ -137,10 +137,11 @@ health check, while `composer test:e2e` excludes topology-contract tests and
 runs feature assertions only.
 
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
-`composer test:e2e` runs only feature assertions in one cached superset process.
-Provision tests are intentionally on demand because they run real
-installer/provisioning paths and are much slower than prepared-topology feature
-tests.
+`composer test:e2e` runs only feature assertions with Pest parallel mode. Each
+worker process gets one cached Docker superset topology and reuses it for the
+tests assigned to that worker. Provision tests are intentionally on demand
+because they run real installer/provisioning paths and are much slower than
+prepared-topology feature tests.
 
 Provision tests clean up on success. On failure they keep tracked VMs/templates
 for inspection and print their names plus a reap command. Set
@@ -202,13 +203,19 @@ code that runs on those nodes.
 
 When `ORBIT_E2E_TOPOLOGY_CACHE=process`, `e2eTopology()` reuses the same
 prepared topology lease for matching requests in the current PHP process and
-cleans it up once at process shutdown. `composer test:e2e` enables this cache
-with `ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so the feature regression aggregate
-pays the Docker container startup cost once for the full topology. It also
-enables `ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout
-once per node/user and gives each test an isolated hardlink copy with fresh
-runtime files. Because the current aggregate includes gateway-backed `node:list`
-tests, it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway API once.
+cleans it up once at process shutdown. `composer test:e2e` combines this with
+Pest parallel mode and `ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so each worker
+pays the Docker container startup cost once for a full topology. It also enables
+`ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout once per
+node/user and gives each test an isolated hardlink copy with fresh runtime
+files. Because the current aggregate includes gateway-backed `node:list` tests,
+it also sets `ORBIT_E2E_GATEWAY_API=1` and starts the gateway API once per
+worker.
+
+Topology state is reused by default inside a worker. Tests that intentionally
+mutate shared topology state must either clean up after themselves or call
+`$topology->reset()` at the point where they require a clean topology. Reset is
+explicit so read-style feature tests can stay fast.
 
 ## Prepared Topology Contract
 
@@ -309,7 +316,8 @@ composer e2e:reap-docker -- --force --older-than=0m
 ```
 
 `composer test:e2e` is the fast feature regression lane. It runs all
-`e2e-feature` tests in one PHP process against a cached Docker full topology.
+`e2e-feature` tests in parallel against cached Docker full topologies, one
+topology per Pest worker process.
 Use `composer test:e2e:topology-contract` when you want to prove the prepared
 Docker topology itself. Provisioning E2E remains serial by default.
 
@@ -348,10 +356,31 @@ restart, or validate systemd-backed runtime units. Registry-only workspace
 views can run on Docker only when they do not inspect live process state,
 execute setup/teardown steps, or assert runtime unit convergence.
 
-`composer test:e2e` is serial in the MVP. Parallel Docker E2E is not supported
-while each test creates a fixed `10.6.0.0/16` bridge network; parallel support
-needs non-overlapping subnets or the per-worker network design from the Docker
-topology plan.
+`composer test:e2e` runs with Pest parallel mode. The default process count is
+`2`; override it with `ORBIT_E2E_PARALLEL_PROCESSES=<n>`. Keep the value within
+Docker host capacity: a full topology uses four containers, so a host with
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8` can safely run two full-topology
+workers. Add Docker hosts with `ORBIT_E2E_DOCKER_HOSTS=beast,sidecar1,sidecar2`
+or raise the per-host container limit when the runner can handle more.
+
+For deterministic multi-host parallelism, use host slots and set the Pest worker
+count to the total slot count:
+
+```bash
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_PARALLEL_PROCESSES=7 \
+composer test:e2e
+```
+
+With that example, workers 1-2 run on `sidecar1`, workers 3-4 run on
+`sidecar2`, and workers 5-7 run on `beast`. Slotting is deterministic and avoids
+multiple Pest workers racing to select the same currently-empty Docker host.
+
+Each Pest worker gets a non-overlapping Docker subnet. Non-parallel runs keep
+the canonical `10.6.0.0/16` topology. Parallel workers use `10.61.0.0/16`,
+`10.62.0.0/16`, and so on, derived from ParaTest's `TEST_TOKEN`. Role addresses
+stay consistent within the worker subnet: gateway `.2`, control `.3`, dev `.4`,
+prod `.5`.
 
 Tests must reach Docker topology services through topology handles such as
 `$topology->control()->ssh(...)`, not by calling `https://10.6.0.x` directly
@@ -359,10 +388,10 @@ from the Pest process. On macOS, Docker Desktop runs containers inside a Linux
 VM, so the bridge subnet is reachable from containers but not necessarily from
 the developer host.
 
-The Docker bridge uses subnet `10.6.0.0/16` to match seeded WireGuard
-addresses. If you also run an Orbit VPN client locally on `10.6.0.x`, stop the
-tunnel before running Docker E2E or Docker network creation will fail with a
-subnet overlap error.
+The non-parallel Docker bridge uses subnet `10.6.0.0/16` to match seeded
+WireGuard addresses. If you also run an Orbit VPN client locally on `10.6.0.x`,
+stop the tunnel before running non-parallel Docker E2E or Docker network
+creation will fail with a subnet overlap error.
 
 To offload Docker work to `beast`, keep Pest running locally and target the
 remote Docker daemon:
@@ -372,9 +401,9 @@ ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e
 ```
 
 The local machine only needs the Docker CLI and SSH access; the prepared Docker
-images must exist on `beast`. The Docker provider checks `docker image inspect`
-against the remote daemon because `DOCKER_HOST=ssh://...` forwards every CLI
-call.
+images must exist on every configured Docker host. The Docker provider checks
+`docker image inspect` against the selected daemon because `DOCKER_HOST=ssh://...`
+forwards every CLI call.
 
 If Docker resources accumulate from interrupted runs, prefer the reaper:
 
@@ -393,7 +422,9 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for composer 
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3  # Deterministic worker-to-host map
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
+ORBIT_E2E_PARALLEL_PROCESSES=2        # Pest workers for composer test:e2e
 ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host

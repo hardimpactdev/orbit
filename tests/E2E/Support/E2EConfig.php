@@ -35,6 +35,8 @@ final readonly class E2EConfig
         public array $dockerHosts,
         public int $dockerMaxContainersPerHost,
         public bool $keep,
+        /** @var array<string, int> */
+        public array $dockerHostSlots = [],
     ) {}
 
     public static function fromEnvironment(): self
@@ -65,6 +67,7 @@ final readonly class E2EConfig
             dockerHosts: self::parseProviderNames(self::envString('ORBIT_E2E_DOCKER_HOSTS', 'local')),
             dockerMaxContainersPerHost: self::envInt('ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST', 8),
             keep: self::envString('ORBIT_E2E_KEEP', '0') === '1',
+            dockerHostSlots: self::parseDockerHostSlots(self::envString('ORBIT_E2E_DOCKER_HOST_SLOTS', '')),
         );
     }
 
@@ -130,6 +133,38 @@ final readonly class E2EConfig
         return $names !== [] ? $names : ['incus'];
     }
 
+    /**
+     * @return array<string, int>
+     */
+    private static function parseDockerHostSlots(string $slots): array
+    {
+        $entries = array_values(array_filter(
+            array_map('trim', explode(',', $slots)),
+            fn (string $entry): bool => $entry !== '',
+        ));
+
+        $hostSlots = [];
+
+        foreach ($entries as $entry) {
+            [$host, $slotCount] = array_pad(array_map('trim', explode(':', $entry, 2)), 2, '');
+            $host = strtolower($host);
+
+            if ($host === '' || $slotCount === '') {
+                throw new \InvalidArgumentException("Invalid Docker host slot entry [{$entry}]. Expected host:slots.");
+            }
+
+            $slots = (int) $slotCount;
+
+            if ((string) $slots !== $slotCount || $slots < 1) {
+                throw new \InvalidArgumentException("Invalid Docker host slot count [{$slotCount}] for host [{$host}].");
+            }
+
+            $hostSlots[$host] = $slots;
+        }
+
+        return $hostSlots;
+    }
+
     private static function envString(string $key, string $default): string
     {
         $value = getenv($key);
@@ -176,6 +211,7 @@ final readonly class E2EConfig
             dockerHosts: $this->dockerHosts,
             dockerMaxContainersPerHost: $this->dockerMaxContainersPerHost,
             keep: $this->keep,
+            dockerHostSlots: $this->dockerHostSlots,
         );
     }
 }

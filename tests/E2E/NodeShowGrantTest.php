@@ -99,13 +99,15 @@ it('shows real grant metadata from a control caller through the gateway api', fu
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         E2EGatewayApi::restart(
             $topology->instance('gateway'),
             'node-show-grant',
             $topology->checkout('gateway'),
+            gatewayIp: $gatewayApiIp,
         );
-        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair());
+        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
 
         nodeShowGrantSeed($topology);
 

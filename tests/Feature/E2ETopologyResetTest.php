@@ -36,6 +36,22 @@ it('cleanup is idempotent', function (): void {
     expect($teardownCalls)->toBe(1);
 });
 
+it('defaults the gateway api address to the standard wireguard address', function (): void {
+    $control = m::mock(E2EInstance::class);
+
+    $lease = new E2ETopologyLease(
+        kind: E2ETopologyKind::Control,
+        control: $control,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+        rebuild: fn () => [],
+    );
+
+    expect($lease->gatewayApiIp())->toBe('10.6.0.2');
+});
+
 it('reset calls cleanup and acquires fresh instances', function (): void {
     $oldControl = m::mock(E2EInstance::class);
     $oldControl->shouldReceive('delete')->once();

@@ -102,3 +102,21 @@ it('defaults docker max containers per host', function (): void {
             ->and($config->forHost('sidecar1')->dockerMaxContainersPerHost)->toBe(8);
     });
 });
+
+it('parses docker host slots for deterministic parallel workers', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2, sidecar2:2, beast:3',
+    ], function (): void {
+        $config = E2EConfig::fromEnvironment();
+
+        expect($config->dockerHostSlots)->toBe([
+            'sidecar1' => 2,
+            'sidecar2' => 2,
+            'beast' => 3,
+        ])->and($config->forHost('beast')->dockerHostSlots)->toBe([
+            'sidecar1' => 2,
+            'sidecar2' => 2,
+            'beast' => 3,
+        ]);
+    });
+});

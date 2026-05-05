@@ -185,6 +185,100 @@ it('acquires a control-gateway lease by launching containers from prepared image
         ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
 });
 
+it('uses the parallel worker token to create a non-overlapping docker network', function (): void {
+    Process::fake([
+        'command -v docker >/dev/null' => Process::result(),
+        'docker info >/dev/null' => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:control-gateway-control-current' >/dev/null" => Process::result(),
+        "docker image inspect 'orbit-e2e-topology:control-gateway-gateway-current' >/dev/null" => Process::result(),
+        "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
+        "docker network create --subnet '10.62.0.0/16' 'orbit-e2e-run123'" => Process::result(),
+        "docker run -d --name 'orbit-e2e-run123-control' --network 'orbit-e2e-run123' --ip '10.62.0.3' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-control-current'" => Process::result(output: "control-id\n"),
+        "docker run -d --name 'orbit-e2e-run123-gateway' --network 'orbit-e2e-run123' --ip '10.62.0.2' --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE 'orbit-e2e-topology:control-gateway-gateway-current'" => Process::result(output: "gateway-id\n"),
+        'docker exec *' => Process::result(),
+    ]);
+
+    $previous = getenv('TEST_TOKEN');
+    putenv('TEST_TOKEN=2');
+
+    try {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $lease = $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+
+        expect($lease->control()->name())->toBe('orbit-e2e-run123-control')
+            ->and($lease->gatewayApiIp())->toBe('10.62.0.2');
+
+        Process::assertRan("docker network create --subnet '10.62.0.0/16' 'orbit-e2e-run123'");
+    } finally {
+        if ($previous === false) {
+            putenv('TEST_TOKEN');
+        } else {
+            putenv("TEST_TOKEN={$previous}");
+        }
+    }
+});
+
+it('assigns parallel docker workers to configured host slots', function (): void {
+    $networkHost = null;
+
+    Process::fake(function ($process) use (&$networkHost) {
+        $host = $process->environment['DOCKER_HOST'] ?? 'local';
+
+        if ($process->command === 'command -v docker >/dev/null') {
+            return Process::result();
+        }
+
+        if ($process->command === 'docker info >/dev/null') {
+            return Process::result();
+        }
+
+        if (str_contains($process->command, 'docker image inspect')) {
+            return Process::result();
+        }
+
+        if ($process->command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'") {
+            return Process::result();
+        }
+
+        if (str_starts_with($process->command, "docker network create --subnet '10.65.0.0/16'")) {
+            $networkHost = $host;
+
+            return Process::result();
+        }
+
+        if (str_starts_with($process->command, 'docker run -d ')) {
+            return Process::result(output: "container-id\n");
+        }
+
+        if (str_starts_with($process->command, 'docker exec ')) {
+            return Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $process->command);
+    });
+
+    $previous = getenv('TEST_TOKEN');
+    putenv('TEST_TOKEN=5');
+
+    try {
+        withE2EConfigEnvironment([
+            'ORBIT_E2E_DOCKER_HOST_SLOTS' => 'sidecar1:2,sidecar2:2,beast:3',
+        ], function () use (&$networkHost): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+            $provider->acquire(E2ETopologyKind::ControlGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+
+            expect($networkHost)->toBe('ssh://beast');
+        });
+    } finally {
+        if ($previous === false) {
+            putenv('TEST_TOKEN');
+        } else {
+            putenv("TEST_TOKEN={$previous}");
+        }
+    }
+});
+
 it('cleans containers and network when docker acquire fails partway through', function (): void {
     Process::fake([
         'command -v docker >/dev/null' => Process::result(),

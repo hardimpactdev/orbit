@@ -26,6 +26,7 @@ final class E2ETopologyLease
         private readonly \Closure $rebuild,
         private ?\Closure $snapshotReset = null,
         private readonly ?\Closure $teardown = null,
+        private readonly string $gatewayApiIp = '10.6.0.2',
     ) {}
 
     public function kind(): E2ETopologyKind
@@ -56,6 +57,11 @@ final class E2ETopologyLease
     public function sshKeyPair(): SshKeyPair
     {
         return $this->sshKeyPair;
+    }
+
+    public function gatewayApiIp(): string
+    {
+        return $this->gatewayApiIp;
     }
 
     public function cleanup(?E2EPhaseTimer $timer = null): void

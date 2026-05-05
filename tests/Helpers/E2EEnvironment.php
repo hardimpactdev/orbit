@@ -15,6 +15,7 @@ function withE2EEnvironment(array $additionalKeys, array $values, Closure $callb
         'ORBIT_E2E_TOPOLOGY_PROVIDERS',
         'ORBIT_E2E_INSTANCE_PREFIX',
         'ORBIT_E2E_DOCKER_HOSTS',
+        'ORBIT_E2E_DOCKER_HOST_SLOTS',
         'ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST',
     ], $additionalKeys)));
 

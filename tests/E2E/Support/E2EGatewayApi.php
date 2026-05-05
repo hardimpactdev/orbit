@@ -6,10 +6,17 @@ namespace Tests\E2E\Support;
 
 final readonly class E2EGatewayApi
 {
-    public static function seedControlIdentity(E2EInstance $gateway, string $controlIp, string $controlUser): void
-    {
+    public static function seedControlIdentity(
+        E2EInstance $gateway,
+        string $controlIp,
+        string $controlUser,
+        string $gatewayIp = '10.6.0.2',
+        string $controlWireGuardIp = '10.6.0.3',
+    ): void {
         $controlIpValue = var_export($controlIp, true);
         $controlUserValue = var_export($controlUser, true);
+        $gatewayIpValue = var_export($gatewayIp, true);
+        $controlWireGuardIpValue = var_export($controlWireGuardIp, true);
         $orbitPathValue = var_export("/home/{$controlUser}/orbit", true);
 
         $php = <<<PHP
@@ -21,8 +28,8 @@ final readonly class E2EGatewayApi
         'tld' => null,
         'platform' => 'unknown',
         'host' => {$controlIpValue},
-        'wireguard_address' => '10.6.0.3',
-        'gateway_endpoint' => '10.6.0.2',
+        'wireguard_address' => {$controlWireGuardIpValue},
+        'gateway_endpoint' => {$gatewayIpValue},
         'ssh_user' => {$controlUserValue},
         'user' => {$controlUserValue},
         'orbit_path' => {$orbitPathValue},
@@ -46,19 +53,20 @@ PHP;
         E2ECommand::exec($gateway, 'chmod 600 /root/.ssh/id_ed25519', 'Could not install root SSH key on gateway');
     }
 
-    public static function restart(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit'): void
+    public static function restart(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit', string $gatewayIp = '10.6.0.2'): void
     {
         self::stop($gateway);
-        self::start($gateway, $label, $orbitPath);
+        self::start($gateway, $label, $orbitPath, $gatewayIp);
     }
 
-    public static function start(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit'): void
+    public static function start(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit', string $gatewayIp = '10.6.0.2'): void
     {
         $orbitPathArgument = escapeshellarg($orbitPath);
+        $gatewayIpValue = var_export($gatewayIp, true);
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf('10.6.0.2'); echo 'issued';"),
+            "cd {$orbitPathArgument} && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -66,13 +74,13 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath)."\nPHP",
+            "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath, $gatewayIp)."\nPHP",
             'Could not write gateway TLS test server',
         );
 
         E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && nohup php artisan serve --host=10.6.0.2 --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
+            "cd {$orbitPathArgument} && nohup php artisan serve --host={$gatewayIp} --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -92,7 +100,7 @@ PHP;
         );
     }
 
-    public static function waitForGatewayApi(E2EInstance $control, string $controlUser, SshKeyPair $key): void
+    public static function waitForGatewayApi(E2EInstance $control, string $controlUser, SshKeyPair $key, string $gatewayIp = '10.6.0.2'): void
     {
         $deadline = time() + 120;
         $last = null;
@@ -103,7 +111,7 @@ PHP;
                 $last = $control->ssh(
                     $controlUser,
                     $key,
-                    'curl --connect-timeout 2 --max-time 5 -fsS http://10.6.0.2/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://10.6.0.2/api/me >/dev/null',
+                    "curl --connect-timeout 2 --max-time 5 -fsS http://{$gatewayIp}/api/ca/root >/dev/null && curl --connect-timeout 2 --max-time 5 -fsSk https://{$gatewayIp}/api/me >/dev/null",
                     timeoutSeconds: 15,
                 );
 
@@ -154,9 +162,9 @@ PHP;
         return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
     }
 
-    private static function tlsServerScript(string $orbitPath): string
+    private static function tlsServerScript(string $orbitPath, string $gatewayIp): string
     {
-        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\n".<<<'PHP'
+        return "<?php\n\n\$orbitPath = ".var_export($orbitPath, true).";\n\$gatewayIp = ".var_export($gatewayIp, true).";\n\n".<<<'PHP'
 
 function respond($connection, int $status, string $body, string $contentType = 'application/json'): void
 {
@@ -227,7 +235,7 @@ $identityPayload = json_encode([
                 'status' => 'active',
                 'platform' => 'unknown',
                 'addresses' => [
-                    'wireguard' => '10.6.0.3',
+                    'wireguard' => preg_replace('/\.2$/', '.3', $gatewayIp),
                 ],
             ],
             'gateway' => [
@@ -236,7 +244,7 @@ $identityPayload = json_encode([
                 'status' => 'active',
                 'platform' => 'unknown',
                 'addresses' => [
-                    'wireguard' => '10.6.0.2',
+                    'wireguard' => $gatewayIp,
                 ],
             ],
         ],
@@ -245,14 +253,14 @@ $identityPayload = json_encode([
 
 $context = stream_context_create([
     'ssl' => [
-        'local_cert' => $orbitPath.'/storage/app/orbit/certs/10.6.0.2.crt',
-        'local_pk' => $orbitPath.'/storage/app/orbit/certs/10.6.0.2.key',
+        'local_cert' => $orbitPath.'/storage/app/orbit/certs/'.$gatewayIp.'.crt',
+        'local_pk' => $orbitPath.'/storage/app/orbit/certs/'.$gatewayIp.'.key',
         'allow_self_signed' => true,
         'verify_peer' => false,
     ],
 ]);
 
-$server = stream_socket_server('tls://10.6.0.2:443', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+$server = stream_socket_server('tls://'.$gatewayIp.':443', $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
 
 if ($server === false) {
     fwrite(STDERR, "Could not start TLS server: {$errstr}\n");
@@ -355,7 +363,7 @@ $matches = static function (string $command): bool {
     }
 
     $isPhpProcess = str_contains($command, 'php ');
-    $isGatewayHttp = str_contains($command, 'php artisan serve --host=10.6.0.2 --port=80');
+    $isGatewayHttp = str_contains($command, 'php artisan serve --host=') && str_contains($command, '--port=80');
     $isGatewayTls = str_contains($command, '/tmp/orbit-') && str_contains($command, '-tls.php');
 
     return $isPhpProcess && ($isGatewayHttp || $isGatewayTls);
