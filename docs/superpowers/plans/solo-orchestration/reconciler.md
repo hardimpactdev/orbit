@@ -105,16 +105,38 @@ Initial rules. Expand here as the loop matures.
 
    Skip the rest of this todo and continue with the next queued merge.
 
-2. **Diff/scope mismatch.** If the diff includes paths outside the todo's
+2. **Branch has no commits beyond `main`.** When `git merge --ff-only` cannot
+   advance because the branch is already at `main` (worker posted
+   `WORKER_DONE` and reviewer posted `REVIEW_APPROVED` before any commit
+   landed), abort the merge, leave the worktree intact, and on the todo
+   post:
+
+   ```text
+   RECONCILE_DONE status=NEEDS_DIRECTION reason=worker-uncommitted
+   ```
+
+   Then `send_input` to the implementer process for that todo with:
+
+   ```text
+   Reconciler: branch <branch> has no commits beyond main; your worktree at <path> still holds uncommitted edits. Commit your owned-scope changes inside the worktree:
+     cd "<path>"
+     git add <owned paths>
+     git commit -m "<focused message>"
+   Then post a fresh WORKER_DONE and stay open.
+   ```
+
+   Skip the rest of this todo and continue with the next queued merge.
+
+3. **Diff/scope mismatch.** If the diff includes paths outside the todo's
    `Owned Files Or Domains`, abort the merge and post
    `RECONCILE_DONE status=NEEDS_DIRECTION reason=scope-drift` on the todo. Do
    not auto-revert anything. Skip and continue.
 
-3. **Missing worktree or branch.** Post
+4. **Missing worktree or branch.** Post
    `RECONCILE_DONE status=FAILED reason=missing-worktree-or-branch` on the
    todo and continue.
 
-4. **Anything else.** Abort the merge, post
+5. **Anything else.** Abort the merge, post
    `RECONCILE_DONE status=NEEDS_DIRECTION reason=<short reason>` on the todo,
    continue, and let the next cycle escalate to the user.
 
