@@ -1203,8 +1203,21 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Gateway API endpoint and configured control-caller forwarding.
   - [x] Interactive input mode and human renderer progress tree.
   - [x] E2E removal cleanup gate.
-- [ ] Port `app:prune`.
-- [ ] Port `app:agent-ide`.
+- [!] Port `app:prune`.
+  - Blocked until workspace schema/models and workspace removal semantics exist.
+    `app:prune` discovers stale workspace intent and delegates removal through
+    `workspace:remove`; without gateway-tracked workspaces it cannot satisfy the
+    current command contract. Next concrete action: port `app:agent-ide`
+    app-level adapter intent, then start workspace schema/models.
+- [~] Port `app:agent-ide`.
+  - [x] Gateway-local JSON/non-interactive app adapter intent slice: stores
+    app-level adapter overrides, supports `inherit` and `none`, resolves
+    effective adapter through the owning node default, and returns empty
+    workspace cleanup until workspace intent exists.
+  - [ ] Gateway API endpoint and configured control-caller forwarding.
+  - [ ] Interactive input mode and human renderer.
+  - [ ] Workspace cleanup planning once workspace schema/removal exists.
+  - [ ] E2E adapter intent gate.
 - [ ] Decide whether legacy app helper commands such as `app:link`,
   `app:secure`, `app:status`, `app:sync`, and scheduler commands should get
   converted docs or stay retired.

@@ -25,6 +25,7 @@ class AppFactory extends Factory
             'repository' => null,
             'php_version' => '8.5',
             'adopted' => false,
+            'agent_ide_config' => null,
         ];
     }
 }

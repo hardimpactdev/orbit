@@ -21,6 +21,7 @@ use Illuminate\Support\Str;
  * @property string|null $repository
  * @property string $php_version
  * @property bool $adopted
+ * @property array<string, mixed>|null $agent_ide_config
  * @property-read Node|null $node
  * @property-read Collection<int, Process> $processes
  */
@@ -38,6 +39,7 @@ class App extends Model
         'repository',
         'php_version',
         'adopted',
+        'agent_ide_config',
     ];
 
     #[\Override]
@@ -45,6 +47,7 @@ class App extends Model
     {
         return [
             'adopted' => 'boolean',
+            'agent_ide_config' => 'array',
         ];
     }
 
