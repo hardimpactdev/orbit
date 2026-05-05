@@ -65,7 +65,12 @@ reconciler closes you when your branch is merged to `main`.
      worktree's checkout overlaid;
    - `none`: cite the todo's reason.
 
-10. Post `WORKER_DONE` with the report below, add `review-ready`, remove
+10. Commit your worktree changes on the assigned branch with one focused
+    commit per `WORKER_DONE`. The reconciler fast-forwards `main` from your
+    branch, so an uncommitted worktree blocks merging. Do not commit to
+    `main` and do not push to remotes.
+
+11. Post `WORKER_DONE` with the report below, add `review-ready`, remove
     `in-progress`, **stay open**, and wait for `send_input`.
 
 ## Feedback Loop (after first `WORKER_DONE`)
@@ -88,8 +93,10 @@ orchestrator routing duck resolution:
    stay open.
 5. Rerun the focused gate. If PHP changed, run Pint.
 6. Rerun the assigned E2E lane locally (when feasible) or note the deferral.
-7. Post a fresh `WORKER_DONE` (status `DONE` or `DONE_WITH_CONCERNS`), ensure
-   `review-ready` is set and `in-progress` is removed, and **stay open**.
+7. Commit your additional worktree changes on the assigned branch (append a
+   focused commit per iteration). Then post a fresh `WORKER_DONE` (status
+   `DONE` or `DONE_WITH_CONCERNS`), ensure `review-ready` is set and
+   `in-progress` is removed, and **stay open**.
 
 ## Termination
 
