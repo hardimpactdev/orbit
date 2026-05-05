@@ -183,24 +183,39 @@ final readonly class NodeGrantController implements Loggable
         ], $status);
     }
 
-    public function activityLogType(): ActivityLogType
+    public function effect(): ActivityLogType
     {
         return ActivityLogType::Write;
     }
 
-    public function activityLogAction(): string
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
     {
         return 'api:POST /nodes/grant';
     }
 
-    public function activityLogSubject(): ?Model
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
     {
         return Node::query()
             ->where('name', (string) request('serving_node'))
             ->first();
     }
 
-    public function activityLogProperties(): array
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    public function properties(): array
     {
         return [
             'consuming_node' => (string) request('consuming_node'),
@@ -208,8 +223,18 @@ final readonly class NodeGrantController implements Loggable
         ];
     }
 
-    public function activityLogDescription(): string
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): string
     {
         return sprintf('%s granted access to %s', (string) request('consuming_node'), (string) request('serving_node'));
+    }
+
+    public function activityLogDescription(): string
+    {
+        return $this->description();
     }
 }

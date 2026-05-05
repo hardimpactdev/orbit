@@ -215,17 +215,27 @@ final readonly class NodeDefaultController implements Loggable
         ], $status);
     }
 
-    public function activityLogType(): ActivityLogType
+    public function effect(): ActivityLogType
     {
         return request()->isMethod('GET') ? ActivityLogType::Read : ActivityLogType::Write;
     }
 
-    public function activityLogAction(): string
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
     {
         return sprintf('api:%s /nodes/default', request()->method());
     }
 
-    public function activityLogSubject(): ?Model
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
     {
         if (! request()->isMethod('PUT')) {
             return null;
@@ -236,7 +246,12 @@ final readonly class NodeDefaultController implements Loggable
             ->first();
     }
 
-    public function activityLogProperties(): array
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    public function properties(): array
     {
         return [
             'action' => $this->activityAction(),
@@ -244,13 +259,23 @@ final readonly class NodeDefaultController implements Loggable
         ];
     }
 
-    public function activityLogDescription(): ?string
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
     {
         return match ($this->activityAction()) {
             'set' => sprintf('Default node set to %s', (string) request('name')),
             'clear' => 'Default node cleared',
             default => null,
         };
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
     }
 
     private function activityAction(): string

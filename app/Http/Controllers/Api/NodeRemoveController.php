@@ -183,22 +183,37 @@ final class NodeRemoveController implements Loggable
         ], $status);
     }
 
-    public function activityLogType(): ActivityLogType
+    public function effect(): ActivityLogType
     {
         return ActivityLogType::Destructive;
     }
 
-    public function activityLogAction(): string
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
     {
         return 'api:DELETE /nodes/{name}';
     }
 
-    public function activityLogSubject(): ?Model
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
     {
         return $this->activitySubject;
     }
 
-    public function activityLogProperties(): array
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    public function properties(): array
     {
         return [
             'target_node' => $this->activityTargetName ?? (string) request()->route('name'),
@@ -208,10 +223,20 @@ final class NodeRemoveController implements Loggable
         ];
     }
 
-    public function activityLogDescription(): ?string
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
     {
         $target = $this->activityTargetName ?? (string) request()->route('name');
 
         return $target !== '' ? "Node {$target} removed" : null;
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
     }
 }

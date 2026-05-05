@@ -24,10 +24,10 @@ final readonly class ActivityLogger
         }
 
         $activity = activity($channel)
-            ->event($loggable->activityLogAction())
+            ->event($loggable->type())
             ->withProperties(array_merge(
-                ['type' => $loggable->activityLogType()->value],
-                $loggable->activityLogProperties(),
+                ['type' => $loggable->effect()->value],
+                $loggable->properties(),
                 $extraProperties,
             ));
 
@@ -35,12 +35,12 @@ final readonly class ActivityLogger
             $activity = $activity->causedBy($causer);
         }
 
-        $subject = $loggable->activityLogSubject();
+        $subject = $loggable->subject();
         if ($subject !== null) {
             $activity = $activity->performedOn($subject);
         }
 
-        $activity->log($loggable->activityLogDescription() ?? $loggable->activityLogAction());
+        $activity->log($loggable->description() ?? $loggable->type());
 
         if ($uuid !== null && LogBatch::isOpen()) {
             LogBatch::endBatch();

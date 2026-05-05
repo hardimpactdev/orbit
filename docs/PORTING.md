@@ -922,7 +922,7 @@ The vocabulary swap is intentional: doctrine `effect` = old `Type`, doctrine
 `type` = old `Action`. Aligned with the `activity:list` tech contract column
 names and adds `destructive` to the effect set.
 
-- [ ] `ACTIVITY-LOGGABLE-RENAME-1` — rename Loggable contract surface in PHP
+- [x] `ACTIVITY-LOGGABLE-RENAME-1` — rename Loggable contract surface in PHP
   (`App\Contracts\Loggable`, traits, controllers) to the doctrine names.
   Keep old method names as thin proxies until callers migrate, then remove.
 - [~] `ACTIVITY-EFFECT-DESTRUCTIVE-IMPL-1` — extend the activity-log effect

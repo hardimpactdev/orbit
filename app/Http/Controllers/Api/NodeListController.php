@@ -115,28 +115,53 @@ final readonly class NodeListController implements Loggable
         ])->all();
     }
 
-    public function activityLogType(): ActivityLogType
+    public function effect(): ActivityLogType
     {
         return ActivityLogType::Read;
     }
 
-    public function activityLogAction(): string
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
     {
         return 'api:GET /nodes';
     }
 
-    public function activityLogSubject(): ?Model
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
     {
         return null;
     }
 
-    public function activityLogProperties(): array
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    public function properties(): array
     {
         return [];
     }
 
-    public function activityLogDescription(): ?string
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
     {
         return null;
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
     }
 }

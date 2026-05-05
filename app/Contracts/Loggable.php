@@ -12,19 +12,19 @@ interface Loggable
     /**
      * Whether this action mutates state. Every implementation MUST declare.
      */
-    public function activityLogType(): ActivityLogType;
+    public function effect(): ActivityLogType;
 
     /**
      * Human-stable action name. Defaults (see traits) usually derive from
      * command name or "METHOD /path", but implementations may override.
      */
-    public function activityLogAction(): string;
+    public function type(): string;
 
     /**
      * The domain entity this action targets, if any (e.g. the Node granted,
      * the App deployed). Null means the action has no single target.
      */
-    public function activityLogSubject(): ?Model;
+    public function subject(): ?Model;
 
     /**
      * Structured, audit-relevant properties. Implementations MUST NOT include
@@ -33,10 +33,10 @@ interface Loggable
      *
      * @return array<string, mixed>
      */
-    public function activityLogProperties(): array;
+    public function properties(): array;
 
     /**
      * Optional human-readable summary for the log description column.
      */
-    public function activityLogDescription(): ?string;
+    public function description(): ?string;
 }

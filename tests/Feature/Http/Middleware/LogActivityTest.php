@@ -27,25 +27,50 @@ final class FakeWriteController implements Loggable
 
     public function activityLogType(): ActivityLogType
     {
+        return $this->effect();
+    }
+
+    public function effect(): ActivityLogType
+    {
         return ActivityLogType::Write;
     }
 
     public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function type(): string
     {
         return 'api:POST /_test/fake-write';
     }
 
     public function activityLogSubject(): ?Model
     {
+        return $this->subject();
+    }
+
+    public function subject(): ?Model
+    {
         return null;
     }
 
     public function activityLogProperties(): array
     {
+        return $this->properties();
+    }
+
+    public function properties(): array
+    {
         return ['probe' => 'ok'];
     }
 
     public function activityLogDescription(): ?string
+    {
+        return $this->description();
+    }
+
+    public function description(): ?string
     {
         return null;
     }
@@ -60,27 +85,110 @@ final class FakeDestructiveController implements Loggable
 
     public function activityLogType(): ActivityLogType
     {
+        return $this->effect();
+    }
+
+    public function effect(): ActivityLogType
+    {
         return ActivityLogType::Destructive;
     }
 
     public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function type(): string
     {
         return 'api:DELETE /_test/fake-destructive';
     }
 
     public function activityLogSubject(): ?Model
     {
+        return $this->subject();
+    }
+
+    public function subject(): ?Model
+    {
         return null;
     }
 
     public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function properties(): array
     {
         return [];
     }
 
     public function activityLogDescription(): ?string
     {
+        return $this->description();
+    }
+
+    public function description(): ?string
+    {
         return null;
+    }
+}
+
+final class FakeDoctrineController implements Loggable
+{
+    public function __invoke(Request $request): JsonResponse
+    {
+        return new JsonResponse(['success' => true]);
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    public function type(): string
+    {
+        return 'api:GET /_test/fake-doctrine';
+    }
+
+    public function subject(): ?Model
+    {
+        return null;
+    }
+
+    public function properties(): array
+    {
+        return ['method_surface' => 'doctrine'];
+    }
+
+    public function description(): ?string
+    {
+        return 'doctrine method names';
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        throw new RuntimeException('legacy effect method should not be called');
+    }
+
+    public function activityLogAction(): string
+    {
+        throw new RuntimeException('legacy type method should not be called');
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        throw new RuntimeException('legacy subject method should not be called');
+    }
+
+    public function activityLogProperties(): array
+    {
+        throw new RuntimeException('legacy properties method should not be called');
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        throw new RuntimeException('legacy description method should not be called');
     }
 }
 
@@ -101,6 +209,9 @@ describe('LogActivity middleware', function (): void {
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
             ->post('/_test/fake-write', FakeWriteController::class);
+
+        Route::middleware([WireGuardIdentity::class, LogActivity::class])
+            ->get('/_test/fake-doctrine', FakeDoctrineController::class);
     });
 
     it('logs an entry with causer hydrated from the authenticated node', function (): void {
@@ -233,5 +344,33 @@ describe('LogActivity middleware', function (): void {
         expect($entry)->not->toBeNull();
         expect($entry->event)->toBe('api:DELETE /_test/fake-destructive');
         expect($entry->properties->get('type'))->toBe('destructive');
+    });
+
+    it('uses the doctrine Loggable method names when writing activity', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'caller',
+            'role' => 'control',
+            'host' => LOG_TEST_WG_IP,
+            'ssh_user' => 'test',
+            'orbit_path' => '/home/test/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'wireguard_address' => LOG_TEST_WG_IP,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
+            ->getJson('/_test/fake-doctrine')
+            ->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:GET /_test/fake-doctrine');
+        expect($entry->description)->toBe('doctrine method names');
+        expect($entry->properties->get('type'))->toBe('read');
+        expect($entry->properties->get('method_surface'))->toBe('doctrine');
     });
 });
