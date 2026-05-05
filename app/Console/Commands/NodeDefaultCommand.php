@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
@@ -143,7 +142,7 @@ class NodeDefaultCommand extends Command
     {
         try {
             $nodes = $this->fetchDevelopmentAppNodes();
-        } catch (GatewayApiException|RuntimeException) {
+        } catch (RuntimeException) {
             return $this->failGatewayUnavailable();
         }
 
@@ -190,7 +189,7 @@ class NodeDefaultCommand extends Command
     {
         try {
             $nodes = $this->fetchDevelopmentAppNodes();
-        } catch (GatewayApiException|RuntimeException) {
+        } catch (RuntimeException) {
             return $this->failGatewayUnavailable();
         }
 
@@ -251,8 +250,6 @@ class NodeDefaultCommand extends Command
             $dto = app(GatewayConnector::class)
                 ->send(new ListNodesRequest(role: 'app', environment: 'development'))
                 ->dto();
-        } catch (GatewayApiException $e) {
-            throw new RuntimeException($e->getMessage() !== '' ? $e->getMessage() : 'Gateway request failed.');
         } catch (Throwable $e) {
             throw new RuntimeException($e->getMessage() !== '' ? $e->getMessage() : 'Gateway request failed.');
         }

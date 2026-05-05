@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\WireGuardPeer;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
@@ -13,8 +14,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn (): null => MockClient::destroyGlobal());
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 function nodeNewExpectedLocalPlatform(): string
 {
@@ -23,6 +29,16 @@ function nodeNewExpectedLocalPlatform(): string
         'Linux' => 'ubuntu_24-04',
         default => 'unknown',
     };
+}
+
+/**
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeNodeCreateGateway(array|string $body, int $status = 200): MockClient
+{
+    return MockClient::global([
+        CreateNodeRequest::class => MockResponse::make($body, $status),
+    ]);
 }
 
 describe('node:new', function (): void {
@@ -848,31 +864,29 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes' => Http::response([
-                'success' => [
-                    'data' => [
-                        'result' => ['action' => 'created'],
-                        'node' => [
-                            'name' => 'app-dev-1',
-                            'role' => 'app',
-                            'environment' => 'development',
-                            'tld' => 'test',
-                            'platform' => 'unknown',
-                            'addresses' => [
-                                'wireguard' => '10.6.0.4',
-                                'gateway_endpoint' => '10.6.0.2',
-                            ],
-                            'status' => 'active',
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'app-dev-1',
+                        'role' => 'app',
+                        'environment' => 'development',
+                        'tld' => 'test',
+                        'platform' => 'unknown',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.4',
+                            'gateway_endpoint' => '10.6.0.2',
                         ],
-                        'provisioning' => [
-                            'transport' => 'ssh',
-                            'host' => '192.0.2.20',
-                            'status' => 'complete',
-                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.20',
+                        'status' => 'complete',
                     ],
                 ],
-            ]),
+            ],
         ]);
 
         Process::fake();
@@ -894,14 +908,15 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['node']['name'])->toBe('app-dev-1')
             ->and(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://10.6.0.2/api/nodes'
-            && $request['name'] === 'app-dev-1'
-            && $request['role'] === 'app'
-            && $request['host'] === '192.0.2.20'
-            && $request['environment'] === 'development'
-            && $request['tld'] === 'test'
-            && $request['ssh_user'] === 'provisioner');
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'app-dev-1',
+                'role' => 'app',
+                'host' => '192.0.2.20',
+                'environment' => 'development',
+                'tld' => 'test',
+                'ssh_user' => 'provisioner',
+            ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });
@@ -917,30 +932,28 @@ describe('node:new', function (): void {
             'updated_at' => now(),
         ]);
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes' => Http::response([
-                'success' => [
-                    'data' => [
-                        'result' => ['action' => 'created'],
-                        'node' => [
-                            'name' => 'app-dev-1',
-                            'role' => 'app',
-                            'environment' => 'development',
-                            'tld' => 'test',
-                            'platform' => 'unknown',
-                            'addresses' => [
-                                'wireguard' => '10.6.0.3',
-                            ],
-                            'status' => 'active',
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'created'],
+                    'node' => [
+                        'name' => 'app-dev-1',
+                        'role' => 'app',
+                        'environment' => 'development',
+                        'tld' => 'test',
+                        'platform' => 'unknown',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.3',
                         ],
-                        'provisioning' => [
-                            'transport' => 'ssh',
-                            'host' => '192.0.2.20',
-                            'status' => 'complete',
-                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'ssh',
+                        'host' => '192.0.2.20',
+                        'status' => 'complete',
                     ],
                 ],
-            ]),
+            ],
         ]);
 
         Process::fake();
@@ -962,14 +975,15 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['node']['name'])->toBe('app-dev-1')
             ->and(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://10.6.0.2/api/nodes'
-            && $request['name'] === 'app-dev-1'
-            && $request['role'] === 'app'
-            && $request['host'] === '192.0.2.20'
-            && $request['environment'] === 'development'
-            && $request['tld'] === 'test'
-            && $request['ssh_user'] === 'provisioner');
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'app-dev-1',
+                'role' => 'app',
+                'host' => '192.0.2.20',
+                'environment' => 'development',
+                'tld' => 'test',
+                'ssh_user' => 'provisioner',
+            ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });

@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
+use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
-use App\Services\Gateway\GatewayRequestSender;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
@@ -282,14 +285,25 @@ class NodeNewCommand extends Command
     private function forwardAppNodeCreation(string $name, array $inputs): int
     {
         try {
-            $response = GatewayRequestSender::make()->post('/api/nodes', [
-                'name' => $name,
-                'role' => 'app',
-                'host' => $inputs['host'],
-                'environment' => $inputs['environment'],
-                'tld' => $inputs['tld'],
-                'ssh_user' => $inputs['sshUser'],
-            ]);
+            /** @var NodeCreateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new CreateNodeRequest(
+                    name: $name,
+                    role: 'app',
+                    host: $inputs['host'],
+                    environment: $inputs['environment'],
+                    tld: $inputs['tld'],
+                    sshUser: $inputs['sshUser'],
+                ))
+                ->dto();
+        } catch (GatewayApiException $exception) {
+            return $this->failCommand(
+                code: $exception->errorCode() ?? 'gateway_unavailable',
+                message: $exception->getMessage() !== ''
+                    ? $exception->getMessage()
+                    : 'Gateway API request failed.',
+                meta: $exception->errorMeta(),
+            );
         } catch (RuntimeException $exception) {
             return $this->failCommand(
                 code: 'gateway_unavailable',
@@ -301,16 +315,8 @@ class NodeNewCommand extends Command
             );
         }
 
-        if (! $response->isSuccess()) {
-            return $this->failCommand(
-                code: $response->errorCode() ?? 'gateway_unavailable',
-                message: $response->errorMessage() ?? 'Gateway API request failed.',
-                meta: $response->errorMeta(),
-            );
-        }
-
         if ($this->wantsJson()) {
-            return $this->jsonSuccess($response->data());
+            return $this->jsonSuccess($dto->data);
         }
 
         $this->info("Created app node {$name}.");
