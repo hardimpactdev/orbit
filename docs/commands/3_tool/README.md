@@ -59,6 +59,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
 | [`caddy`](catalog/caddy.md) | Caddy | system service | Required baseline, adopted and kept converged | `always` | lifecycle, reload, reconfigure, update, logs, fix, adopt |
+| [`supervisor`](catalog/supervisor.md) | Supervisor | system service | Required baseline, adopted and kept converged | `always` | lifecycle, reload, logs, fix, adopt |
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed tools |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | system binary | Required baseline, adopted and kept converged | `always` | probe, adopt |

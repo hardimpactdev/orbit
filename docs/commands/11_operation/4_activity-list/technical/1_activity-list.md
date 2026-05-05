@@ -95,8 +95,8 @@ command does not prompt.
 
 `activity:list` must not:
 - Mutate gateway intent, local settings, or node reality.
-- Inspect live node state, app runtimes, systemd units, process logs, Caddy, or
-  filesystem state.
+- Inspect live node state, app runtimes, runtime backend programs, process
+  logs, Caddy, or filesystem state.
 - Fix drift, adopt reality, or enqueue repair work.
 - Collapse correlated activity into one synthetic row; correlation is metadata,
   not a replacement for individual history entries.

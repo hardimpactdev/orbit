@@ -97,8 +97,8 @@ resolved activity id.
 `activity:show` must not:
 - Mutate gateway intent, local settings, or node reality.
 - Replay, revert, repair, adopt, or retry the selected activity.
-- Inspect live node state, app runtimes, systemd units, process logs, Caddy, or
-  filesystem state.
+- Inspect live node state, app runtimes, runtime backend programs, process
+  logs, Caddy, or filesystem state.
 - Treat activity details as current readiness or drift diagnostics.
 
 ## Renderer Contracts

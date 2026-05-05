@@ -140,8 +140,8 @@ It is the only doctor mode that may intentionally mutate gateway intent.
 
 `doctor` must not:
 - Invent a state family outside the stable family keys.
-- Treat backend names such as Caddy, systemd, UFW, or package managers as public
-  doctor families.
+- Treat backend names such as Caddy, Supervisor, systemd, UFW, or package
+  managers as public doctor families.
 - Create new fleet membership, apps, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.

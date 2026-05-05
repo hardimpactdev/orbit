@@ -30,10 +30,12 @@ owning family concept document.
   [Process Concepts](commands/7_process/process-concepts.md).
 - **Supervisor program** — backend-specific name for the rendered runtime
   unit. See [Process Concepts](commands/7_process/process-concepts.md).
-- **Orbit Scheduler** — resident `orbit-scheduler` Artisan-command daemon
-  supervised by the runtime backend on every gateway and app node. Owns
+- **Orbit Scheduler** — the resident schedule executor daemon (runs
+  `php artisan orbit:scheduler:run`) on every gateway and app node. Owns
   schedule evaluation, due-run dispatch, overlap policy, run history, and
-  heartbeat. See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
+  heartbeat. The daemon is enacted as the `orbit_scheduler` Supervisor
+  program; the program supervises the daemon, the daemon does the work.
+  See [Schedule Concepts](commands/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager that keeps the runtime
   backend alive. systemd on Ubuntu. Not the product-level process runtime.
 - **RemoteShell** — gateway-to-app-node execution primitive. See
@@ -231,6 +233,7 @@ Source: [Deploy Concepts](commands/10_deploy/deploy-concepts.md).
 - **Latest deployment status**
 - **Deployment health**
 - **Deploy-domain boundaries**
+- **Cross-family invocation**
 <!-- /concept-index -->
 
 ## Operation Concepts

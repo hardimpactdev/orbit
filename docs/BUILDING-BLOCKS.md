@@ -304,6 +304,11 @@ Supervisor — Supervisor itself does not provide cron-style scheduling. Its
 contributions are: keep the PHP process alive, restart it on crash, and
 capture stdout/stderr for `process:logs orbit_scheduler`.
 
+Other host services — Caddy, PHP-FPM, Docker, and Supervisor itself — run
+directly under host init as peers of Supervisor, not under Supervisor.
+Supervisor's job is to manage Orbit-defined runtime units (process family
+runtime units and the Orbit Scheduler), not the host service stack.
+
 The daemon's per-tick logic is shared with the `orbit schedule:run`
 command. The daemon is the steady-state path; `schedule:run` is the
 on-demand path used for testing, troubleshooting, and recovery.

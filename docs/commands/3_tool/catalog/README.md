@@ -56,12 +56,13 @@ Orbit adopts, observes, and keeps them converged, but `tool:install` does not
 create them from scratch unless the tool file says otherwise.
 
 1. [`caddy`](caddy.md)
-2. [`docker`](docker.md)
-3. [`viteplus`](viteplus.md)
-4. [`php-cli`](php-cli.md)
-5. [`gh`](gh.md)
-6. [`composer`](composer.md)
-7. [`dns`](dns.md)
+2. [`supervisor`](supervisor.md)
+3. [`docker`](docker.md)
+4. [`viteplus`](viteplus.md)
+5. [`php-cli`](php-cli.md)
+6. [`gh`](gh.md)
+7. [`composer`](composer.md)
+8. [`dns`](dns.md)
 
 ## Installable Tools
 

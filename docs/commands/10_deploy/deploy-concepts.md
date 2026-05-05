@@ -47,8 +47,8 @@ it does not override the [Blueprint](../../BLUEPRINT.md).
 - **Deployment run history:** Durable app-owned gateway history of deployment
   runs. Read commands use stored history and do not inspect live node state.
 - **Deployment log:** Stored per-step deployment output for a previous run. It
-  is captured gateway history, not live streaming output, journald output, or a
-  node filesystem read.
+  is captured gateway history, not live streaming output, runtime backend
+  log output, or a node filesystem read.
 - **Latest deployment status:** App-owned gateway state recording the newest
   deployment outcome used by app doctor when evaluating production app health.
 
@@ -63,3 +63,9 @@ it does not override the [Blueprint](../../BLUEPRINT.md).
   manage development apps, create process definitions or schedules, inspect live
   node state during reads, model releases as standalone state, or prove
   production app health after a deployment run.
+- **Cross-family invocation:** Deploy steps may invoke documented commands
+  from other families as their step command, including
+  `process:restart [name]` after artifact rotation or `php:reload-fpm`
+  after a PHP version change. Lifecycle semantics still belong to the
+  invoked family; the deploy family only records the step's exit code and
+  captured output as run history.

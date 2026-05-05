@@ -107,7 +107,7 @@ Write authoritative app intent to the gateway SQLite database:
 Execute the convergent behavior shared with `app:register`:
 - **PHP-FPM:** Render and install PHP-FPM pool configuration on the target node.
 - **Proxy Routes:** Create a gateway-owned proxy route for the app.
-- **Process Artifacts:** Render and install systemd units for default processes.
+- **Process Artifacts:** Render and install runtime units (Supervisor programs) for default processes.
 - **Enactment Verification:** Verify that command-owned setup and artifact
   writes completed. This does not assert application HTTP readiness; a new app
   may still need project setup steps before it is healthy, and durable runtime

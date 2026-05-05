@@ -56,9 +56,10 @@ shared invocation model.
 
 ### History Boundary Rules
 
-`deploy:log` reads past captured deployment output only. It must not stream live
-deployment output, SSH into the owning app node, read journald, mutate gateway
-intent, mutate deployment history, or repair failed deployments.
+`deploy:log` reads past captured deployment output only. It must not stream
+live deployment output, SSH into the owning app node, read runtime backend
+logs, mutate gateway intent, mutate deployment history, or repair failed
+deployments.
 
 ## Renderer Contracts
 
@@ -89,5 +90,5 @@ health checks and may reference latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract for production app lookup, authorization, run lookup, step filtering, line filtering, stored-output read behavior, read-only side-effect boundary, no live SSH or journald reads, failure codes, and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract for production app lookup, authorization, run lookup, step filtering, line filtering, stored-output read behavior, read-only side-effect boundary, no live SSH or runtime backend log reads, failure codes, and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, per-step output shape, run-to-app ownership validation, step lookup rules, line filtering, and stored output mapping. |

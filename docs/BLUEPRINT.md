@@ -49,8 +49,8 @@ interfaces.
 
 App, workspace, process, and node identity names are slugs. They are not
 presentation labels. Future labels may contain spaces, capitalization, or
-punctuation, but labels must not drive paths, hostnames, systemd unit names, or
-durable keys.
+punctuation, but labels must not drive paths, hostnames, runtime backend
+program names, or durable keys.
 
 Identity slugs must match:
 
@@ -188,7 +188,8 @@ services and tenant app:
   inside an app or workspace;
 - PHP-FPM;
 - Caddy or a future proxy backend;
-- systemd units for Orbit-managed processes and schedules;
+- Supervisor as the runtime backend for Orbit-managed runtime units;
+- the `orbit_scheduler` Supervisor program running the Orbit Scheduler daemon;
 - Docker services when enabled;
 - WireGuard and SSH;
 - small Orbit-authored hook files such as process-event notifiers.
@@ -212,8 +213,8 @@ Runtime-control commands are a separate category. For example, app-node callers
 may run documented process lifecycle commands such as `process:start`,
 `process:stop`, and `process:restart` when authorized for the resolved app or
 workspace context. Those commands still call the gateway typed API and do not
-grant the app-node CLI direct systemd access or durable process-intent write
-permission.
+grant the app-node CLI direct runtime backend access or durable
+process-intent write permission.
 
 App nodes carry an `environment` constraint of `development` or `production`.
 Development app nodes may own a development TLD default used by future app and
@@ -274,8 +275,10 @@ node reality through
 
 Non-CLI app-node to gateway traffic is exceptional. It is allowed only for
 narrow, purpose-built event ingestion, such as process lifecycle notifications
-emitted by a systemd hook. There is no generic app-node RPC daemon, no catch-all
-webhook receiver, and no app-node Orbit control plane.
+emitted by a runtime backend hook, plus the Orbit Scheduler's outbound
+schedule-intent sync and run-history reporting. There is no generic
+app-node RPC daemon, no catch-all webhook receiver, and no app-node Orbit
+control plane.
 
 ## State Model
 
@@ -675,8 +678,8 @@ Tools are node capabilities Orbit expects or manages. A tool may be:
 - authenticated or configured;
 - required by a node role.
 
-The product concept is `tool`. Package managers, binaries, Docker services, and
-systemd units are backend details.
+The product concept is `tool`. Package managers, binaries, Docker services,
+host services, and Supervisor programs are backend details.
 
 ### Firewall Rules
 
