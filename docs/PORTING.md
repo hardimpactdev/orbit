@@ -245,8 +245,13 @@ yet satisfy the full product contracts.
   - Gateway resolution slice implemented: control callers resolve named/domain
     targets through typed `ShowAppRequest`, preserve baseline profiling from
     the caller process, and report `origin=caller`.
+  - Gateway-origin API slice implemented: `GET /api/profile` resolves and
+    authorizes visible apps on the gateway, performs the profile request from
+    gateway origin, and app callers use typed `ShowProfileRequest` instead of a
+    caller-local HTTP profile edge.
   - Contract gaps:
-    - app caller gateway resolution and gateway-origin fallback profiling.
+    - control caller gateway-origin fallback profiling when caller-local
+      profiling cannot reach the route.
     - app/workspace cwd inference beyond gateway-local app paths.
     - interactive app selector.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.

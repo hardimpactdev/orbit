@@ -8,6 +8,7 @@ use App\Actions\Profile\ShowProfile;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\ShowAppRequest;
+use App\Http\Gateway\Requests\Profile\ShowProfileRequest;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
@@ -123,6 +124,26 @@ class ProfileCommand extends Command
             );
         }
 
+        if ($callerRole === 'app') {
+            $gatewayResult = $this->profileThroughGateway($selector, $uri, $nodeConstraint);
+
+            if ($gatewayResult instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $gatewayResult->errorCode() ?? 'gateway_unavailable',
+                    message: $gatewayResult->getMessage() !== '' ? $gatewayResult->getMessage() : 'Gateway connection is required to profile this target.',
+                    meta: $gatewayResult->errorMeta(),
+                );
+            }
+
+            if ($this->wantsJson()) {
+                return $this->jsonSuccess($gatewayResult);
+            }
+
+            $this->renderHuman($gatewayResult);
+
+            return self::SUCCESS;
+        }
+
         if ($callerRole === 'gateway') {
             $app = $this->resolveLocalApp($selector, $nodeConstraint);
 
@@ -202,6 +223,34 @@ class ProfileCommand extends Command
         $this->renderHuman($data);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array<string, mixed>|GatewayApiException
+     */
+    private function profileThroughGateway(string $selector, string $uri, ?string $nodeConstraint): array|GatewayApiException
+    {
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ShowProfileRequest(
+                    target: $selector,
+                    uri: $uri,
+                    authMode: $this->authMode(),
+                    user: $this->stringOption('user'),
+                    node: $nodeConstraint,
+                ))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException(
+                message: 'Gateway connection is required to profile this target.',
+                errorCode: 'gateway_unavailable',
+                errorMeta: [],
+            );
+        }
+
+        return $dto->data;
     }
 
     /**

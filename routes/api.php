@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\NodeRevokeController;
 use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Middleware\CorrelationHeader;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\WireGuardIdentity;
@@ -29,6 +30,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/me', MeController::class);
+        Route::get('/profile', ProfileController::class);
         Route::get('/apps', AppListController::class);
         Route::get('/apps/{app}', AppShowController::class);
         Route::get('/nodes', NodeListController::class);
