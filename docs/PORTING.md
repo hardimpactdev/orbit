@@ -1230,7 +1230,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
 - [x] Create workspace implementation abstraction seed.
 - [x] Port workspace schema and models.
-- [~] Port workspace registry read commands.
+- [x] Port workspace registry read commands.
   - [x] `workspace:list` gateway-local registry read, typed gateway API
     forwarding, access-policy filtering, human/JSON renderers, focused Pest
     coverage, and E2E gate classified as `lane=none` because the command is a
@@ -1251,11 +1251,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     - [x] Read-only Docker feature E2E gate from the command contract.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
-- [~] Port workspace history and log commands.
+- [x] Port workspace history and log commands.
   - [x] `workspace:history` registry read, typed gateway API forwarding,
     pagination filters, human/JSON renderers, focused Pest coverage, and
     read-only Docker feature E2E gate.
-  - [ ] `workspace:log`.
+  - [x] `workspace:log` stored-output read, typed gateway API forwarding,
+    access-policy filtering, human/JSON renderers, focused Pest coverage, and
+    read-only Docker feature E2E gate.
 - [ ] Port workspace progress stream behavior.
 
 ## Process Workstream
@@ -1414,6 +1416,7 @@ for the Saloon-based gateway transport pattern.
   - [x] `workspace:show` API controller plus Saloon request/DTO for named
     registry lookup.
   - [x] `workspace:history` API controller plus Saloon request/DTO.
+  - [x] `workspace:log` API controller plus Saloon request/DTO.
 - [ ] Port process API controllers and typed client requests.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.

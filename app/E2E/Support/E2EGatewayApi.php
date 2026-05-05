@@ -435,6 +435,11 @@ PHP;
 
             return run_orbit_command(implode(' ', $parts));
         }
+
+        function run_workspace_log(string $run): array
+        {
+            return run_orbit_command('php artisan workspace:log '.escapeshellarg($run).' --json');
+        }
         
         $identityPayload = json_encode([
             'success' => [
@@ -697,6 +702,14 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_workspace_history(null, $query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^GET /api/workspaces/runs/([^ ?]+)/log#', $requestLine, $matches) === 1) {
+                [$exitCode, $output] = run_workspace_log(urldecode($matches[1]));
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

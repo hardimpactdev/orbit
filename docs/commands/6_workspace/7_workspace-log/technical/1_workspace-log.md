@@ -171,7 +171,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php` | Command contract: input resolution and `<run>` validation, run lookup, authorization check, log-not-found vs run-not-found distinction, per-run and per-step timing storage, absence of lifecycle env capture, truncation policy with `[TRUNCATED]` marker and per-step truncation booleans, status taxonomy mapping, read-only and gateway-only guarantees, and failure semantics. |
-| `tests/E2E/Read/WorkspaceLogTest.php` | Real read-only `workspace:log <run> --json` against a workspace with both a completed and a failed setup run, asserting captured stdout/stderr, per-step timing, and truncation reporting. |
+| `tests/E2E/WorkspaceLogTest.php` | Real read-only `workspace:log <run> --json` against a workspace with both a completed and a failed setup run, asserting captured stdout/stderr, per-step timing, and truncation reporting. |
 
 Renderer-specific test mapping lives in:
 
