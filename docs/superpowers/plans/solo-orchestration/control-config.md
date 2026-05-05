@@ -10,10 +10,10 @@ coordination_todo: 257
 
 loop_clock:
   enabled: true
-  interval_minutes: 15
+  interval_minutes: 30
 
 pipeline:
-  ready_target: 5
+  ready_target: 8
   filler_enabled: true
   dispatch_order: []
 

@@ -146,3 +146,5 @@ implementer owns rebase resolution inside its worktree.
 
 Do not implement, review code, run product tests, spawn implementers,
 reviewers, E2E, ducks, workspace setups, or scouts. Do not set timers.
+
+When you reach this point in the procedure you need to close yourself in Solo.

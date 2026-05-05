@@ -53,3 +53,5 @@ what_was_checked:
 
 Do not edit todos or files, run commands, spawn agents, or propose more than
 one path.
+
+When you reach this point in the procedure you need to close yourself in Solo.

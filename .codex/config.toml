@@ -3,3 +3,6 @@ command = "php"
 args = ["artisan", "boost:mcp"]
 cwd = "."
 required = true
+
+[mcp_servers.laravel-boost.tools.search-docs]
+approval_mode = "approve"

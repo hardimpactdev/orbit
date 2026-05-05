@@ -55,8 +55,8 @@ The orchestrator waits for your terminal label before dispatching implementers.
    ```text
    Read docs/superpowers/plans/solo-orchestration/todo-scout.md and validate todo <todo_id>.
    ```
-   Fire-and-forget. Their `SCOUT_REPORT` outcomes apply in a future cycle's
-   step 4. Deliberately held older drafts stay held; do not re-scout them.
+
+   Spawned scouts will close themselves in Solo when done. They will leave a comment on the todo.
 
 8. Append one report on `coordination_todo` and exit:
 
@@ -80,3 +80,5 @@ gap_reason: <why no new candidates were created, or none>
 
 Do not implement, review, run E2E, merge, dispatch implementers, dispatch
 workspace setups, or set timers.
+
+When you reach this point in the procedure you need to close yourself in Solo.

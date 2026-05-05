@@ -74,3 +74,5 @@ failures:
 
 Do not implement, run focused gates, edit product docs, spawn roles, or
 dispatch the implementer.
+
+When you reach this point in the procedure you need to close yourself in Solo.

@@ -51,3 +51,5 @@ reason:
 ```
 
 Do not implement, promote, run tests, or spawn agents.
+
+When you reach this point in the procedure you need to close yourself in Solo.

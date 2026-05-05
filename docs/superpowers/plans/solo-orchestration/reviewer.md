@@ -79,3 +79,5 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    - remove `review-ready`, add `needs-direction`.
 
 Do not edit code, run E2E, or complete the todo.
+
+When you reach this point in the procedure you need to close yourself in Solo.

@@ -130,3 +130,5 @@ risks:
 Do not implement, review code, run product tests, run E2E lanes, merge
 branches, or close implementer agents. Reviewer/E2E/duck/scout/pipeline-filler
 results land for later cycles.
+
+When you reach this point in the procedure you need to close yourself in Solo.
