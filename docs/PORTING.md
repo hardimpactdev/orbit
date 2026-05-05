@@ -417,10 +417,11 @@ Use this setup before promoting new command-port E2E gates:
    `composer test:e2e:provision -- --filter=<test>` and leave failed VMs
    inspectable.
 
-Docker remains the likely long-term default for fast feature regression because
-container topology reset is cheaper. Incus remains the VM-realism lane for
-systemd, SSH, users, package installation, WireGuard, trust-store, and
-VPS-adjacent behavior.
+Docker remains the likely long-term default for fast feature regression
+because container topology reset is cheaper and the runtime backend +
+Orbit Scheduler run identically inside containers. Incus remains the
+VM-realism lane for host init, real SSH, sudo, package installation, real
+WireGuard, trust-store mutation, and VPS-adjacent behavior.
 
 #### Sequencing Rules
 
@@ -882,6 +883,9 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 ## Workspace Workstream
 
 - [x] Convert workspace command docs into current format.
+- [x] Reshape workspace docs to reference inherited runtime units rendered
+  as Supervisor programs by the runtime backend. See
+  [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
 - [ ] Port workspace schema and models.
 - [ ] Port workspace lifecycle commands.
 - [ ] Port workspace setup and teardown step commands.
@@ -891,11 +895,55 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 ## Process Workstream
 
 - [x] Convert process command docs into current format.
+- [x] Reshape process docs around runtime backend (Supervisor) and runtime
+  unit vocabulary. See
+  [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
 - [ ] Port process schema and models.
 - [ ] Port process add/edit/remove/list commands.
-- [ ] Port process start/stop/restart commands.
-- [ ] Port process log and event stream behavior.
+- [ ] Port process start/stop/restart commands against Supervisor.
+- [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.
+
+## Schedule Workstream
+
+- [x] Convert schedule command docs into current format.
+- [x] Reshape schedule docs around the Orbit Scheduler resident daemon. See
+  [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
+- [ ] Port schedule schema, models, and run-history table.
+- [ ] Port schedule add/list/show/remove commands.
+- [ ] Port schedule run command (manual fire / on-demand tick).
+- [ ] Port schedule logs command against scheduler-captured stdout/stderr.
+- [ ] Port `orbit-scheduler` Artisan-command daemon and Supervisor program
+  rendering.
+- [ ] Port scheduler heartbeat reporting and run-history intake endpoint.
+- [ ] Port schedule doctor probe and fix map.
+
+## Runtime Backend And Scheduler Workstream
+
+The runtime backend (Supervisor) and the Orbit Scheduler are introduced as
+product behavior in the doc reshape and require implementation work shared
+across the process and schedule families.
+
+- [x] Document the runtime backend (Supervisor) and Orbit Scheduler in
+  blueprint, mission, building blocks, concepts, process docs, schedule
+  docs, and workspace docs. See
+  [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
+- [ ] Add Supervisor installation to gateway and app node provisioning.
+- [ ] Add the runtime backend reachability probe shared by process and
+  schedule doctor.
+- [ ] Add the Supervisor program renderer shared by process and schedule
+  enactment.
+- [ ] Add the `orbit-scheduler` Artisan-command daemon.
+- [ ] Add scheduler local-state schema (locks, heartbeat, last-sync).
+- [ ] Add scheduler-to-gateway authentication using the existing WireGuard
+  node identity.
+- [ ] Add the gateway run-history intake endpoint and typed request.
+- [ ] Docker E2E base image runs `supervisord -n` as PID 1 (under `tini`)
+  and ships pre-installed Supervisor and `orbit_scheduler` program files.
+- [ ] Add Docker E2E coverage for runtime backend behavior and scheduler
+  liveness.
+- [ ] Add Incus E2E coverage where host init or VM-only behavior is part of
+  the assertion.
 
 ## Gateway API Client And Transport Workstream
 
