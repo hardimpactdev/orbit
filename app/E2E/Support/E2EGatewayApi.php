@@ -314,6 +314,15 @@ PHP;
             );
         }
 
+        function run_node_revoke(array $input): array
+        {
+            return run_orbit_command(
+                'php artisan node:revoke '
+                    .escapeshellarg((string) ($input['consuming_node'] ?? '')).' '
+                    .escapeshellarg((string) ($input['serving_node'] ?? '')).' --force --json'
+            );
+        }
+
         function run_app_show(string $name): array
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
@@ -489,6 +498,29 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_node_grant($input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/nodes/revoke ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_node_revoke($input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

@@ -722,6 +722,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeRevokeHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeRevokeJsonRendererTest.php` (JSON renderer contract)
     - `tests/Feature/Commands/Nodes/NodeRevokeInteractiveInputModeTest.php` (interactive input mode contract)
+    - `tests/E2E/NodeRevokeTest.php` (Docker feature E2E for control-caller gateway forwarding)
   - Bootstrap slice implemented: gateway-local grant revocation, idempotence, node-not-found validation, self-lockout detection, destructive consent (`--force`, interactive confirmation), caller role rejection, human progress tree and JSON renderer contracts, split contract tests.
   - Gateway API prerequisite implemented: `POST /api/nodes/revoke` plus typed
     `RevokeNodeRequest`.
@@ -729,8 +730,10 @@ exist. Those families wait for the node/gateway/app foundations.
     through `GatewayConnector` and typed `RevokeNodeRequest`; gateway API
     structured errors are preserved, and forwarded revocations do not require
     or mutate a local target-node row.
+  - E2E gate implemented: Docker feature coverage verifies a configured control
+    caller removes a gateway-owned node access grant through the Gateway API and
+    reads the removed grant state back through forwarded `node:show`.
   - Contract gaps:
-    - paired ephemeral E2E gate for the control-caller forwarding path.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:remove`.
   - Files:
@@ -1367,7 +1370,7 @@ for the Saloon-based gateway transport pattern.
      write-forwarding/provisioning safety gates are either complete or
      explicitly deferred with rationale.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
-   critical path: `node:revoke`/`node:remove` paired E2E gates, advanced
-   `node:new` enrollment paths, WireGuard peer teardown, and DNS cleanup.
+   critical path: `node:remove` paired E2E gate, advanced `node:new` enrollment
+   paths, WireGuard peer teardown, and DNS cleanup.
 3. Port `profile` later as a verification helper once app read state exists and
    can support useful target resolution.
