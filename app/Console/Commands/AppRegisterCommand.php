@@ -6,12 +6,17 @@ namespace App\Console\Commands;
 
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\RemoteShell;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\RegisterAppRequest;
+use App\Http\Gateway\Responses\Apps\AppRegisterResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
 #[Signature('app:register
     {name? : App name}
@@ -57,11 +62,7 @@ class AppRegisterCommand extends Command
         }
 
         if ($callerRole === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to register apps.',
-                meta: [],
-            );
+            return $this->forwardRegister($input);
         }
 
         $existingApp = App::query()
@@ -164,7 +165,47 @@ class AppRegisterCommand extends Command
         return $this->successCommand([
             'result' => ['action' => $action],
             'app' => $this->appPayload($app),
-        ], $warnings, $node);
+        ], $warnings, $node->name);
+    }
+
+    /**
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function forwardRegister(array $input): int
+    {
+        try {
+            /** @var AppRegisterResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new RegisterAppRequest(
+                    name: $input['name'],
+                    node: $input['node'],
+                    path: $input['path'],
+                    root: $input['root'],
+                    phpVersion: $input['php_version'],
+                    domain: $input['domain'],
+                ))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to register apps.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to register apps.',
+                meta: [],
+            );
+        }
+
+        $nodeName = is_string($dto->data['app']['node'] ?? null)
+            ? $dto->data['app']['node']
+            : (string) ($input['node'] ?? '');
+
+        return $this->successCommand($dto->data, $dto->warnings, $nodeName);
     }
 
     /**
@@ -363,7 +404,7 @@ class AppRegisterCommand extends Command
      * @param  array<string, mixed>  $data
      * @param  list<array<string, mixed>>  $warnings
      */
-    private function successCommand(array $data, array $warnings, Node $node): int
+    private function successCommand(array $data, array $warnings, string $nodeName): int
     {
         if (! $this->wantsJson()) {
             /** @var array{name?: string, url?: string} $app */
@@ -384,7 +425,7 @@ class AppRegisterCommand extends Command
             'success' => [
                 'data' => $data,
                 'meta' => [
-                    'node' => $node->name,
+                    'node' => $nodeName,
                     'warnings' => $warnings,
                 ],
             ],
