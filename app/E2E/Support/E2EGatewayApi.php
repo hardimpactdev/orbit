@@ -323,6 +323,11 @@ PHP;
             );
         }
 
+        function run_node_remove(string $name): array
+        {
+            return run_orbit_command('php artisan node:remove '.escapeshellarg($name).' --force --json');
+        }
+
         function run_app_show(string $name): array
         {
             return run_orbit_command('php artisan app:show '.escapeshellarg($name).' --json');
@@ -521,6 +526,16 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_node_revoke($input);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^DELETE /api/nodes/([^ ?]+)#', $requestLine, $matches) === 1) {
+                read_request_body($connection, $headers);
+
+                [$exitCode, $output] = run_node_remove(urldecode($matches[1]));
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

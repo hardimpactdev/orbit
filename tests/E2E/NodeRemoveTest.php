@@ -1,0 +1,94 @@
+<?php
+
+declare(strict_types=1);
+
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
+use App\E2E\Support\E2ETopologyHarness;
+use App\E2E\Support\E2ETopologyKind;
+
+function nodeRemoveSeedGrant(E2ETopologyHarness $topology): void
+{
+    $checkout = escapeshellarg($topology->checkout('gateway'));
+    $script = <<<'PHP'
+$nodes = \App\Models\Node::query()
+    ->whereIn('name', ['control-1', 'app-prod-1'])
+    ->pluck('id', 'name');
+
+foreach (['control-1', 'app-prod-1'] as $name) {
+    if (! $nodes->has($name)) {
+        throw new \RuntimeException("Missing prepared node [{$name}].");
+    }
+}
+
+\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+    'consumer_node_id' => $nodes->get('control-1'),
+    'serving_node_id' => $nodes->get('app-prod-1'),
+], [
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+
+echo 'seeded';
+PHP;
+
+    $topology->ssh(
+        'gateway',
+        "cd {$checkout} && php artisan tinker --execute=".escapeshellarg($script),
+        timeoutSeconds: 120,
+    );
+}
+
+it('removes a node from a control caller through the gateway api', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd, withGatewayApi: true);
+
+    try {
+        $topology->withCurrentCheckout(roles: ['control', 'gateway']);
+        $gatewayApiIp = $topology->lease()->gatewayApiIp();
+
+        E2EGatewayApi::restart(
+            $topology->instance('gateway'),
+            'node-remove',
+            $topology->checkout('gateway'),
+            gatewayIp: $gatewayApiIp,
+        );
+        E2EGatewayApi::waitForGatewayApi($topology->instance('control'), $config->controlUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+
+        nodeRemoveSeedGrant($topology);
+
+        $removeResult = $topology->ssh(
+            'control',
+            sprintf(
+                'cd %s && php artisan node:remove app-prod-1 --force --json',
+                escapeshellarg($topology->checkout('control')),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        $removePayload = json_decode(trim($removeResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($removePayload['success']['data'])->toBe([
+            'name' => 'app-prod-1',
+            'action' => 'removed',
+            'removed_self' => false,
+            'wireguard_peer_removed' => false,
+            'grants_removed' => 1,
+        ]);
+
+        $showResult = $topology->ssh(
+            'control',
+            sprintf(
+                'cd %s && (php artisan node:show app-prod-1 --json || true)',
+                escapeshellarg($topology->checkout('control')),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        $showPayload = json_decode(trim($showResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($showPayload['error']['code'])->toBe('node.not_found');
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
