@@ -1155,7 +1155,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
       node, preserves intent with `proxy.enactment_failed` warnings when backend
       enactment needs later convergence, and rejects route-domain conflicts
       before source creation.
-    - [ ] Default process artifact rendering/enactment.
+    - [x] Process runtime-unit rendering/enactment foundation: process intent
+      schema/models exist, app registration can render existing app-owned
+      process definitions as Supervisor programs on the owning app node, and
+      missing Supervisor/runtime-unit enactment is surfaced as process-family
+      warnings. No undocumented default process definitions are created by
+      `app:new`.
   - [ ] Docker feature E2E and provisioning-lane E2E for real source creation.
 - [ ] Port `app:register`.
 - [ ] Port `app:root`.
@@ -1184,7 +1189,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Reshape process docs around runtime backend (Supervisor) and runtime
   unit vocabulary. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
-- [ ] Port process schema and models.
+- [x] Port process schema and models.
 - [ ] Port process add/edit/remove/list commands.
 - [ ] Port process start/stop/restart commands against Supervisor.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
@@ -1453,10 +1458,11 @@ for the Saloon-based gateway transport pattern.
      behavior.
    - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, the `app:new`
      interactive/human renderer slice, runtime warning handoff foundation,
-     PHP-FPM pool rendering/reload, and proxy route registry/enactment handoff
-     are implemented. Keep `app:register`, `app:root`, `app:remove`,
-     `app:prune`, and `app:agent-ide` blocked until `app:new` has real
-     source-creation E2E and full registration pipeline convergence coverage.
+     PHP-FPM pool rendering/reload, proxy route registry/enactment handoff, and
+     process runtime-unit rendering/enactment foundation are implemented. Keep
+     `app:register`, `app:root`, `app:remove`, `app:prune`, and
+     `app:agent-ide` blocked until `app:new` has real source-creation E2E and
+     full registration pipeline convergence coverage.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.

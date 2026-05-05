@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
@@ -20,6 +22,7 @@ use Illuminate\Support\Str;
  * @property string $php_version
  * @property bool $adopted
  * @property-read Node|null $node
+ * @property-read Collection<int, Process> $processes
  */
 class App extends Model
 {
@@ -51,6 +54,14 @@ class App extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * @return HasMany<Process, $this>
+     */
+    public function processes(): HasMany
+    {
+        return $this->hasMany(Process::class)->orderBy('sort_order');
     }
 
     public function url(): string

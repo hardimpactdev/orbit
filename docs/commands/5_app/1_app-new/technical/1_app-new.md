@@ -107,7 +107,9 @@ Write authoritative app intent to the gateway SQLite database:
 Execute the convergent behavior shared with `app:register`:
 - **PHP-FPM:** Render and install PHP-FPM pool configuration on the target node.
 - **Proxy Routes:** Create a gateway-owned proxy route for the app.
-- **Process Artifacts:** Render and install runtime units (Supervisor programs) for default processes.
+- **Process Artifacts:** Render and install runtime units (Supervisor programs)
+  for any app-owned process definitions already present in gateway intent.
+  `app:new` does not invent undocumented default process definitions.
 - **Enactment Verification:** Verify that command-owned setup and artifact
   writes completed. This does not assert application HTTP readiness; a new app
   may still need project setup steps before it is healthy, and durable runtime
@@ -159,7 +161,9 @@ If `--domain` is supplied:
   with a `next_command` handoff (e.g. `doctor --family=app --fix` or
   `app:register [name] --domain=<host>`). Examples include node-side PHP
   version unavailable (`app.php_version_unavailable`) and pending domain
-  activation (`proxy.domain_inactive`).
+  activation (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
+  as process-family warnings such as `process.runtime_backend_unavailable` or
+  `process.runtime_unit_missing`.
 
 ## Doctor Relationship
 
