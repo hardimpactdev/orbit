@@ -76,6 +76,17 @@ Source code lives in the per-run bundle, not in any image. Topology
 snapshots get rebuilt each time `e2e:prepare-topology --force` runs. The
 base image only needs rebuilding when apt dependencies change.
 
+Latest Beast prepared-topology measurement (May 5, 2026):
+
+- First successful `control-gateway-dev-prod` rebuild completed in roughly
+  3m03s after harness blockers were fixed.
+- Timed warm rebuild with `/usr/bin/time -p` completed in `real 205.71s`.
+  This passes the cold target (≤ 8 min) but misses the warm target (≤ 3 min)
+  by about 26s. Follow-up: Solo todo 298
+  (`E2E-TOPOLOGY-WARM-OPT-1`).
+- `composer test:e2e:topology-contract` passed after the rebuild
+  (1 test, 28 assertions).
+
 Use the following overrides to source the per-run bundle from a non-default
 location:
 

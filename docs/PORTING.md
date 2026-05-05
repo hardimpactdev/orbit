@@ -993,10 +993,13 @@ decision evidence and tracker status only.
     `e2e:prepare-incus-images` (now `--role=blank` only).
   - [x] One-shot Beast cleanup
     (`incus image delete orbit-ready-{control,gateway,devapp,prodapp}`).
-  - [ ] Wall-time check on Beast: cold ≤ 8 min, warm ≤ 3 min for
-    `e2e:prepare-topology -- --force control-gateway-dev-prod`.
+  - [x] Wall-time check on Beast completed for
+    `e2e:prepare-topology -- --force control-gateway-dev-prod`: first
+    successful rebuild roughly 3m03s; timed warm rebuild `real 205.71s`.
+    Cold target passed; warm target missed by about 26s and is tracked in
+    Solo todo 298 (`E2E-TOPOLOGY-WARM-OPT-1`).
   - [x] Re-run topology contracts on Beast against the new lane
-    (`control-gateway-dev-prod` contract passed with 47 assertions).
+    (`control-gateway-dev-prod` contract passed with 28 assertions).
   - [x] Rework `e2e-provision` tests that previously launched from
     `E2EImage::Control`/`Gateway` (now refused by `IncusProvider::aliasFor`)
     to base + provisioner. Focused provider tests and stale-reference audit
