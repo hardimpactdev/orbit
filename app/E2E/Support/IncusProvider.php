@@ -18,6 +18,11 @@ final class IncusProvider implements E2EProvider
         $this->host = new IncusHost($config);
     }
 
+    public function __destruct()
+    {
+        $this->releaseResourceLease();
+    }
+
     public function name(): string
     {
         return 'incus';

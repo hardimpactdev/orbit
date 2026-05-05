@@ -48,9 +48,54 @@ PHP;
 
     public static function installRootSshKey(E2EInstance $gateway, SshKeyPair $key): void
     {
-        E2ECommand::exec($gateway, 'install -d -m 700 /root/.ssh', 'Could not prepare root SSH directory on gateway');
-        $gateway->copyFileToInstance($key->privateKeyPath, '/root/.ssh/id_ed25519');
-        E2ECommand::exec($gateway, 'chmod 600 /root/.ssh/id_ed25519', 'Could not install root SSH key on gateway');
+        self::installProvisioningSshKey($gateway, $key);
+    }
+
+    public static function installProvisioningSshKey(E2EInstance $gateway, SshKeyPair $key): void
+    {
+        self::installSshKey($gateway, $key, 'root', '/root');
+        self::installSshKeyIfUserExists($gateway, $key, 'orbit', '/home/orbit');
+        self::installSshKeyIfUserExists($gateway, $key, 'www-data', '/var/www');
+    }
+
+    private static function installSshKeyIfUserExists(E2EInstance $gateway, SshKeyPair $key, string $user, string $home): void
+    {
+        if (! $gateway->exec('id -u '.escapeshellarg($user).' >/dev/null 2>&1')->successful()) {
+            return;
+        }
+
+        self::installSshKey($gateway, $key, $user, $home);
+    }
+
+    private static function installSshKey(E2EInstance $gateway, SshKeyPair $key, string $user, string $home): void
+    {
+        $sshDirectory = "{$home}/.ssh";
+        $privateKey = "{$sshDirectory}/id_ed25519";
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'install -d -m 700 -o %s -g %s %s',
+                escapeshellarg($user),
+                escapeshellarg($user),
+                escapeshellarg($sshDirectory),
+            ),
+            "Could not prepare {$user} SSH directory on gateway",
+        );
+
+        $gateway->copyFileToInstance($key->privateKeyPath, $privateKey);
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'chown %s:%s %s && chmod 600 %s',
+                escapeshellarg($user),
+                escapeshellarg($user),
+                escapeshellarg($privateKey),
+                escapeshellarg($privateKey),
+            ),
+            "Could not install {$user} SSH key on gateway",
+        );
     }
 
     public static function restart(E2EInstance $gateway, string $label, string $orbitPath = '/home/orbit/orbit', string $gatewayIp = '10.6.0.2'): void

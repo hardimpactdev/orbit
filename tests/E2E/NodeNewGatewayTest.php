@@ -2,51 +2,44 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EBaseProvisioner;
+use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EImage;
 use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
-use App\E2E\Support\E2ETopologyCapabilities;
-use App\E2E\Support\E2ETopologyFactory;
-use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\ProviderPool;
 use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
-it('NodeNewWireGuard enrolls the first gateway from a prepared control topology', function (): void {
+it('NodeNewWireGuard enrolls the first gateway from base-provisioned VMs', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $selection = (new ProviderPool([new IncusProvider($config)]))->select(E2EImage::Blank);
+    $provider = new IncusProvider($config);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
     }
 
-    $topology = E2ETopologyFactory::fromEnvironment()
-        ->requireCapabilities(E2ETopologyCapabilities::vm())
-        ->require(E2ETopologyKind::ControlGatewayDevProd);
-    $provider = $selection->provider();
     $run = E2ERun::start($provider, 'node-new-gateway');
+    $bundle = null;
     $passed = false;
 
     try {
-        $key = $topology->sshKeyPair();
-        $control = $topology->control();
-        $gateway = e2eProvisionStep('launch blank gateway', fn () => $run->launchBlank('gateway'));
-        $checkout = e2eProvisionStep('overlay current checkout on control', fn () => e2eCheckout($topology, ['control'])['control']);
-        e2eProvisionStep('reset control checkout gateway state', fn () => resetControlCheckoutForFirstGateway($control, $config->controlUser, $key, $checkout));
+        $bundle = E2EProvisioningBundle::stage($provider);
+        $provisioner = new E2EBaseProvisioner($provider, $bundle);
+        $key = $run->createSshKeyPair();
+        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
+        $gateway = e2eProvisionStep('launch base gateway', fn () => $run->launchBase('gateway'));
 
-        e2eProvisionStep('authorize gateway SSH', fn () => $gateway->authorizeSsh($config->bootstrapUser, $key));
-        e2eProvisionStep('install control SSH private key', function () use ($config, $control, $key): void {
-            $control->copyFileToInstance($key->privateKeyPath, "/home/{$config->controlUser}/.ssh/id_ed25519");
-            $control->exec("chown {$config->controlUser}:{$config->controlUser} /home/{$config->controlUser}/.ssh/id_ed25519 && chmod 600 /home/{$config->controlUser}/.ssh/id_ed25519");
-        });
+        e2eProvisionStep('wait for gateway cloud-init', fn () => $provider->host->waitForCloudInit($gateway->name()));
+        e2eProvisionStep('authorize SSH between control and gateway', fn () => nodeNewGatewayAuthorizeSsh($control, $gateway, $config->controlUser, $config->bootstrapUser, $key));
 
-        e2eProvisionStep('wait for SSH', function () use ($config, $control, $gateway, $key): void {
-            $control->waitForSsh($config->controlUser, $key);
-            $gateway->waitForSsh($config->bootstrapUser, $key);
-        });
+        $control->waitForSsh($config->controlUser, $key);
+        $gateway->waitForSsh($config->bootstrapUser, $key);
 
         [$controlIp, $gatewayIp] = e2eProvisionStep('resolve VM IPv4 addresses', fn () => [
             $control->waitForIpv4(),
@@ -55,14 +48,14 @@ it('NodeNewWireGuard enrolls the first gateway from a prepared control topology'
 
         expect($controlIp)->not->toBe($gatewayIp);
 
-        $nodeNew = e2eProvisionStep('run node:new gateway', fn () => $control->ssh(
+        $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
+        $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
+            $control,
             $config->controlUser,
             $key,
-            'cd '.escapeshellarg($checkout)." && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json",
+            $command,
             timeoutSeconds: 1800,
         ));
-
-        expect($nodeNew->successful())->toBeTrue($nodeNew->output().$nodeNew->errorOutput());
 
         $payload = json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -74,14 +67,14 @@ it('NodeNewWireGuard enrolls the first gateway from a prepared control topology'
 echo json_encode(\App\Models\Node::query()->orderBy('name')->pluck('name')->all(), JSON_THROW_ON_ERROR);
 PHP;
 
-        $registry = e2eProvisionStep('assert control registry', fn () => $control->ssh(
+        $registry = e2eProvisionStep('assert control registry', fn () => E2ECommand::ssh(
+            $control,
             $config->controlUser,
             $key,
-            'cd '.escapeshellarg($checkout).' && php artisan tinker --execute='.escapeshellarg($php),
+            "cd /home/{$config->controlUser}/orbit && php artisan tinker --execute=".escapeshellarg($php),
         ));
 
-        expect($registry->successful())->toBeTrue($registry->output().$registry->errorOutput())
-            ->and($registry->output())->toContain('gateway-1')
+        expect($registry->output())->toContain('gateway-1')
             ->and($registry->output())->toContain('control-1');
 
         [$gatewayInstall, $gatewayVersion] = e2eProvisionStep('assert gateway install', fn () => [
@@ -114,14 +107,13 @@ PHP;
             ->and($gatewayPeers['control-1']['allowed_ips'])->toBe('10.6.0.3/32')
             ->and($gatewayPeers['control-1']['public_key'])->toBeString()->not->toBeEmpty();
 
-        $rerun = e2eProvisionStep('rerun node:new gateway', fn () => $control->ssh(
+        $rerun = e2eProvisionStep('rerun node:new gateway', fn () => E2ECommand::ssh(
+            $control,
             $config->controlUser,
             $key,
-            'cd '.escapeshellarg($checkout)." && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json",
+            $command,
             timeoutSeconds: 1800,
         ));
-
-        expect($rerun->successful())->toBeTrue($rerun->output().$rerun->errorOutput());
 
         $rerunPayload = json_decode(trim($rerun->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $rerunPeers = e2eProvisionStep('assert WireGuard enrollment idempotence', fn () => gatewayWireGuardPeers($gateway));
@@ -130,34 +122,25 @@ PHP;
             ->and($rerunPayload['success']['data']['local_onboarding']['wireguard'])->toBe('already_installed')
             ->and($rerunPeers)->toBe($gatewayPeers);
 
-        // TODO 256: Assert gateway CA trust on control node
-        // TODO 256: Assert local_onboarding.gateway_api = verified
-        // TODO 256: Assert gateway API reachability over WireGuard (GET /api/me)
-        // TODO 256: Assert platform metadata for both nodes
-        // TODO 256: Assert full documented JSON success state structure
-
         $passed = true;
     } finally {
-        e2eProvisionCleanup($passed, run: $run, topology: $topology);
+        e2eProvisionCleanup($passed, run: $run);
+        $bundle?->cleanup();
     }
 });
 
-function resetControlCheckoutForFirstGateway(
+function nodeNewGatewayAuthorizeSsh(
     E2EInstance $control,
+    E2EInstance $gateway,
     string $controlUser,
+    string $bootstrapUser,
     SshKeyPair $key,
-    string $checkout,
 ): void {
-    $php = <<<'PHP'
-\App\Models\Node::query()->where('role', '!=', 'control')->delete();
-\App\Models\LocalGatewaySettings::query()->delete();
-PHP;
+    $control->authorizeSsh($controlUser, $key);
+    $gateway->authorizeSsh($bootstrapUser, $key);
+    $control->copyFileToInstance($key->privateKeyPath, "/home/{$controlUser}/.ssh/id_ed25519");
 
-    $result = $control->ssh(
-        $controlUser,
-        $key,
-        'cd '.escapeshellarg($checkout).' && php artisan tinker --execute='.escapeshellarg($php),
-    );
+    $result = $control->exec("chown {$controlUser}:{$controlUser} /home/{$controlUser}/.ssh/id_ed25519 && chmod 600 /home/{$controlUser}/.ssh/id_ed25519");
 
     expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 }

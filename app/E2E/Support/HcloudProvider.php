@@ -16,6 +16,11 @@ final class HcloudProvider implements E2EProvider
         private E2EConfig $config,
     ) {}
 
+    public function __destruct()
+    {
+        $this->releaseResourceLease();
+    }
+
     public function name(): string
     {
         return 'hcloud';
