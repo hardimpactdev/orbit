@@ -6,7 +6,7 @@ use Tests\E2E\Support\E2EImage;
 use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\ProviderPool;
 
-pest()->group('e2e-provisioning');
+pest()->group('e2e-provision');
 
 it('launches a blank VM, reaches it over SSH, and destroys it', function (): void {
     $selection = ProviderPool::fromEnvironment()->select(E2EImage::Blank);
@@ -18,6 +18,7 @@ it('launches a blank VM, reaches it over SSH, and destroys it', function (): voi
     $provider = $selection->provider();
     $config = $provider->config();
     $run = E2ERun::start($provider, 'blank-lifecycle');
+    $passed = false;
 
     try {
         $key = $run->createSshKeyPair();
@@ -29,7 +30,9 @@ it('launches a blank VM, reaches it over SSH, and destroys it', function (): voi
         $result = $vm->ssh($config->bootstrapUser, $key, 'test "$(uname -s)" = Linux && test -r /etc/os-release');
 
         expect($result->successful())->toBeTrue($result->errorOutput());
+
+        $passed = true;
     } finally {
-        $run->cleanup();
+        e2eProvisionCleanup($passed, run: $run);
     }
 });

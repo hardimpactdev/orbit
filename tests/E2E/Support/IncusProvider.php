@@ -44,7 +44,11 @@ final readonly class IncusProvider implements E2EProvider
         }
 
         foreach ($images as $image) {
-            $alias = $this->aliasFor($image);
+            try {
+                $alias = $this->aliasFor($image);
+            } catch (\RuntimeException $exception) {
+                return ProviderAvailability::unavailable($exception->getMessage());
+            }
 
             if (! $this->host->imageExists($alias)) {
                 return ProviderAvailability::unavailable("incus image {$alias} is not available");
@@ -99,13 +103,15 @@ final readonly class IncusProvider implements E2EProvider
             name: "{$this->config->instancePrefix}-{$run->id}-".E2ERun::safeLabel($suffix),
         );
 
-        $result = $this->host->run(sprintf(
-            'incus launch %s %s --vm --config=limits.cpu=%s --config=limits.memory=%s >/dev/null',
-            escapeshellarg($this->aliasFor($image)),
-            escapeshellarg($instance->name()),
-            escapeshellarg($this->config->cpus),
-            escapeshellarg($this->config->memory),
-        ));
+        $result = $this->host->launchInstance(
+            image: $this->aliasFor($image),
+            name: $instance->name(),
+            config: sprintf(
+                '--config=limits.cpu=%s --config=limits.memory=%s',
+                escapeshellarg($this->config->cpus),
+                escapeshellarg($this->config->memory),
+            ),
+        );
 
         if (! $result->successful()) {
             throw new \RuntimeException("Could not launch {$instance->name()}: {$result->errorOutput()}");
@@ -161,8 +167,11 @@ final readonly class IncusProvider implements E2EProvider
     {
         return match ($image) {
             E2EImage::Blank => $this->config->blankImage,
-            E2EImage::Control => $this->config->controlImage,
-            E2EImage::Gateway => $this->config->gatewayImage,
+            E2EImage::Control, E2EImage::Gateway => throw new \RuntimeException(
+                'Role-specific ready images have been replaced by the base image + per-run provisioner lane. '
+                .'Use IncusTopologyBuilder via e2e:prepare-topology, or rework provisioning tests to launch '
+                .'from blank/base and run bin/e2e-provision-node.'
+            ),
         };
     }
 }

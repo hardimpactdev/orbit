@@ -11,5 +11,6 @@ final readonly class E2ETopologyAcquisitionOptions
      */
     public function __construct(
         public ?array $sshUsers = null,
+        public bool $startGatewayApi = false,
     ) {}
 }

@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2ETopologyKind;
@@ -19,6 +20,9 @@ use Tests\E2E\Support\IncusTopologyTemplate;
 #[Signature('e2e:prepare-topology
     {kind=control-gateway-dev-prod : Topology kind to prepare (control|control-gateway|control-gateway-dev|control-gateway-dev-prod)}
     {--force : Create Incus topology templates}
+    {--branch= : Build the source archive from the named git ref via git archive}
+    {--source-archive= : Use this pre-built source archive instead of tarring the current checkout}
+    {--composer-cache= : Local composer cache directory to ship in the bundle (default ~/.cache/orbit-e2e/composer when present)}
     {--json : Output as JSON}')]
 #[Description('Prepare Incus topology templates used by ephemeral E2E tests')]
 class E2EPrepareTopologyCommand extends Command
@@ -97,14 +101,30 @@ class E2EPrepareTopologyCommand extends Command
             return $this->failCommand('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
         }
 
+        $bundleDir = null;
+        $remoteBundle = null;
+
         try {
+            $bundleDir = $this->buildLocalBundle();
+            $remoteBundle = $host->pushBundle($bundleDir);
+
             $builder = $this->builderFactory !== null
                 ? ($this->builderFactory)($host)
                 : new IncusTopologyBuilder($host);
 
+            $builder->useBundle($remoteBundle);
+
             $manifest = $builder->build($kind);
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
+        } finally {
+            if ($remoteBundle !== null) {
+                $host->cleanupBundle($remoteBundle);
+            }
+
+            if ($bundleDir !== null && is_dir($bundleDir)) {
+                Process::run('rm -rf '.escapeshellarg($bundleDir));
+            }
         }
 
         $result = [
@@ -127,6 +147,169 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function buildLocalBundle(): string
+    {
+        $bundleDir = sys_get_temp_dir().'/orbit-e2e-bundle-'.bin2hex(random_bytes(6));
+
+        if (! mkdir($bundleDir, 0755, true)) {
+            throw new RuntimeException("Could not create local bundle directory: {$bundleDir}");
+        }
+
+        $sourceArchive = $this->resolveSourceArchive($bundleDir);
+        $finalArchive = "{$bundleDir}/orbit-source.tar.gz";
+
+        if ($sourceArchive !== $finalArchive) {
+            if (! @copy($sourceArchive, $finalArchive)) {
+                throw new RuntimeException("Could not stage source archive at {$finalArchive}.");
+            }
+        }
+
+        $this->stageBundleScript($bundleDir, 'install-orbit');
+        $this->stageBundleScript($bundleDir, 'e2e-provision-node');
+        $this->stageBundleScript($bundleDir, '_e2e-deps.sh');
+
+        $composerCache = $this->resolveComposerCache();
+
+        if ($composerCache !== null) {
+            $target = "{$bundleDir}/composer-cache";
+
+            if (! mkdir($target, 0755, true)) {
+                throw new RuntimeException("Could not create composer cache target: {$target}");
+            }
+
+            $copy = Process::timeout(120)->run(sprintf(
+                'cp -R %s %s',
+                escapeshellarg(rtrim($composerCache, '/').'/.'),
+                escapeshellarg($target),
+            ));
+
+            if (! $copy->successful()) {
+                throw new RuntimeException("Could not copy composer cache: {$copy->errorOutput()}");
+            }
+        }
+
+        return $bundleDir;
+    }
+
+    private function resolveSourceArchive(string $bundleDir): string
+    {
+        $explicit = $this->stringOption('source-archive');
+
+        if ($explicit !== null) {
+            if (! is_file($explicit)) {
+                throw new RuntimeException("--source-archive not found: {$explicit}");
+            }
+
+            return $explicit;
+        }
+
+        $branch = $this->stringOption('branch');
+        $archive = "{$bundleDir}/orbit-source.tar.gz";
+
+        if ($branch !== null) {
+            $command = sprintf(
+                'git -C %s archive --format=tar.gz --output=%s %s',
+                escapeshellarg(base_path()),
+                escapeshellarg($archive),
+                escapeshellarg($branch),
+            );
+
+            $result = Process::timeout(300)->run($command);
+
+            if (! $result->successful()) {
+                throw new RuntimeException("git archive failed for branch [{$branch}]: {$result->errorOutput()}");
+            }
+
+            return $archive;
+        }
+
+        $excludes = [
+            './.git',
+            './.env',
+            './database/*.sqlite',
+            './database/*.sqlite-*',
+            './node_modules',
+            './storage/framework/cache/data/*',
+            './storage/framework/sessions/*',
+            './storage/framework/testing/*',
+            './storage/framework/views/*',
+            './storage/logs/*',
+            './vendor',
+        ];
+
+        $excludeArgs = implode(' ', array_map(
+            fn (string $pattern): string => '--exclude='.escapeshellarg($pattern),
+            $excludes,
+        ));
+
+        $command = sprintf(
+            'COPYFILE_DISABLE=1 tar %s -czf %s -C %s .',
+            $excludeArgs,
+            escapeshellarg($archive),
+            escapeshellarg(base_path()),
+        );
+
+        $result = Process::timeout(300)->run($command);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to build source archive: {$result->errorOutput()}");
+        }
+
+        return $archive;
+    }
+
+    private function stageBundleScript(string $bundleDir, string $name): void
+    {
+        $source = base_path('bin/'.$name);
+
+        if (! is_file($source)) {
+            throw new RuntimeException("Required bin script missing: {$source}");
+        }
+
+        $target = "{$bundleDir}/{$name}";
+
+        if (! @copy($source, $target)) {
+            throw new RuntimeException("Could not stage {$name} into bundle.");
+        }
+
+        @chmod($target, 0755);
+    }
+
+    private function resolveComposerCache(): ?string
+    {
+        $explicit = $this->stringOption('composer-cache');
+
+        if ($explicit !== null) {
+            if (! is_dir($explicit)) {
+                throw new RuntimeException("--composer-cache directory not found: {$explicit}");
+            }
+
+            return $explicit;
+        }
+
+        $home = (string) (getenv('HOME') ?: '');
+        $defaultPath = $home !== '' ? "{$home}/.cache/orbit-e2e/composer" : null;
+
+        if ($defaultPath !== null && is_dir($defaultPath)) {
+            return $defaultPath;
+        }
+
+        return null;
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private function failValidation(string $message): int

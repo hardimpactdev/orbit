@@ -18,10 +18,6 @@ function baseOptions(bool $force = false, array $roles = ['blank']): IncusE2EIma
         force: $force,
         sourceImage: 'images:ubuntu/26.04/cloud',
         blankImageAlias: 'orbit-blank-ubuntu-26.04',
-        controlImageAlias: 'orbit-ready-control',
-        gatewayImageAlias: 'orbit-ready-gateway',
-        devappImageAlias: 'orbit-ready-devapp',
-        prodappImageAlias: 'orbit-ready-prodapp',
         bootstrapUser: 'provisioner',
         controlUser: 'control',
         installScriptPath: '/tmp/install-orbit',
@@ -46,28 +42,18 @@ it('returns dry-run result when force is false', function (): void {
     ]);
 });
 
-it('returns dry-run plans for every requested role', function (): void {
-    $host = m::mock(IncusHost::class);
-    $preparer = new IncusE2EImagePreparer($host);
-
-    $result = $preparer->prepare(baseOptions(force: false, roles: ['blank', 'control', 'gateway', 'devapp', 'prodapp']));
-
-    expect($result->images)->toHaveCount(5);
-    expect(array_column($result->images, 'role'))->toBe(['blank', 'control', 'gateway', 'devapp', 'prodapp']);
-    expect(array_column($result->images, 'alias'))->toBe([
-        'orbit-blank-ubuntu-26.04',
-        'orbit-ready-control',
-        'orbit-ready-gateway',
-        'orbit-ready-devapp',
-        'orbit-ready-prodapp',
-    ]);
-    expect(array_unique(array_column($result->images, 'action')))->toBe(['planned']);
-});
-
 it('throws for unknown roles when forced', function (): void {
     $host = m::mock(IncusHost::class);
     $preparer = new IncusE2EImagePreparer($host);
 
     expect(fn () => $preparer->prepare(baseOptions(force: true, roles: ['mystery'])))
         ->toThrow(RuntimeException::class, 'Unknown role [mystery].');
+});
+
+it('rejects retired role-specific roles when forced', function (): void {
+    $host = m::mock(IncusHost::class);
+    $preparer = new IncusE2EImagePreparer($host);
+
+    expect(fn () => $preparer->prepare(baseOptions(force: true, roles: ['control'])))
+        ->toThrow(RuntimeException::class, 'Unknown role [control].');
 });

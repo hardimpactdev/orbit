@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Process;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\E2ETopologyKind;
 use Tests\E2E\Support\IncusHostPool;
 use Tests\E2E\Support\IncusTopologyBuilder;
 use Tests\E2E\Support\IncusTopologyTemplate;
 
-pest()->group('e2e-provisioning');
+pest()->group('e2e-provision');
 
 it('builds a control topology and snapshots the template clean', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -24,8 +25,8 @@ it('builds a control topology and snapshots the template clean', function (): vo
         $this->markTestSkipped('No Incus host configured (ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST).');
     }
 
-    if (! $host->imageExists($config->controlImage)) {
-        $this->markTestSkipped("Required source image [{$config->controlImage}] missing on Incus host.");
+    if (! $host->imageExists($config->baseImage)) {
+        $this->markTestSkipped("Required source image [{$config->baseImage}] missing on Incus host.");
     }
 
     $kind = E2ETopologyKind::Control;
@@ -36,8 +37,27 @@ it('builds a control topology and snapshots the template clean', function (): vo
         $host->run(sprintf('incus delete --force %s', escapeshellarg($templateName)));
     }
 
+    $bundleDir = sys_get_temp_dir().'/orbit-e2e-bundle-test-'.bin2hex(random_bytes(4));
+    mkdir($bundleDir, 0755, true);
+
+    $archive = "{$bundleDir}/orbit-source.tar.gz";
+    Process::timeout(300)->run(sprintf(
+        'COPYFILE_DISABLE=1 tar --exclude=./.git --exclude=./vendor --exclude=./node_modules -czf %s -C %s .',
+        escapeshellarg($archive),
+        escapeshellarg(base_path()),
+    ))->throw();
+
+    foreach (['install-orbit', 'e2e-provision-node', '_e2e-deps.sh'] as $script) {
+        copy(base_path('bin/'.$script), "{$bundleDir}/{$script}");
+        chmod("{$bundleDir}/{$script}", 0755);
+    }
+
+    $remoteBundle = $host->pushBundle($bundleDir);
+    $passed = false;
+
     try {
         $builder = new IncusTopologyBuilder($host);
+        $builder->useBundle($remoteBundle);
         $manifest = $builder->build($kind);
 
         expect($manifest)->toHaveCount(1);
@@ -47,9 +67,16 @@ it('builds a control topology and snapshots the template clean', function (): vo
 
         expect($host->instanceExists($templateName))->toBeTrue();
         expect($host->snapshotExists($templateName, 'clean'))->toBeTrue();
+
+        $passed = true;
     } finally {
-        if ($host->instanceExists($templateName)) {
+        if ($host->instanceExists($templateName) && ($passed || ! e2eProvisionKeepsFailures())) {
             $host->run(sprintf('incus delete --force %s', escapeshellarg($templateName)));
+        } elseif (! $passed && $host->instanceExists($templateName)) {
+            e2eProvisionReportDangling([$templateName]);
         }
+
+        $host->cleanupBundle($remoteBundle);
+        Process::run('rm -rf '.escapeshellarg($bundleDir));
     }
 });

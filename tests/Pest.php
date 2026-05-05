@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Tests\TestCase;
 
+require_once __DIR__.'/E2E/Support/Pest.php';
+
 /*
 |--------------------------------------------------------------------------
 | Test Case

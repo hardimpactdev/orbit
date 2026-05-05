@@ -4,64 +4,40 @@ declare(strict_types=1);
 
 namespace App\Services\E2E;
 
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Tests\E2E\Support\IncusHost;
 
 /**
- * Builds the reusable Incus blank image (`orbit-blank-ubuntu-26.04`) used by
- * the provisioning E2E lane. Cloud-init bootstraps a sudoers user and brings
- * up sshd; no Orbit source is shipped here.
+ * Build the reusable Incus base image (`orbit-base-ubuntu-26.04`) used by the
+ * E2E topology lane. The base image holds OS deps, the bootstrap user, the
+ * `orbit` user, and the runtime directory tree — but no Orbit source. Source
+ * is pushed per topology preparation; see bin/e2e-provision-node.
  *
- * Role-specific ready images (control / gateway / dev / prod) used to live
- * here too; they have been replaced by the base image + per-run provisioner
- * lane (see IncusBaseImagePreparer + bin/e2e-provision-node).
+ * Mirrors the cloud-init bootstrap shape of IncusE2EImagePreparer::buildBlank()
+ * but additionally creates the `orbit` user and pre-installs the apt package
+ * list defined by bin/_e2e-deps.sh, so the per-run `bin/install-orbit` invocation
+ * inside a base-cloned VM is fast.
  */
-class IncusE2EImagePreparer
+class IncusBaseImagePreparer
 {
     public function __construct(private readonly IncusHost $host) {}
-
-    public function prepare(IncusE2EImagePreparationOptions $options): IncusE2EImagePreparationResult
-    {
-        $planned = array_map(
-            fn (string $role): array => [
-                'role' => $role,
-                'alias' => $this->aliasFor($role, $options),
-                'action' => 'planned',
-            ],
-            $options->roles,
-        );
-
-        if (! $options->force) {
-            return new IncusE2EImagePreparationResult($planned);
-        }
-
-        $built = [];
-
-        foreach ($options->roles as $role) {
-            $built[] = match ($role) {
-                'blank' => $this->buildBlank($options),
-                default => throw new RuntimeException("Unknown role [{$role}]."),
-            };
-        }
-
-        return new IncusE2EImagePreparationResult($built);
-    }
-
-    private function aliasFor(string $role, IncusE2EImagePreparationOptions $options): string
-    {
-        return match ($role) {
-            'blank' => $options->blankImageAlias,
-            default => "orbit-ready-{$role}",
-        };
-    }
 
     /**
      * @return array{role: string, alias: string, action: string}
      */
-    private function buildBlank(IncusE2EImagePreparationOptions $options): array
+    public function build(IncusBaseImagePreparationOptions $options): array
     {
+        if (! $options->force) {
+            return [
+                'role' => 'base',
+                'alias' => $options->baseImageAlias,
+                'action' => 'planned',
+            ];
+        }
+
         $runId = $this->newRunId();
-        $instanceName = "orbit-e2e-{$runId}-prepare-blank";
+        $instanceName = "orbit-e2e-{$runId}-prepare-base";
         $remoteWorkDir = $this->createRemoteWorkDir($instanceName);
         $tempInstance = null;
 
@@ -71,20 +47,24 @@ class IncusE2EImagePreparer
             $remotePrivateKey = "{$remoteWorkDir}/id_ed25519";
             $publicKey = $this->createRemoteSshKey($remotePrivateKey, $runId);
 
-            $this->launchBlankInstance($instanceName, $remoteWorkDir, $options, $publicKey);
+            $packages = $this->readPackageList($options->depsScriptPath, '--all');
+
+            $this->launchBaseInstance($instanceName, $remoteWorkDir, $options, $publicKey, $packages);
             $tempInstance = $instanceName;
 
+            $this->waitForAgent($instanceName, $options->timeoutSeconds);
             $this->waitForCloudInit($instanceName, $options->timeoutSeconds);
+            $this->waitForAgent($instanceName, $options->timeoutSeconds);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
-            $this->cleanBlankImageState($instanceName, $options->bootstrapUser);
+            $this->cleanBaseImageState($instanceName, $options->bootstrapUser);
             $this->stopInstance($instanceName);
-            $this->publishImage($instanceName, $options->blankImageAlias);
+            $this->publishImage($instanceName, $options->baseImageAlias);
 
             return [
-                'role' => 'blank',
-                'alias' => $options->blankImageAlias,
+                'role' => 'base',
+                'alias' => $options->baseImageAlias,
                 'action' => 'built',
             ];
         } finally {
@@ -134,7 +114,7 @@ class IncusE2EImagePreparer
             'ssh-keygen -t ed25519 -N %s -f %s -C %s >/dev/null',
             escapeshellarg(''),
             escapeshellarg($privateKeyPath),
-            escapeshellarg("orbit-e2e-{$runId}"),
+            escapeshellarg("orbit-e2e-base-{$runId}"),
         ), timeoutSeconds: 60);
 
         if (! $generate->successful()) {
@@ -156,13 +136,44 @@ class IncusE2EImagePreparer
         return $publicKey;
     }
 
-    private function launchBlankInstance(
+    /**
+     * @return list<string>
+     */
+    private function readPackageList(string $depsScriptPath, string $selector): array
+    {
+        if (! is_file($depsScriptPath) || ! is_executable($depsScriptPath)) {
+            throw new RuntimeException("Deps helper not executable: {$depsScriptPath}");
+        }
+
+        $result = Process::timeout(30)->run([$depsScriptPath, $selector]);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to read package list from {$depsScriptPath} {$selector}: {$result->errorOutput()}");
+        }
+
+        $packages = array_values(array_filter(
+            array_map(trim(...), explode("\n", $result->output())),
+            fn (string $package): bool => $package !== '',
+        ));
+
+        if ($packages === []) {
+            throw new RuntimeException("Deps helper {$depsScriptPath} {$selector} returned an empty package list.");
+        }
+
+        return $packages;
+    }
+
+    /**
+     * @param  list<string>  $packages
+     */
+    private function launchBaseInstance(
         string $name,
         string $remoteWorkDir,
-        IncusE2EImagePreparationOptions $options,
+        IncusBaseImagePreparationOptions $options,
         string $publicKey,
+        array $packages,
     ): void {
-        $userData = $this->cloudInit($options, $publicKey);
+        $userData = $this->cloudInit($options, $publicKey, $packages);
         $userDataPath = "{$remoteWorkDir}/user-data.yaml";
 
         $write = $this->host->run(sprintf(
@@ -185,20 +196,64 @@ class IncusE2EImagePreparer
         ), timeoutSeconds: $options->timeoutSeconds);
 
         if (! $launch->successful()) {
-            throw new RuntimeException("Failed to launch blank instance [{$name}]: {$launch->errorOutput()}");
+            throw new RuntimeException("Failed to launch base instance [{$name}]: {$launch->errorOutput()}");
         }
+    }
+
+    private function waitForAgent(string $instanceName, int $timeoutSeconds): void
+    {
+        $deadline = time() + $timeoutSeconds;
+
+        while (time() < $deadline) {
+            $result = $this->host->run(
+                sprintf('incus exec %s -- true', escapeshellarg($instanceName)),
+                timeoutSeconds: 10,
+            );
+
+            if ($result->successful()) {
+                return;
+            }
+
+            sleep(2);
+        }
+
+        throw new RuntimeException("Incus agent never became ready on [{$instanceName}].");
     }
 
     private function waitForCloudInit(string $instanceName, int $timeoutSeconds): void
     {
-        $result = $this->host->run(
-            sprintf('incus exec %s -- cloud-init status --wait', escapeshellarg($instanceName)),
-            timeoutSeconds: $timeoutSeconds,
-        );
+        $deadline = time() + $timeoutSeconds;
+        $lastOutput = '';
+        $lastExitCode = null;
 
-        if (! $result->successful()) {
-            throw new RuntimeException("Cloud-init did not complete successfully on [{$instanceName}].");
+        while (time() < $deadline) {
+            $remainingSeconds = max(1, $deadline - time());
+
+            // `cloud-init status` exits:
+            //   0 — done, clean
+            //   1 — error
+            //   2 — done with recoverable_errors (e.g. systemd-networkd-wait-online
+            //       flakes during a heavy first-boot apt install). The image is
+            //       still usable, so we accept it as success.
+            // 255 — Incus agent disappeared during a first-boot reboot; retry.
+            $result = $this->host->run(
+                sprintf('incus exec %s -- cloud-init status', escapeshellarg($instanceName)),
+                timeoutSeconds: min(10, $remainingSeconds),
+            );
+
+            $lastOutput = trim($result->output().$result->errorOutput());
+            $lastExitCode = $result->exitCode();
+
+            if (str_contains($lastOutput, 'status: done') || str_contains($lastOutput, 'status: degraded done')) {
+                return;
+            }
+
+            sleep(3);
         }
+
+        throw new RuntimeException(
+            "Cloud-init did not complete on [{$instanceName}] (exit={$lastExitCode}): {$lastOutput}"
+        );
     }
 
     private function waitForIpv4(string $instanceName, int $timeoutSeconds): string
@@ -254,13 +309,18 @@ class IncusE2EImagePreparer
         throw new RuntimeException("SSH never became ready on {$ip} as {$bootstrapUser}.");
     }
 
-    private function cleanBlankImageState(string $instanceName, string $bootstrapUser): void
+    private function cleanBaseImageState(string $instanceName, string $bootstrapUser): void
     {
         $script = sprintf(
             'rm -f /home/%1$s/.ssh/authorized_keys && '
             .'touch /home/%1$s/.ssh/authorized_keys && '
             .'chown %1$s:%1$s /home/%1$s/.ssh/authorized_keys && '
             .'chmod 600 /home/%1$s/.ssh/authorized_keys && '
+            .'install -d -m 700 -o orbit -g orbit /home/orbit/.ssh && '
+            .'rm -f /home/orbit/.ssh/authorized_keys && '
+            .'touch /home/orbit/.ssh/authorized_keys && '
+            .'chown orbit:orbit /home/orbit/.ssh/authorized_keys && '
+            .'chmod 600 /home/orbit/.ssh/authorized_keys && '
             .'grep -q "^Subsystem sftp" /etc/ssh/sshd_config || echo "Subsystem sftp /usr/lib/openssh/sftp-server" >> /etc/ssh/sshd_config && '
             .'systemctl restart sshd || systemctl restart ssh || true && '
             .'rm -f /etc/machine-id && '
@@ -320,16 +380,39 @@ class IncusE2EImagePreparer
         );
     }
 
-    private function cloudInit(IncusE2EImagePreparationOptions $options, string $publicKey): string
+    /**
+     * @param  list<string>  $packages
+     */
+    private function cloudInit(IncusBaseImagePreparationOptions $options, string $publicKey, array $packages): string
     {
+        $packageLines = implode("\n", array_map(
+            fn (string $package): string => '  - '.$package,
+            $packages,
+        ));
+
         return <<<YAML
 #cloud-config
 bootcmd:
-  - [ sh, -lc, "rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf" ]
+  - [ sh, -lc, "rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\n' > /etc/resolv.conf" ]
+  - [ sh, -lc, "printf '%s\\n' 'Acquire::ForceIPv4 \"true\";' 'Acquire::http::Timeout \"10\";' 'Acquire::https::Timeout \"10\";' 'Acquire::Retries \"1\";' > /etc/apt/apt.conf.d/99orbit-e2e-network" ]
+apt:
+  primary:
+    - arches: [default]
+      uri: http://mirror.leaseweb.com/ubuntu
+  security:
+    - arches: [default]
+      uri: http://mirror.leaseweb.com/ubuntu
+  conf: |
+    Acquire::ForceIPv4 "true";
+    Acquire::http::Timeout "10";
+    Acquire::https::Timeout "10";
+    Acquire::Retries "1";
+  disable_suites:
+    - security
 package_update: true
+package_upgrade: false
 packages:
-  - openssh-server
-  - openssh-client
+{$packageLines}
 ssh_pwauth: false
 users:
   - default
@@ -340,8 +423,18 @@ users:
     lock_passwd: false
     ssh_authorized_keys:
       - {$publicKey}
+  - name: orbit
+    groups: sudo
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
 runcmd:
   - [ sh, -lc, "usermod -p '*' {$options->bootstrapUser}" ]
+  - [ sh, -lc, "usermod -p '*' orbit" ]
+  - [ sh, -lc, "install -d -m 700 -o orbit -g orbit /home/orbit/.ssh" ]
+  - [ sh, -lc, "install -d -m 755 -o orbit -g orbit /home/orbit/.config" ]
+  - [ sh, -lc, "install -d -m 755 -o orbit -g orbit /home/orbit/.config/orbit" ]
+  - [ sh, -lc, "update-alternatives --set php /usr/bin/php8.5 || true" ]
   - [ sh, -lc, "systemctl enable --now ssh || systemctl enable --now sshd || true" ]
 YAML;
     }

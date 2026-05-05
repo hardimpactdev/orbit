@@ -57,7 +57,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 $instances[$role] = new DockerInstance($host, $name, $network);
             }
 
-            if (isset($instances['gateway'])) {
+            if ($options->startGatewayApi && isset($instances['gateway'])) {
                 $timer->measure('docker.gateway-restart', fn () => E2EGatewayApi::start($instances['gateway'], "topology-{$runId}"));
             }
         } catch (\Throwable $exception) {
@@ -89,7 +89,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 $newInstances[$role] = new DockerInstance($host, $name, $network);
             }
 
-            if (isset($newInstances['gateway'])) {
+            if ($options->startGatewayApi && isset($newInstances['gateway'])) {
                 $cycleTimer->measure('reset.gateway-restart', fn () => E2EGatewayApi::start($newInstances['gateway'], "topology-{$runId}"));
             }
 

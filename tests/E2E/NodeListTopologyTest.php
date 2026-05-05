@@ -2,22 +2,47 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ECommand;
-use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');
-
-it('lists nodes from a prepared full topology', function (): void {
-    $topology = E2ETopologyFactory::fromEnvironment()
-        ->withSshUsers(['control' => 'control'])
-        ->require(E2ETopologyKind::ControlGatewayDevProd);
+it('lists nodes from a prepared control and gateway topology', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::ControlGateway)
+        ->withCurrentCheckout(roles: ['control']);
 
     try {
-        $control = $topology->control();
-        $key = $topology->sshKeyPair();
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
+        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        $result = E2ECommand::ssh($control, 'control', $key, 'cd /home/control/orbit && orbit node:list --json');
+        $names = array_column($payload['success']['data']['nodes'], 'name');
+
+        expect($names)->toContain('gateway');
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-feature-control-gateway');
+
+it('lists nodes from a prepared control, gateway, and dev topology', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
+        ->withCurrentCheckout(roles: ['control']);
+
+    try {
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
+        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $names = array_column($payload['success']['data']['nodes'], 'name');
+
+        expect($names)->toContain('gateway');
+        expect($names)->toContain('app-dev-1');
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+
+it('lists nodes from a prepared full topology', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd)
+        ->withCurrentCheckout(roles: ['control']);
+
+    try {
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan node:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $names = array_column($payload['success']['data']['nodes'], 'name');
@@ -28,4 +53,4 @@ it('lists nodes from a prepared full topology', function (): void {
     } finally {
         $topology->cleanup();
     }
-});
+})->group('e2e-feature', 'e2e-feature-control-gateway-dev-prod');

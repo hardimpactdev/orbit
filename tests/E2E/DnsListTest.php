@@ -2,31 +2,21 @@
 
 declare(strict_types=1);
 
-use Tests\E2E\Support\E2ECommand;
-use Tests\E2E\Support\E2ECurrentCheckout;
-use Tests\E2E\Support\E2ETopologyFactory;
 use Tests\E2E\Support\E2ETopologyKind;
 
 pest()->group('e2e-feature', 'e2e-feature-control');
 
 it('lists Orbit-managed resolver overrides on a Linux control node', function (): void {
-    $topology = E2ETopologyFactory::fromEnvironment()
-        ->withSshUsers(['control' => 'control'])
-        ->require(E2ETopologyKind::Control);
+    $topology = e2eTopology(E2ETopologyKind::Control)
+        ->withCurrentCheckout(roles: ['control']);
 
     try {
-        $control = $topology->control();
-        $key = $topology->sshKeyPair();
-        $checkout = E2ECurrentCheckout::install($control, 'control', $key);
-
-        E2ECommand::ssh(
-            $control,
+        $topology->ssh(
             'control',
-            $key,
-            "cd {$checkout} && mkdir -p storage/app/orbit/dnsmasq.d && printf 'address=/.test/10.6.0.7\n' > storage/app/orbit/dnsmasq.d/test.conf",
+            "cd {$topology->checkout('control')} && mkdir -p storage/app/orbit/dnsmasq.d && printf 'address=/.test/10.6.0.7\n' > storage/app/orbit/dnsmasq.d/test.conf",
         );
 
-        $result = E2ECommand::ssh($control, 'control', $key, "cd {$checkout} && php artisan dns:list --json");
+        $result = $topology->ssh('control', "cd {$topology->checkout('control')} && php artisan dns:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($payload['success']['data']['dns'])->toBe([

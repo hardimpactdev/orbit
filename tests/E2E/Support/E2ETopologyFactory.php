@@ -13,6 +13,7 @@ final class E2ETopologyFactory
         private readonly string $strategy,
         private readonly ?array $sshUsers = null,
         private readonly ?E2ETopologyCapabilities $capabilityRequirements = null,
+        private readonly bool $startGatewayApi = false,
     ) {}
 
     public static function fromEnvironment(): self
@@ -30,6 +31,7 @@ final class E2ETopologyFactory
             strategy: $this->strategy,
             sshUsers: $this->sshUsers,
             capabilityRequirements: $required,
+            startGatewayApi: $this->startGatewayApi,
         );
     }
 
@@ -42,6 +44,17 @@ final class E2ETopologyFactory
             strategy: $this->strategy,
             sshUsers: $sshUsers,
             capabilityRequirements: $this->capabilityRequirements,
+            startGatewayApi: $this->startGatewayApi,
+        );
+    }
+
+    public function withGatewayApi(): self
+    {
+        return new self(
+            strategy: $this->strategy,
+            sshUsers: $this->sshUsers,
+            capabilityRequirements: $this->capabilityRequirements,
+            startGatewayApi: true,
         );
     }
 
@@ -62,7 +75,10 @@ final class E2ETopologyFactory
                 $resolved,
                 E2ERun::id(),
                 $timer,
-                new E2ETopologyAcquisitionOptions(sshUsers: $this->sshUsers),
+                new E2ETopologyAcquisitionOptions(
+                    sshUsers: $this->sshUsers,
+                    startGatewayApi: $this->startGatewayApi,
+                ),
             );
         } finally {
             $timer->flush('acquire');

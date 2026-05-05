@@ -44,7 +44,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         $sshKeyPair = $this->createSshKeyPair($host, $runId);
         $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options);
-        $snapshotReset = $this->snapshotResetFor($instances, $primaryUsers, $sshKeyPair);
+        $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer);
 
         $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
             $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer);
@@ -52,7 +52,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
             return [
                 'instances' => $newInstances,
-                'snapshotReset' => $this->snapshotResetFor($newInstances, $newPrimaryUsers, $sshKeyPair),
+                'snapshotReset' => $this->prepareSnapshotReset($host, $newInstances, $newPrimaryUsers, $sshKeyPair, $cycleTimer),
             ];
         };
 
@@ -86,30 +86,12 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
             $primaryUsers[$role] = $primaryUser;
 
-            $timer->measure("ssh-authorize.{$role}", function () use ($instance, $config, $primaryUser, $sshKeyPair): void {
-                $instance->authorizeSsh($config->bootstrapUser, $sshKeyPair);
-
-                if ($primaryUser !== $config->bootstrapUser) {
-                    $instance->authorizeSsh($primaryUser, $sshKeyPair);
-                }
-            });
-
-            $timer->measure("ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            $timer->measure("command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
         }
 
-        if (isset($instances['control'], $primaryUsers['control'])) {
-            $timer->measure('control-identity', fn () => E2EControlIdentity::ensure(
-                $instances['control'],
-                $primaryUsers['control'],
-                $sshKeyPair,
-            ));
+        if ($options->startGatewayApi) {
+            $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
         }
-
-        foreach ($instances as $role => $instance) {
-            $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
-        }
-
-        $timer->measure('wireguard', fn () => $this->reestablishWireGuard($instances));
 
         return $primaryUsers;
     }
@@ -140,6 +122,41 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  array<string, IncusInstance>  $instances
      * @param  array<string, string>  $primaryUsers
      */
+    private function prepareSnapshotReset(IncusHost $host, array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer): ?\Closure
+    {
+        if (! $this->shouldPrepareSnapshotReset()) {
+            return null;
+        }
+
+        $strategy = $this->resetStrategy();
+
+        foreach ($instances as $role => $instance) {
+            if ($strategy === 'stateful-restore') {
+                $timer->measure("snapshot-stateful.{$role}", fn () => $instance->snapshotStatefully('lease-warm'));
+
+                continue;
+            }
+
+            $timer->measure("snapshot.{$role}", fn () => $instance->snapshot('lease-clean'));
+        }
+
+        return $strategy === 'stateful-restore'
+            ? $this->statefulResetFor($host, $instances, $primaryUsers, $sshKeyPair)
+            : $this->snapshotResetFor($instances, $primaryUsers, $sshKeyPair);
+    }
+
+    private function shouldPrepareSnapshotReset(): bool
+    {
+        return in_array($this->resetStrategy(), ['snapshot-restore', 'stateful-restore'], true);
+    }
+
+    private function resetStrategy(): string
+    {
+        $strategy = getenv('ORBIT_E2E_TOPOLOGY_RESET');
+
+        return is_string($strategy) && $strategy !== '' ? $strategy : 'fresh-clone';
+    }
+
     private function snapshotResetFor(array $instances, array $primaryUsers, SshKeyPair $sshKeyPair): \Closure
     {
         return function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair): void {
@@ -163,6 +180,41 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 }
 
                 $cycleTimer->measure("reset.ssh-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
+            }
+        };
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     * @param  array<string, string>  $primaryUsers
+     */
+    private function statefulResetFor(IncusHost $host, array $instances, array $primaryUsers, SshKeyPair $sshKeyPair): \Closure
+    {
+        return function (E2EPhaseTimer $cycleTimer) use ($host, $instances, $primaryUsers, $sshKeyPair): void {
+            $result = $cycleTimer->measure(
+                'reset.restore-stateful.all',
+                fn () => $host->restoreSnapshotsConcurrently(
+                    array_map(
+                        fn (IncusInstance $instance): string => $instance->name(),
+                        array_values($instances),
+                    ),
+                    'lease-warm',
+                    stateful: true,
+                ),
+            );
+
+            if (! $result->successful()) {
+                throw new \RuntimeException("Could not restore stateful topology snapshots: {$result->errorOutput()}");
+            }
+
+            foreach ($primaryUsers as $role => $primaryUser) {
+                $instance = $instances[$role] ?? null;
+
+                if ($instance === null) {
+                    continue;
+                }
+
+                $cycleTimer->measure("reset.command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
             }
         };
     }

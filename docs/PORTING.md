@@ -43,7 +43,7 @@ Implementation-pattern guidance for command porting lives in
 - In-memory Pest tests own deterministic command, service, database, renderer,
   and contract coverage.
 - Provisioning, destructive, host-mutation, live transport, and repair/adoption
-  flows require the `e2e-provisioning` lane before they can be treated as fully
+  flows require the `e2e-provision` lane before they can be treated as fully
   verified.
 - Every newly-ported command requires focused in-memory Pest coverage and one
   E2E-* gate todo before its workstream entry can flip to `[x]`. The E2E gate
@@ -93,7 +93,7 @@ Default migration order is command-contract and capability driven:
    - Keep `composer quality-check` green for in-memory Pest coverage.
    - Expand the Incus-backed ephemeral E2E harness before provisioning or
      destructive flows depend on it.
-    - Use blank Incus VM snapshots for the `e2e-provisioning` lane and ready
+    - Use blank Incus VM snapshots for the `e2e-provision` lane and ready
       Incus VM snapshots for the `e2e-feature` lane.
    - Convert docs for the next implementation slice before writing code.
    - Create or refresh the matching `docs/abstractions/<n>_<family>.md` before
@@ -147,9 +147,9 @@ yet satisfy the full product contracts.
     launches from that image and verifies SSH through a non-`orbit` bootstrap user.
   - Control-ready lane implemented: `php artisan e2e:prepare-incus-images --role=control --force`
     builds the reusable `orbit-ready-control` Incus image from the blank image by
-    installing Orbit as a non-`orbit` control user, and `composer test:e2e:provisioning --filter='control'`
+    installing Orbit as a non-`orbit` control user, and `composer test:e2e:provision --filter='control'`
     launches it and verifies `orbit --version` over SSH.
-  - First-gateway provisioning lane implemented: `composer test:e2e:provisioning --filter='NodeNewGateway'`
+  - First-gateway provisioning lane implemented: `composer test:e2e:provision --filter='NodeNewGateway'`
     launches a ready control VM and a blank gateway VM, runs
     `orbit node:new --role=gateway` from the control VM, and verifies the
     gateway is provisioned under the steady-state `orbit` user with a working
@@ -407,7 +407,7 @@ todos required by the Rules section:
 - `E2E-<short-id>` — ephemeral E2E gate todo. Tagged `e2e`, `e2e-gate`,
   `ephemeral`. Promote to `e2e-ready` (NOT `worker-ready`) on
   `SCOUT_REPORT status=READY`. Lane must declare a concrete
-  `composer test:e2e:provisioning` invocation, `composer test:e2e:features`
+  `composer test:e2e:provision` invocation, `composer test:e2e:features`
   invocation, `php artisan e2e:*` command, or `lane=none` reason; if that lane
   does not yet exist, create a separate implementer todo to author it before the
   E2E gate becomes dispatchable.
@@ -429,6 +429,65 @@ steady-state `orbit` symlink just to expose a command under development.
 If an E2E lane cannot test the current checkout this way, the gate is not ready.
 Create an E2E harness todo first, or mark the gate blocked with the missing
 checkout-overlay support.
+
+#### Current E2E Setup For Porting Work
+
+Use this setup before promoting new command-port E2E gates:
+
+1. Build or refresh the stable Incus base image when apt/system dependencies
+   change:
+
+   ```bash
+   ORBIT_E2E_HOST=beast \
+   ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
+   composer e2e:prepare-base-image -- --force
+   ```
+
+2. Rebuild the prepared superset topology from the current checkout whenever
+   feature assertions need fresh baseline command code:
+
+   ```bash
+   ORBIT_E2E_HOST=beast \
+   ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
+   composer e2e:prepare-topology -- --force control-gateway-dev-prod
+   ```
+
+   The Beast `orbit-e2e` Incus storage pool is ZFS-backed and is the expected
+   Incus pool for practical VM-backed feature E2E. Without
+   `ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e`, clones fall back to the host's
+   default storage and are much slower.
+
+3. For feature ports, prefer the fast aggregate first:
+
+   ```bash
+   ORBIT_E2E_INCUS_HOSTS=beast \
+   ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
+   composer test:e2e
+   ```
+
+   This runs `e2e-feature` tests in one PHP process, acquires the prepared
+   superset once, overlays the current checkout per test via the Pest helpers,
+   and reuses the checkout cache for the process.
+
+4. Add scenario-specific gates only when the command truly needs a narrower
+   topology contract:
+
+   ```bash
+   composer test:e2e:features:control
+   composer test:e2e:features:control-gateway
+   composer test:e2e:features:control-gateway-dev
+   composer test:e2e:features:control-gateway-dev-prod
+   ```
+
+5. Keep provisioning, installer, host mutation, and destructive setup flows out
+   of the default feature lane. Pair those todos with
+   `composer test:e2e:provision -- --filter=<test>` and leave failed VMs
+   inspectable.
+
+Docker remains the likely long-term default for fast feature regression because
+container topology reset is cheaper. Incus remains the VM-realism lane for
+systemd, SSH, users, package installation, WireGuard, trust-store, and
+VPS-adjacent behavior.
 
 #### Sequencing Rules
 
@@ -480,10 +539,10 @@ work becomes the active lane:
 
 1. `NODENEW-WIREGUARD-ENROLL-1` — enroll the first gateway in WireGuard and
    prove the resulting registry and config state with focused Pest coverage;
-   pair with an `e2e-provisioning` gate.
+   pair with an `e2e-provision` gate.
 2. `NODENEW-GATEWAY-API-VERIFY-1` — verify the gateway API over WireGuard,
    including `/api/me`, after first-gateway bootstrap; pair with an
-   `e2e-provisioning` gate.
+   `e2e-provision` gate.
 3. `NODENEW-GATEWAY-CA-VERIFY-1` — make gateway CA trust verification explicit
    in the command result and focused tests; pair with provisioning E2E only if
    the behavior mutates a host.
@@ -643,7 +702,7 @@ exist. Those families wait for the node/gateway/app foundations.
     registry rows.
   - [x] First-gateway bootstrap creates/verifies a steady-state runtime user
     (`orbit`) through the bootstrap SSH user and installs Orbit under that user.
-  - [x] First-gateway ephemeral E2E lane (`composer test:e2e:provisioning --filter='NodeNewGateway'`) verifies
+  - [x] First-gateway ephemeral E2E lane (`composer test:e2e:provision --filter='NodeNewGateway'`) verifies
     end-to-end provisioning against disposable Incus VMs.
   - [x] First-gateway bootstrap invokes gateway-local internal command over SSH
     to initialize gateway node identity (`is_local=true`) and generate root CA.
@@ -711,7 +770,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Dns/DnsResolveTldHumanRendererTest.php` (human progress trees, success/failure prose, no JSON envelopes)
   - Contract gaps:
     - Interactive input mode prompts are covered by command logic but not fully exercised via automated TTY prompts (standard PHPUnit/Pest limitation).
-    - Ephemeral E2E lane (`composer test:e2e:provisioning --filter='DnsResolveTld'`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
+    - Ephemeral E2E lane (`composer test:e2e:provision --filter='DnsResolveTld'`) is tracked as todo 245 (DNS-LANE-RESOLVE-TLD-1); deferred until E2E harness lane is authored.
     - Linux backend support is intentionally deferred; only macOS dnsmasq backend is implemented.
 - [x] Port `dns:list`.
   - Current implementation: `app/Console/Commands/DnsListCommand.php`
@@ -876,18 +935,18 @@ decision evidence and tracker status only.
 - [~] Restore ephemeral E2E.
   - [x] Add Incus backend preflight on beast.
   - [x] Add disposable blank Ubuntu VM lifecycle check.
-  - [x] Create a blank snapshot lane for `e2e-provisioning` tests.
+  - [x] Create a blank snapshot lane for `e2e-provision` tests.
   - [x] Add reusable host installer needed by the ready control snapshot.
   - [x] Create a ready control snapshot lane for `e2e-feature` tests.
   - [x] Create a ready gateway snapshot lane (`php artisan e2e:prepare-incus-images --role=gateway --force`)
     that builds a reusable `orbit-ready-gateway` image with bootstrapped
     gateway identity and root CA.
-  - [x] Add first-gateway provisioning E2E lane (`composer test:e2e:provisioning --filter='NodeNewGateway'`)
+  - [x] Add first-gateway provisioning E2E lane (`composer test:e2e:provision --filter='NodeNewGateway'`)
     that exercises `node:new --role=gateway` from a ready control VM against a
-    blank gateway VM (`e2e-provisioning`).
-  - [x] Add control-node onboarding E2E lane (`composer test:e2e:provisioning --filter='GatewayAdd'`) that
+    blank gateway VM (`e2e-provision`).
+  - [x] Add control-node onboarding E2E lane (`composer test:e2e:provision --filter='GatewayAdd'`) that
     exercises `gateway:add` from a ready control VM against a ready gateway VM
-    (`e2e-provisioning`).
+    (`e2e-provision`).
   - [x] Create ready development app topology lane for `e2e-feature` tests.
   - [x] Create ready production app topology lane for `e2e-feature` tests.
 - [x] Add E2E topology for gateway + control + development app + production
@@ -896,7 +955,35 @@ decision evidence and tracker status only.
     `ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2 composer test:e2e:features:control-gateway-dev-prod`.
   - Docker-backed container-safe offload lane:
     `ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_DOCKER_HOSTS=beast composer test:e2e:features:docker`.
-- [ ] Add provisioning/destructive coverage only in the `e2e-provisioning` lane.
+- [~] E2E-IMAGE-ARCH-1: stable base image + per-run Orbit provisioner
+  - [x] Provisioner script `bin/e2e-provision-node` + apt-deps helper
+    `bin/_e2e-deps.sh` (single source of truth shared with the base preparer).
+  - [x] `IncusBaseImagePreparer` + `e2e:prepare-base-image` (hidden, with
+    `--force` and `--json`).
+  - [x] `composer e2e:prepare-base-image` script.
+  - [x] `IncusHost::pushBundle` + `IncusHost::provisionInstance` for the
+    per-run bundle path.
+  - [x] `e2e:prepare-topology --force` builds the source archive once
+    (or reuses one via `--branch=<ref>` / `--source-archive=<path>`),
+    bundles `bin/install-orbit` + `bin/e2e-provision-node` + the
+    `~/.cache/orbit-e2e/composer` cache, and forwards the bundle to the
+    builder.
+  - [x] `IncusTopologyBuilder` clones every role from
+    `orbit-base-ubuntu-26.04` and runs the provisioner before
+    authorize/network/ceremony.
+  - [x] Drop role-specific `controlImage`/`gatewayImage`/dev/prod aliases
+    from `E2EConfig`, `IncusE2EImagePreparationOptions`, and
+    `e2e:prepare-incus-images` (now `--role=blank` only).
+  - [x] One-shot Beast cleanup
+    (`incus image delete orbit-ready-{control,gateway,devapp,prodapp}`).
+  - [ ] Wall-time check on Beast: cold ≤ 8 min, warm ≤ 3 min for
+    `e2e:prepare-topology -- --force control-gateway-dev-prod`.
+  - [x] Re-run topology contracts on Beast against the new lane
+    (`control-gateway-dev-prod` contract passed with 47 assertions).
+  - [ ] Rework `e2e-provision` tests that previously launched from
+    `E2EImage::Control`/`Gateway` (now refused by `IncusProvider::aliasFor`)
+    to base + provisioner.
+- [ ] Add provisioning/destructive coverage only in the `e2e-provision` lane.
 
 ## Next Priorities
 
@@ -917,7 +1004,7 @@ decision evidence and tracker status only.
    `node:revoke`, and `node:remove`.
 5. Extend `node:new --role=gateway` WireGuard/API/vhost/FPM provisioning only
    when a porting slice explicitly targets provisioning or host mutation; keep
-   those checks in the `e2e-provisioning` lane.
+   those checks in the `e2e-provision` lane.
 6. Convert `profile` docs once its node/app prerequisites are present, then
    port it early as a verification-helper command.
 7. Complete the documented `update` and `update:all` implementation gaps once

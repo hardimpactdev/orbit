@@ -24,7 +24,17 @@ function successfulProcessResult(): ProcessResult
     return $result;
 }
 
-function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB'): E2EConfig
+function failedProcessResult(string $error = ''): ProcessResult
+{
+    $result = m::mock(ProcessResult::class);
+    $result->shouldReceive('successful')->andReturn(false);
+    $result->shouldReceive('errorOutput')->andReturn($error);
+    $result->shouldReceive('output')->andReturn('');
+
+    return $result;
+}
+
+function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB', string $incusStoragePool = ''): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
@@ -32,8 +42,7 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
         host: 'beast',
         sourceImage: '',
         blankImage: '',
-        controlImage: '',
-        gatewayImage: '',
+        baseImage: '',
         hcloudServerType: '',
         hcloudLocation: '',
         hcloudBlankImage: '',
@@ -47,6 +56,8 @@ function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string 
         memory: '2GiB',
         topologyCpus: $topologyCpus,
         topologyMemory: $topologyMemory,
+        topologyStateSize: '4GiB',
+        incusStoragePool: $incusStoragePool,
         incusMaxVmsPerHost: 4,
         dockerHosts: ['local'],
         dockerMaxContainersPerHost: 8,
@@ -68,29 +79,27 @@ it('generates correct template and clone names', function (): void {
         ->toBe('orbit-e2e-abc123-control');
 });
 
-it('returns true when all template instances exist', function (): void {
+it('returns true when all template instances and clean snapshots exist', function (): void {
     $host = m::mock(IncusHost::class);
-    $host->shouldReceive('instanceExists')
-        ->with('orbit-template-control-gateway-dev-control')
-        ->andReturn(true);
-    $host->shouldReceive('instanceExists')
-        ->with('orbit-template-control-gateway-dev-gateway')
-        ->andReturn(true);
-    $host->shouldReceive('instanceExists')
-        ->with('orbit-template-control-gateway-dev-dev')
-        ->andReturn(true);
+    $host->shouldReceive('run')
+        ->once()
+        ->withArgs(function (string $command, int $timeoutSeconds): bool {
+            return $timeoutSeconds === 30
+                && str_contains($command, 'orbit-template-control-gateway-dev-control')
+                && str_contains($command, 'orbit-template-control-gateway-dev-gateway')
+                && str_contains($command, 'orbit-template-control-gateway-dev-dev')
+                && substr_count($command, 'grep -q') === 3;
+        })
+        ->andReturn(successfulProcessResult());
 
     expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::ControlGatewayDev))->toBeTrue();
 });
 
 it('returns false when any template instance is missing', function (): void {
     $host = m::mock(IncusHost::class);
-    $host->shouldReceive('instanceExists')
-        ->with('orbit-template-control-gateway-control')
-        ->andReturn(true);
-    $host->shouldReceive('instanceExists')
-        ->with('orbit-template-control-gateway-gateway')
-        ->andReturn(false);
+    $host->shouldReceive('run')
+        ->once()
+        ->andReturn(failedProcessResult());
 
     expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::ControlGateway))->toBeFalse();
 });
@@ -143,10 +152,10 @@ it('returns first host with required templates and capacity', function (): void 
     $config = makeIncusTopologyTemplateTestConfig();
 
     $hostWithout = m::mock(IncusHost::class, [$config])->makePartial();
-    $hostWithout->shouldReceive('instanceExists')->andReturn(false);
+    $hostWithout->shouldReceive('run')->andReturn(failedProcessResult());
 
     $hostWith = m::mock(IncusHost::class, [$config])->makePartial();
-    $hostWith->shouldReceive('instanceExists')->andReturn(true);
+    $hostWith->shouldReceive('run')->andReturn(successfulProcessResult());
     $hostWith->shouldReceive('runningE2EInstanceCount')->andReturn(0);
 
     $pool = new IncusHostPool([$hostWithout, $hostWith]);
@@ -158,10 +167,10 @@ it('returns null when no host has required templates', function (): void {
     $config = makeIncusTopologyTemplateTestConfig();
 
     $host1 = m::mock(IncusHost::class, [$config])->makePartial();
-    $host1->shouldReceive('instanceExists')->andReturn(false);
+    $host1->shouldReceive('run')->andReturn(failedProcessResult());
 
     $host2 = m::mock(IncusHost::class, [$config])->makePartial();
-    $host2->shouldReceive('instanceExists')->andReturn(false);
+    $host2->shouldReceive('run')->andReturn(failedProcessResult());
 
     $pool = new IncusHostPool([$host1, $host2]);
 
@@ -172,12 +181,12 @@ it('skips host when capacity is insufficient and selects the next', function ():
     $config = makeIncusTopologyTemplateTestConfig();
 
     $tightHost = m::mock(IncusHost::class, [$config])->makePartial();
-    $tightHost->shouldReceive('instanceExists')->andReturn(true);
+    $tightHost->shouldReceive('run')->andReturn(successfulProcessResult());
     // 4 max - 3 running = 1 free slot, but we need 4 slots for ControlGatewayDevProd.
     $tightHost->shouldReceive('runningE2EInstanceCount')->andReturn(3);
 
     $freeHost = m::mock(IncusHost::class, [$config])->makePartial();
-    $freeHost->shouldReceive('instanceExists')->andReturn(true);
+    $freeHost->shouldReceive('run')->andReturn(successfulProcessResult());
     $freeHost->shouldReceive('runningE2EInstanceCount')->andReturn(0);
 
     $pool = new IncusHostPool([$tightHost, $freeHost]);
@@ -189,11 +198,11 @@ it('returns null when every host with templates is at capacity', function (): vo
     $config = makeIncusTopologyTemplateTestConfig();
 
     $host1 = m::mock(IncusHost::class, [$config])->makePartial();
-    $host1->shouldReceive('instanceExists')->andReturn(true);
+    $host1->shouldReceive('run')->andReturn(successfulProcessResult());
     $host1->shouldReceive('runningE2EInstanceCount')->andReturn(4);
 
     $host2 = m::mock(IncusHost::class, [$config])->makePartial();
-    $host2->shouldReceive('instanceExists')->andReturn(true);
+    $host2->shouldReceive('run')->andReturn(successfulProcessResult());
     $host2->shouldReceive('runningE2EInstanceCount')->andReturn(4);
 
     $pool = new IncusHostPool([$host1, $host2]);
@@ -214,7 +223,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
 
     // Every role gets a backgrounded copy with a captured pid.
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        expect($script)->toContain("incus copy 'orbit-template-control-gateway-dev-prod-{$role}' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus copy 'orbit-template-control-gateway-dev-prod-{$role}/clean' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
     }
@@ -223,8 +232,52 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     // copy/wait/limits/start/wait, in that order).
     $firstStartPos = strpos($script, 'incus start');
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        $copyPos = strpos($script, "incus copy 'orbit-template-control-gateway-dev-prod-{$role}'");
+        $copyPos = strpos($script, "incus copy 'orbit-template-control-gateway-dev-prod-{$role}/clean'");
         expect($copyPos)->toBeLessThan($firstStartPos);
+    }
+});
+
+it('adds an explicit storage pool to topology clone copies when configured', function (): void {
+    $config = makeIncusTopologyTemplateTestConfig(incusStoragePool: 'orbit-e2e');
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::ControlGateway,
+        'runZ',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
+    );
+
+    expect($script)->toContain("incus copy 'orbit-template-control-gateway-control/clean' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-control-gateway-gateway/clean' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+});
+
+it('enables stateful migration before starting clones when stateful reset is requested', function (): void {
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
+    putenv('ORBIT_E2E_TOPOLOGY_RESET=stateful-restore');
+
+    try {
+        $config = makeIncusTopologyTemplateTestConfig();
+        $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+        $script = IncusTopologyTemplate::buildBatchScript(
+            $host,
+            E2ETopologyKind::ControlGateway,
+            'runState',
+            IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
+        );
+
+        expect($script)->toContain("incus config set 'orbit-e2e-runState-control' migration.stateful=true")
+            ->and($script)->toContain("incus config set 'orbit-e2e-runState-gateway' migration.stateful=true")
+            ->and($script)->toContain("incus config device set 'orbit-e2e-runState-control' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-control' root size.state='4GiB'")
+            ->and($script)->toContain("incus config device set 'orbit-e2e-runState-gateway' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-gateway' root size.state='4GiB'")
+            ->and(strpos($script, 'migration.stateful=true'))->toBeLessThan(strpos($script, 'incus start'));
+    } finally {
+        if ($previous === false) {
+            putenv('ORBIT_E2E_TOPOLOGY_RESET');
+        } else {
+            putenv("ORBIT_E2E_TOPOLOGY_RESET={$previous}");
+        }
     }
 });
 

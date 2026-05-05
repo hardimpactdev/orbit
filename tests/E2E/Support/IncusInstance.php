@@ -14,6 +14,7 @@ final class IncusInstance implements E2EInstance
     public function __construct(
         private readonly IncusHost $host,
         private readonly string $name,
+        private readonly bool $commandTransport = false,
     ) {}
 
     public function name(): string
@@ -32,6 +33,15 @@ final class IncusInstance implements E2EInstance
 
     public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
     {
+        if ($this->commandTransport) {
+            return $this->host->run(sprintf(
+                'incus exec %s -- runuser -u %s -- bash -lc %s',
+                escapeshellarg($this->name),
+                escapeshellarg($user),
+                escapeshellarg($command),
+            ), $timeoutSeconds);
+        }
+
         return $this->host->run(sprintf(
             'ssh -i %s -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s',
             escapeshellarg($keyPair->privateKeyPath),
@@ -153,6 +163,22 @@ final class IncusInstance implements E2EInstance
 
     public function waitForSsh(string $user, SshKeyPair $keyPair): void
     {
+        if ($this->commandTransport) {
+            $deadline = time() + $this->host->config->timeoutSeconds;
+
+            while (time() < $deadline) {
+                $result = $this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 10);
+
+                if ($result->successful()) {
+                    return;
+                }
+
+                sleep(1);
+            }
+
+            throw new \RuntimeException("Incus command transport is not ready for {$user}@{$this->name}.");
+        }
+
         $deadline = time() + $this->host->config->timeoutSeconds;
 
         while (time() < $deadline) {
@@ -203,9 +229,20 @@ final class IncusInstance implements E2EInstance
         }
     }
 
-    public function restoreSnapshot(string $snapshot): void
+    public function snapshotStatefully(string $snapshot): void
     {
-        $result = $this->host->restoreSnapshot($this->name, $snapshot);
+        $result = $this->host->snapshotStatefulInstance($this->name, $snapshot);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not statefully snapshot {$this->name} as {$snapshot}: {$result->errorOutput()}");
+        }
+    }
+
+    public function restoreSnapshot(string $snapshot, bool $stateful = false): void
+    {
+        $this->ipv4 = null;
+
+        $result = $this->host->restoreSnapshot($this->name, $snapshot, $stateful);
 
         if (! $result->successful()) {
             throw new \RuntimeException("Could not restore {$this->name} from {$snapshot}: {$result->errorOutput()}");

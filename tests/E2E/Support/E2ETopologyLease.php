@@ -94,7 +94,7 @@ final class E2ETopologyLease
         $timer = new E2EPhaseTimer;
 
         try {
-            if ($strategy === 'snapshot-restore' && $this->snapshotReset !== null) {
+            if (in_array($strategy, ['snapshot-restore', 'stateful-restore'], true) && $this->snapshotReset !== null) {
                 ($this->snapshotReset)($timer);
                 $this->cleaned = false;
 
@@ -114,5 +114,18 @@ final class E2ETopologyLease
         } finally {
             $timer->flush('reset');
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function instanceNames(): array
+    {
+        return array_values(array_filter([
+            $this->control->name(),
+            $this->gateway?->name(),
+            $this->dev?->name(),
+            $this->prod?->name(),
+        ]));
     }
 }

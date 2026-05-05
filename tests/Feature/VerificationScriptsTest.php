@@ -40,7 +40,7 @@ it('keeps the aggregate quality gate complete', function (): void {
     ]);
 });
 
-it('runs ephemeral e2e through the opt-in Pest suite', function (): void {
+it('runs default ephemeral e2e through prepared topology lanes', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['test'])
@@ -51,8 +51,12 @@ it('runs ephemeral e2e through the opt-in Pest suite', function (): void {
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        '@test:e2e:provisioning',
-        '@test:e2e:features',
+        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args',
+    ]);
+
+    expect($composer['scripts']['test:e2e:provision'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision @additional_args',
     ]);
 });
 
@@ -149,9 +153,7 @@ it('documents e2e topology timing event names', function (): void {
     expect($testing)
         ->toContain('batch.copy-start')
         ->toContain('agent-ready.<role>')
-        ->toContain('ssh-authorize.<role>')
-        ->toContain('ssh-ready.<role>')
-        ->toContain('snapshot.<role>')
+        ->toContain('command-ready.<role>')
         ->toContain('wireguard')
         ->toContain('cleanup.<role>');
 });
@@ -166,17 +168,28 @@ it('exposes opt-in parallel feature e2e after topology contracts', function (): 
     ]);
 });
 
-it('exposes control-only feature e2e after the control topology contract', function (): void {
+it('exposes feature e2e for each prepared topology shape after its topology contract', function (): void {
     $composer = json_decode(file_get_contents(base_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($composer['scripts']['test:e2e:features'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        '@test:e2e:features:control',
-        '@test:e2e:features:control-gateway-dev-prod',
+        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract @additional_args',
     ])->and($composer['scripts']['test:e2e:features:control'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control --fail-on-empty-test-suite @no_additional_args',
-        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-feature-control --exclude-group=e2e-topology-contract @additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control --exclude-group=e2e-topology-contract @additional_args',
+    ])->and($composer['scripts']['test:e2e:features:control-gateway'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway --fail-on-empty-test-suite @no_additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway --exclude-group=e2e-topology-contract @additional_args',
+    ])->and($composer['scripts']['test:e2e:features:control-gateway-dev'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev --fail-on-empty-test-suite @no_additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev --exclude-group=e2e-topology-contract @additional_args',
+    ])->and($composer['scripts']['test:e2e:features:control-gateway-dev-prod'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        'ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-topology-contract-control-gateway-dev-prod --fail-on-empty-test-suite @no_additional_args',
+        'ORBIT_E2E=1 ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process php artisan test --testsuite=E2E --group=e2e-feature-control-gateway-dev-prod --exclude-group=e2e-topology-contract @additional_args',
     ]);
 });
 

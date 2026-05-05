@@ -15,7 +15,7 @@ pest()->group('e2e-topology-contract');
 
 it('satisfies the prepared control topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::Control);
+    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::Control);
 
     try {
         expectPreparedControlTopology($topology, $config);
@@ -26,7 +26,7 @@ it('satisfies the prepared control topology contract', function (): void {
 
 it('satisfies the prepared control-gateway topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGateway);
+    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGateway);
 
     try {
         expectPreparedGatewayTopology($topology, $config);
@@ -37,7 +37,7 @@ it('satisfies the prepared control-gateway topology contract', function (): void
 
 it('satisfies the prepared control-gateway-dev topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDev);
+    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGatewayDev);
 
     try {
         expectPreparedDevTopology($topology, $config);
@@ -48,7 +48,7 @@ it('satisfies the prepared control-gateway-dev topology contract', function (): 
 
 it('satisfies the prepared control-gateway-dev-prod topology contract', function (): void {
     $config = E2EConfig::fromEnvironment();
-    $topology = E2ETopologyFactory::fromEnvironment()->require(E2ETopologyKind::ControlGatewayDevProd);
+    $topology = E2ETopologyFactory::fromEnvironment()->withGatewayApi()->require(E2ETopologyKind::ControlGatewayDevProd);
 
     try {
         expectPreparedProdTopology($topology, $config);

@@ -11,6 +11,7 @@ use Tests\E2E\Support\E2ERun;
 use Tests\E2E\Support\E2ETopologyKind;
 use Tests\E2E\Support\E2ETopologyLease;
 use Tests\E2E\Support\HcloudProvider;
+use Tests\E2E\Support\IncusProvider;
 use Tests\E2E\Support\ProviderAvailability;
 use Tests\E2E\Support\ProviderPool;
 use Tests\E2E\Support\SshKeyPair;
@@ -33,6 +34,18 @@ it('uses the explicit provider list before the single provider value', function 
         'ORBIT_E2E_PROVIDERS' => 'hcloud, incus',
     ], function (): void {
         expect(E2EConfig::fromEnvironment()->providerNames)->toBe(['hcloud', 'incus']);
+    });
+});
+
+it('reads the explicit incus storage pool from the environment', function (): void {
+    withE2EProviderEnvironment(['ORBIT_E2E_INCUS_STORAGE_POOL' => 'orbit-e2e'], function (): void {
+        expect(E2EConfig::fromEnvironment()->incusStoragePool)->toBe('orbit-e2e');
+    });
+});
+
+it('reads the topology state size from the environment', function (): void {
+    withE2EProviderEnvironment(['ORBIT_E2E_TOPOLOGY_STATE_SIZE' => '6GiB'], function (): void {
+        expect(E2EConfig::fromEnvironment()->topologyStateSize)->toBe('6GiB');
     });
 });
 
@@ -82,6 +95,20 @@ it('discovers prepared hcloud snapshots by logical image label', function (): vo
     expect($provider->availability([E2EImage::Blank, E2EImage::Control, E2EImage::Gateway])->available)->toBeTrue()
         ->and($provider->imageReferenceFor(E2EImage::Control))->toBe('402')
         ->and($provider->imageReferenceFor(E2EImage::Gateway))->toBe('501');
+});
+
+it('reports retired incus ready images as unavailable instead of throwing', function (): void {
+    Process::fake([
+        '*command -v*incus*' => Process::result(),
+        '*incus info*' => Process::result(),
+        '*incus network show incusbr0*' => Process::result(),
+    ]);
+
+    $availability = (new IncusProvider(E2EConfig::fromEnvironment()))
+        ->availability([E2EImage::Control]);
+
+    expect($availability->available)->toBeFalse()
+        ->and($availability->message)->toContain('Role-specific ready images have been replaced');
 });
 
 function fakeE2EProvider(string $name, bool $available): E2EProvider

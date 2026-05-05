@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\E2EPrepareTopologyCommand;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 use Tests\E2E\Support\E2ETopologyKind;
@@ -17,6 +18,26 @@ beforeEach(function (): void {
 afterEach(function (): void {
     m::close();
 });
+
+function fakeBundleProcessing(): void
+{
+    Process::fake([
+        // Local source archive build (default tar path).
+        'COPYFILE_DISABLE=1 tar *' => Process::result(),
+        'tar *' => Process::result(),
+        // git archive (when --branch is given).
+        'git -C *archive*' => Process::result(),
+        // Composer cache copy.
+        'cp -R *' => Process::result(),
+        // Local bundle cleanup.
+        'rm -rf *' => Process::result(),
+        // Remote ops (SSH-wrapped). pushBundle creates a stage dir and an
+        // orbit-e2e-bundle subdir, then scps into it.
+        'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
+        'ssh *' => Process::result(),
+        'scp *' => Process::result(),
+    ]);
+}
 
 it('defaults to control-gateway-dev-prod kind', function (): void {
     $this->artisan('e2e:prepare-topology')
@@ -147,6 +168,8 @@ it('is hidden', function (): void {
 });
 
 it('--force uses the default Incus host when host environment is unset', function (): void {
+    fakeBundleProcessing();
+
     $previousHosts = getenv('ORBIT_E2E_INCUS_HOSTS');
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
@@ -156,6 +179,7 @@ it('--force uses the default Incus host when host environment is unset', functio
     $selectedHost = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::Control)
         ->andReturn($manifest);
@@ -187,12 +211,134 @@ it('--force uses the default Incus host when host environment is unset', functio
     }
 });
 
-it('--force outputs JSON success envelope when builder returns a manifest', function (): void {
+it('--force builds the source archive and forwards the bundle path to the builder', function (): void {
+    fakeBundleProcessing();
+
+    $manifest = [
+        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+    ];
+    $forwardedBundle = null;
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')
+        ->once()
+        ->andReturnUsing(function (string $path) use (&$forwardedBundle): void {
+            $forwardedBundle = $path;
+        });
+    $builder->shouldReceive('build')
+        ->with(E2ETopologyKind::Control)
+        ->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+    ])->assertSuccessful();
+
+    expect($forwardedBundle)->toBe('/tmp/orbit-e2e-stage-remote/orbit-e2e-bundle');
+    Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
+});
+
+it('--branch uses git archive instead of tar', function (): void {
+    fakeBundleProcessing();
+
     $manifest = [
         ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
+    $builder->shouldReceive('build')->andReturn($manifest);
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => $builder);
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+        '--branch' => 'main',
+    ])->assertSuccessful();
+
+    Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'git -C') && str_contains((string) $p->command, 'archive') && str_contains((string) $p->command, "'main'"));
+});
+
+it('--source-archive forwards the provided archive', function (): void {
+    fakeBundleProcessing();
+
+    $tempArchive = tempnam(sys_get_temp_dir(), 'orbit-archive-').'.tar.gz';
+    file_put_contents($tempArchive, 'fake');
+
+    try {
+        $manifest = [
+            ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ];
+
+        $builder = m::mock(IncusTopologyBuilder::class);
+        $builder->shouldReceive('useBundle')->once();
+        $builder->shouldReceive('build')->andReturn($manifest);
+
+        $command = app(E2EPrepareTopologyCommand::class);
+        $command->setBuilderFactory(fn () => $builder);
+        $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+        $this->artisan('e2e:prepare-topology', [
+            'kind' => 'control',
+            '--force' => true,
+            '--source-archive' => $tempArchive,
+        ])->assertSuccessful();
+
+        Process::assertNotRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
+        Process::assertNotRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'git -C') && str_contains((string) $p->command, 'archive'));
+    } finally {
+        @unlink($tempArchive);
+    }
+});
+
+it('--source-archive fails clearly when archive is missing', function (): void {
+    fakeBundleProcessing();
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => m::mock(IncusTopologyBuilder::class));
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+        '--source-archive' => '/tmp/orbit-source-does-not-exist.tar.gz',
+    ])
+        ->expectsOutputToContain('--source-archive not found')
+        ->assertFailed();
+});
+
+it('--composer-cache fails clearly when an explicit cache directory is missing', function (): void {
+    fakeBundleProcessing();
+
+    $command = app(E2EPrepareTopologyCommand::class);
+    $command->setBuilderFactory(fn () => m::mock(IncusTopologyBuilder::class));
+    $this->app->instance(E2EPrepareTopologyCommand::class, $command);
+
+    $this->artisan('e2e:prepare-topology', [
+        'kind' => 'control',
+        '--force' => true,
+        '--composer-cache' => '/tmp/orbit-composer-cache-does-not-exist',
+    ])
+        ->expectsOutputToContain('--composer-cache directory not found')
+        ->assertFailed();
+});
+
+it('--force outputs JSON success envelope when builder returns a manifest', function (): void {
+    fakeBundleProcessing();
+
+    $manifest = [
+        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+    ];
+
+    $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle')->once();
     $builder->shouldReceive('build')
         ->with(E2ETopologyKind::Control)
         ->andReturn($manifest);
@@ -222,9 +368,12 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
 });
 
 it('--force surfaces builder failure as command failure', function (): void {
+    fakeBundleProcessing();
+
     $builder = m::mock(IncusTopologyBuilder::class);
+    $builder->shouldReceive('useBundle');
     $builder->shouldReceive('build')
-        ->andThrow(new RuntimeException('Required source image [orbit-ready-control] not found.'));
+        ->andThrow(new RuntimeException('Required source image [orbit-base-ubuntu-26.04] not found.'));
 
     $command = app(E2EPrepareTopologyCommand::class);
     $command->setBuilderFactory(fn () => $builder);
@@ -234,5 +383,6 @@ it('--force surfaces builder failure as command failure', function (): void {
         'kind' => 'control',
         '--force' => true,
     ])
+        ->expectsOutputToContain('Required source image [orbit-base-ubuntu-26.04] not found.')
         ->assertFailed();
 });

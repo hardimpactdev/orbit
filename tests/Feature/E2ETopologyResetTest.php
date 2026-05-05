@@ -151,6 +151,45 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-re
     }
 });
 
+it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is stateful-restore', function (): void {
+    $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
+    putenv('ORBIT_E2E_TOPOLOGY_RESET=stateful-restore');
+
+    try {
+        $control = m::mock(E2EInstance::class);
+        $control->shouldNotReceive('delete');
+
+        $callCount = 0;
+        $snapshotReset = function () use (&$callCount): void {
+            $callCount++;
+        };
+
+        $lease = new E2ETopologyLease(
+            kind: E2ETopologyKind::Control,
+            control: $control,
+            gateway: null,
+            dev: null,
+            prod: null,
+            sshKeyPair: new SshKeyPair('/tmp/fake', '/tmp/fake.pub'),
+            rebuild: function (): array {
+                throw new RuntimeException('rebuild should not run for stateful-restore');
+            },
+            snapshotReset: $snapshotReset,
+        );
+
+        $lease->reset();
+
+        expect($callCount)->toBe(1)
+            ->and($lease->control())->toBe($control);
+    } finally {
+        if ($previous === false) {
+            putenv('ORBIT_E2E_TOPOLOGY_RESET');
+        } else {
+            putenv("ORBIT_E2E_TOPOLOGY_RESET={$previous}");
+        }
+    }
+});
+
 it('falls back to fresh-clone when snapshot-restore is requested without a snapshot reset closure', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
     putenv('ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore');

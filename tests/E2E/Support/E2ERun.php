@@ -79,6 +79,17 @@ final class E2ERun
         $this->provider->cleanup($this, array_reverse($this->instances));
     }
 
+    /**
+     * @return list<string>
+     */
+    public function instanceNames(): array
+    {
+        return array_map(
+            fn (E2EInstance $instance): string => $instance->name(),
+            $this->instances,
+        );
+    }
+
     public function setMetadata(string $key, string $value): void
     {
         $this->metadata[$key] = $value;

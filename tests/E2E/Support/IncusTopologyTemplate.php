@@ -31,13 +31,20 @@ final readonly class IncusTopologyTemplate
 
     public static function availableOn(IncusHost $host, E2ETopologyKind $kind): bool
     {
+        $checks = [];
+
         foreach (self::rolesFor($kind) as $role) {
-            if (! $host->instanceExists(self::templateName($kind, $role))) {
-                return false;
-            }
+            $template = self::templateName($kind, $role);
+
+            $checks[] = 'incus info '.escapeshellarg($template).' >/dev/null 2>&1';
+            $checks[] = sprintf(
+                'incus info %s --show-log=false 2>/dev/null | grep -q %s',
+                escapeshellarg($template),
+                escapeshellarg('clean'),
+            );
         }
 
-        return true;
+        return $host->run(implode("\n", $checks), timeoutSeconds: 30)->successful();
     }
 
     /**
@@ -61,7 +68,7 @@ final readonly class IncusTopologyTemplate
         $instances = [];
         foreach ($roles as $role) {
             $clone = self::cloneName($runId, $role);
-            $instance = new IncusInstance($host, $clone);
+            $instance = new IncusInstance($host, $clone, commandTransport: true);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
             $instances[$role] = $instance;
         }
@@ -76,22 +83,33 @@ final readonly class IncusTopologyTemplate
     {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
+        $stateSize = escapeshellarg($host->config->topologyStateSize);
+        $storagePool = $host->storagePoolArgument();
+        $storagePool = $storagePool !== '' ? " {$storagePool}" : '';
 
         $copyLines = [];
         $waitCopyLines = [];
         $limitLines = [];
+        $statefulLines = [];
         $startLines = [];
         $waitStartLines = [];
+        $statefulReset = getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
 
         $index = 0;
         foreach ($roles as $role) {
             $index++;
-            $template = escapeshellarg(self::templateName($kind, $role));
+            $template = escapeshellarg(self::templateName($kind, $role).'/clean');
             $clone = escapeshellarg(self::cloneName($runId, $role));
 
-            $copyLines[] = "incus copy {$template} {$clone} & PID_COPY_{$index}=\$!";
+            $copyLines[] = "incus copy {$template} {$clone}{$storagePool} & PID_COPY_{$index}=\$!";
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
+
+            if ($statefulReset) {
+                $statefulLines[] = "incus config device set {$clone} root size.state={$stateSize} || incus config device override {$clone} root size.state={$stateSize}";
+                $statefulLines[] = "incus config set {$clone} migration.stateful=true";
+            }
+
             $startLines[] = "incus start {$clone} & PID_START_{$index}=\$!";
             $waitStartLines[] = "wait \$PID_START_{$index}";
         }
@@ -100,6 +118,7 @@ final readonly class IncusTopologyTemplate
             ...$copyLines,
             ...$waitCopyLines,
             ...$limitLines,
+            ...$statefulLines,
             ...$startLines,
             ...$waitStartLines,
         ]);

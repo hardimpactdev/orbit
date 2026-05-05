@@ -35,78 +35,50 @@ mutation checks against disposable VMs:
 composer test:e2e
 php artisan e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
-php artisan e2e:prepare-incus-images --role=control --force
-php artisan e2e:prepare-incus-images --role=gateway --force
-composer test:e2e:provisioning --filter='lifecycle'
-composer test:e2e:provisioning --filter='control'
-composer test:e2e:provisioning --filter='NodeNewGateway'
+composer e2e:prepare-base-image -- --force
+composer e2e:prepare-topology -- --force control-gateway-dev-prod
+composer test:e2e:topology-contract
+composer test:e2e:features
 ```
 
-The first ephemeral E2E harness uses Incus VMs on the configured E2E host
-(`beast` by default). Run
-`php artisan e2e:prepare-incus-images --role=blank --force` to build or replace the reusable
-`orbit-blank-ubuntu-26.04` image from the Ubuntu cloud image. The `composer test:e2e` command runs the full ephemeral E2E suite (provisioning
-followed by features). The provisioning lane includes a blank VM lifecycle test
-that launches one disposable VM from that blank image, injects an ephemeral SSH
-key for the non-`orbit` bootstrap user, verifies SSH from the host into the VM,
-and deletes the VM. The blank image intentionally does not use `orbit` as the
-bootstrap user so gateway and app provisioning tests can prove Orbit creates or
-prepares the node-side `orbit` user itself.
+The ephemeral E2E harness uses Incus VMs on the configured E2E host
+(`beast` by default). It builds two reusable images plus per-topology
+template snapshots:
 
-Run `php artisan e2e:prepare-incus-images --role=control --force` to build or replace the reusable
-`orbit-ready-control` image from the blank image. That lane ships the current
-Orbit source and `bin/install-orbit` into a disposable VM, installs the control
-node prerequisites and CLI as the non-`orbit` control user, verifies
-`orbit --version`, then publishes the ready image. Run `composer test:e2e:provisioning --filter='control'` to
-launch from that image and verify the ready control node over SSH.
+1. **Blank image** (`orbit-blank-ubuntu-26.04`). Built once via
+   `php artisan e2e:prepare-incus-images --role=blank --force`. Ubuntu cloud
+   + bootstrap user + sshd. Used by the provisioning lane's blank-VM
+   lifecycle test.
+2. **Base image** (`orbit-base-ubuntu-26.04`). Built once via
+   `composer e2e:prepare-base-image -- --force`. Ubuntu cloud + bootstrap
+   user + the `orbit` user + the apt deps that `bin/install-orbit` would
+   otherwise install (PHP 8.5, composer, git, sqlite, WireGuard, openssh).
+   No Orbit source is baked in. Rebuilt only when system deps change.
+3. **Per-topology templates** (`orbit-template-<kind>-<role>`). Built per
+   `composer e2e:prepare-topology -- --force <kind>` invocation. The
+   command tars the current checkout, ships it plus `bin/install-orbit`,
+   `bin/e2e-provision-node`, and `bin/_e2e-deps.sh` to the host, then for
+   each role: clones from the base image, runs the provisioner inside the
+   clone (installing Orbit + role-specific bootstrap), runs the existing
+   WireGuard / gateway:add / `node:new` ceremony, stops, and snapshots as
+   `clean`. Tests clone these snapshots per run.
 
-Run `php artisan e2e:prepare-incus-images --role=gateway --force` to build or replace the reusable
-`orbit-ready-gateway` Incus image from the blank image. That lane ships the
-current Orbit source and `bin/install-orbit` into a disposable VM, installs the
-gateway node prerequisites and CLI as the `orbit` user, bootstraps gateway-local
-identity and root CA via `orbit:internal:bootstrap-gateway-local`, verifies
-`orbit --version`, then publishes the ready image.
+Source code lives in the per-run bundle, not in any image. Topology
+snapshots get rebuilt each time `e2e:prepare-topology --force` runs. The
+base image only needs rebuilding when apt dependencies change.
 
-Run `php artisan e2e:prepare-incus-images --role=devapp --force` to build or replace the reusable
-`orbit-ready-devapp` Incus image from the blank image. That lane ships the
-current Orbit source and `bin/install-orbit` into a disposable VM, installs the
-development-app node prerequisites and CLI as the `orbit` user with
-`--role=app`, verifies `orbit --version`, then publishes the ready image.
+Use the following overrides to source the per-run bundle from a non-default
+location:
 
-Run `php artisan e2e:prepare-incus-images --role=prodapp --force` to build or replace the reusable
-`orbit-ready-prodapp` Incus image from the blank image. That lane ships the
-current Orbit source and `bin/install-orbit` into a disposable VM, installs the
-production-app node prerequisites and CLI as the `orbit` user with
-`--role=app`, verifies `orbit --version`, then publishes the ready image.
-
-Run `composer test:e2e:provisioning --filter='NodeNewGateway'` to exercise the first-gateway bootstrap path.
-This lane launches one disposable VM from the ready control image and one from
-the blank image, injects an ephemeral SSH key into both, runs
-`orbit node:new gateway-1 --role=gateway --host=<gateway-ip> --ssh-user=<bootstrap-user> --control-name=control-1 --json`
-from the control VM, and verifies that the control registry contains both nodes,
-that the gateway has Orbit installed under the steady-state `orbit` user (not the
-bootstrap user), and that `orbit --version` works on the gateway as the `orbit`
-user. Verification uses `incus exec` to run `orbit --version` as the `orbit`
-user; SSH access from the control VM to the gateway as `orbit` is not yet
-verified because runtime-user SSH key distribution is not yet implemented.
-The VMs are destroyed at the end unless `ORBIT_E2E_KEEP=1`.
-
-Run `ORBIT_E2E=1 php artisan test --testsuite=E2E --filter='GatewayAdd'` to exercise control-node onboarding against a
-prepared gateway VM. This lane launches one disposable VM from the ready control
-image and one from the ready gateway image, injects an ephemeral SSH key into
-both, configures a dummy network interface on the gateway VM with the expected
-WireGuard IP (10.6.0.2), seeds the control node identity into the gateway
-database, starts the gateway API server, and runs
-`orbit gateway:add 10.6.0.2 --json` from the control VM. It verifies that the
-command returns a success response, that `LocalGatewaySettings` is populated in
-the control node database, and that the gateway CA is installed in the local OS
-trust store. Full HTTPS verification and idempotent rerun convergence depend on
-gateway web server/TLS infrastructure in the ephemeral harness; this lane is an
-explicit bootstrap-partial gate. The VMs are destroyed at the end unless
-`ORBIT_E2E_KEEP=1`.
-
-These are backend and single-role E2E checks only; they do not yet validate a full
-gateway/control/development-app/production-app topology.
+- `composer e2e:prepare-topology -- --force <kind> --branch=<ref>` ships
+  `git archive` of the named branch instead of tarring the working
+  checkout.
+- `composer e2e:prepare-topology -- --force <kind> --source-archive=<path>`
+  ships an existing tarball.
+- `composer e2e:prepare-topology -- --force <kind> --composer-cache=<dir>`
+  bundles a composer cache directory; otherwise
+  `~/.cache/orbit-e2e/composer` is bundled when present. A warm cache
+  cuts `bin/install-orbit` runtime inside each role clone.
 
 Environment overrides:
 
@@ -114,8 +86,7 @@ Environment overrides:
 ORBIT_E2E_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
-ORBIT_E2E_CONTROL_IMAGE=orbit-ready-control
-ORBIT_E2E_GATEWAY_IMAGE=orbit-ready-gateway
+ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
@@ -127,11 +98,14 @@ ORBIT_E2E_KEEP=1
 
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
 
-- **`e2e-provisioning`** — tests that mutate disposable VMs from blank or ready
-  images and exercise setup flows such as blank VM lifecycle, control node readiness,
-  gateway onboarding, and node provisioning. These tests are grouped with
-  `pest()->group('e2e-provisioning')` at the file level and run via
-  `composer test:e2e:provisioning`.
+- **`e2e-provision`** — opt-in tests that mutate disposable VMs from blank or base
+  images and exercise setup flows such as blank VM lifecycle, control node
+  readiness, gateway onboarding, and node provisioning. These tests are
+  grouped with `pest()->group('e2e-provision')` at the file level and run
+  via `composer test:e2e:provision`. Tests that previously launched from
+  role-specific ready images now stage a per-run bundle and run
+  `bin/e2e-provision-node` against a base-image clone for the role under
+  test.
 
 - **`e2e-feature`** — tests that start from prepared topology clones and verify
   ported commands, forwarding chains, or read-only behavior. They must not run
@@ -152,12 +126,18 @@ A feature lane must run the contract for the smallest topology it needs before
 running that topology's feature assertions. If the relevant topology contract
 fails, the feature lane stops before command assertions can produce misleading
 results. Additional Pest arguments passed to a feature-lane Composer script are
-applied only to the post-contract feature assertions. Add a Composer feature
-script for a topology when the first feature test for that topology lands.
+applied only to the post-contract feature assertions.
 
-Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, so
-`composer test:e2e` continues to run all ephemeral tests together through the
-ordered lane scripts.
+Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
+`composer test:e2e` runs only feature assertions in one cached superset process.
+The scenario-specific feature lanes still run their required topology contract
+before feature assertions. Provision tests are intentionally on demand because
+they run real installer/provisioning paths and are much slower than
+prepared-topology feature tests.
+
+Provision tests clean up on success. On failure they keep tracked VMs/templates
+for inspection and print their names plus a reap command. Set
+`ORBIT_E2E_KEEP_ON_FAILURE=0` to restore cleanup-on-failure behavior.
 
 Live or standing infrastructure verification lanes are sunset. Do not use
 persistent gateway, control, or app nodes as verification targets.
@@ -191,6 +171,41 @@ target unless the test is explicitly about installed CLI behavior.
 Use the shared E2E checkout helper when a feature test needs the current
 checkout on a clone. Do not mutate template instances, reusable images, or the
 steady-state `orbit` symlink to make a feature assertion see new code.
+
+The Pest-facing helpers in `tests/E2E/Support/Pest.php` wrap the lower-level
+topology lease API:
+
+```php
+$topology = e2eTopology(E2ETopologyKind::ControlGatewayDevProd)
+    ->withCurrentCheckout(roles: ['control', 'gateway', 'dev', 'prod']);
+
+try {
+    $topology->ssh(
+        'control',
+        "cd {$topology->checkout('control')} && php artisan node:list --json",
+    );
+} finally {
+    $topology->cleanup();
+}
+```
+
+Use `roles: ['control']` when only the control-side command under test needs
+the branch checkout. Add `gateway`, `dev`, or `prod` when the branch changes
+code that runs on those nodes.
+
+When `ORBIT_E2E_TOPOLOGY_CACHE=process`, `e2eTopology()` reuses the same
+prepared topology lease for matching requests in the current PHP process and
+cleans it up once at process shutdown. `composer test:e2e` and
+`composer test:e2e:features` enable this cache with
+`ORBIT_E2E_TOPOLOGY_STRATEGY=superset`, so the feature regression aggregate pays
+the Incus clone/start cost once for the full topology. They also enable
+`ORBIT_E2E_CHECKOUT_CACHE=process`, which installs the branch checkout once per
+VM/user and gives each test an isolated hardlink copy with fresh runtime files.
+Because the current aggregate includes gateway-backed `node:list` tests, it also
+sets `ORBIT_E2E_GATEWAY_API=1` and pays the WireGuard/gateway API startup cost
+once. Control-only feature lanes can leave that unset. Individual scenario
+scripts keep their named topology group but also enable both process caches,
+which lets multiple tests in that scenario share a lease.
 
 ## Prepared Topology Contract
 
@@ -263,14 +278,24 @@ Common requirements for every prepared topology:
 composer test
 
 # Ephemeral E2E lanes (requires ORBIT_E2E=1)
-composer test:e2e:provisioning
+composer test:e2e
+composer test:e2e:provision
 composer test:e2e:topology-contract
 composer test:e2e:features
+composer test:e2e:features:control
+composer test:e2e:features:control-gateway
+composer test:e2e:features:control-gateway-dev
 composer test:e2e:features:control-gateway-dev-prod
 composer test:e2e:features:parallel
 composer test:e2e:features:docker
 
-# Prepare or replace a topology clone for the feature lane
+# Build the reusable Incus base image (deps + orbit user, no source).
+# Rebuild only when system deps change.
+composer e2e:prepare-base-image -- --force
+
+# Prepare or replace a topology clone for the feature lane. Tars the
+# current checkout, ships it via per-run bundle, runs the provisioner per
+# role, snapshots clean.
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 
 # Prepare Docker feature topology images
@@ -286,6 +311,11 @@ composer e2e:reap-hcloud
 composer e2e:reap-docker
 composer e2e:reap-docker -- --force --older-than=0m
 ```
+
+`composer test:e2e` and `composer test:e2e:features` are the fast feature
+regression lanes. They run all `e2e-feature` tests in one PHP process against a
+cached full topology. Use the scenario-specific scripts when you want to prove a
+particular topology shape and its contract.
 
 `composer test:e2e:features:parallel` is opt-in. It runs topology contracts first,
 then runs feature assertions with Pest parallel mode and `--processes=3`. The
@@ -359,17 +389,22 @@ ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
 ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
 ORBIT_E2E_TOPOLOGY_PROVIDER=incus     # Prepared topology provider
 ORBIT_E2E_TOPOLOGY_PROVIDERS=incus    # Ordered prepared topology provider pool
+ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=beast          # Recommended Docker daemon pool for Docker topology provider
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
 ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2  # Recommended Incus host pool for VM-backed feature E2E
+ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
+ORBIT_E2E_TOPOLOGY_CACHE=process      # Reuse acquired topologies for the current PHP process
+ORBIT_E2E_CHECKOUT_CACHE=process      # Reuse branch checkout installs within one PHP process
 ORBIT_E2E_TOPOLOGY_RESET=fresh-clone  # Reset strategy for topology clones
 ORBIT_E2E_TIMINGS=1                   # Print phase timings to STDERR (acquire / reset)
 ORBIT_E2E_CPUS=2                      # vCPUs for image-prep / provisioning VMs
 ORBIT_E2E_MEMORY=2GiB                 # Memory for image-prep / provisioning VMs
 ORBIT_E2E_TOPOLOGY_CPUS=1             # vCPUs for disposable topology clones
 ORBIT_E2E_TOPOLOGY_MEMORY=2GiB        # Memory for disposable topology clones
+ORBIT_E2E_TOPOLOGY_STATE_SIZE=4GiB    # Root disk state size for stateful VM snapshots
 ```
 
 `ORBIT_E2E_PROVIDER` and `ORBIT_E2E_PROVIDERS` choose provisioning providers.
@@ -398,8 +433,14 @@ counted. Recommended baseline:
 
 ```bash
 ORBIT_E2E_INCUS_HOSTS=sidecar1,sidecar2
+ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
 ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
 ```
+
+`ORBIT_E2E_INCUS_STORAGE_POOL` is optional. Leave it empty to use each host's
+Incus default pool. Set it when a host has a faster CoW-capable pool, e.g. a
+dedicated ZFS-backed `orbit-e2e` pool, so template builds and feature clones use
+that pool explicitly.
 
 `ORBIT_E2E_TOPOLOGY_RESET` controls how `E2ETopologyLease::reset()` returns a
 clone to a known-clean state between sub-scenarios in the same test:
@@ -413,13 +454,28 @@ clone to a known-clean state between sub-scenarios in the same test:
   faster than `fresh-clone` for tests that reset multiple times. Falls back to
   `fresh-clone` if a lease was constructed without a snapshot reset closure
   (e.g. unit tests).
+- `stateful-restore`: create a running `lease-warm` snapshot with
+  `migration.stateful=true` and restore that running state between
+  sub-scenarios. This is the experimental fastest reset path; it restores all
+  role VMs to the captured warm state, including memory state and running
+  services. It also applies `size.state=ORBIT_E2E_TOPOLOGY_STATE_SIZE` to the
+  root disk before boot because Incus requires that value to be larger than
+  `limits.memory`. Use it only on hosts where stateful VM migration/snapshot
+  support has been verified.
 
 Unknown values continue to fall back to `fresh-clone`.
 
+For test-to-test isolation, prefer one topology lease per Pest test and call
+`$topology->cleanup()` in `finally`. For multiple destructive sub-scenarios in a
+single test, call `$topology->reset()` between scenarios; set
+`ORBIT_E2E_TOPOLOGY_RESET=snapshot-restore` or
+`ORBIT_E2E_TOPOLOGY_RESET=stateful-restore` when restore speed matters and the
+scenario does not need a brand-new clone identity.
+
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
 factory and lease. Current event names include `availability`,
-`batch.copy-start`, `agent-ready.<role>`, `ssh-authorize.<role>`,
-`ssh-ready.<role>`, `snapshot.<role>`, `wireguard`, `cleanup.<role>`, and
+`batch.copy-start`, `agent-ready.<role>`, `command-ready.<role>`, `wireguard`,
+`cleanup.<role>`, and
 `reset.*`. Output goes to STDERR with the prefix `[orbit-e2e]` so it interleaves
 cleanly with Pest output. The clone/start batch intentionally stays one remote
 SSH operation; split copy/start timing should only be added if it can keep that

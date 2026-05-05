@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Services\E2E\IncusE2EImagePreparationOptions;
-use App\Services\E2E\IncusE2EImagePreparer;
+use App\Services\E2E\IncusBaseImagePreparationOptions;
+use App\Services\E2E\IncusBaseImagePreparer;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -14,22 +14,21 @@ use RuntimeException;
 use Tests\E2E\Support\E2EConfig;
 use Tests\E2E\Support\IncusHostPool;
 
-#[Signature('e2e:prepare-incus-images
-    {--role=blank : Image role to build (currently only "blank")}
-    {--force : Build the image (otherwise prints the planned alias)}
+#[Signature('e2e:prepare-base-image
+    {--force : Build the base image (otherwise prints the planned alias)}
     {--json : Output as JSON}')]
-#[Description('Prepare the reusable Incus blank image used by the provisioning E2E lane')]
-class E2EPrepareIncusImagesCommand extends Command
+#[Description('Prepare the reusable Incus base image used by ephemeral E2E topologies')]
+class E2EPrepareBaseImageCommand extends Command
 {
     protected $hidden = true;
 
     /**
-     * @var (Closure(): IncusE2EImagePreparer)|null
+     * @var (Closure(): IncusBaseImagePreparer)|null
      */
     private ?Closure $preparerFactory = null;
 
     /**
-     * @param  Closure(): IncusE2EImagePreparer  $factory
+     * @param  Closure(): IncusBaseImagePreparer  $factory
      */
     public function setPreparerFactory(Closure $factory): void
     {
@@ -38,23 +37,19 @@ class E2EPrepareIncusImagesCommand extends Command
 
     public function handle(): int
     {
-        $role = (string) $this->option('role');
-        $validRoles = ['blank'];
-
-        if (! in_array($role, $validRoles, true)) {
-            return $this->failValidation('--role must be one of: '.implode(', ', $validRoles).'.');
-        }
-
         $config = E2EConfig::fromEnvironment();
-        $roles = [
-            ['role' => 'blank', 'image_alias' => $config->blankImage, 'source' => $config->sourceImage],
+
+        $planned = [
+            'role' => 'base',
+            'alias' => $config->baseImage,
+            'source' => $config->sourceImage,
         ];
 
         if (! (bool) $this->option('force')) {
             $result = [
                 'provider' => 'incus',
                 'dry_run' => true,
-                'roles' => $roles,
+                'image' => $planned,
             ];
 
             if ((bool) $this->option('json')) {
@@ -63,7 +58,8 @@ class E2EPrepareIncusImagesCommand extends Command
                 return self::SUCCESS;
             }
 
-            $this->renderHuman($result);
+            $this->line('Dry run. Pass --force to build the Incus base image.');
+            $this->line("planned: {$planned['role']} -> {$planned['alias']} (source: {$planned['source']})");
 
             return self::SUCCESS;
         }
@@ -79,26 +75,23 @@ class E2EPrepareIncusImagesCommand extends Command
             return $this->failCommand('No Incus hosts configured. Set ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST.');
         }
 
-        $options = new IncusE2EImagePreparationOptions(
-            roles: array_column($roles, 'role'),
+        $options = new IncusBaseImagePreparationOptions(
             force: true,
             sourceImage: $config->sourceImage,
-            blankImageAlias: $config->blankImage,
+            baseImageAlias: $config->baseImage,
             bootstrapUser: $config->bootstrapUser,
-            controlUser: $config->controlUser,
-            installScriptPath: base_path('bin/install-orbit'),
-            serverType: "{$config->cpus}cpu/{$config->memory}",
             cpus: (int) $config->cpus,
             memory: $config->memory,
             timeoutSeconds: $config->timeoutSeconds,
+            depsScriptPath: base_path('bin/_e2e-deps.sh'),
         );
 
         try {
             $preparer = $this->preparerFactory !== null
                 ? ($this->preparerFactory)()
-                : new IncusE2EImagePreparer($host);
+                : new IncusBaseImagePreparer($host);
 
-            $preparerResult = $preparer->prepare($options);
+            $built = $preparer->build($options);
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
         }
@@ -106,7 +99,7 @@ class E2EPrepareIncusImagesCommand extends Command
         $result = [
             'provider' => 'incus',
             'dry_run' => false,
-            'images' => $preparerResult->images,
+            'image' => $built,
         ];
 
         if ((bool) $this->option('json')) {
@@ -115,47 +108,10 @@ class E2EPrepareIncusImagesCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->info('Built Incus images.');
-
-        foreach ($preparerResult->images as $image) {
-            $this->line("{$image['action']}: {$image['role']} -> {$image['alias']}");
-        }
+        $this->info('Built Incus base image.');
+        $this->line("{$built['action']}: {$built['role']} -> {$built['alias']}");
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @param  array{
-     *     provider: string,
-     *     dry_run: bool,
-     *     roles: list<array{role: string, image_alias: string, source: string}>
-     * }  $result
-     */
-    private function renderHuman(array $result): void
-    {
-        $this->line('Dry run. Pass --force to build Incus images.');
-
-        foreach ($result['roles'] as $role) {
-            $this->line("planned: {$role['role']} -> {$role['image_alias']} (source: {$role['source']})");
-        }
-    }
-
-    private function failValidation(string $message): int
-    {
-        if ((bool) $this->option('json')) {
-            $this->line(json_encode([
-                'error' => [
-                    'code' => 'validation_failed',
-                    'message' => $message,
-                ],
-            ], JSON_THROW_ON_ERROR));
-
-            return self::FAILURE;
-        }
-
-        $this->error($message);
-
-        return self::FAILURE;
     }
 
     private function failCommand(string $message): int
@@ -163,7 +119,7 @@ class E2EPrepareIncusImagesCommand extends Command
         if ((bool) $this->option('json')) {
             $this->line(json_encode([
                 'error' => [
-                    'code' => 'incus_e2e_image_prepare_failed',
+                    'code' => 'incus_base_image_prepare_failed',
                     'message' => $message,
                 ],
             ], JSON_THROW_ON_ERROR));

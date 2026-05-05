@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROLE=""
+SOURCE_ARCHIVE=""
+INSTALLER=""
+COMPOSER_CACHE=""
+CONTROL_USER="${ORBIT_E2E_CONTROL_USER:-control}"
+GATEWAY_WIREGUARD_ADDRESS="${ORBIT_E2E_GATEWAY_WIREGUARD_ADDRESS:-10.6.0.2}"
+GATEWAY_NAME="${ORBIT_E2E_GATEWAY_NAME:-gateway}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+CURRENT_STEP=""
+LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
+
+usage() {
+    cat <<'HELP'
+usage: bin/e2e-provision-node --role=ROLE --source-archive=PATH [options]
+
+Provision a freshly-cloned Orbit base-image VM with role-specific Orbit
+installation. Pushes a source archive into place via bin/install-orbit, then
+runs role-specific post-install steps (gateway: bootstrap-gateway-local; app:
+install only; control: install only). Designed to run inside the VM after the
+bundle has been pushed. Platform packages are expected to be present in the
+base image; this script keeps apt out of the per-run hot path.
+
+Required:
+  --role=control|gateway|app   Role being provisioned.
+  --source-archive=PATH        Tarball of the Orbit checkout to install.
+
+Optional:
+  --installer=PATH             Path to bin/install-orbit. Defaults to a sibling
+                               of this script.
+  --composer-cache=PATH        Local composer cache directory. If given and
+                               non-empty, copied into the role's composer cache
+                               before install-orbit runs.
+  --control-user=NAME          Control-role steady-state user. Defaults to
+                               $ORBIT_E2E_CONTROL_USER or "control".
+  --gateway-name=NAME          Gateway identity name passed to
+                               bootstrap-gateway-local. Defaults to "gateway".
+  --gateway-wireguard=ADDR     Gateway WireGuard address passed to
+                               bootstrap-gateway-local. Defaults to "10.6.0.2".
+  -h, --help                   Show this help text.
+
+Roles:
+  control   install-orbit --role=control --path=/home/<control-user>/orbit.
+            No further work; control identity is created later by the topology
+            builder.
+  gateway   install-orbit --role=gateway --path=/home/orbit/orbit, then run
+            php artisan orbit:internal:bootstrap-gateway-local <name> <addr>
+            as the orbit user.
+  app       install-orbit --role=app --path=/home/orbit/orbit. node:new and
+            bake-app-node are run later from control/gateway, not here.
+HELP
+}
+
+fail() {
+    local code="$1"
+    shift
+
+    printf 'e2e-provision-node: error [%s] %s\n' "$code" "$*" >&2
+
+    if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+        printf 'e2e-provision-node: log %s\n' "$LOG_FILE" >&2
+    fi
+
+    exit 1
+}
+
+ensure_log_file() {
+    local tmp_dir
+    local tmp_file
+
+    if [ -n "$LOG_FILE" ]; then
+        return
+    fi
+
+    tmp_dir="${TMPDIR:-/tmp}"
+    tmp_dir="${tmp_dir%/}"
+    tmp_file="$(mktemp "$tmp_dir/orbit-provision.XXXXXX")"
+    LOG_FILE="${tmp_file}.log"
+    mv "$tmp_file" "$LOG_FILE"
+}
+
+run() {
+    ensure_log_file
+
+    {
+        printf '+'
+        printf ' %q' "$@"
+        printf '\n'
+    } >>"$LOG_FILE"
+
+    "$@" >>"$LOG_FILE" 2>&1
+}
+
+sudo_run() {
+    if [ "$(id -u)" -ne 0 ]; then
+        run sudo "$@"
+        return
+    fi
+
+    run "$@"
+}
+
+start_step() {
+    CURRENT_STEP="$1"
+    printf '  ◉  %s\n' "$CURRENT_STEP"
+}
+
+complete_step() {
+    printf '  ●  %s\n' "$CURRENT_STEP"
+    CURRENT_STEP=""
+}
+
+fail_step() {
+    local status="$1"
+
+    if [ -n "$CURRENT_STEP" ]; then
+        printf '  ●  %s failed\n' "$CURRENT_STEP" >&2
+    fi
+
+    if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+        printf 'e2e-provision-node: log %s\n' "$LOG_FILE" >&2
+        tail -n 20 "$LOG_FILE" >&2 || true
+    fi
+
+    exit "$status"
+}
+
+parse_args() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --role=*)
+                ROLE="${1#*=}"
+                ;;
+            --source-archive=*)
+                SOURCE_ARCHIVE="${1#*=}"
+                ;;
+            --installer=*)
+                INSTALLER="${1#*=}"
+                ;;
+            --composer-cache=*)
+                COMPOSER_CACHE="${1#*=}"
+                ;;
+            --control-user=*)
+                CONTROL_USER="${1#*=}"
+                ;;
+            --gateway-name=*)
+                GATEWAY_NAME="${1#*=}"
+                ;;
+            --gateway-wireguard=*)
+                GATEWAY_WIREGUARD_ADDRESS="${1#*=}"
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                fail validation_failed "unknown option: $1"
+                ;;
+        esac
+
+        shift
+    done
+}
+
+validate_args() {
+    case "$ROLE" in
+        control|gateway|app)
+            ;;
+        "")
+            fail validation_failed "--role is required"
+            ;;
+        *)
+            fail validation_failed "--role must be one of: control, gateway, app"
+            ;;
+    esac
+
+    [ -n "$SOURCE_ARCHIVE" ] || fail validation_failed "--source-archive is required"
+    [ -f "$SOURCE_ARCHIVE" ] || fail validation_failed "source archive not found: $SOURCE_ARCHIVE"
+
+    if [ -z "$INSTALLER" ]; then
+        INSTALLER="${SCRIPT_DIR}/install-orbit"
+    fi
+
+    [ -x "$INSTALLER" ] || fail validation_failed "installer not executable: $INSTALLER"
+
+    [ -n "$CONTROL_USER" ] || fail validation_failed "--control-user must not be empty"
+}
+
+target_user_for_role() {
+    case "$ROLE" in
+        control) printf '%s' "$CONTROL_USER" ;;
+        gateway|app) printf 'orbit' ;;
+    esac
+}
+
+ensure_target_user() {
+    local user
+    user="$(target_user_for_role)"
+
+    if id -u "$user" >/dev/null 2>&1; then
+        return
+    fi
+
+    sudo_run useradd -m -s /bin/bash "$user"
+    sudo_run usermod -p '*' "$user"
+    sudo_run usermod -aG sudo "$user"
+    sudo_run install -d -m 0755 /etc/sudoers.d
+    sudo_run bash -lc "printf '%s ALL=(ALL) NOPASSWD:ALL\n' $(printf '%q' "$user") > /etc/sudoers.d/99-${user}"
+    sudo_run chmod 440 "/etc/sudoers.d/99-${user}"
+    sudo_run install -d -m 700 -o "$user" -g "$user" "/home/${user}/.ssh"
+}
+
+restore_composer_cache() {
+    local user
+    local target
+
+    [ -n "$COMPOSER_CACHE" ] || return 0
+    [ -d "$COMPOSER_CACHE" ] || return 0
+
+    user="$(target_user_for_role)"
+    target="/home/${user}/.composer/cache"
+
+    sudo_run install -d -m 0755 -o "$user" -g "$user" "/home/${user}/.composer"
+    sudo_run install -d -m 0755 -o "$user" -g "$user" "$target"
+
+    if [ -z "$(ls -A "$COMPOSER_CACHE" 2>/dev/null || true)" ]; then
+        return 0
+    fi
+
+    sudo_run bash -lc "cp -R $(printf '%q' "${COMPOSER_CACHE}/.") $(printf '%q' "$target")"
+    sudo_run chown -R "${user}:${user}" "$target"
+}
+
+install_role() {
+    local user
+    local home_dir
+    local target_dir
+
+    user="$(target_user_for_role)"
+    home_dir="/home/${user}"
+    target_dir="${home_dir}/orbit"
+
+    sudo_run install -m 0644 -o "$user" -g "$user" "$SOURCE_ARCHIVE" "/tmp/orbit-source.tar.gz"
+    sudo_run install -m 0755 "$INSTALLER" "/tmp/install-orbit"
+
+    sudo_run runuser -u "$user" -- env \
+        "HOME=${home_dir}" \
+        "COMPOSER_HOME=${home_dir}/.composer" \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        /tmp/install-orbit \
+        "--role=${ROLE}" \
+        "--path=${target_dir}" \
+        --source-archive=/tmp/orbit-source.tar.gz \
+        --bin=/usr/local/bin/orbit \
+        --skip-prerequisites
+}
+
+run_post_install() {
+    local user
+    local target_dir
+
+    case "$ROLE" in
+        gateway)
+            user='orbit'
+            target_dir="/home/${user}/orbit"
+            sudo_run runuser -u "$user" -- env \
+                "HOME=/home/${user}" \
+                "COMPOSER_HOME=/home/${user}/.composer" \
+                PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+                bash -lc "cd $(printf '%q' "$target_dir") && php artisan orbit:internal:bootstrap-gateway-local $(printf '%q' "$GATEWAY_NAME") $(printf '%q' "$GATEWAY_WIREGUARD_ADDRESS")"
+            ;;
+    esac
+}
+
+cleanup_bundle() {
+    sudo_run rm -f /tmp/orbit-source.tar.gz /tmp/install-orbit
+}
+
+main() {
+    parse_args "$@"
+    validate_args
+
+    ensure_log_file
+    trap 'fail_step "$?"' ERR
+
+    printf '  ┌ Orbit E2E provision (%s)\n' "$ROLE"
+    printf '  │\n'
+    printf '  └  Log: %s\n\n' "$LOG_FILE"
+
+    start_step "Ensure target user"
+    ensure_target_user
+    complete_step
+
+    if [ -n "$COMPOSER_CACHE" ]; then
+        start_step "Restore composer cache"
+        restore_composer_cache
+        complete_step
+    fi
+
+    start_step "Install Orbit (${ROLE})"
+    install_role
+    complete_step
+
+    if [ "$ROLE" = "gateway" ]; then
+        start_step "Bootstrap gateway-local identity"
+        run_post_install
+        complete_step
+    fi
+
+    start_step "Cleanup provisioner bundle"
+    cleanup_bundle
+    complete_step
+
+    printf '\n  └  Provisioned %s at /home/%s/orbit\n' "$ROLE" "$(target_user_for_role)"
+}
+
+main "$@"
