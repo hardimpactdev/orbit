@@ -286,6 +286,96 @@ it('forwards configured control callers through the typed gateway request', func
         ->and($payload['success']['data']['cleanup']['proxy_routes_removed'])->toBe(1);
 });
 
+it('prompts for destructive confirmation and renders the documented human progress tree', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('app:remove docs')
+        ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
+        ->expectsOutputToContain('┌ Removing App')
+        ->expectsOutputToContain('○ Validate removal')
+        ->expectsOutputToContain('○ Apply and verify app removal')
+        ->expectsOutputToContain('○ Remove app-owned proxy routes')
+        ->expectsOutputToContain('○ Remove app-owned schedules')
+        ->expectsOutputToContain('○ Remove app-owned workspaces')
+        ->expectsOutputToContain('○ Stop and remove app processes')
+        ->expectsOutputToContain('○ Clean node-side runtime artifacts')
+        ->expectsOutputToContain('└ Working...')
+        ->expectsOutputToContain("App 'docs' removed")
+        ->assertExitCode(0);
+});
+
+it('cancels before side effects when interactive destructive confirmation is declined', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+    ]);
+
+    $remoteShell = new AppRemoveSequencedRemoteShell([]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $this->artisan('app:remove docs')
+        ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'no')
+        ->expectsOutputToContain('Operation cancelled.')
+        ->assertExitCode(1);
+
+    expect(App::query()->whereKey($app->id)->exists())->toBeTrue()
+        ->and($remoteShell->scripts)->toBe([]);
+});
+
+it('renders drift details in human output when node cleanup leaves warnings', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'adopted' => true,
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fpm failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'runtime failed', durationMs: 1),
+    ]));
+
+    $this->artisan('app:remove docs')
+        ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
+        ->expectsOutputToContain('└ App `docs` removed with drift')
+        ->expectsOutputToContain("App 'docs' removed")
+        ->expectsOutputToContain('  Drift detected:')
+        ->expectsOutputToContain('  - app: App PHP-FPM configuration could not be removed during cleanup. (run `doctor --family=app --fix`)')
+        ->expectsOutputToContain('  - app: Managed app runtime configuration could not be removed during cleanup. (run `doctor --family=app --fix`)')
+        ->assertExitCode(0);
+});
+
 final class AppRemoveSequencedRemoteShell implements RemoteShell
 {
     /**

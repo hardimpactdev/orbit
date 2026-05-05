@@ -1201,7 +1201,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     node artifact cleanup through the gateway-owned RemoteShell edge, and
     reports retryable cleanup drift as success warnings after intent removal.
   - [x] Gateway API endpoint and configured control-caller forwarding.
-  - [ ] Interactive input mode and human renderer progress tree.
+  - [x] Interactive input mode and human renderer progress tree.
   - [ ] E2E removal cleanup gate.
 - [ ] Port `app:prune`.
 - [ ] Port `app:agent-ide`.

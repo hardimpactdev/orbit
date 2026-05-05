@@ -45,21 +45,13 @@ class AppRemoveCommand extends Command
             return $this->failValidation('app', 'App name is required.');
         }
 
-        if (! $this->option('force')) {
-            if (! $this->isInteractiveInput()) {
-                return $this->failValidation('force', 'Use --force to remove this app.');
-            }
-
-            if (! $this->confirm("Remove app '{$selector}' and all owned artifacts? This cannot be undone.", false)) {
-                return $this->failCommand(
-                    code: 'validation_failed',
-                    message: 'Operation cancelled.',
-                    meta: [],
-                );
-            }
-        }
-
         if ($callerRole === 'control') {
+            $consent = $this->confirmRemoval($selector);
+
+            if (is_int($consent)) {
+                return $consent;
+            }
+
             return $this->forwardRemove($selector);
         }
 
@@ -73,6 +65,12 @@ class AppRemoveCommand extends Command
             );
         }
 
+        $consent = $this->confirmRemoval($app->name);
+
+        if (is_int($consent)) {
+            return $consent;
+        }
+
         if (! $this->wantsJson()) {
             $this->renderProgressTree();
         }
@@ -80,6 +78,27 @@ class AppRemoveCommand extends Command
         $result = $removeApp->handle($app);
 
         return $this->successCommand($result);
+    }
+
+    private function confirmRemoval(string $name): ?int
+    {
+        if ($this->option('force')) {
+            return null;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failValidation('force', 'Use --force to remove this app.');
+        }
+
+        if ($this->confirm("Remove app '{$name}' and all owned artifacts? This cannot be undone.", false)) {
+            return null;
+        }
+
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     private function forwardRemove(string $selector): int
@@ -167,13 +186,14 @@ class AppRemoveCommand extends Command
     private function renderProgressTree(): void
     {
         $this->line('┌ Removing App');
-        $this->line('○ Remove gateway app intent');
+        $this->line('○ Validate removal');
+        $this->line('○ Apply and verify app removal');
         $this->line('○ Remove app-owned proxy routes');
         $this->line('○ Remove app-owned schedules');
         $this->line('○ Remove app-owned workspaces');
-        $this->line('○ Stop and remove app-owned processes');
-        $this->line('○ Remove app node artifacts');
-        $this->line('└ App removed');
+        $this->line('○ Stop and remove app processes');
+        $this->line('○ Clean node-side runtime artifacts');
+        $this->line('└ Working...');
     }
 
     /**
@@ -195,17 +215,23 @@ class AppRemoveCommand extends Command
 
         if (! $this->wantsJson()) {
             $app = $result['app'];
-            $this->line("SUCCESS: App '".(string) ($app['name'] ?? '')."' removed.");
+            $name = (string) ($app['name'] ?? '');
 
             if ($warnings !== []) {
-                $this->line('Warnings:');
+                $this->line("└ App `{$name}` removed with drift");
+            }
+
+            $this->line("App '{$name}' removed");
+
+            if ($warnings !== []) {
+                $this->line('  Drift detected:');
 
                 foreach ($warnings as $warning) {
-                    $this->line('- '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+                    $family = (string) ($warning['family'] ?? 'app');
+                    $message = (string) ($warning['message'] ?? $warning['code'] ?? 'cleanup drift');
+                    $next = (string) ($warning['next_command'] ?? 'doctor --family='.$family.' --fix');
 
-                    if (isset($warning['next_command'])) {
-                        $this->line('  Next: orbit '.$warning['next_command']);
-                    }
+                    $this->line("  - {$family}: {$message} (run `{$next}`)");
                 }
             }
 
