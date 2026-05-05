@@ -227,6 +227,12 @@ it('waits for cloud-init before mutating apt on Ubuntu', function (): void {
     expect($script)->toContain('cloud-init status --wait');
 });
 
+it('installs Supervisor as a platform prerequisite for runtime backend hosts', function (): void {
+    $script = file_get_contents(base_path('bin/install-orbit'));
+
+    expect($script)->toContain('supervisor');
+});
+
 it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 

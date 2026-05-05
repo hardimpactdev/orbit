@@ -19,6 +19,7 @@ ORBIT_E2E_BASE_PACKAGES=(
     openssh-client
     openssh-server
     sqlite3
+    supervisor
     tar
     unzip
     wireguard

@@ -1328,7 +1328,11 @@ across the process and schedule families.
   inherited runtime units render as separate Supervisor programs with
   workspace-specific working directory, environment, and log paths
   derived from the parent app's process definition.
-- [ ] Add Supervisor installation to gateway and app node provisioning.
+- [x] Add Supervisor installation to gateway and app node provisioning.
+  - `bin/install-orbit` installs the Ubuntu `supervisor` package with platform
+    prerequisites, and `bin/_e2e-deps.sh` includes `supervisor` in prepared E2E
+    base-image packages so `--skip-prerequisites` role provisioning still has the
+    runtime backend package available.
 - [ ] Add the runtime backend reachability probe shared by process and
   schedule doctor.
 - [ ] Add the Supervisor program renderer shared by process and schedule

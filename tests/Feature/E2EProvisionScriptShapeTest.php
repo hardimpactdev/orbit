@@ -98,7 +98,7 @@ it('deps helper prints all packages by default', function (): void {
 
     $lines = array_filter(array_map('trim', explode("\n", $result->output())));
 
-    expect($lines)->toContain('ca-certificates', 'composer', 'git', 'wireguard');
+    expect($lines)->toContain('ca-certificates', 'composer', 'git', 'supervisor', 'wireguard');
     expect($lines)->toContain('php8.5-cli', 'php8.5-bcmath', 'php8.5-zip');
 });
 
