@@ -235,11 +235,11 @@ yet satisfy the full product contracts.
     - `app/Services/CurlRequestProfiler.php`
   - Current docs: `docs/commands/11_operation/4_profile`
   - Current tests:
-    - `tests/Feature/Commands/Operations/ProfileCommandTest.php` (gateway-local baseline JSON, validation, non-2xx success)
+    - `tests/Feature/Commands/Operations/ProfileCommandTest.php` (gateway-state baseline JSON, validation, non-2xx success)
     - `tests/Feature/Commands/Operations/ProfileHumanRendererTest.php` (baseline human renderer)
     - `tests/Unit/Services/CurlRequestProfilerTest.php` (baseline HTTP timing extraction)
-  - Bootstrap slice implemented: gateway-local app/domain/path/full-URL target
-    resolution, `--node` scoping validation, baseline cURL timing capture,
+  - Bootstrap slice implemented: gateway caller app/domain/path/full-URL target
+    resolution against gateway state, `--node` scoping validation, baseline cURL timing capture,
     request id and Toolbar auth headers, baseline JSON envelope, baseline human
     output, and completed non-2xx success semantics.
   - Gateway resolution slice implemented: control callers resolve named/domain
@@ -252,8 +252,11 @@ yet satisfy the full product contracts.
   - Request-origin fallback slice implemented: control callers first attempt
     caller-origin profiling for resolved targets, then fall back to typed
     gateway-origin profiling when the caller-local request cannot complete.
+  - Gateway-caller cwd inference slice implemented: omitted targets on gateway
+    callers resolve from the current working directory when it maps to an app
+    path known by the gateway registry.
   - Contract gaps:
-    - app/workspace cwd inference beyond gateway-local app paths.
+    - app/workspace cwd inference for non-gateway callers and workspace paths.
     - interactive app selector.
     - Toolbar-enriched renderer details beyond attaching decoded summary data.
     - paired E2E gate for an observable profile target.

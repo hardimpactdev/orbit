@@ -113,6 +113,11 @@ class ProfileCommand extends Command
             [$selector, $uri] = $parsed;
         }
 
+        if ($selector === null && $callerRole === 'gateway') {
+            $cwd = getcwd();
+            $selector = is_string($cwd) ? $cwd : null;
+        }
+
         if ($selector === null) {
             return $this->failCommand(
                 code: 'validation_failed',

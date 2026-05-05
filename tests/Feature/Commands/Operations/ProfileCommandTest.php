@@ -19,7 +19,7 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
 });
 
-it('profiles a gateway-local app target as baseline json', function (): void {
+it('profiles an app target resolved from gateway state as baseline json', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
@@ -86,6 +86,71 @@ it('profiles a gateway-local app target as baseline json', function (): void {
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/')
         ->and($payload['success']['data']['request']['status'])->toBe(200)
         ->and($payload['success']['meta']['warnings'])->toBe([]);
+});
+
+it('infers an app target from the gateway caller current working directory', function (): void {
+    $gateway = Node::factory()->create([
+        'name' => 'gateway',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $appPath = sys_get_temp_dir().'/orbit-profile-cwd-'.bin2hex(random_bytes(4));
+    mkdir($appPath.'/subdir', 0777, true);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $gateway->id,
+        'domain' => 'docs.test',
+        'path' => $appPath,
+    ]);
+
+    app()->instance(RequestProfiler::class, new class implements RequestProfiler
+    {
+        public function profile(string $url, array $headers = []): array
+        {
+            return [
+                'request' => [
+                    'method' => 'GET',
+                    'url' => $url,
+                    'uri' => '/',
+                    'status' => 200,
+                    'bytes' => 1200,
+                    'completed' => true,
+                ],
+                'timings' => [
+                    'dns_ms' => 1.0,
+                    'connect_ms' => 3.0,
+                    'tls_ms' => 7.0,
+                    'ttfb_ms' => 50.0,
+                    'download_ms' => 2.0,
+                    'total_ms' => 52.0,
+                ],
+                'error' => null,
+                'response_headers' => [],
+            ];
+        }
+    });
+
+    $originalCwd = getcwd();
+
+    try {
+        chdir($appPath.'/subdir');
+
+        $exitCode = Artisan::call('profile', [
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($originalCwd)) {
+            chdir($originalCwd);
+        }
+    }
+
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['target']['app'])->toBe('docs')
+        ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/');
 });
 
 it('resolves a control caller target through the gateway before profiling', function (): void {
