@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Nodes\RevokeNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn (): null => MockClient::destroyGlobal());
+afterEach(fn (): null => MockClient::destroyGlobal());
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -57,6 +63,16 @@ function setupRevokeControlCaller(): void
         'gateway_wg_ip' => '10.6.0.2',
         'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
     ])->save();
+}
+
+/**
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeNodeRevokeGateway(array|string $body, int $status = 200): MockClient
+{
+    return MockClient::global([
+        RevokeNodeRequest::class => MockResponse::make($body, $status),
+    ]);
 }
 
 describe('node:revoke base contract', function (): void {
@@ -313,18 +329,16 @@ describe('node:revoke control forwarding', function (): void {
     it('forwards configured control-node revokes to the gateway without local target rows', function (): void {
         setupRevokeControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'revoked',
-                        'already_absent' => false,
-                        'self_lockout' => false,
-                    ],
+        $mock = fakeNodeRevokeGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'revoked',
+                    'already_absent' => false,
+                    'self_lockout' => false,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:revoke', [
@@ -346,28 +360,27 @@ describe('node:revoke control forwarding', function (): void {
             ])
             ->and(DB::table('node_access')->count())->toBe(0);
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://10.6.0.2/api/nodes/revoke'
-            && $request['consuming_node'] === 'control-1'
-            && $request['serving_node'] === 'app-1'
-            && $request['force'] === true);
+        $mock->assertSent(fn (RevokeNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes/revoke'
+            && $request->body()->all() === [
+                'consuming_node' => 'control-1',
+                'serving_node' => 'app-1',
+                'force' => true,
+            ]);
     });
 
     it('renders forwarded already-absent success with human output', function (): void {
         setupRevokeControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'revoked',
-                        'already_absent' => true,
-                        'self_lockout' => false,
-                    ],
+        fakeNodeRevokeGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'revoked',
+                    'already_absent' => true,
+                    'self_lockout' => false,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:revoke', [
@@ -383,18 +396,16 @@ describe('node:revoke control forwarding', function (): void {
     it('renders forwarded self-lockout success with human output', function (): void {
         setupRevokeControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'gateway-1',
-                        'action' => 'revoked',
-                        'already_absent' => false,
-                        'self_lockout' => true,
-                    ],
+        fakeNodeRevokeGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'gateway-1',
+                    'action' => 'revoked',
+                    'already_absent' => false,
+                    'self_lockout' => true,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:revoke', [
@@ -412,11 +423,7 @@ describe('node:revoke control forwarding', function (): void {
     it('preserves structured gateway errors when forwarding', function (array $error): void {
         setupRevokeControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'error' => $error,
-            ], 422),
-        ]);
+        fakeNodeRevokeGateway(['error' => $error], 422);
 
         $exitCode = Artisan::call('node:revoke', [
             'consuming_node' => 'control-1',
@@ -469,18 +476,16 @@ describe('node:revoke control forwarding', function (): void {
             'serving_node_id' => $appNodeId,
         ]);
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'revoked',
-                        'already_absent' => false,
-                        'self_lockout' => false,
-                    ],
+        fakeNodeRevokeGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'revoked',
+                    'already_absent' => false,
+                    'self_lockout' => false,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:revoke', [
@@ -497,18 +502,16 @@ describe('node:revoke control forwarding', function (): void {
     it('fails with validation_failed before gateway call when force is missing for control callers', function (): void {
         setupRevokeControlCaller();
 
-        Http::fake([
-            'https://10.6.0.2/api/nodes/revoke' => Http::response([
-                'success' => [
-                    'data' => [
-                        'consuming_node' => 'control-1',
-                        'serving_node' => 'app-1',
-                        'action' => 'revoked',
-                        'already_absent' => false,
-                        'self_lockout' => false,
-                    ],
+        $mock = fakeNodeRevokeGateway([
+            'success' => [
+                'data' => [
+                    'consuming_node' => 'control-1',
+                    'serving_node' => 'app-1',
+                    'action' => 'revoked',
+                    'already_absent' => false,
+                    'self_lockout' => false,
                 ],
-            ]),
+            ],
         ]);
 
         $exitCode = Artisan::call('node:revoke', [
@@ -523,7 +526,7 @@ describe('node:revoke control forwarding', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force');
 
-        Http::assertNotSent(fn ($request): bool => $request->url() === 'https://10.6.0.2/api/nodes/revoke');
+        $mock->assertNothingSent();
     });
 });
 
