@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `--fix`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `--adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation returns an empty snapshot. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -213,13 +213,14 @@ Reconciliation throws `RuntimeException` for all other keys, including:
 
 ## Adoption
 
-Adoption returns `Skipped` results for all supported adoptable keys:
+Adoption returns `Skipped` results for unsupported adoptable keys and `Updated`
+when a supported compatible record can be safely adopted:
 
 | Key | Behavior |
 | --- | --- |
 | `node.wireguard_peer_extra` | Skipped (requires WireGuard peer inspection). |
 | `node.wireguard_address_mismatch` | Skipped (requires peer identity verification). |
-| `node.platform_record_mismatch` | Skipped (requires live platform detection). |
+| `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |
 
 ## Extensibility
 

@@ -611,7 +611,24 @@ final readonly class NodesProbe
 
     public function snapshotForAdopt(Node $node): ProbeSnapshot
     {
-        return new ProbeSnapshot([]);
+        $items = [];
+
+        if ($node->is_local) {
+            try {
+                $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
+            } catch (Throwable) {
+                $observedPlatform = null;
+            }
+
+            if (is_string($observedPlatform) && $observedPlatform !== '' && $node->platform !== $observedPlatform) {
+                $items['node.platform_record_mismatch'] = [
+                    'recorded' => $node->platform,
+                    'observed' => $observedPlatform,
+                ];
+            }
+        }
+
+        return new ProbeSnapshot($items);
     }
 
     /**
@@ -635,11 +652,44 @@ final readonly class NodesProbe
             summary: 'WireGuard address mismatch adoption skipped.',
         );
 
+        $platformRecordMismatch = $snapshot->get('node.platform_record_mismatch');
+
+        if ($platformRecordMismatch === null) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.platform_record_mismatch',
+                action: AdoptAction::Skipped,
+                summary: 'Platform record mismatch adoption skipped.',
+            );
+
+            return $results;
+        }
+
+        $observedPlatform = $platformRecordMismatch['observed'] ?? null;
+
+        if (! is_string($observedPlatform) || $observedPlatform === '') {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.platform_record_mismatch',
+                action: AdoptAction::Skipped,
+                summary: 'Platform record mismatch adoption skipped because the observed platform is unavailable.',
+                detail: $platformRecordMismatch,
+            );
+
+            return $results;
+        }
+
+        $node->update(['platform' => $observedPlatform]);
+
         $results[] = new AdoptResult(
             family: $this->key(),
             key: 'node.platform_record_mismatch',
-            action: AdoptAction::Skipped,
-            summary: 'Platform record mismatch adoption skipped.',
+            action: AdoptAction::Updated,
+            summary: "Updated platform record for {$node->name} to {$observedPlatform}.",
+            detail: [
+                'recorded' => $platformRecordMismatch['recorded'] ?? $node->platform,
+                'observed' => $observedPlatform,
+            ],
         );
 
         return $results;

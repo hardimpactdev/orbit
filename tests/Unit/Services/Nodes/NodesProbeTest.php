@@ -1118,7 +1118,7 @@ describe('reconciliation', function (): void {
 });
 
 describe('adoption', function (): void {
-    it('returns empty snapshot for adopt', function (): void {
+    it('returns empty adopt snapshot for non-local nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -1134,6 +1134,35 @@ describe('adoption', function (): void {
         $snapshot = $this->probe->snapshotForAdopt($node);
 
         expect($snapshot->isEmpty())->toBeTrue();
+    });
+
+    it('snapshots local platform record mismatches for adopt', function (): void {
+        $probe = new NodesProbe(new class extends PlatformDetector
+        {
+            public function detectLocal(): string
+            {
+                return 'macos_15-4';
+            }
+        });
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14-0',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]);
+
+        $snapshot = $probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.platform_record_mismatch'))->toBe([
+            'recorded' => 'macos_14-0',
+            'observed' => 'macos_15-4',
+        ]);
     });
 
     it('returns skipped results for adoptable keys', function (): void {
@@ -1161,6 +1190,39 @@ describe('adoption', function (): void {
         foreach ($results as $result) {
             expect($result->action)->toBe(AdoptAction::Skipped);
         }
+    });
+
+    it('adopts local platform record mismatches', function (): void {
+        $probe = new NodesProbe(new class extends PlatformDetector
+        {
+            public function detectLocal(): string
+            {
+                return 'macos_15-4';
+            }
+        });
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14-0',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]);
+
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
+        $platform = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.platform_record_mismatch'));
+
+        expect($platform)->toHaveCount(1);
+        expect($platform[0]->action)->toBe(AdoptAction::Updated);
+        expect($platform[0]->detail)->toBe([
+            'recorded' => 'macos_14-0',
+            'observed' => 'macos_15-4',
+        ]);
+        expect($node->refresh()->platform)->toBe('macos_15-4');
     });
 });
 
