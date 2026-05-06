@@ -95,6 +95,20 @@ final readonly class ToolLifecycleManager
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
+    public function reload(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    {
+        return $this->runIntentPreservingAction(
+            tool: $tool,
+            node: $node,
+            app: $app,
+            action: 'reload',
+            repairCommandKey: 'lifecycle_reloaded',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
     private function applyLifecycleAction(
         string $tool,
         ?string $node,
@@ -121,6 +135,47 @@ final readonly class ToolLifecycleManager
 
         $model->expected_state = $expectedState;
         $model->save();
+        $model->loadMissing('node');
+
+        if ($model->node === null) {
+            return ToolRegistryFailure::remoteActionFailed($tool, '', $action, 1, 'Target node is missing.');
+        }
+
+        $result = $this->remoteShell->run($model->node, $command, ['throw' => false]);
+
+        if (! $result->successful()) {
+            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, $action, $result->exitCode, trim($result->stderr));
+        }
+
+        return $this->payloads->toArray($model);
+    }
+
+    /**
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
+    private function runIntentPreservingAction(
+        string $tool,
+        ?string $node,
+        ?string $app,
+        string $action,
+        string $repairCommandKey,
+    ): array|ToolRegistryFailure {
+        if (! $this->catalog->supports($tool)) {
+            return ToolRegistryFailure::unsupportedAction($tool, $action);
+        }
+
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+
+        if ($model instanceof ToolRegistryFailure) {
+            return $model;
+        }
+
+        $command = $this->repairCommand($model, $repairCommandKey);
+
+        if ($command === null) {
+            return ToolRegistryFailure::unsupportedAction($tool, $action);
+        }
+
         $model->loadMissing('node');
 
         if ($model->node === null) {
