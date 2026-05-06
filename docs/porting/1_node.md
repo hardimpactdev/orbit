@@ -191,11 +191,13 @@ Detail file for the node command family. Top-level command status lives in
   - [~] Gateway-connected forwarding from configured control nodes.
     - [x] App-node creation forwarding.
     - [x] Control-node enrollment forwarding.
-    - [ ] Gateway convergence/adoption forwarding.
+    - [x] Gateway convergence forwarding.
+    - [ ] Gateway adoption forwarding.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
     - [x] Control-node enrollment path with WireGuard config return.
-    - [ ] Gateway convergence/adoption path.
+    - [x] Gateway convergence path.
+    - [ ] Gateway adoption path.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

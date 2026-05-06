@@ -1070,6 +1070,73 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('forwards gateway convergence when gateway add only stored local gateway settings', function (): void {
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'converged'],
+                    'node' => [
+                        'name' => 'gateway-1',
+                        'role' => 'gateway',
+                        'environment' => null,
+                        'tld' => null,
+                        'platform' => 'ubuntu_24-04',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.2',
+                            'gateway_endpoint' => '203.0.113.2',
+                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'none',
+                        'host' => '203.0.113.2',
+                        'status' => 'already_provisioned',
+                    ],
+                    'next_steps' => [],
+                ],
+            ],
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '203.0.113.2',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('converged')
+            ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())->toBeFalse();
+
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'gateway-1',
+                'role' => 'gateway',
+                'host' => '203.0.113.2',
+                'environment' => null,
+                'tld' => null,
+                'ssh_user' => 'provisioner',
+            ]);
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('enrolls a control node locally on a gateway without SSH side effects', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
@@ -1149,6 +1216,67 @@ describe('node:new', function (): void {
             ->and($controlPeer->public_key)->toBe('control-public-key')
             ->and($controlPeer->private_key)->toBe('control-private-key')
             ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
+
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
+
+    it('converges an already provisioned gateway locally without SSH side effects', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'host' => '203.0.113.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => '203.0.113.2',
+            'platform' => 'ubuntu_24-04',
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'gateway-1',
+            '--role' => 'gateway',
+            '--host' => '203.0.113.2',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload)->toBe([
+                'success' => [
+                    'data' => [
+                        'result' => [
+                            'action' => 'converged',
+                        ],
+                        'node' => [
+                            'name' => 'gateway-1',
+                            'role' => 'gateway',
+                            'environment' => null,
+                            'tld' => null,
+                            'platform' => 'ubuntu_24-04',
+                            'addresses' => [
+                                'wireguard' => '10.6.0.2',
+                                'gateway_endpoint' => '203.0.113.2',
+                            ],
+                            'status' => 'active',
+                        ],
+                        'provisioning' => [
+                            'transport' => 'none',
+                            'host' => '203.0.113.2',
+                            'status' => 'already_provisioned',
+                        ],
+                        'next_steps' => [],
+                    ],
+                ],
+            ]);
 
         Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
     });

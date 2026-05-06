@@ -139,6 +139,14 @@ class NodeNewCommand extends Command
                 return $this->convergeFirstGateway($name);
             }
 
+            if ($callerRole === 'control' && $this->gatewayApiConfigured()) {
+                return $this->forwardGatewayConvergence($name);
+            }
+
+            if ($callerRole === 'gateway') {
+                return $this->convergeGatewayLocally($name);
+            }
+
             return $this->failCommand(
                 code: 'gateway_unavailable',
                 message: 'Gateway forwarding is required before gateway convergence can run.',
@@ -331,6 +339,122 @@ class NodeNewCommand extends Command
         $this->info("Created app node {$name}.");
 
         return self::SUCCESS;
+    }
+
+    private function forwardGatewayConvergence(string $name): int
+    {
+        $host = $this->resolveHost('gateway');
+
+        if ($host === null) {
+            return $this->validationFailed('host', 'Host is required for gateway nodes.');
+        }
+
+        try {
+            /** @var NodeCreateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new CreateNodeRequest(
+                    name: $name,
+                    role: 'gateway',
+                    host: $host,
+                    environment: null,
+                    tld: null,
+                    sshUser: $this->resolveSshUser(),
+                ))
+                ->dto();
+        } catch (GatewayApiException $exception) {
+            return $this->failCommand(
+                code: $exception->errorCode() ?? 'gateway_unavailable',
+                message: $exception->getMessage() !== ''
+                    ? $exception->getMessage()
+                    : 'Gateway API request failed.',
+                meta: $exception->errorMeta(),
+            );
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway API request failed.',
+                meta: [
+                    'requested_role' => 'gateway',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($dto->data);
+        }
+
+        $this->info('Gateway is already provisioned.');
+
+        return self::SUCCESS;
+    }
+
+    private function convergeGatewayLocally(string $name): int
+    {
+        $host = $this->resolveHost('gateway');
+
+        if ($host === null) {
+            return $this->validationFailed('host', 'Host is required for gateway nodes.');
+        }
+
+        $gateway = Node::query()
+            ->where('name', $name)
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->first();
+
+        if (! $gateway instanceof Node || ! $this->gatewayHostMatches($gateway, $host)) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: 'Existing gateway is incompatible with the requested host or identity.',
+                meta: ['name' => $name, 'host' => $host],
+            );
+        }
+
+        $payload = $this->gatewayConvergencePayload($gateway, $host);
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info('Gateway is already provisioned.');
+
+        return self::SUCCESS;
+    }
+
+    private function gatewayHostMatches(Node $gateway, string $host): bool
+    {
+        return $gateway->host === $host || $gateway->gateway_endpoint === $host;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function gatewayConvergencePayload(Node $gateway, string $host): array
+    {
+        return [
+            'result' => [
+                'action' => 'converged',
+            ],
+            'node' => [
+                'name' => $gateway->name,
+                'role' => 'gateway',
+                'environment' => null,
+                'tld' => null,
+                'platform' => $gateway->platform ?? 'unknown',
+                'addresses' => [
+                    'wireguard' => $gateway->wireguard_address,
+                    'gateway_endpoint' => $gateway->gateway_endpoint ?? $gateway->host,
+                ],
+                'status' => 'active',
+            ],
+            'provisioning' => [
+                'transport' => 'none',
+                'host' => $host,
+                'status' => 'already_provisioned',
+            ],
+            'next_steps' => [],
+        ];
     }
 
     private function forwardControlNodeEnrollment(string $name): int
@@ -1252,6 +1376,11 @@ class NodeNewCommand extends Command
             return true;
         }
 
+        return $this->gatewayApiConfigured();
+    }
+
+    private function gatewayApiConfigured(): bool
+    {
         return LocalGatewaySettings::query()
             ->whereNotNull('gateway_url')
             ->where('gateway_url', '!=', '')
