@@ -207,9 +207,15 @@ Detail file for the node command family. Top-level command status lives in
       are implemented, and app runtime readiness now produces adoption
       verification/conflict results. `node:new` still needs a compatible
       gateway/app host boundary for missing/extra WireGuard identity before it
-      can safely adopt already-provisioned hosts. Next concrete action: decide
-      the missing/extra peer adoption boundary, then wire `node:new` adoption
-      through the verified node-family adoption result.
+      can safely adopt already-provisioned hosts. The old repo skipped these
+      cases, and the clean repo can currently inspect only gateway registry
+      peer rows, not live WireGuard peer reality or remote node identity
+      artifacts. Registry-only peer rows are insufficient to attach or recreate
+      node identity safely. Next concrete action: design and implement a
+      read-only WireGuard peer reality probe that can bind live peer material to
+      the selected node identity, then enable missing/extra peer adoption only
+      for proven compatible identities and wire `node:new` adoption through the
+      verified node-family adoption result.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

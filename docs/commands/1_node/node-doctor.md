@@ -162,6 +162,7 @@ such as `node:new`, `node:update`, `node:grant`, `node:revoke`, and
 | --- | --- |
 | `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a compatible already-provisioned node identity. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
+| `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
 
 `--adopt` does not handle unselected hosts, unresolved caller identities,

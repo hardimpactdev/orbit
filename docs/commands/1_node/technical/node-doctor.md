@@ -218,7 +218,7 @@ when a supported compatible record can be safely adopted:
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_extra` | Skipped (requires WireGuard peer inspection). |
+| `node.wireguard_peer_extra` | Skipped until a live WireGuard peer reality probe can prove that the selected scope names a compatible already-provisioned node identity. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the runtime backend is available; returns a conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |
