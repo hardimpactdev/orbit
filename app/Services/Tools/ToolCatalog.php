@@ -54,6 +54,26 @@ final readonly class ToolCatalog
         return is_string($command) && $command !== '' ? $command : null;
     }
 
+    public function logCommand(string $tool, int $lines): ?string
+    {
+        $metadata = $this->probeMetadata($tool);
+        $service = is_array($metadata) && is_string($metadata['service'] ?? null)
+            ? $metadata['service']
+            : null;
+
+        if ($service === null || $service === '') {
+            return null;
+        }
+
+        $lineCount = max(1, $lines);
+
+        return sprintf(
+            'journalctl -u %s -n %d --no-pager --output=short-iso',
+            escapeshellarg($service),
+            $lineCount,
+        );
+    }
+
     /**
      * @return array{
      *     binary: string,
