@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
@@ -25,6 +26,7 @@ final readonly class NodesProbe
 
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
+        private ?RemoteShell $remoteShell = null,
     ) {}
 
     public function key(): string
@@ -398,6 +400,44 @@ final readonly class NodesProbe
      */
     private function checkSshReachability(Node $node): array
     {
+        if ($node->role !== 'app' || $node->status !== 'active') {
+            return [];
+        }
+
+        try {
+            $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, 'true', [
+                'timeout' => 10,
+            ]);
+        } catch (Throwable $e) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.app_ssh_unreachable',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Gateway cannot reach app node {$node->name} over SSH: {$e->getMessage()}",
+                    detail: [
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ],
+                ),
+            ];
+        }
+
+        if (! $result->successful()) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.app_ssh_unreachable',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Gateway cannot reach app node {$node->name} over SSH.",
+                    detail: [
+                        'exit_code' => $result->exitCode,
+                        'output' => trim($result->output()),
+                    ],
+                ),
+            ];
+        }
+
         return [];
     }
 

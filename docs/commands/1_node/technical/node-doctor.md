@@ -145,13 +145,23 @@ into remote nodes or mutate host state:
   - Reports mismatch when the local node record's platform identifier differs
     from local detection.
 
+### Implemented Remote Read Checks
+
+These layers perform bounded read-only remote inspection through `RemoteShell`.
+They do not mutate host state:
+
+- SSH reachability (`node.app_ssh_unreachable`)
+  - Runs only for active app-node records.
+  - Executes `true` through `RemoteShell` with a short timeout.
+  - Reports `Unverifiable` drift when the gateway cannot reach the app node over
+    SSH.
+
 ### Stubs (External Service Required)
 
 These layers return empty arrays. They are reserved for future probe
 implementations that require external services:
 
 - WireGuard live interface reality (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
-- SSH reachability (`node.app_ssh_unreachable`)
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node bootstrap readiness (`node.app_runtime_missing`, `node.node_identity_artifact_missing`)
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +36,8 @@ function nodeListHumanRow(array $overrides = []): array
 
 describe('node:list human renderer contract', function (): void {
     beforeEach(function (): void {
+        app()->instance(RemoteShell::class, new NodeListHumanRendererRemoteShell);
+
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
             'role' => 'gateway',
@@ -230,3 +235,11 @@ describe('node:list human renderer contract', function (): void {
             ->and($output)->toContain('Run `orbit doctor --family=node --fix` to repair.');
     });
 });
+
+final class NodeListHumanRendererRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

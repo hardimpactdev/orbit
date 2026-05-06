@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Nodes;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
@@ -744,7 +746,12 @@ describe('external service stubs', function (): void {
         expect($platform[0]->summary)->toBe('Could not detect local platform for test: Unsupported platform family: Solaris');
     });
 
-    it('returns empty for SSH reachability checks', function (): void {
+    it('accepts reachable app nodes over SSH', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -756,11 +763,68 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
         $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
+        expect($remoteShell->scripts)->toBe(['true']);
+        expect($remoteShell->options[0]['timeout'])->toBe(10);
+    });
+
+    it('detects unreachable app nodes over SSH', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'connection refused', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable'));
+
+        expect($ssh)->toHaveCount(1);
+        expect($ssh[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($ssh[0]->detail)->toBe([
+            'exit_code' => 255,
+            'output' => 'connection refused',
+        ]);
+    });
+
+    it('skips SSH reachability for non-app nodes', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'gateway',
+            'role' => 'gateway',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
+
+        expect($ssh)->toHaveCount(0);
+        expect($remoteShell->scripts)->toBe([]);
     });
 
     it('returns empty for gateway runtime checks', function (): void {
@@ -1052,3 +1116,31 @@ describe('public IP metadata exclusion', function (): void {
         expect($ipIssues)->toHaveCount(0);
     });
 });
+
+final class NodesProbeRecordingRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+        $this->options[] = $options;
+
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

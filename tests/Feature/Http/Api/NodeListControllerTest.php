@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -50,6 +53,8 @@ function createCallerNode(): void
 
 describe('NodeListController', function (): void {
     beforeEach(function (): void {
+        app()->instance(RemoteShell::class, new NodeListControllerRemoteShell);
+
         createCallerNode();
     });
 
@@ -228,3 +233,11 @@ describe('NodeListController', function (): void {
             ->assertJsonPath('success.meta.doctor.failures.0.family', 'node');
     });
 });
+
+final class NodeListControllerRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

@@ -1696,7 +1696,7 @@ for the Saloon-based gateway transport pattern.
       - [x] registry-backed peer material intent.
       - [ ] live gateway interface reality.
     - [x] local platform detection.
-    - [ ] SSH reachability.
+    - [x] SSH reachability.
     - [ ] gateway/app runtime readiness.
     - [~] development TLD:
       - [x] missing development app-node TLD intent.
