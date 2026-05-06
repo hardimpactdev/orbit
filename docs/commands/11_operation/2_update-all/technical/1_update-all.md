@@ -183,6 +183,20 @@ The expected target shape per caller role:
   different Orbit version; node doctor owns any later reachability or readiness
   diagnosis once its contract is converted in this repo.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed fleet
+update attempts. Activity logging is best-effort and must not change the
+documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `update:all` |
+| Effect | `write` |
+| Subject | `none`; the command updates selected Orbit installations but does not own a durable operation-family entity. |
+| Properties | `scope=fleet`, `status` (`completed` or `failed`), `summary` counts, selected `targets` with target/node/role metadata, and `failed_step` for local or remote update failures. No process output, SSH output, Git output, Composer output, migration output, environment values, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary existing test owners:

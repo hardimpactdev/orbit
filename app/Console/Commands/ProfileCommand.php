@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Profile\ShowProfile;
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\ListAppsRequest;
@@ -29,9 +32,67 @@ use function Laravel\Prompts\datatable;
     {--user= : Authenticate the profiled request as the given primary key}
     {--json : Output as JSON}')]
 #[Description('Profile one Orbit-managed app HTTP request')]
-class ProfileCommand extends Command
+class ProfileCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
+    private ?string $activityTarget = null;
+
+    private ?string $activityApp = null;
+
+    private ?string $activityNode = null;
+
+    private ?string $activityDomain = null;
+
+    private ?string $activityUri = null;
+
+    private ?string $activityOrigin = null;
+
+    private ?int $activityStatusCode = null;
+
     public function handle(ShowProfile $profile): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeProfile($profile);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return array_filter([
+            'target' => $this->activityTarget ?? $this->stringOption('app') ?? $this->stringArgument('target'),
+            'app' => $this->activityApp,
+            'node' => $this->activityNode,
+            'domain' => $this->activityDomain,
+            'uri' => $this->activityUri ?? $this->stringOption('uri') ?? '/',
+            'origin' => $this->activityOrigin,
+            'auth_mode' => $this->authMode(),
+            'status_code' => $this->activityStatusCode,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        if ($this->activityApp !== null) {
+            return "Profiled {$this->activityApp}";
+        }
+
+        return 'Profile request attempted';
+    }
+
+    private function executeProfile(ShowProfile $profile): int
     {
         $callerRole = $this->callerRole();
 
@@ -73,6 +134,7 @@ class ProfileCommand extends Command
         }
 
         $uri = $this->normalizedUri();
+        $this->activityUri = $uri;
 
         if ($uri === null) {
             return $this->failCommand(
@@ -86,8 +148,10 @@ class ProfileCommand extends Command
         }
 
         $selector = $appOption ?? $target;
+        $this->activityTarget = $selector;
         $selectorWasOmitted = $selector === null;
         $nodeConstraint = $this->stringOption('node');
+        $this->activityNode = $nodeConstraint;
 
         if ($callerRole === 'gateway' && $nodeConstraint !== null && ! Node::query()->where('name', $nodeConstraint)->where('status', 'active')->exists()) {
             return $this->failCommand(
@@ -115,6 +179,8 @@ class ProfileCommand extends Command
             }
 
             [$selector, $uri] = $parsed;
+            $this->activityTarget = $selector;
+            $this->activityUri = $uri;
         }
 
         if ($selector === null && in_array($callerRole, ['gateway', 'app'], true)) {
@@ -161,9 +227,12 @@ class ProfileCommand extends Command
             }
 
             if ($this->wantsJson()) {
+                $this->captureActivitySuccess($gatewayResult);
+
                 return $this->jsonSuccess($gatewayResult);
             }
 
+            $this->captureActivitySuccess($gatewayResult);
             $this->renderHuman($gatewayResult);
 
             return self::SUCCESS;
@@ -187,6 +256,7 @@ class ProfileCommand extends Command
                         'domain' => $this->appDomain($app),
                     ];
                     $origin = 'gateway';
+                    $this->captureActivityTarget($targetPayload, $origin);
                 } else {
                     return $this->failCommand(
                         code: 'target_not_found',
@@ -203,6 +273,7 @@ class ProfileCommand extends Command
                     'domain' => $this->appDomain($app),
                 ];
                 $origin = 'gateway';
+                $this->captureActivityTarget($targetPayload, $origin);
             }
         } else {
             $gatewayResult = $this->fetchGatewayApp($selector);
@@ -226,6 +297,7 @@ class ProfileCommand extends Command
                 'domain' => $this->domainFromPayload($appPayload, $selector),
             ];
             $origin = 'caller';
+            $this->captureActivityTarget($targetPayload, $origin);
         }
 
         $result = $profile->handle(
@@ -242,9 +314,12 @@ class ProfileCommand extends Command
 
                 if (! $gatewayResult instanceof GatewayApiException) {
                     if ($this->wantsJson()) {
+                        $this->captureActivitySuccess($gatewayResult);
+
                         return $this->jsonSuccess($gatewayResult);
                     }
 
+                    $this->captureActivitySuccess($gatewayResult);
                     $this->renderHuman($gatewayResult);
 
                     return self::SUCCESS;
@@ -272,12 +347,47 @@ class ProfileCommand extends Command
         }
 
         if ($this->wantsJson()) {
+            $this->captureActivitySuccess($data);
+
             return $this->jsonSuccess($data);
         }
 
+        $this->captureActivitySuccess($data);
         $this->renderHuman($data);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function captureActivitySuccess(array $data): void
+    {
+        $target = is_array($data['target'] ?? null) ? $data['target'] : [];
+        $request = is_array($data['request'] ?? null) ? $data['request'] : [];
+
+        $this->captureActivityTarget($target, is_string($data['origin'] ?? null) ? $data['origin'] : $this->activityOrigin);
+        $this->activityStatusCode = is_numeric($request['status'] ?? null) ? (int) $request['status'] : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $target
+     */
+    private function captureActivityTarget(array $target, ?string $origin): void
+    {
+        $this->activityApp = is_string($target['app'] ?? null) ? $target['app'] : $this->activityApp;
+        $this->activityNode = is_string($target['node'] ?? null) ? $target['node'] : $this->activityNode;
+        $this->activityDomain = is_string($target['domain'] ?? null) ? $target['domain'] : $this->activityDomain;
+        $this->activityOrigin = $origin;
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (Throwable) {
+            // Activity logging must not change the documented profile result.
+        }
     }
 
     /**

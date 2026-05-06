@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -79,6 +80,30 @@ it('renders success envelope shape with updates array and summary', function ():
         'completed' => 2,
         'failed' => 0,
     ]);
+});
+
+it('logs fleet update activity', function (): void {
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    $exitCode = Artisan::call('update:all', ['--json' => true]);
+
+    $entry = Activity::query()->first();
+
+    expect($exitCode)->toBe(0);
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('update:all');
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('scope'))->toBe('fleet');
+    expect($entry->properties->get('status'))->toBe('completed');
+    expect($entry->properties->get('summary'))->toBe([
+        'total' => 2,
+        'completed' => 2,
+        'failed' => 0,
+    ]);
+    expect($entry->properties->get('targets'))->toHaveCount(2);
 });
 
 it('renders local_update_failed with failed_step and output', function (): void {

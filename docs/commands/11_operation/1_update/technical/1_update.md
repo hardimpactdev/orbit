@@ -99,6 +99,20 @@ fields and does not prompt.
 - After updating a gateway or app node, run the `doctor --family=<family>`
   command for the family whose artifacts or readiness need verification.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed local
+checkout update attempts. Activity logging is best-effort and must not change
+the documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `update` |
+| Effect | `write` |
+| Subject | `none`; the command updates the caller-local Orbit checkout, not a gateway-owned registry entity. |
+| Properties | `scope=local`, `target=local`, `status` (`completed` or `failed`), and `failed_step` when a step fails. No process output, Git output, Composer output, migration output, environment values, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary existing test owners:

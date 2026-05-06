@@ -1039,6 +1039,10 @@ that produced the controller's Loggable wiring.
 - [x] `9_schedule`.
 - [ ] `10_deploy`.
 - [ ] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
+  - [~] `update`, `update:all`, and `profile` activity contracts/emission are
+    implemented by `ACTIVITY-OPERATION-IMPLEMENTED-1`.
+  - [!] `doctor` activity backfill is blocked until the clean `doctor` command
+    is implemented.
 - [ ] `12_cf`.
 - [ ] `13_vpn`.
 - [ ] `14_php`.
@@ -1121,6 +1125,14 @@ that produced the controller's Loggable wiring.
   - [x] The local-only gateway commands now emit best-effort CLI activity
     entries with `effect=write`; activity-log failures do not alter the
     documented command result.
+- [~] `ACTIVITY-OPERATION-IMPLEMENTED-1` — add activity logging contracts and
+  local CLI activity emission to the currently implemented operation commands.
+  - [x] `update`, `update:all`, and `profile` now declare their
+    `## Activity Logging` tech contracts and are enforced by
+    `ActivityLoggingContractRule`.
+  - [x] The implemented operation commands emit best-effort CLI activity entries;
+    update commands emit `effect=write`, and `profile` emits `effect=read`.
+  - [!] `doctor` remains blocked until the clean `doctor` command exists.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the

@@ -175,6 +175,21 @@ this command contract.
 - `profile` failures may point to the owning doctor family, but the command
   must not report app, proxy, or node health as converged.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed profile
+read attempts. Gateway API profile requests also emit through the gateway API
+activity middleware. Activity logging is best-effort and must not change the
+documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `profile` |
+| Effect | `read` |
+| Subject | `none`; the CLI command observes one request and does not mutate or own a durable operation-family entity. |
+| Properties | `target`, resolved `app`, `node`, `domain`, `uri`, `origin`, `auth_mode`, and `status_code` when known. No response headers, Toolbar payloads, profile body, user secrets, timing internals, raw errors, or auth header values. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

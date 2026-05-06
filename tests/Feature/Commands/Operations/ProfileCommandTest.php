@@ -14,6 +14,7 @@ use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -88,6 +89,67 @@ it('profiles an app target resolved from gateway state as baseline json', functi
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/')
         ->and($payload['success']['data']['request']['status'])->toBe(200)
         ->and($payload['success']['meta']['warnings'])->toBe([]);
+});
+
+it('logs profile activity', function (): void {
+    $gateway = Node::factory()->create([
+        'name' => 'gateway',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $gateway->id,
+        'domain' => 'docs.test',
+        'path' => '/srv/docs',
+    ]);
+
+    app()->instance(RequestProfiler::class, new class implements RequestProfiler
+    {
+        public function profile(string $url, array $headers = []): array
+        {
+            return [
+                'request' => [
+                    'method' => 'GET',
+                    'url' => $url,
+                    'uri' => '/',
+                    'status' => 200,
+                    'bytes' => 1200,
+                    'completed' => true,
+                ],
+                'timings' => [
+                    'dns_ms' => 1.0,
+                    'connect_ms' => 3.0,
+                    'tls_ms' => 7.0,
+                    'ttfb_ms' => 50.0,
+                    'download_ms' => 2.0,
+                    'total_ms' => 52.0,
+                ],
+                'error' => null,
+                'response_headers' => [],
+            ];
+        }
+    });
+
+    $exitCode = Artisan::call('profile', [
+        'target' => 'docs',
+        '--json' => true,
+    ]);
+
+    $entry = Activity::query()->first();
+
+    expect($exitCode)->toBe(0);
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('profile');
+    expect($entry->properties->get('type'))->toBe('read');
+    expect($entry->properties->get('target'))->toBe('docs');
+    expect($entry->properties->get('app'))->toBe('docs');
+    expect($entry->properties->get('node'))->toBe('gateway');
+    expect($entry->properties->get('domain'))->toBe('docs.test');
+    expect($entry->properties->get('uri'))->toBe('/');
+    expect($entry->properties->get('origin'))->toBe('gateway');
+    expect($entry->properties->get('status_code'))->toBe(200);
 });
 
 it('infers an app target from the gateway caller current working directory', function (): void {

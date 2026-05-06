@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
 use App\Services\OrbitUpdater;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -11,15 +13,54 @@ use Illuminate\Console\Command;
 
 #[Signature('update {--json : Output as JSON}')]
 #[Description('Update this Orbit checkout')]
-class UpdateCommand extends Command
+class UpdateCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
     private const array STEP_LABELS = [
         'pull_source' => 'Pull source',
         'install_dependencies' => 'Install dependencies',
         'run_migrations' => 'Run migrations',
     ];
 
+    private ?string $activityStatus = null;
+
+    private ?string $activityFailedStep = null;
+
     public function handle(OrbitUpdater $updater): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeUpdate($updater);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return array_filter([
+            'scope' => 'local',
+            'target' => 'local',
+            'status' => $this->activityStatus,
+            'failed_step' => $this->activityFailedStep,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        return match ($this->activityStatus) {
+            'completed' => 'Local Orbit checkout updated',
+            'failed' => 'Local Orbit checkout update failed',
+            default => 'Local Orbit checkout update attempted',
+        };
+    }
+
+    private function executeUpdate(OrbitUpdater $updater): int
     {
         $steps = [
             'pull_source' => $updater->pullSource(...),
@@ -35,6 +76,8 @@ class UpdateCommand extends Command
                 $stepResults[$key] = $result->successful() ? 'completed' : 'failed';
 
                 if (! $result->successful()) {
+                    $this->captureActivityFailure($key);
+
                     if ($key === 'pull_source' && $result->exitCode() === 128) {
                         return $this->jsonError(
                             code: 'local_checkout_unavailable',
@@ -52,6 +95,8 @@ class UpdateCommand extends Command
                 }
             }
 
+            $this->activityStatus = 'completed';
+
             return $this->jsonSuccess($stepResults);
         }
 
@@ -63,6 +108,8 @@ class UpdateCommand extends Command
             $this->updateProgressTree($stepResults);
 
             if (! $result->successful()) {
+                $this->captureActivityFailure($key);
+
                 $this->line('');
                 $this->error('Failed to update local Orbit checkout.');
                 $output = trim($result->errorOutput() ?: $result->output());
@@ -78,7 +125,24 @@ class UpdateCommand extends Command
         $this->line('');
         $this->info('Updated local Orbit checkout.');
 
+        $this->activityStatus = 'completed';
+
         return self::SUCCESS;
+    }
+
+    private function captureActivityFailure(string $failedStep): void
+    {
+        $this->activityStatus = 'failed';
+        $this->activityFailedStep = $failedStep;
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented update result.
+        }
     }
 
     private function wantsJson(): bool

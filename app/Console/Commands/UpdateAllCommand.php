@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
 use Illuminate\Console\Attributes\Description;
@@ -13,14 +15,59 @@ use Illuminate\Database\Eloquent\Collection;
 
 #[Signature('update:all {--json : Output as JSON}')]
 #[Description('Update this Orbit checkout and every active registered node')]
-class UpdateAllCommand extends Command
+class UpdateAllCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
     /**
      * @var list<array{target: string, node: string|null, role: string|null}>
      */
     private array $targets = [];
 
+    /**
+     * @var array{total: int, completed: int, failed: int}|null
+     */
+    private ?array $activitySummary = null;
+
+    private ?string $activityStatus = null;
+
+    private ?string $activityFailedStep = null;
+
     public function handle(OrbitUpdater $updater): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeUpdateAll($updater);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return array_filter([
+            'scope' => 'fleet',
+            'status' => $this->activityStatus,
+            'summary' => $this->activitySummary,
+            'targets' => $this->targets,
+            'failed_step' => $this->activityFailedStep,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
+    }
+
+    public function description(): ?string
+    {
+        return match ($this->activityStatus) {
+            'completed' => 'Orbit installations updated',
+            'failed' => 'One or more Orbit installations failed to update',
+            default => 'Orbit fleet update attempted',
+        };
+    }
+
+    private function executeUpdateAll(OrbitUpdater $updater): int
     {
         $nodes = Node::query()
             ->where('status', 'active')
@@ -54,6 +101,8 @@ class UpdateAllCommand extends Command
         ];
 
         if (! $localResult->successful()) {
+            $this->captureActivitySummary($updates, 'failed', 'local_checkout');
+
             return $this->jsonError(
                 code: 'local_update_failed',
                 message: 'Failed to update local Orbit checkout.',
@@ -80,6 +129,8 @@ class UpdateAllCommand extends Command
         $failed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'failed'));
 
         if ($failed > 0) {
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
             return $this->jsonError(
                 code: 'remote_update_failed',
                 message: 'One or more Orbit installations failed to update.',
@@ -93,6 +144,8 @@ class UpdateAllCommand extends Command
                 ],
             );
         }
+
+        $this->captureActivitySummary($updates, 'completed');
 
         return $this->jsonSuccess($updates);
     }
@@ -110,6 +163,8 @@ class UpdateAllCommand extends Command
         $this->updateProgressTree($results);
 
         if (! $localResult->successful()) {
+            $this->captureActivitySummaryFromResults($results, 'failed', 'local_checkout');
+
             $this->line('');
             $this->error('Failed to update local Orbit checkout.');
             $output = trim($localResult->errorOutput() ?: $localResult->output());
@@ -142,6 +197,8 @@ class UpdateAllCommand extends Command
             }
         }
 
+        $this->captureActivitySummaryFromResults($results, $failed ? 'failed' : 'completed', $failed ? 'remote_update' : null);
+
         $this->line('');
         $this->info('Updated local Orbit checkout.');
 
@@ -152,6 +209,46 @@ class UpdateAllCommand extends Command
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $updates
+     */
+    private function captureActivitySummary(array $updates, string $status, ?string $failedStep = null): void
+    {
+        $this->activityStatus = $status;
+        $this->activityFailedStep = $failedStep;
+        $this->activitySummary = [
+            'total' => count($updates),
+            'completed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'completed')),
+            'failed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'failed')),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $results
+     */
+    private function captureActivitySummaryFromResults(array $results, string $status, ?string $failedStep = null): void
+    {
+        $updates = [];
+
+        foreach ($this->targets as $target) {
+            $updates[] = [
+                ...$target,
+                'status' => $results[$target['target']] ?? 'pending',
+            ];
+        }
+
+        $this->captureActivitySummary($updates, $status, $failedStep);
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented update:all result.
+        }
     }
 
     /**
