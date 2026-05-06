@@ -1710,8 +1710,15 @@ for the Saloon-based gateway transport pattern.
   - [x] Source path and document root reality checks.
   - [x] PHP runtime availability checks.
   - [x] PHP-FPM configuration presence and content checks.
-  - [ ] External app runtime artifact checks: runtime configuration, production
+  - [!] External app runtime artifact checks: runtime configuration, production
     policy, deployment health, and stale app artifacts.
+    - Blocked by missing clean-rebuild schema/intent for app runtime
+      configuration, production user policy, deployment steps, deployment runs,
+      latest deployment status, and stale app artifact discovery scope.
+    - Next concrete action: port the deploy-policy/run-history schema and app
+      production/runtime intent fields, or explicitly narrow `app-doctor` to
+      the currently implemented app runtime artifacts before adding more probe
+      checks.
 - [ ] Port workspace doctor contracts and checks.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
