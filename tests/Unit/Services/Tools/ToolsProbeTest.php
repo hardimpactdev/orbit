@@ -161,6 +161,51 @@ describe('ToolsProbe', function (): void {
                 'observed_hash' => str_repeat('b', 64),
             ]);
     });
+
+    it('detects missing managed credential material when credential intent declares a path and hash', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => str_repeat('a', 64),
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/opencode-server\t\trunning\t\t\t0\t\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.credentials_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects managed credential hash mismatches', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => str_repeat('a', 64),
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/opencode-server\t\trunning\t\t\t1\t".str_repeat('b', 64)."\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)->toMatchArray([
+                'path' => '/home/orbit/.config/opencode-server/password',
+                'expected_hash' => str_repeat('a', 64),
+                'observed_hash' => str_repeat('b', 64),
+            ]);
+    });
 });
 
 final readonly class ToolsProbeRemoteShell implements RemoteShell

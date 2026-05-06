@@ -43,7 +43,8 @@ final readonly class ToolsProbe
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
         $configPath = $this->managedConfigPath($tool);
-        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version=""; state="unknown"; config_exists=""; config_hash="";';
+        $secretPath = $this->managedSecretPath($tool);
+        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version=""; state="unknown"; config_exists=""; config_hash=""; secret_exists=""; secret_hash="";';
 
         if (is_string($versionCommand) && $versionCommand !== '') {
             $script .= ' version=$('.$versionCommand.' 2>/dev/null | head -n 1 || true);';
@@ -57,7 +58,11 @@ final readonly class ToolsProbe
             $script .= ' if [ -f "$ORBIT_TOOL_CONFIG_PATH" ]; then config_exists="1"; config_hash=$(sha256sum "$ORBIT_TOOL_CONFIG_PATH" | awk \'{print $1}\'); else config_exists="0"; fi;';
         }
 
-        $script .= ' printf "%s\t%s\t%s\t%s\t%s\n" "$path" "$version" "$state" "$config_exists" "$config_hash"';
+        if ($secretPath !== null) {
+            $script .= ' if [ -f "$ORBIT_TOOL_SECRET_PATH" ]; then secret_exists="1"; secret_hash=$(sha256sum "$ORBIT_TOOL_SECRET_PATH" | awk \'{print $1}\'); else secret_exists="0"; fi;';
+        }
+
+        $script .= ' printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash"';
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
@@ -65,9 +70,10 @@ final readonly class ToolsProbe
                 'ORBIT_TOOL_BINARY' => $binary,
                 'ORBIT_TOOL_SERVICE' => is_string($service) ? $service : '',
                 'ORBIT_TOOL_CONFIG_PATH' => $configPath ?? '',
+                'ORBIT_TOOL_SECRET_PATH' => $secretPath ?? '',
             ],
         ]);
-        $parts = explode("\t", trim($result->stdout), 5);
+        $parts = explode("\t", trim($result->stdout), 7);
 
         return new ProbeSnapshot([
             $tool->name => [
@@ -77,6 +83,8 @@ final readonly class ToolsProbe
                 'state' => ($parts[2] ?? '') !== '' ? $parts[2] : null,
                 'config_exists' => ($parts[3] ?? '') !== '' ? $parts[3] === '1' : null,
                 'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
+                'secret_exists' => ($parts[5] ?? '') !== '' ? $parts[5] === '1' : null,
+                'secret_hash' => ($parts[6] ?? '') !== '' ? $parts[6] : null,
             ],
         ]);
     }
@@ -94,6 +102,7 @@ final readonly class ToolsProbe
             ...$this->checkVersionState($tool, $snapshot),
             ...$this->checkLifecycleState($tool, $snapshot),
             ...$this->checkConfigState($tool, $snapshot),
+            ...$this->checkCredentialState($tool, $snapshot),
         ];
     }
 
@@ -335,14 +344,91 @@ final readonly class ToolsProbe
 
     private function managedConfigPath(NodeTool $tool): ?string
     {
-        $path = $tool->config['managed_config']['path'] ?? null;
+        $config = is_array($tool->config) ? $tool->config : [];
+        $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
+        $path = $managedConfig['path'] ?? null;
 
         return is_string($path) && $path !== '' ? $path : null;
     }
 
     private function managedConfigHash(NodeTool $tool): ?string
     {
-        $hash = $tool->config['managed_config']['hash'] ?? null;
+        $config = is_array($tool->config) ? $tool->config : [];
+        $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
+        $hash = $managedConfig['hash'] ?? null;
+
+        return is_string($hash) && $hash !== '' ? $hash : null;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkCredentialState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $path = $this->managedSecretPath($tool);
+        $expectedHash = $this->managedSecretHash($tool);
+
+        if ($path === null || $expectedHash === null) {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        if (($observed['secret_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.credentials_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} managed credential material is missing.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'path' => $path,
+                    ],
+                ),
+            ];
+        }
+
+        $observedHash = is_string($observed['secret_hash'] ?? null) ? $observed['secret_hash'] : null;
+
+        if ($observedHash === null || hash_equals($expectedHash, $observedHash)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.credentials_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool {$tool->name} managed credential material differs from gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'path' => $path,
+                    'expected_hash' => $expectedHash,
+                    'observed_hash' => $observedHash,
+                ],
+            ),
+        ];
+    }
+
+    private function managedSecretPath(NodeTool $tool): ?string
+    {
+        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
+        $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
+        $path = $managedSecret['path'] ?? null;
+
+        return is_string($path) && $path !== '' ? $path : null;
+    }
+
+    private function managedSecretHash(NodeTool $tool): ?string
+    {
+        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
+        $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
+        $hash = $managedSecret['hash'] ?? null;
 
         return is_string($hash) && $hash !== '' ? $hash : null;
     }
