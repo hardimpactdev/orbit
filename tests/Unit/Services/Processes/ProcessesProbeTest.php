@@ -12,6 +12,7 @@ use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -49,7 +50,7 @@ describe('runtime backend availability', function (): void {
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
         ]);
 
         $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
@@ -61,6 +62,7 @@ describe('runtime backend availability', function (): void {
         ]);
         expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1');
         expect($shell->scripts[1])->toContain('ORBIT_PROCESS_UNITS');
+        expect($shell->scripts[1])->toContain('ORBIT_PROCESS_EVENT_NOTIFIER');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
             'config_exists' => true,
@@ -102,6 +104,105 @@ describe('runtime backend availability', function (): void {
         ]));
 
         expect(issue($drift, 'process.runtime_backend_unavailable'))->toBeNull();
+    });
+});
+
+describe('lifecycle event notifier reality', function (): void {
+    it('introspects crash event notifier material for crash-reporting processes', function (): void {
+        LocalGatewaySettings::current()->fill(['gateway_url' => 'https://10.6.0.2'])->save();
+
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'vite',
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
+        ]);
+
+        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+
+        expect($snapshot->get('vite')['event_notifier'])->toMatchArray([
+            'script_exists' => true,
+            'script_executable' => true,
+            'script_matches' => true,
+            'gateway_endpoint_exists' => true,
+            'gateway_endpoint_matches' => true,
+        ]);
+    });
+
+    it('detects missing crash event notifier material for crash-reporting processes', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'vite',
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'event_notifier' => [
+                    'script_exists' => false,
+                    'script_executable' => false,
+                    'script_matches' => false,
+                    'gateway_endpoint_exists' => false,
+                    'gateway_endpoint_matches' => false,
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.event_notifier_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects divergent crash event notifier material for crash-reporting processes', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'vite',
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'event_notifier' => [
+                    'script_exists' => true,
+                    'script_executable' => true,
+                    'script_matches' => false,
+                    'gateway_endpoint_exists' => true,
+                    'gateway_endpoint_matches' => true,
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.event_notifier_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('does not require notifier material when crash reporting is disabled', function (): void {
+        $app = processableApp();
+        $process = processFor($app, [
+            'name' => 'vite',
+            'crash_notification' => ProcessCrashNotification::None,
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'event_notifier' => [
+                    'script_exists' => false,
+                    'gateway_endpoint_exists' => false,
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.event_notifier_missing'))->toBeNull();
+        expect(issue($drift, 'process.event_notifier_mismatch'))->toBeNull();
     });
 });
 

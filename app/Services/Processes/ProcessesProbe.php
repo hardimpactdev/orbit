@@ -21,6 +21,7 @@ final readonly class ProcessesProbe
     public function __construct(
         private ?SupervisorProgramRenderer $supervisorProgramRenderer = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
+        private ?ProcessEventNotifierRenderer $processEventNotifierRenderer = null,
     ) {}
 
     public function key(): string
@@ -43,6 +44,11 @@ final readonly class ProcessesProbe
 
         $probe = $this->runtimeBackendProbe()->check($process->app->node);
         $spec = $this->expectedRuntimeUnitSpecs($process);
+        $notifier = [
+            'required' => $this->requiresEventNotifier($process),
+            'script_hash' => $this->processEventNotifierRenderer()->hash(),
+            'gateway_endpoint' => $this->processEventNotifierRenderer()->expectedGatewayEndpoint(),
+        ];
 
         $items = [
             $process->name => [
@@ -50,6 +56,7 @@ final readonly class ProcessesProbe
                 'runtime_backend_exit_code' => $probe->exitCode,
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
+                'event_notifier' => null,
             ],
         ];
 
@@ -62,6 +69,7 @@ set -euo pipefail
 php <<'PHP'
 <?php
 $units = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_UNITS')), true);
+$notifier = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_EVENT_NOTIFIER')), true);
 
 foreach ($units as $unit) {
     $name = (string) ($unit['name'] ?? '');
@@ -77,6 +85,17 @@ foreach ($units as $unit) {
 
     printf("%s\t%s\t%s\t%s\t%s\n", $name, $exists, $matches, $restartMatches, $environmentMatches);
 }
+
+$notifierPath = '/usr/local/bin/orbit-notify-exit';
+$endpointPath = '/etc/orbit/gateway-endpoint';
+$notifierExists = is_file($notifierPath) ? '1' : '0';
+$notifierExecutable = is_executable($notifierPath) ? '1' : '0';
+$notifierMatches = $notifierExists === '1' && hash_file('sha256', $notifierPath) === (string) ($notifier['script_hash'] ?? '') ? '1' : '0';
+$expectedEndpoint = (string) ($notifier['gateway_endpoint'] ?? '');
+$endpointExists = is_file($endpointPath) ? '1' : '0';
+$endpointMatches = $expectedEndpoint !== '' && $endpointExists === '1' && rtrim(trim((string) file_get_contents($endpointPath)), '/') === $expectedEndpoint ? '1' : '0';
+
+printf("__notifier\t%s\t%s\t%s\t%s\t%s\n", $notifierExists, $notifierExecutable, $notifierMatches, $endpointExists, $endpointMatches);
 PHP
 BASH;
 
@@ -84,7 +103,10 @@ BASH;
             ->remoteShell()
             ->run($process->app->node, $script, [
                 'throw' => true,
-                'env' => ['ORBIT_PROCESS_UNITS' => base64_encode((string) json_encode($spec))],
+                'env' => [
+                    'ORBIT_PROCESS_UNITS' => base64_encode((string) json_encode($spec)),
+                    'ORBIT_PROCESS_EVENT_NOTIFIER' => base64_encode((string) json_encode($notifier)),
+                ],
             ]);
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
@@ -92,7 +114,26 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 5);
+            $parts = explode("\t", $line, 6);
+            $name = $parts[0] ?? '';
+
+            if ($name === '__notifier') {
+                if (count($parts) !== 6) {
+                    continue;
+                }
+
+                [, $scriptExists, $scriptExecutable, $scriptMatches, $endpointExists, $endpointMatches] = $parts;
+
+                $items[$process->name]['event_notifier'] = [
+                    'script_exists' => $scriptExists === '1',
+                    'script_executable' => $scriptExecutable === '1',
+                    'script_matches' => $scriptMatches === '1',
+                    'gateway_endpoint_exists' => $endpointExists === '1',
+                    'gateway_endpoint_matches' => $endpointMatches === '1',
+                ];
+
+                continue;
+            }
 
             if (count($parts) !== 5) {
                 continue;
@@ -125,6 +166,7 @@ BASH;
         $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
+        $drift = array_merge($drift, $this->checkEventNotifier($process, $snapshot));
 
         return $drift;
     }
@@ -191,6 +233,67 @@ BASH;
                     key: 'process.owner_app_invalid',
                     kind: DriftKind::Divergent,
                     summary: "Process {$process->name} owner app {$process->app->name} is not on an active app node.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkEventNotifier(Process $process, ProbeSnapshot $snapshot): array
+    {
+        if (! $this->requiresEventNotifier($process)) {
+            return [];
+        }
+
+        $observed = $snapshot->get($process->name);
+
+        if (
+            $observed === null
+            || ($observed['runtime_backend_available'] ?? null) === false
+            || ! is_array($observed['event_notifier'] ?? null)
+        ) {
+            return [];
+        }
+
+        $notifier = $observed['event_notifier'];
+
+        if (
+            ($notifier['script_exists'] ?? null) === false
+            || ($notifier['gateway_endpoint_exists'] ?? null) === false
+        ) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.event_notifier_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Process {$process->name} crash event notifier material is missing.",
+                    detail: [
+                        'script' => $this->processEventNotifierRenderer()->installPath(),
+                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
+                    ],
+                ),
+            ];
+        }
+
+        if (
+            ($notifier['script_executable'] ?? null) === false
+            || ($notifier['script_matches'] ?? null) === false
+            || ($notifier['gateway_endpoint_matches'] ?? null) === false
+        ) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.event_notifier_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Process {$process->name} crash event notifier material differs from gateway intent.",
+                    detail: [
+                        'script' => $this->processEventNotifierRenderer()->installPath(),
+                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
+                    ],
                 ),
             ];
         }
@@ -464,6 +567,11 @@ BASH;
         return 'environment=';
     }
 
+    private function requiresEventNotifier(Process $process): bool
+    {
+        return ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification')) === ProcessCrashNotification::AgentIde;
+    }
+
     private function supervisorProgramRenderer(): SupervisorProgramRenderer
     {
         return $this->supervisorProgramRenderer ?? app(SupervisorProgramRenderer::class);
@@ -472,5 +580,10 @@ BASH;
     private function runtimeBackendProbe(): RuntimeBackendProbe
     {
         return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
+    }
+
+    private function processEventNotifierRenderer(): ProcessEventNotifierRenderer
+    {
+        return $this->processEventNotifierRenderer ?? app(ProcessEventNotifierRenderer::class);
     }
 }
