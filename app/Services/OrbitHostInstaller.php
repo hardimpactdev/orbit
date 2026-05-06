@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class OrbitHostInstaller
 {
-    public function install(string $host, string $sshUser, string $role, string $runtimeUser = 'orbit'): OrbitHostInstallResult
+    public function install(string $host, string $sshUser, string $runtimeUser = 'orbit'): OrbitHostInstallResult
     {
         $localArchive = $this->buildSourceArchive();
         $remotePrefix = '/tmp/orbit-install-'.Str::lower(Str::random(8));
@@ -67,11 +67,10 @@ class OrbitHostInstaller
 
             $remoteHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
             $installCommand = sprintf(
-                "set -e; trap 'rm -f %s %s' EXIT; bash %s --role=%s --path=%s --source-archive=%s",
+                "set -e; trap 'rm -f %s %s' EXIT; bash %s --path=%s --source-archive=%s",
                 escapeshellarg($remoteInstaller),
                 escapeshellarg($remoteArchive),
                 escapeshellarg($remoteInstaller),
-                escapeshellarg($role),
                 escapeshellarg("{$remoteHome}/orbit"),
                 escapeshellarg($remoteArchive),
             );

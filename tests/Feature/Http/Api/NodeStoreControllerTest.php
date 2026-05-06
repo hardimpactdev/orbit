@@ -96,8 +96,7 @@ describe('NodeStoreController', function (): void {
         expect($entry->properties->get('environment'))->toBe('development');
         expect($entry->properties->get('tld'))->toBe('test');
 
-        Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
-            && str_contains($process->command, 'app')
+        Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive='));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusInstance;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
 
@@ -40,11 +41,11 @@ function incusHostTestConfig(string $incusStoragePool = ''): E2EConfig
     );
 }
 
-function incusHostTestProcessResult(): ProcessResult
+function incusHostTestProcessResult(string $output = ''): ProcessResult
 {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn(true);
-    $result->shouldReceive('output')->andReturn('');
+    $result->shouldReceive('output')->andReturn($output);
     $result->shouldReceive('errorOutput')->andReturn('');
 
     return $result;
@@ -79,11 +80,11 @@ it('adds configured storage pool to launch and copy commands', function (): void
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig('orbit-e2e'), $commands);
 
-    $host->launchInstance('orbit-base-ubuntu-26.04', 'orbit-template-control-control');
-    $host->copyInstance('orbit-template-control-control/clean', 'orbit-e2e-run-control');
+    $host->launchInstance('orbit-base-ubuntu-26.04', 'orbit-template-control');
+    $host->copyInstance('orbit-template-control/clean-control', 'orbit-e2e-run-control');
 
-    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control-control' --vm --storage 'orbit-e2e' >/dev/null")
-        ->and($commands[1])->toContain("incus copy 'orbit-template-control-control/clean' 'orbit-e2e-run-control' --storage 'orbit-e2e'");
+    expect($commands[0])->toContain("incus launch 'orbit-base-ubuntu-26.04' 'orbit-template-control' --vm --storage 'orbit-e2e' >/dev/null")
+        ->and($commands[1])->toContain("incus copy 'orbit-template-control/clean-control' 'orbit-e2e-run-control' --storage 'orbit-e2e'");
 });
 
 it('uses incus snapshot restore and supports stateful restore', function (): void {
@@ -104,6 +105,37 @@ it('uses reusable stateful snapshots for warm topology reset points', function (
     $host->snapshotStatefulInstance('orbit-e2e-run-control', 'lease-warm');
 
     expect($commands[0])->toContain("incus snapshot create 'orbit-e2e-run-control' 'lease-warm' --stateful --reuse");
+});
+
+it('ignores topology WireGuard addresses when resolving an Incus provider IPv4', function (): void {
+    $commands = [];
+
+    $host = new class(incusHostTestConfig(), $commands) extends IncusHost
+    {
+        /** @var list<string> */
+        private array $commands;
+
+        /**
+         * @param  list<string>  $commands
+         */
+        public function __construct(E2EConfig $config, array &$commands)
+        {
+            parent::__construct($config);
+            $this->commands = &$commands;
+        }
+
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusHostTestProcessResult("10.231.0.10\n");
+        }
+    };
+
+    $instance = new IncusInstance($host, 'orbit-template-control');
+
+    expect($instance->waitForIpv4())->toBe('10.231.0.10')
+        ->and($commands[0])->toContain("grep -v '^10\\.6\\.'");
 });
 
 it('can restore snapshots concurrently', function (): void {

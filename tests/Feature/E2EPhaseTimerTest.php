@@ -37,6 +37,40 @@ it('records the event even when the callback throws', function (): void {
         ->and($timer->events()[0]['name'])->toBe('boom');
 });
 
+it('streams start and done checkpoints when enabled', function (): void {
+    $lines = [];
+    $timer = new E2EPhaseTimer(
+        stream: true,
+        writer: function (string $line) use (&$lines): void {
+            $lines[] = $line;
+        },
+    );
+
+    $timer->measure('phase', fn () => null);
+
+    expect($timer->streamsCheckpoints())->toBeTrue()
+        ->and($lines[0])->toBe('[orbit-e2e] phase started')
+        ->and(str_starts_with($lines[1], '[orbit-e2e] phase done '))->toBeTrue();
+});
+
+it('streams failed checkpoints before rethrowing', function (): void {
+    $lines = [];
+    $timer = new E2EPhaseTimer(
+        stream: true,
+        writer: function (string $line) use (&$lines): void {
+            $lines[] = $line;
+        },
+    );
+
+    expect(fn () => $timer->measure('boom', function (): void {
+        throw new RuntimeException('nope');
+    }))->toThrow(RuntimeException::class, 'nope');
+
+    expect($lines[0])->toBe('[orbit-e2e] boom started')
+        ->and($lines[1])->toContain('[orbit-e2e] boom failed ')
+        ->and($lines[1])->toContain('RuntimeException: nope');
+});
+
 it('flush is silent when ORBIT_E2E_TIMINGS is not 1', function (): void {
     $previous = getenv('ORBIT_E2E_TIMINGS');
     putenv('ORBIT_E2E_TIMINGS');

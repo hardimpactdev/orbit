@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EBaseProvisioner;
+use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
+use App\E2E\Support\E2EGatewayApi;
+use App\E2E\Support\E2EInstance;
+use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\E2ETopologyCache;
 use App\E2E\Support\E2ETopologyFactory;
@@ -11,6 +16,8 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
 use App\E2E\Support\E2ETopologyUnavailable;
+use App\E2E\Support\IncusProvider;
+use App\E2E\Support\SshKeyPair;
 
 /**
  * @template TValue
@@ -29,6 +36,155 @@ function e2eProvisionStep(string $step, callable $callback): mixed
 
         throw $throwable;
     }
+}
+
+function e2eProvisionControlFromBlank(
+    IncusProvider $provider,
+    E2ERun $run,
+    E2EProvisioningBundle $bundle,
+    E2EConfig $config,
+    SshKeyPair $key,
+): E2EInstance {
+    $provisioner = new E2EBaseProvisioner($provider, $bundle);
+    $control = e2eProvisionStep(
+        'provision control from blank',
+        fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser),
+    );
+
+    $control->authorizeSsh($config->controlUser, $key);
+    $control->waitForSsh($config->controlUser, $key);
+    e2eInstallPrivateSshKey($control, $key, $config->controlUser);
+
+    return $control;
+}
+
+/**
+ * @return array{0: E2EInstance, 1: array<string, mixed>}
+ */
+function e2eProvisionGatewayThroughNodeNew(
+    IncusProvider $provider,
+    E2ERun $run,
+    E2EConfig $config,
+    E2EInstance $control,
+    SshKeyPair $key,
+    string $name = 'gateway-1',
+    bool $useWireGuardGatewayUrl = true,
+): array {
+    $gateway = e2eProvisionStep('launch blank gateway', fn () => $run->launchBlank('gateway'));
+
+    e2eProvisionStep('wait for gateway cloud-init', fn () => $provider->host->waitForCloudInit($gateway->name()));
+    $gateway->authorizeSsh($config->bootstrapUser, $key);
+    $gateway->waitForSsh($config->bootstrapUser, $key);
+
+    $gatewayIp = $gateway->waitForIpv4();
+
+    $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new {$name} --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
+    $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        $command,
+        timeoutSeconds: 1800,
+    ));
+
+    if ($useWireGuardGatewayUrl) {
+        e2eUseWireGuardGatewayUrl($control, $config->controlUser, $key);
+    }
+
+    E2EGatewayApi::installProvisioningSshKey($gateway, $key);
+
+    return [$gateway, json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR)];
+}
+
+/**
+ * @return array{0: E2EInstance, 1: array<string, mixed>}
+ */
+function e2eProvisionAppThroughNodeNew(
+    IncusProvider $provider,
+    E2ERun $run,
+    E2EConfig $config,
+    E2EInstance $control,
+    SshKeyPair $key,
+    string $name,
+    string $environment,
+    ?string $tld = null,
+): array {
+    $app = e2eProvisionStep("launch blank {$environment} app", fn () => $run->launchBlank($name));
+
+    e2eProvisionStep("wait for {$environment} app cloud-init", fn () => $provider->host->waitForCloudInit($app->name()));
+    $app->authorizeSsh($config->bootstrapUser, $key);
+    $app->waitForSsh($config->bootstrapUser, $key);
+
+    $parts = [
+        "cd /home/{$config->controlUser}/orbit && orbit node:new",
+        escapeshellarg($name),
+        '--role=app',
+        '--host='.escapeshellarg($app->waitForIpv4()),
+        '--environment='.escapeshellarg($environment),
+        '--ssh-user='.escapeshellarg($config->bootstrapUser),
+        '--json',
+    ];
+
+    if ($tld !== null) {
+        $parts[] = '--tld='.escapeshellarg($tld);
+    }
+
+    $nodeNew = e2eProvisionStep("run node:new {$name}", fn () => E2ECommand::ssh(
+        $control,
+        $config->controlUser,
+        $key,
+        implode(' ', $parts),
+        timeoutSeconds: 1800,
+    ));
+
+    return [$app, json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR)];
+}
+
+function e2eInstallPrivateSshKey(E2EInstance $instance, SshKeyPair $key, string $user): void
+{
+    $home = $user === 'root' ? '/root' : "/home/{$user}";
+
+    E2ECommand::exec(
+        $instance,
+        sprintf(
+            'install -d -m 700 -o %s -g %s %s',
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg("{$home}/.ssh"),
+        ),
+        "Could not prepare {$user} SSH directory",
+    );
+
+    $instance->copyFileToInstance($key->privateKeyPath, "{$home}/.ssh/id_ed25519");
+
+    E2ECommand::exec(
+        $instance,
+        sprintf(
+            'chown %s:%s %s && chmod 600 %s',
+            escapeshellarg($user),
+            escapeshellarg($user),
+            escapeshellarg("{$home}/.ssh/id_ed25519"),
+            escapeshellarg("{$home}/.ssh/id_ed25519"),
+        ),
+        "Could not install {$user} SSH key",
+    );
+}
+
+function e2eUseWireGuardGatewayUrl(E2EInstance $control, string $controlUser, SshKeyPair $key): void
+{
+    $php = <<<'PHP'
+$settings = \App\Models\LocalGatewaySettings::current();
+$settings->gateway_url = 'https://10.6.0.2';
+$settings->gateway_wg_ip = '10.6.0.2';
+$settings->save();
+PHP;
+
+    E2ECommand::ssh(
+        $control,
+        $controlUser,
+        $key,
+        'cd /home/'.$controlUser.'/orbit && php artisan tinker --execute='.escapeshellarg($php),
+    );
 }
 
 /**

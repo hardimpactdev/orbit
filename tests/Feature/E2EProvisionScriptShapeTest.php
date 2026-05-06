@@ -42,15 +42,17 @@ it('prints help with --help', function (): void {
 
     expect($result->successful())->toBeTrue();
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
-    expect($result->output())->toContain('--role=control|gateway|app');
+    expect($result->output())->toContain('--role=control');
     expect($result->output())->toContain('--source-archive=PATH');
+    expect($result->output())->toContain('Gateway and app topology roles are');
 });
 
-it('keeps platform package installation out of the provisioner hot path', function (): void {
+it('runs install-orbit without role semantics', function (): void {
     $provisioner = file_get_contents(provisionScript());
     $installer = file_get_contents(installerScript());
 
-    expect($provisioner)->toContain('--skip-prerequisites')
+    expect($provisioner)->not->toContain('"--role=${ROLE}"')
+        ->and($provisioner)->not->toContain('--skip-prerequisites')
         ->and($provisioner)->toContain('COMPOSER_HOME=')
         ->and($installer)->toContain('ORBIT_INSTALL_SKIP_PREREQUISITES')
         ->and($installer)->toContain('--skip-prerequisites');
@@ -67,7 +69,7 @@ it('fails when --role is invalid', function (): void {
     $result = Process::run([provisionScript(), '--role=invalid', '--source-archive=/tmp/missing']);
 
     expect($result->successful())->toBeFalse();
-    expect($result->errorOutput())->toContain('--role must be one of: control, gateway, app');
+    expect($result->errorOutput())->toContain('--role must be: control');
 });
 
 it('fails when --source-archive is missing', function (): void {

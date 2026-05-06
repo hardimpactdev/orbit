@@ -689,7 +689,7 @@ class NodeNewCommand extends Command
         }
 
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $installation = $installer->install($inputs['host'], $inputs['sshUser'], 'app', $runtimeUser);
+        $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
 
         if (! $installation->successful) {
             return $this->failCommand(
@@ -1102,7 +1102,7 @@ class NodeNewCommand extends Command
             ],
         ], JSON_THROW_ON_ERROR);
 
-        $installation = $installer->install($host, $sshUser, 'gateway', $runtimeUser);
+        $installation = $installer->install($host, $sshUser, $runtimeUser);
 
         if (! $installation->successful) {
             return $this->failCommand(
@@ -1206,7 +1206,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        $trustPath = storage_path("app/orbit/trust/{$name}-ca.crt");
+        $trustPath = $this->localGatewayCaPath();
         File::ensureDirectoryExists(dirname($trustPath));
 
         if (! File::put($trustPath, $caCert)) {
@@ -1606,6 +1606,11 @@ class NodeNewCommand extends Command
     private function gatewayUrl(string $host): string
     {
         return str_starts_with($host, 'http') ? $host : "https://{$host}";
+    }
+
+    private function localGatewayCaPath(): string
+    {
+        return storage_path('app/orbit/gateway-ca/orbit.crt');
     }
 
     private function callerRole(): string

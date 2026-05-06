@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2EBaseProvisioner;
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EImage;
@@ -11,14 +10,13 @@ use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
 use App\E2E\Support\ProviderPool;
-use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
-it('NodeNewWireGuard enrolls the first gateway from base-provisioned VMs', function (): void {
+it('NodeNewWireGuard enrolls the first gateway from blank VMs', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -30,16 +28,9 @@ it('NodeNewWireGuard enrolls the first gateway from base-provisioned VMs', funct
 
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
-        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
-        $gateway = e2eProvisionStep('launch base gateway', fn () => $run->launchBase('gateway'));
-
-        e2eProvisionStep('wait for gateway cloud-init', fn () => $provider->host->waitForCloudInit($gateway->name()));
-        e2eProvisionStep('authorize SSH between control and gateway', fn () => nodeNewGatewayAuthorizeSsh($control, $gateway, $config->controlUser, $config->bootstrapUser, $key));
-
-        $control->waitForSsh($config->controlUser, $key);
-        $gateway->waitForSsh($config->bootstrapUser, $key);
+        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        [$gateway, $payload] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key, useWireGuardGatewayUrl: false);
 
         [$controlIp, $gatewayIp] = e2eProvisionStep('resolve VM IPv4 addresses', fn () => [
             $control->waitForIpv4(),
@@ -49,16 +40,6 @@ it('NodeNewWireGuard enrolls the first gateway from base-provisioned VMs', funct
         expect($controlIp)->not->toBe($gatewayIp);
 
         $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
-        $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
-            $control,
-            $config->controlUser,
-            $key,
-            $command,
-            timeoutSeconds: 1800,
-        ));
-
-        $payload = json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-
         expect($payload['success']['data']['node']['name'])->toBe('gateway-1')
             ->and($payload['success']['data']['node']['role'])->toBe('gateway')
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('control-1');
@@ -128,22 +109,6 @@ PHP;
         $bundle?->cleanup();
     }
 });
-
-function nodeNewGatewayAuthorizeSsh(
-    E2EInstance $control,
-    E2EInstance $gateway,
-    string $controlUser,
-    string $bootstrapUser,
-    SshKeyPair $key,
-): void {
-    $control->authorizeSsh($controlUser, $key);
-    $gateway->authorizeSsh($bootstrapUser, $key);
-    $control->copyFileToInstance($key->privateKeyPath, "/home/{$controlUser}/.ssh/id_ed25519");
-
-    $result = $control->exec("chown {$controlUser}:{$controlUser} /home/{$controlUser}/.ssh/id_ed25519 && chmod 600 /home/{$controlUser}/.ssh/id_ed25519");
-
-    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
-}
 
 /**
  * @return array<string, array{role: string, wireguard_address: string, public_key: string, allowed_ips: string|null}>

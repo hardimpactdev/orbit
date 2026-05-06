@@ -7,25 +7,22 @@ SOURCE_ARCHIVE=""
 INSTALLER=""
 COMPOSER_CACHE=""
 CONTROL_USER="${ORBIT_E2E_CONTROL_USER:-control}"
-GATEWAY_WIREGUARD_ADDRESS="${ORBIT_E2E_GATEWAY_WIREGUARD_ADDRESS:-10.6.0.2}"
-GATEWAY_NAME="${ORBIT_E2E_GATEWAY_NAME:-gateway}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 CURRENT_STEP=""
 LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e-provision-node --role=ROLE --source-archive=PATH [options]
+usage: bin/e2e-provision-node --role=control --source-archive=PATH [options]
 
-Provision a freshly-cloned Orbit base-image VM with role-specific Orbit
-installation. Pushes a source archive into place via bin/install-orbit, then
-runs role-specific post-install steps (gateway: bootstrap-gateway-local; app:
-install only; control: install only). Designed to run inside the VM after the
-bundle has been pushed. Platform packages are expected to be present in the
-base image; this script keeps apt out of the per-run hot path.
+Provision a freshly-cloned Orbit blank VM as a control node by pushing a source
+archive into place via bin/install-orbit. Gateway and app topology roles are
+created later through node:new from that control node, matching the production
+provisioning path. Designed to run inside the VM after the bundle has been
+pushed.
 
 Required:
-  --role=control|gateway|app   Role being provisioned.
+  --role=control               Control node role being installed.
   --source-archive=PATH        Tarball of the Orbit checkout to install.
 
 Optional:
@@ -36,21 +33,7 @@ Optional:
                                before install-orbit runs.
   --control-user=NAME          Control-role steady-state user. Defaults to
                                $ORBIT_E2E_CONTROL_USER or "control".
-  --gateway-name=NAME          Gateway identity name passed to
-                               bootstrap-gateway-local. Defaults to "gateway".
-  --gateway-wireguard=ADDR     Gateway WireGuard address passed to
-                               bootstrap-gateway-local. Defaults to "10.6.0.2".
   -h, --help                   Show this help text.
-
-Roles:
-  control   install-orbit --role=control --path=/home/<control-user>/orbit.
-            No further work; control identity is created later by the topology
-            builder.
-  gateway   install-orbit --role=gateway --path=/home/orbit/orbit, then run
-            php artisan orbit:internal:bootstrap-gateway-local <name> <addr>
-            as the orbit user.
-  app       install-orbit --role=app --path=/home/orbit/orbit. node:new and
-            bake-app-node are run later from control/gateway, not here.
 HELP
 }
 
@@ -146,12 +129,6 @@ parse_args() {
             --control-user=*)
                 CONTROL_USER="${1#*=}"
                 ;;
-            --gateway-name=*)
-                GATEWAY_NAME="${1#*=}"
-                ;;
-            --gateway-wireguard=*)
-                GATEWAY_WIREGUARD_ADDRESS="${1#*=}"
-                ;;
             -h|--help)
                 usage
                 exit 0
@@ -167,13 +144,13 @@ parse_args() {
 
 validate_args() {
     case "$ROLE" in
-        control|gateway|app)
+        control)
             ;;
         "")
             fail validation_failed "--role is required"
             ;;
         *)
-            fail validation_failed "--role must be one of: control, gateway, app"
+            fail validation_failed "--role must be: control"
             ;;
     esac
 
@@ -190,10 +167,7 @@ validate_args() {
 }
 
 target_user_for_role() {
-    case "$ROLE" in
-        control) printf '%s' "$CONTROL_USER" ;;
-        gateway|app) printf 'orbit' ;;
-    esac
+    printf '%s' "$CONTROL_USER"
 }
 
 ensure_target_user() {
@@ -251,28 +225,9 @@ install_role() {
         "COMPOSER_HOME=${home_dir}/.composer" \
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
         /tmp/install-orbit \
-        "--role=${ROLE}" \
         "--path=${target_dir}" \
         --source-archive=/tmp/orbit-source.tar.gz \
-        --bin=/usr/local/bin/orbit \
-        --skip-prerequisites
-}
-
-run_post_install() {
-    local user
-    local target_dir
-
-    case "$ROLE" in
-        gateway)
-            user='orbit'
-            target_dir="/home/${user}/orbit"
-            sudo_run runuser -u "$user" -- env \
-                "HOME=/home/${user}" \
-                "COMPOSER_HOME=/home/${user}/.composer" \
-                PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-                bash -lc "cd $(printf '%q' "$target_dir") && php artisan orbit:internal:bootstrap-gateway-local $(printf '%q' "$GATEWAY_NAME") $(printf '%q' "$GATEWAY_WIREGUARD_ADDRESS")"
-            ;;
-    esac
+        --bin=/usr/local/bin/orbit
 }
 
 cleanup_bundle() {
@@ -303,12 +258,6 @@ main() {
     start_step "Install Orbit (${ROLE})"
     install_role
     complete_step
-
-    if [ "$ROLE" = "gateway" ]; then
-        start_step "Bootstrap gateway-local identity"
-        run_post_install
-        complete_step
-    fi
 
     start_step "Cleanup provisioner bundle"
     cleanup_bundle

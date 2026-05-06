@@ -66,7 +66,7 @@ class E2EPrepareTopologyCommand extends Command
             $templates[] = [
                 'role' => $role,
                 'name' => IncusTopologyTemplate::templateName($kind, $role),
-                'snapshot' => 'clean',
+                'snapshot' => IncusTopologyTemplate::snapshotName($kind),
             ];
         }
 
@@ -104,7 +104,7 @@ class E2EPrepareTopologyCommand extends Command
 
         $bundleDir = null;
         $remoteBundle = null;
-        $timer = new E2EPhaseTimer;
+        $timer = new E2EPhaseTimer(stream: true);
 
         try {
             $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());

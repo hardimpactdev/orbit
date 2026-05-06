@@ -28,10 +28,9 @@ class IncusTopologyBuilder
     }
 
     /**
-     * Stage a remote bundle directory that the builder will use to provision
-     * each role instance via bin/e2e-provision-node. Must be set before build()
-     * for the new base-image lane; legacy callers that do not set it fall back
-     * to assuming the bundle has already been prepared by the topology command.
+     * Stage a remote bundle directory that the builder will use to install the
+     * control node. Gateway and app roles are then provisioned through node:new
+     * from that control node.
      */
     public function useBundle(string $remoteBundleDir): void
     {
@@ -39,8 +38,9 @@ class IncusTopologyBuilder
     }
 
     /**
-     * Build all role instances for a topology kind, snapshot each as `clean`,
-     * and return the list of templates produced.
+     * Build every prerequisite topology stage up to the requested kind,
+     * snapshot each role with that stage name, and return the templates for
+     * the requested kind.
      *
      * @return list<array{role: string, name: string, snapshot: string}>
      */
@@ -52,9 +52,9 @@ class IncusTopologyBuilder
 
         try {
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
-            $instances = $this->provisionInstances($kind, $key);
+            $manifests = $this->buildStages($kind, $key);
 
-            return $this->finalizeInstances($instances);
+            return $manifests[$kind->value];
         } finally {
             $this->timer->measure('workdir.cleanup', fn () => $this->host->run('rm -rf '.escapeshellarg((string) $workDirectory)));
         }
@@ -62,10 +62,10 @@ class IncusTopologyBuilder
 
     private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting): void
     {
-        $baseImage = $this->host->config->baseImage;
+        $blankImage = $this->host->config->blankImage;
 
-        if (! $this->host->imageExists($baseImage)) {
-            throw new RuntimeException("Required source image [{$baseImage}] not found on host.");
+        if (! $this->host->imageExists($blankImage)) {
+            throw new RuntimeException("Required blank image [{$blankImage}] not found on host.");
         }
 
         if ($this->remoteBundleDir === null) {
@@ -74,9 +74,7 @@ class IncusTopologyBuilder
             );
         }
 
-        foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
-            $name = IncusTopologyTemplate::templateName($kind, $role);
-
+        foreach ($this->templateNamesForRefresh($kind, includeLegacyNames: $replaceExisting) as $name) {
             if (! $this->host->instanceExists($name)) {
                 continue;
             }
@@ -124,17 +122,80 @@ class IncusTopologyBuilder
     }
 
     /**
+     * @return array<string, list<array{role: string, name: string, snapshot: string}>>
+     */
+    private function buildStages(E2ETopologyKind $target, SshKeyPair $key): array
+    {
+        $manifests = [];
+        $instances = [];
+
+        foreach ($this->stagesThrough($target) as $stage) {
+            $instances = match ($stage) {
+                E2ETopologyKind::Control => $this->buildControlStage($key),
+                E2ETopologyKind::ControlGateway => $this->buildGatewayStage($key),
+                E2ETopologyKind::ControlGatewayDev => $this->buildDevelopmentAppStage($key),
+                E2ETopologyKind::ControlGatewayDevProd => $this->buildProductionAppStage($key),
+            };
+
+            $manifests[$stage->value] = $this->finalizeInstances($stage, $instances);
+        }
+
+        return $manifests;
+    }
+
+    /**
+     * @return list<E2ETopologyKind>
+     */
+    private function stagesThrough(E2ETopologyKind $target): array
+    {
+        $stages = [
+            E2ETopologyKind::Control,
+            E2ETopologyKind::ControlGateway,
+            E2ETopologyKind::ControlGatewayDev,
+            E2ETopologyKind::ControlGatewayDevProd,
+        ];
+
+        $targetIndex = array_search($target, $stages, true);
+
+        if ($targetIndex === false) {
+            throw new RuntimeException("Unsupported topology kind [{$target->value}].");
+        }
+
+        return array_slice($stages, 0, $targetIndex + 1);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function templateNamesForRefresh(E2ETopologyKind $kind, bool $includeLegacyNames): array
+    {
+        $names = [];
+
+        foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
+            $names[] = IncusTopologyTemplate::templateName($kind, $role);
+        }
+
+        if (! $includeLegacyNames) {
+            return array_reverse(array_values(array_unique($names)));
+        }
+
+        foreach ($this->stagesThrough($kind) as $stage) {
+            foreach (IncusTopologyTemplate::rolesFor($stage) as $role) {
+                $names[] = "orbit-template-{$stage->value}-{$role}";
+            }
+        }
+
+        return array_reverse(array_values(array_unique($names)));
+    }
+
+    /**
      * @return array<string, IncusInstance>
      */
-    private function provisionInstances(E2ETopologyKind $kind, SshKeyPair $key): array
+    private function buildControlStage(SshKeyPair $key): array
     {
         $instances = [];
-        $roles = IncusTopologyTemplate::rolesFor($kind);
-        $baseImage = $this->host->config->baseImage;
-        $gateway = null;
-
-        $controlName = IncusTopologyTemplate::templateName($kind, 'control');
-        $this->timer->measure('control.launch', fn () => $this->copyAndStart($baseImage, $controlName));
+        $controlName = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, 'control');
+        $this->timer->measure('control.launch', fn () => $this->launchBlank($controlName));
         $control = new IncusInstance($this->host, $controlName);
         $this->timer->measure('control.agent.initial', fn () => $control->waitForAgent());
         $this->timer->measure('control.cloud-init', fn () => $this->host->waitForCloudInit($controlName));
@@ -142,128 +203,193 @@ class IncusTopologyBuilder
         $this->timer->measure('control.provision', fn () => $this->host->provisionInstance($controlName, 'control', (string) $this->remoteBundleDir, $this->host->config->controlUser));
         $this->timer->measure('control.ssh-authorize', fn () => $control->authorizeSsh($this->host->config->controlUser, $key));
         $this->timer->measure('control.ssh-ready', fn () => $control->waitForSsh($this->host->config->controlUser, $key));
-        $controlIp = $this->timer->measure('control.ipv4', fn (): string => $control->waitForIpv4());
+        $this->timer->measure('control.ipv4', fn (): string => $control->waitForIpv4());
+        $this->timer->measure('control.provisioning-ssh-key', fn () => $this->installPrivateSshKey($control, $key, $this->host->config->controlUser));
         $this->timer->measure('control.identity', fn () => E2EControlIdentity::ensure($control, $this->host->config->controlUser, $key));
         $instances['control'] = $control;
 
-        if (in_array('gateway', $roles, true)) {
-            $gatewayName = IncusTopologyTemplate::templateName($kind, 'gateway');
-            $this->timer->measure('gateway.launch', fn () => $this->copyAndStart($baseImage, $gatewayName));
-            $gateway = new IncusInstance($this->host, $gatewayName);
-            $this->timer->measure('gateway.agent.initial', fn () => $gateway->waitForAgent());
-            $this->timer->measure('gateway.cloud-init', fn () => $this->host->waitForCloudInit($gatewayName));
-            $this->timer->measure('gateway.agent.after-cloud-init', fn () => $gateway->waitForAgent());
-            $this->timer->measure('gateway.provision', fn () => $this->host->provisionInstance($gatewayName, 'gateway', (string) $this->remoteBundleDir));
-            $this->timer->measure('gateway.ssh-authorize', fn () => $gateway->authorizeSsh('orbit', $key));
-            $this->timer->measure('gateway.ssh-ready', fn () => $gateway->waitForSsh('orbit', $key));
-            $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
-            $instances['gateway'] = $gateway;
+        return $instances;
+    }
 
-            $this->timer->measure('wireguard.control-gateway', function () use ($control, $controlIp, $gateway, $gatewayIp): void {
-                E2ENetwork::assignWireGuardIp($control, self::ControlWireGuardIp);
-                E2ENetwork::assignWireGuardIp($gateway, self::GatewayWireGuardIp);
-                E2ENetwork::routeWireGuardPeer($control, self::GatewayWireGuardIp, $gatewayIp, self::ControlWireGuardIp);
-                E2ENetwork::routeWireGuardPeer($gateway, self::ControlWireGuardIp, $controlIp, self::GatewayWireGuardIp);
-            });
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildGatewayStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control'], $key);
+        $control = $instances['control'];
+        $gateway = $this->launchBlankRole('gateway', $key);
+        $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
+        $instances['gateway'] = $gateway;
 
-            $this->timer->measure('gateway.identity', fn () => E2EGatewayApi::seedControlIdentity($gateway, $controlIp, $this->host->config->controlUser));
-            $this->timer->measure('gateway.root-ssh-key', fn () => E2EGatewayApi::installRootSshKey($gateway, $key));
-            $this->timer->measure('gateway.api.start', fn () => E2EGatewayApi::start($gateway, 'topology-build'));
-            $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key));
+        $this->timer->measure('gateway.node-new', fn () => $this->runGatewayNodeNew($control, $key, $gatewayIp));
+        $this->timer->measure('gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($control, $key));
+        $this->timer->measure('gateway.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
+        $this->timer->measure('gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key));
+        $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key));
 
-            $this->timer->measure('gateway.register', fn () => E2ECommand::ssh(
-                $control,
-                $this->host->config->controlUser,
-                $key,
-                'cd /home/'.$this->host->config->controlUser.'/orbit && orbit gateway:add '.self::GatewayWireGuardIp.' --json',
-                timeoutSeconds: 600,
-            ));
-        }
+        return $instances;
+    }
 
-        if (in_array('dev', $roles, true)) {
-            if ($gateway === null) {
-                throw new RuntimeException('Cannot prepare dev app without a gateway instance.');
-            }
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildDevelopmentAppStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control', 'gateway'], $key);
 
-            $devName = IncusTopologyTemplate::templateName($kind, 'dev');
-            $this->timer->measure('dev.launch', fn () => $this->copyAndStart($baseImage, $devName));
-            $dev = new IncusInstance($this->host, $devName);
-            $this->timer->measure('dev.agent.initial', fn () => $dev->waitForAgent());
-            $this->timer->measure('dev.cloud-init', fn () => $this->host->waitForCloudInit($devName));
-            $this->timer->measure('dev.agent.after-cloud-init', fn () => $dev->waitForAgent());
-            $this->timer->measure('dev.provision', fn () => $this->host->provisionInstance($devName, 'app', (string) $this->remoteBundleDir));
-            $this->timer->measure('dev.ssh-authorize', fn () => $dev->authorizeSsh('orbit', $key));
-            $this->timer->measure('dev.ssh-ready', fn () => $dev->waitForSsh('orbit', $key));
-            $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
-            $instances['dev'] = $dev;
+        $this->timer->measure('dev.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
+        $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
 
-            $this->timer->measure('dev.wireguard', fn () => E2ENetwork::assignWireGuardIp($dev, self::DevWireGuardIp));
+        $dev = $this->launchBlankRole('dev', $key);
+        $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
+        $instances['dev'] = $dev;
 
-            $this->timer->measure('dev.bake-node', fn () => $this->bakeAppNode(
-                $control,
-                $gateway,
-                $key,
-                'app-dev-1',
-                $devIp,
-                self::DevWireGuardIp,
-                'development',
-                'test',
-            ));
-        }
+        $this->timer->measure('dev.node-new', fn () => $this->runAppNodeNew(
+            $instances['control'],
+            $key,
+            'app-dev-1',
+            $devIp,
+            'development',
+            'test',
+        ));
 
-        if (in_array('prod', $roles, true)) {
-            if ($gateway === null) {
-                throw new RuntimeException('Cannot prepare prod app without a gateway instance.');
-            }
+        return $instances;
+    }
 
-            $prodName = IncusTopologyTemplate::templateName($kind, 'prod');
-            $this->timer->measure('prod.launch', fn () => $this->copyAndStart($baseImage, $prodName));
-            $prod = new IncusInstance($this->host, $prodName);
-            $this->timer->measure('prod.agent.initial', fn () => $prod->waitForAgent());
-            $this->timer->measure('prod.cloud-init', fn () => $this->host->waitForCloudInit($prodName));
-            $this->timer->measure('prod.agent.after-cloud-init', fn () => $prod->waitForAgent());
-            $this->timer->measure('prod.provision', fn () => $this->host->provisionInstance($prodName, 'app', (string) $this->remoteBundleDir));
-            $this->timer->measure('prod.ssh-authorize', fn () => $prod->authorizeSsh('orbit', $key));
-            $this->timer->measure('prod.ssh-ready', fn () => $prod->waitForSsh('orbit', $key));
-            $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
-            $instances['prod'] = $prod;
+    /**
+     * @return array<string, IncusInstance>
+     */
+    private function buildProductionAppStage(SshKeyPair $key): array
+    {
+        $instances = $this->startTemplateRoles(['control', 'gateway', 'dev'], $key);
 
-            $this->timer->measure('prod.wireguard', fn () => E2ENetwork::assignWireGuardIp($prod, self::ProdWireGuardIp));
+        $this->timer->measure('prod.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
+        $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
 
-            $this->timer->measure('prod.bake-node', fn () => $this->bakeAppNode(
-                $control,
-                $gateway,
-                $key,
-                'app-prod-1',
-                $prodIp,
-                self::ProdWireGuardIp,
-                'production',
-            ));
+        $prod = $this->launchBlankRole('prod', $key);
+        $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
+        $instances['prod'] = $prod;
+
+        $this->timer->measure('prod.node-new', fn () => $this->runAppNodeNew(
+            $instances['control'],
+            $key,
+            'app-prod-1',
+            $prodIp,
+            'production',
+        ));
+
+        return $instances;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array<string, IncusInstance>
+     */
+    private function startTemplateRoles(array $roles, SshKeyPair $key): array
+    {
+        $instances = [];
+
+        foreach ($roles as $role) {
+            $instances[$role] = $this->startTemplateRole($role, $key);
         }
 
         return $instances;
     }
 
-    private function bakeAppNode(
+    private function startTemplateRole(string $role, SshKeyPair $key): IncusInstance
+    {
+        $name = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, $role);
+
+        $start = $this->timer->measure("{$role}.start", fn () => $this->host->startInstance($name));
+        if (! $start->successful()) {
+            throw new RuntimeException("Could not start {$name}: {$start->errorOutput()}");
+        }
+
+        $instance = new IncusInstance($this->host, $name);
+        $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
+
+        if ($role === 'control') {
+            $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->controlUser, $key));
+        }
+
+        return $instance;
+    }
+
+    private function launchBlankRole(string $role, SshKeyPair $key): IncusInstance
+    {
+        $name = IncusTopologyTemplate::templateName(E2ETopologyKind::Control, $role);
+        $this->timer->measure("{$role}.launch", fn () => $this->launchBlank($name));
+        $instance = new IncusInstance($this->host, $name);
+        $this->timer->measure("{$role}.agent.initial", fn () => $instance->waitForAgent());
+        $this->timer->measure("{$role}.cloud-init", fn () => $this->host->waitForCloudInit($name));
+        $this->timer->measure("{$role}.agent.after-cloud-init", fn () => $instance->waitForAgent());
+        $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
+        $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
+
+        return $instance;
+    }
+
+    private function runGatewayNodeNew(
         IncusInstance $control,
-        IncusInstance $gateway,
+        SshKeyPair $key,
+        string $host,
+    ): void {
+        $parts = [
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new gateway-1',
+            '--role=gateway',
+            '--host='.escapeshellarg($host),
+            '--ssh-user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--control-name=control-1',
+            '--json',
+        ];
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            implode(' ', $parts),
+            timeoutSeconds: 900,
+        );
+    }
+
+    private function useWireGuardGatewayUrl(IncusInstance $control, SshKeyPair $key): void
+    {
+        $gatewayUrl = var_export('https://'.self::GatewayWireGuardIp, true);
+        $gatewayIp = var_export(self::GatewayWireGuardIp, true);
+
+        $php = <<<PHP
+\$settings = \\App\\Models\\LocalGatewaySettings::current();
+\$settings->gateway_url = {$gatewayUrl};
+\$settings->gateway_wg_ip = {$gatewayIp};
+\$settings->save();
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 60,
+        );
+    }
+
+    private function runAppNodeNew(
+        IncusInstance $control,
         SshKeyPair $key,
         string $name,
         string $host,
-        string $wireGuardAddress,
         string $environment,
         ?string $tld = null,
     ): void {
         $parts = [
-            'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node',
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new',
             escapeshellarg($name),
             '--role=app',
             '--host='.escapeshellarg($host),
-            '--wireguard-address='.escapeshellarg($wireGuardAddress),
             '--environment='.escapeshellarg($environment),
-            '--gateway-endpoint='.self::GatewayWireGuardIp,
-            '--ssh-user=orbit',
-            '--user=orbit',
+            '--ssh-user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--json',
         ];
 
         if ($tld !== null) {
@@ -271,23 +397,93 @@ class IncusTopologyBuilder
         }
 
         E2ECommand::ssh(
-            $gateway,
-            'orbit',
+            $control,
+            $this->host->config->controlUser,
             $key,
             implode(' ', $parts),
-            timeoutSeconds: 120,
+            timeoutSeconds: 900,
         );
 
         E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
+    }
+
+    private function installPrivateSshKey(IncusInstance $instance, SshKeyPair $key, string $user): void
+    {
+        $home = $user === 'root' ? '/root' : "/home/{$user}";
+        $sshDirectory = "{$home}/.ssh";
+        $privateKey = "{$sshDirectory}/id_ed25519";
+
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'install -d -m 700 -o %s -g %s %s',
+                escapeshellarg($user),
+                escapeshellarg($user),
+                escapeshellarg($sshDirectory),
+            ),
+            "Could not prepare {$user} SSH directory",
+        );
+
+        $instance->copyFileToInstance($key->privateKeyPath, $privateKey);
+
+        E2ECommand::exec(
+            $instance,
+            sprintf(
+                'chown %s:%s %s && chmod 600 %s',
+                escapeshellarg($user),
+                escapeshellarg($user),
+                escapeshellarg($privateKey),
+                escapeshellarg($privateKey),
+            ),
+            "Could not install {$user} SSH key",
+        );
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function reestablishWireGuardRoutes(array $instances): void
+    {
+        $control = $instances['control'] ?? null;
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($control === null || $gateway === null) {
+            return;
+        }
+
+        $controlIp = $control->waitForIpv4();
+        $gatewayIp = $gateway->waitForIpv4();
+
+        E2ENetwork::assignWireGuardIp($control, self::ControlWireGuardIp);
+        E2ENetwork::assignWireGuardIp($gateway, self::GatewayWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($control, self::GatewayWireGuardIp, $gatewayIp, self::ControlWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($gateway, self::ControlWireGuardIp, $controlIp, self::GatewayWireGuardIp);
+
+        $this->routeAppPeer($gateway, $gatewayIp, $instances['dev'] ?? null, self::DevWireGuardIp);
+        $this->routeAppPeer($gateway, $gatewayIp, $instances['prod'] ?? null, self::ProdWireGuardIp);
+    }
+
+    private function routeAppPeer(IncusInstance $gateway, string $gatewayIp, ?IncusInstance $app, string $appWireGuardIp): void
+    {
+        if ($app === null) {
+            return;
+        }
+
+        $appIp = $app->waitForIpv4();
+
+        E2ENetwork::assignWireGuardIp($app, $appWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($gateway, $appWireGuardIp, $appIp, self::GatewayWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($app, self::GatewayWireGuardIp, $gatewayIp, $appWireGuardIp);
     }
 
     /**
      * @param  array<string, IncusInstance>  $instances
      * @return list<array{role: string, name: string, snapshot: string}>
      */
-    private function finalizeInstances(array $instances): array
+    private function finalizeInstances(E2ETopologyKind $kind, array $instances): array
     {
         $manifest = [];
+        $snapshot = IncusTopologyTemplate::snapshotName($kind);
 
         foreach ($instances as $role => $instance) {
             $name = $instance->name();
@@ -297,7 +493,7 @@ class IncusTopologyBuilder
                 throw new RuntimeException("Could not stop {$name}: {$result->errorOutput()}");
             }
 
-            $result = $this->timer->measure("finalize.snapshot.{$role}", fn () => $this->host->snapshotInstance($name, 'clean'));
+            $result = $this->timer->measure("finalize.snapshot.{$role}", fn () => $this->host->snapshotInstance($name, $snapshot));
             if (! $result->successful()) {
                 throw new RuntimeException("Could not snapshot {$name}: {$result->errorOutput()}");
             }
@@ -305,15 +501,16 @@ class IncusTopologyBuilder
             $manifest[] = [
                 'role' => $role,
                 'name' => $name,
-                'snapshot' => 'clean',
+                'snapshot' => $snapshot,
             ];
         }
 
         return $manifest;
     }
 
-    private function copyAndStart(string $sourceImageAlias, string $target): void
+    private function launchBlank(string $target): void
     {
+        $sourceImageAlias = $this->host->config->blankImage;
         $result = $this->host->launchInstance($sourceImageAlias, $target, timeoutSeconds: $this->host->config->timeoutSeconds);
 
         if (! $result->successful()) {

@@ -40,7 +40,7 @@ E2E harness is complete. Both Docker and Incus topology providers are
 available; provisioning tests run on Beast (Incus) and feature tests run on
 the shared Docker pool by default. Composer scripts: `test`, `test:e2e`,
 `test:e2e:provision`, `test:e2e:topology-contract`. Artisan helpers:
-`e2e:prepare-base-image`, `e2e:prepare-topology`,
+`e2e:prepare-incus-images`, `e2e:prepare-topology`,
 `e2e:prepare-docker-runtime`, `e2e:prepare-docker-topology`.
 
 Recent command-port lanes:
@@ -61,40 +61,48 @@ The only outstanding item is non-blocking:
 
 ## Foundation
 
-- **`bin/install-orbit`** — local control/gateway/app host prerequisite
-  installer for Ubuntu and macOS. Installs PHP 8.5, Composer, Git, Orbit
-  source, SQLite migrations, and the `orbit` symlink. Ubuntu gateway
-  installs include WireGuard, Caddy, and PHP-FPM. Ephemeral E2E targets
-  Ubuntu 26.04.
-- **`bin/e2e-provision-node` + `bin/_e2e-deps.sh`** — per-run provisioner
-  used by both `e2e:prepare-base-image` and `IncusTopologyBuilder` so the
-  base image and topology stay byte-identical.
-- **`IncusBaseImagePreparer`, `IncusTopologyBuilder`, `IncusHost`,
+- **`bin/install-orbit`** — local control-node installer for Ubuntu and
+  macOS. Installs the runtime prerequisites Orbit needs to run and provision
+  hosts (PHP 8.5, Composer, Git, OpenSSH client, WireGuard tooling,
+  Supervisor/Caddy/PHP-FPM on Ubuntu), installs the Orbit source, runs SQLite
+  migrations, and links `orbit` into the executable path. Gateway and app
+  roles are created by `node:new`, not by installer flags.
+- **`bin/e2e-provision-node`** — per-run control-template helper used by
+  `IncusTopologyBuilder`. It installs Orbit on the control template from the
+  current source bundle. Gateway and app templates are then created through
+  real `node:new` calls from that control node.
+- **`IncusTopologyBuilder`, `IncusHost`,
   `DockerHost`, `DockerTopologyBuilder`** under `app/E2E/Support/` provide
   the topology providers behind `e2eTopology()` / `e2eVmTopology()`.
 
 ## Setup playbook
 
-Refresh the base image when apt/system dependencies change. Incus
-provisioning runs on Beast only:
+Refresh the blank Incus image when the bootstrap image shape changes. Incus
+provisioning runs on Beast:
 
 ```bash
-ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast \
-ORBIT_E2E_INCUS_HOSTS=beast \
-ORBIT_E2E_INCUS_HOST_SLOTS=beast:1 \
+ORBIT_E2E_HOST=beast \
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
-ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
-composer e2e:prepare-base-image -- --force
+php artisan e2e:prepare-incus-images --role=blank --force
 ```
 
 Rebuild the prepared topology from the current checkout when feature
-assertions need fresh baseline command code:
+assertions need fresh baseline command code. This refreshes a staged chain of
+role templates: control is installed from the blank image and snapshotted as
+`clean-control`; gateway, development app, and production app are then added
+through real `node:new` calls from the control node and snapshotted as
+`clean-control-gateway`, `clean-control-gateway-dev`, and
+`clean-control-gateway-dev-prod` respectively:
 
 ```bash
 ORBIT_E2E_HOST=beast \
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e \
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 ```
+
+The force path streams `[orbit-e2e] <phase> started|done|failed` checkpoints to
+STDERR, so a long topology refresh shows which phase currently owns the wait
+without corrupting JSON output on STDOUT.
 
 Run feature tests with `composer test:e2e` (Docker default, Pest parallel,
 checkout overlay per test). Narrow to a scenario with `--filter='<Name>'`.

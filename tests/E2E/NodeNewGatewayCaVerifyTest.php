@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2EBaseProvisioner;
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EImage;
@@ -15,10 +14,10 @@ use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
-it('NodeNewGatewayCaVerify proves first-gateway CA trust from base VMs', function (): void {
+it('NodeNewGatewayCaVerify proves first-gateway CA trust from blank VMs', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -30,16 +29,9 @@ it('NodeNewGatewayCaVerify proves first-gateway CA trust from base VMs', functio
 
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
-        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
-        $gateway = e2eProvisionStep('launch base gateway', fn () => $run->launchBase('gateway'));
-
-        e2eProvisionStep('wait for gateway cloud-init', fn () => $provider->host->waitForCloudInit($gateway->name()));
-        e2eProvisionStep('authorize SSH between control and gateway', fn () => nodeNewGatewayCaVerifyAuthorizeSsh($control, $gateway, $config->controlUser, $config->bootstrapUser, $key));
-
-        $control->waitForSsh($config->controlUser, $key);
-        $gateway->waitForSsh($config->bootstrapUser, $key);
+        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        [$gateway, $payload] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key, useWireGuardGatewayUrl: false);
 
         $controlIp = $control->waitForIpv4();
         $gatewayIp = $gateway->waitForIpv4();
@@ -47,16 +39,6 @@ it('NodeNewGatewayCaVerify proves first-gateway CA trust from base VMs', functio
         expect($controlIp)->not->toBe($gatewayIp);
 
         $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
-        $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
-            $control,
-            $config->controlUser,
-            $key,
-            $command,
-            timeoutSeconds: 1800,
-        ));
-
-        $payload = json_decode(trim($nodeNew->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-
         expect($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['local_onboarding']['gateway_trust'])->toBe('trusted')
             ->and($payload['success']['data']['local_onboarding']['gateway_config'])->toBe('stored')
@@ -70,7 +52,7 @@ it('NodeNewGatewayCaVerify proves first-gateway CA trust from base VMs', functio
 
         expect($settings['gateway_url'])->toBe("https://{$gatewayIp}")
             ->and($settings['gateway_wg_ip'])->toBe('10.6.0.2')
-            ->and($settings['ca_pem_path'])->toBe("/home/{$config->controlUser}/orbit/storage/app/orbit/trust/gateway-1-ca.crt")
+            ->and($settings['ca_pem_path'])->toBe("/home/{$config->controlUser}/orbit/storage/app/orbit/gateway-ca/orbit.crt")
             ->and($settings['ca_sha256'])->toBe($payload['success']['data']['gateway_trust']['ca_sha256'])
             ->and($settings['pem_sha256'])->toBe($settings['ca_sha256'])
             ->and($settings['pem'])->toBe($remoteCa)
@@ -105,22 +87,6 @@ it('NodeNewGatewayCaVerify proves first-gateway CA trust from base VMs', functio
         $bundle?->cleanup();
     }
 });
-
-function nodeNewGatewayCaVerifyAuthorizeSsh(
-    E2EInstance $control,
-    E2EInstance $gateway,
-    string $controlUser,
-    string $bootstrapUser,
-    SshKeyPair $key,
-): void {
-    $control->authorizeSsh($controlUser, $key);
-    $gateway->authorizeSsh($bootstrapUser, $key);
-    $control->copyFileToInstance($key->privateKeyPath, "/home/{$controlUser}/.ssh/id_ed25519");
-
-    $result = $control->exec("chown {$controlUser}:{$controlUser} /home/{$controlUser}/.ssh/id_ed25519 && chmod 600 /home/{$controlUser}/.ssh/id_ed25519");
-
-    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
-}
 
 /**
  * @return array{

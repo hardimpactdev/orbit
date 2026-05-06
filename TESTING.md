@@ -46,39 +46,33 @@ installation, cloud-init, or host-level daemon behavior:
 ```bash
 composer e2e:preflight
 php artisan e2e:prepare-incus-images --role=blank --force
-composer e2e:prepare-base-image -- --force
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer test:e2e:provision
 ```
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
-default). It builds two reusable images plus per-topology template snapshots:
+default). It builds one reusable blank image plus cumulative role templates
+with per-topology clean snapshots:
 
 1. **Blank image** (`orbit-blank-ubuntu-26.04`). Built once via
    `php artisan e2e:prepare-incus-images --role=blank --force`. Ubuntu cloud
    + bootstrap user + sshd. Used by the provisioning lane's blank-VM
-   lifecycle test.
-2. **Base image** (`orbit-base-ubuntu-26.04`). Built once via
-   `composer e2e:prepare-base-image -- --force`. Ubuntu cloud + bootstrap
-   user + the `orbit` user + the apt deps that `bin/install-orbit` would
-   otherwise install (PHP 8.5, composer, git, sqlite, WireGuard, openssh,
-   Supervisor).
-   No Orbit source is baked in. Rebuilt only when system deps change. In a
-   multi-host pool, the image is built on
-   `ORBIT_E2E_INCUS_IMAGE_BUILD_HOST` (default: `ORBIT_E2E_HOST`) and then
-   exported/imported onto the configured `ORBIT_E2E_INCUS_HOSTS`.
-3. **Per-topology templates** (`orbit-template-<kind>-<role>`). Built per
-   `composer e2e:prepare-topology -- --force <kind>` invocation. The
-   command tars the current checkout, ships it plus `bin/install-orbit`,
-   `bin/e2e-provision-node`, and `bin/_e2e-deps.sh` to the host, then for
-   each role: clones from the base image, runs the provisioner inside the
-   clone (installing Orbit + role-specific bootstrap), runs the existing
-   WireGuard / gateway:add / `node:new` ceremony, stops, and snapshots as
-   `clean`. Tests clone these snapshots per run.
+   lifecycle test and as the source for prepared topology roles.
+2. **Role templates** (`orbit-template-control`, `orbit-template-gateway`,
+   `orbit-template-dev`, `orbit-template-prod`). Built by
+   `composer e2e:prepare-topology -- --force <kind>`. The command tars the
+   current checkout, ships it plus `bin/install-orbit` and
+   `bin/e2e-provision-node` to the host, installs Orbit on the control
+   template from the blank image, snapshots `clean-control`, then starts that
+   template and provisions the gateway through real `node:new`. It repeats
+   the chain for dev and prod app nodes. Each topology kind is a snapshot set
+   such as `clean-control-gateway-dev`, not a separate copy of every role
+   template. Tests clone the requested role templates from the matching
+   snapshot per run.
 
-Source code lives in the per-run bundle, not in any image. Topology
-snapshots get rebuilt each time `e2e:prepare-topology --force` runs. The
-base image only needs rebuilding when apt dependencies change.
+Source code lives in the per-run bundle, not in any image. Topology snapshots
+get rebuilt each time `e2e:prepare-topology --force` runs. Rebuild the blank
+image only when the bootstrap image shape changes.
 
 Latest Beast prepared-topology measurement (May 5, 2026):
 
@@ -104,6 +98,12 @@ location:
   `~/.cache/orbit-e2e/composer` is bundled when present. A warm cache
   cuts `bin/install-orbit` runtime inside each role clone.
 
+Forced topology preparation prints live phase checkpoints to STDERR with the
+`[orbit-e2e]` prefix. Each measured phase emits `started`, then `done <seconds>`
+or `failed <seconds> <exception>`. This keeps JSON responses on STDOUT
+parseable while still showing whether a long run is in bundle staging,
+control install, `node:new`, gateway API readiness, snapshotting, or cleanup.
+
 Environment overrides:
 
 ```bash
@@ -111,7 +111,6 @@ ORBIT_E2E_HOST=beast
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast
 ORBIT_E2E_SOURCE_IMAGE=images:ubuntu/26.04/cloud
 ORBIT_E2E_BLANK_IMAGE=orbit-blank-ubuntu-26.04
-ORBIT_E2E_BASE_IMAGE=orbit-base-ubuntu-26.04
 ORBIT_E2E_BOOTSTRAP_USER=provisioner
 ORBIT_E2E_CONTROL_USER=control
 ORBIT_E2E_INSTANCE_PREFIX=orbit-e2e
@@ -151,14 +150,13 @@ Provisioning, installer, and host-mutation tests stay in the
 
 The ephemeral E2E suite is split into two explicit lanes at the Pest group level:
 
-- **`e2e-provision`** — opt-in tests that mutate disposable VMs from blank or base
+- **`e2e-provision`** — opt-in tests that mutate disposable VMs from blank
   images and exercise setup flows such as blank VM lifecycle, control node
   readiness, gateway onboarding, and node provisioning. These tests are
   grouped with `pest()->group('e2e-provision')` at the file level and run
   via `composer test:e2e:provision`. Tests that previously launched from
-  role-specific ready images now stage a per-run bundle and run
-  `bin/e2e-provision-node` against a base-image clone for the role under
-  test.
+  role-specific ready images now use blank VMs and run the same installer /
+  `node:new` paths that production provisioning uses.
 
 - **`e2e-feature`** — tests that start from prepared topology clones and verify
   ported commands, forwarding chains, or read-only behavior. They must not run
@@ -342,14 +340,12 @@ composer test:e2e:topology-contract
 # E2E readiness check
 composer e2e:preflight
 
-# Build the reusable Incus base image (deps + orbit user, no source).
-# Multi-host pools build on ORBIT_E2E_INCUS_IMAGE_BUILD_HOST and import to hosts.
-# Rebuild only when system deps change.
-composer e2e:prepare-base-image -- --force
+# Build the reusable Incus blank image (bootstrap user + sshd, no Orbit source).
+php artisan e2e:prepare-incus-images --role=blank --force
 
-# Prepare or replace a topology clone for the feature lane. Tars the
-# current checkout, ships it via per-run bundle, runs the provisioner per
-# role, snapshots clean.
+# Prepare or replace topology templates for the feature lane. Tars the current
+# checkout, installs Orbit on the control template, then provisions gateway/app
+# templates through node:new from control before snapshotting clean.
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 
 # Prepare Docker feature topology images
@@ -708,9 +704,10 @@ single test, call `$topology->reset()` between scenarios; set
 scenario does not need a brand-new clone identity.
 
 Set `ORBIT_E2E_TIMINGS=1` to surface per-phase durations from the topology
-factory and lease. Current event names include `availability`,
-`batch.copy-start`, `agent-ready.<role>`, `command-ready.<role>`, `wireguard`,
-`cleanup.<role>`, and
+factory and lease. Forced `e2e:prepare-topology` already streams checkpoints by
+default; the environment flag is still useful for topology acquisition, cleanup,
+and reset paths. Current event names include `availability`, `batch.copy-start`,
+`agent-ready.<role>`, `command-ready.<role>`, `wireguard`, `cleanup.<role>`, and
 `reset.*`. Output goes to STDERR with the prefix `[orbit-e2e]` so it interleaves
 cleanly with Pest output. The clone/start batch intentionally stays one remote
 SSH operation; split copy/start timing should only be added if it can keep that

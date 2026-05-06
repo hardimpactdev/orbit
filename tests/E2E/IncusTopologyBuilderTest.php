@@ -25,8 +25,8 @@ it('builds a control topology and snapshots the template clean', function (): vo
         $this->markTestSkipped('No Incus host configured (ORBIT_E2E_INCUS_HOSTS or ORBIT_E2E_HOST).');
     }
 
-    if (! $host->imageExists($config->baseImage)) {
-        $this->markTestSkipped("Required source image [{$config->baseImage}] missing on Incus host.");
+    if (! $host->imageExists($config->blankImage)) {
+        $this->markTestSkipped("Required blank image [{$config->blankImage}] missing on Incus host.");
     }
 
     $kind = E2ETopologyKind::Control;
@@ -63,10 +63,10 @@ it('builds a control topology and snapshots the template clean', function (): vo
         expect($manifest)->toHaveCount(1);
         expect($manifest[0]['role'])->toBe('control');
         expect($manifest[0]['name'])->toBe($templateName);
-        expect($manifest[0]['snapshot'])->toBe('clean');
+        expect($manifest[0]['snapshot'])->toBe('clean-control');
 
         expect($host->instanceExists($templateName))->toBeTrue();
-        expect($host->snapshotExists($templateName, 'clean'))->toBeTrue();
+        expect($host->snapshotExists($templateName, 'clean-control'))->toBeTrue();
 
         $passed = true;
     } finally {

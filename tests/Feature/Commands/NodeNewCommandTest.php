@@ -183,7 +183,7 @@ describe('node:new', function (): void {
         }
     });
 
-    it('ships a local installer for control and gateway bootstrap hosts', function (): void {
+    it('ships a local installer for control nodes', function (): void {
         $installer = base_path('bin/install-orbit');
         $contents = file_get_contents($installer);
 
@@ -197,30 +197,31 @@ describe('node:new', function (): void {
         $help = Process::run(escapeshellarg($installer).' --help');
 
         expect($help->successful())->toBeTrue($help->errorOutput())
-            ->and($help->output())->toContain('--role=control|gateway|app')
+            ->and($help->output())->not->toContain('--role=')
             ->and($help->output())->toContain('--php=8.5')
             ->and($help->output())->toContain('--source-archive=PATH')
             ->and($help->output())->toContain('--verbose')
             ->and($help->output())->toContain('A new control node runs it')
-            ->and($help->output())->toContain('First-gateway bootstrap may ship this same script')
+            ->and($help->output())->toContain('Gateway and app roles are provisioned by node:new')
             ->and($contents)->toContain('packages.sury.org/php')
             ->and($contents)->toContain('sury-php.gpg')
             ->and($contents)->toContain('php${PHP_VERSION}-cli')
             ->and($contents)->toContain('php${PHP_VERSION}-fpm')
+            ->and($contents)->toContain('openssh-client')
             ->and($contents)->toContain('wireguard-tools')
             ->and($contents)->toContain('caddy');
     });
 
     it('renders installer failures with Orbit-style progress and stable error codes', function (): void {
         $installer = base_path('bin/install-orbit');
-        $result = Process::run(escapeshellarg($installer).' --role=invalid --path=/tmp/orbit-test --bin=/tmp/orbit-test --no-sudo');
+        $result = Process::run(escapeshellarg($installer).' --php=8.4 --path=/tmp/orbit-test --bin=/tmp/orbit-test --no-sudo');
 
         expect($result->failed())->toBeTrue()
             ->and($result->output())->toContain('┌ Orbit install')
             ->and($result->output())->toContain('◉  Validate installer input')
             ->and($result->output())->not->toContain('+ ')
             ->and($result->errorOutput())->toContain('error [validation_failed]')
-            ->and($result->errorOutput())->toContain('--role must be one of: control, gateway, app');
+            ->and($result->errorOutput())->toContain('--php must be: 8.5');
     });
 
     it('bootstraps the first gateway from an unconfigured control node using a distinct bootstrap user', function (): void {
@@ -329,7 +330,7 @@ describe('node:new', function (): void {
             ],
         ]);
 
-        $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
+        $trustPath = storage_path('app/orbit/gateway-ca/orbit.crt');
         expect(file_exists($trustPath))->toBeTrue()
             ->and(file_get_contents($trustPath))->toBe($mockCaCert);
 
@@ -355,8 +356,7 @@ describe('node:new', function (): void {
             && str_contains($process->command, 'sudoers.d/99-orbit')
             && str_contains($process->command, 'orbit'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
-            && str_contains($process->command, '--role=')
-            && str_contains($process->command, 'gateway')
+            && ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive=')
             && str_contains($process->command, 'sudo su -'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
@@ -389,7 +389,7 @@ describe('node:new', function (): void {
             '--json' => true,
         ]);
 
-        $trustPath = storage_path('app/orbit/trust/gateway-1-ca.crt');
+        $trustPath = storage_path('app/orbit/gateway-ca/orbit.crt');
         $firstPem = file_get_contents($trustPath);
 
         Process::fake(fn ($process) => str_contains((string) $process->command, 'ssh-keygen -y')
@@ -607,7 +607,7 @@ describe('node:new', function (): void {
             ])
             ->and(DB::table('nodes')->count())->toBe(0);
 
-        $trustPath = storage_path('app/orbit/trust/gateway-invalid-ca.crt');
+        $trustPath = storage_path('app/orbit/gateway-ca/orbit.crt');
         expect(file_exists($trustPath))->toBeFalse();
     });
 
@@ -639,7 +639,7 @@ describe('node:new', function (): void {
             ])
             ->and(DB::table('nodes')->count())->toBe(0);
 
-        $trustPath = storage_path('app/orbit/trust/gateway-malformed-ca.crt');
+        $trustPath = storage_path('app/orbit/gateway-ca/orbit.crt');
         expect(file_exists($trustPath))->toBeFalse();
     });
 
@@ -747,8 +747,7 @@ describe('node:new', function (): void {
             ->toContain('node=app-dev-1')
             ->toContain('address=/.test/10.6.0.3');
 
-        Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
-            && str_contains($process->command, 'app')
+        Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive='));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));

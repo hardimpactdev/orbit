@@ -9,18 +9,41 @@ final class E2EPhaseTimer
     /** @var list<array{name: string, seconds: float}> */
     private array $events = [];
 
+    public function __construct(
+        private readonly bool $stream = false,
+        /**
+         * @var (\Closure(string): void)|null
+         */
+        private readonly ?\Closure $writer = null
+    ) {}
+
     public function measure(string $name, callable $callback): mixed
     {
+        $this->write("{$name} started");
+
         $start = microtime(true);
 
         try {
-            return $callback();
-        } finally {
-            $this->events[] = [
-                'name' => $name,
-                'seconds' => microtime(true) - $start,
-            ];
+            $result = $callback();
+        } catch (\Throwable $exception) {
+            $seconds = microtime(true) - $start;
+            $this->record($name, $seconds);
+            $this->write(sprintf(
+                '%s failed %.3fs %s: %s',
+                $name,
+                $seconds,
+                get_debug_type($exception),
+                $exception->getMessage(),
+            ));
+
+            throw $exception;
         }
+
+        $seconds = microtime(true) - $start;
+        $this->record($name, $seconds);
+        $this->write(sprintf('%s done %.3fs', $name, $seconds));
+
+        return $result;
     }
 
     /**
@@ -31,9 +54,14 @@ final class E2EPhaseTimer
         return $this->events;
     }
 
+    public function streamsCheckpoints(): bool
+    {
+        return $this->stream;
+    }
+
     public function flush(string $label): void
     {
-        if (getenv('ORBIT_E2E_TIMINGS') !== '1') {
+        if ($this->stream || getenv('ORBIT_E2E_TIMINGS') !== '1') {
             return;
         }
 
@@ -45,5 +73,30 @@ final class E2EPhaseTimer
                 $event['seconds'],
             ));
         }
+    }
+
+    private function record(string $name, float $seconds): void
+    {
+        $this->events[] = [
+            'name' => $name,
+            'seconds' => $seconds,
+        ];
+    }
+
+    private function write(string $message): void
+    {
+        if (! $this->stream) {
+            return;
+        }
+
+        $line = "[orbit-e2e] {$message}";
+
+        if ($this->writer !== null) {
+            ($this->writer)($line);
+
+            return;
+        }
+
+        fwrite(STDERR, $line.PHP_EOL);
     }
 }

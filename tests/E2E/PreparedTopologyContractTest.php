@@ -93,7 +93,7 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
 
     E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
 
-    $gatewayNode = E2EGatewayApi::getNode($gateway, 'gateway');
+    $gatewayNode = readPreparedLocalGatewayNode($gateway);
     $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
 
     expect($gatewayNode['role'])->toBe('gateway')
@@ -153,6 +153,39 @@ function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair 
         $key,
         'cd '.escapeshellarg($orbitPath).' && test -f artisan && orbit --version >/dev/null',
     );
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function readPreparedLocalGatewayNode(E2EInstance $gateway): array
+{
+    $php = <<<'PHP'
+echo json_encode(\App\Models\Node::query()
+    ->where('role', 'gateway')
+    ->where('is_local', true)
+    ->firstOrFail()
+    ->only([
+        'name',
+        'role',
+        'environment',
+        'tld',
+        'host',
+        'wireguard_address',
+        'gateway_endpoint',
+        'ssh_user',
+        'user',
+        'is_local',
+    ]), JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = E2ECommand::orbit(
+        $gateway,
+        'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg($php),
+        'Could not read prepared local gateway node',
+    );
+
+    return json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 }
 
 /**

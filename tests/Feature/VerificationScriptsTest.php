@@ -233,6 +233,12 @@ it('installs Supervisor as a platform prerequisite for runtime backend hosts', f
     expect($script)->toContain('supervisor');
 });
 
+it('installs the SSH client as a control-node provisioning prerequisite', function (): void {
+    $script = file_get_contents(base_path('bin/install-orbit'));
+
+    expect($script)->toContain('openssh-client');
+});
+
 it('aligns orbit checkout ownership with the home parent so non-root users can write', function (): void {
     $script = file_get_contents(base_path('bin/install-orbit'));
 

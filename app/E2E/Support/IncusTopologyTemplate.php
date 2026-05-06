@@ -21,7 +21,12 @@ final readonly class IncusTopologyTemplate
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
     {
-        return "orbit-template-{$kind->value}-{$role}";
+        return "orbit-template-{$role}";
+    }
+
+    public static function snapshotName(E2ETopologyKind $kind): string
+    {
+        return "clean-{$kind->value}";
     }
 
     public static function cloneName(string $runId, string $role): string
@@ -35,12 +40,13 @@ final readonly class IncusTopologyTemplate
 
         foreach (self::rolesFor($kind) as $role) {
             $template = self::templateName($kind, $role);
+            $snapshot = self::snapshotName($kind);
 
             $checks[] = 'incus info '.escapeshellarg($template).' >/dev/null 2>&1';
             $checks[] = sprintf(
                 'incus info %s --show-log=false 2>/dev/null | grep -q %s',
                 escapeshellarg($template),
-                escapeshellarg('clean'),
+                escapeshellarg($snapshot),
             );
         }
 
@@ -96,9 +102,11 @@ final readonly class IncusTopologyTemplate
         $statefulReset = getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
 
         $index = 0;
+        $snapshot = self::snapshotName($kind);
+
         foreach ($roles as $role) {
             $index++;
-            $template = escapeshellarg(self::templateName($kind, $role).'/clean');
+            $template = escapeshellarg(self::templateName($kind, $role)."/{$snapshot}");
             $clone = escapeshellarg(self::cloneName($runId, $role));
 
             $copyLines[] = "incus copy {$template} {$clone}{$storagePool} & PID_COPY_{$index}=\$!";

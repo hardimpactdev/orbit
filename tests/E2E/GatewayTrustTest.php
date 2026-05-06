@@ -2,13 +2,10 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2EBaseProvisioner;
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
-use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2EImage;
 use App\E2E\Support\E2EInstance;
-use App\E2E\Support\E2ENetwork;
 use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
@@ -20,7 +17,7 @@ pest()->group('e2e-provision');
 it('trusts the configured gateway root CA from a provisioned control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -32,29 +29,9 @@ it('trusts the configured gateway root CA from a provisioned control VM', functi
 
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
-        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
-        $gateway = e2eProvisionStep('provision gateway from base', fn () => $provisioner->provision($run, 'gateway', 'gateway'));
-
-        $control->authorizeSsh($config->controlUser, $key);
-        $gateway->authorizeSsh('orbit', $key);
-
-        $control->waitForSsh($config->controlUser, $key);
-        $gateway->waitForSsh('orbit', $key);
-
-        $controlIp = $control->waitForIpv4();
-        $gatewayIp = $gateway->waitForIpv4();
-
-        expect($controlIp)->not->toBe($gatewayIp);
-
-        E2ENetwork::assignWireGuardIp($control, '10.6.0.3');
-        E2ENetwork::assignWireGuardIp($gateway, '10.6.0.2');
-        E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
-        E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
-        E2EGatewayApi::seedControlIdentity($gateway, $controlIp, $config->controlUser);
-        E2EGatewayApi::start($gateway, 'gateway-trust');
-        E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
+        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
 
         gatewayTrustE2ESeedSettings($control, $config->controlUser, $key);
 
@@ -83,7 +60,7 @@ it('trusts the configured gateway root CA from a provisioned control VM', functi
             ->and(trim($settings['pem']))->toBe(trim($remoteCa))
             ->and($settings['trusted_at'])->toBeString()->not->toBeEmpty()
             ->and($trustStoreHash)->toBe($settings['ca_sha256'])
-            ->and($localNodeMirrorCount)->toBe('0');
+            ->and($localNodeMirrorCount)->toBe('2');
 
         $rerun = E2ECommand::ssh(
             $control,

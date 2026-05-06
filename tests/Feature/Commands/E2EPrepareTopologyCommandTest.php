@@ -42,31 +42,31 @@ function fakeBundleProcessing(): void
 
 it('defaults to control-gateway-dev-prod kind', function (): void {
     $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-prod-control')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-prod-gateway')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-prod-dev')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-prod-prod')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway-dev-prod)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway-dev-prod)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-control-gateway-dev-prod)')
+        ->expectsOutputToContain('planned: orbit-template-prod (snapshot: clean-control-gateway-dev-prod)')
         ->assertSuccessful();
 });
 
 it('supports control kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'control'])
-        ->expectsOutputToContain('orbit-template-control-control')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control)')
         ->assertSuccessful();
 });
 
 it('supports control-gateway kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'control-gateway'])
-        ->expectsOutputToContain('orbit-template-control-gateway-control')
-        ->expectsOutputToContain('orbit-template-control-gateway-gateway')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway)')
         ->assertSuccessful();
 });
 
 it('supports control-gateway-dev kind', function (): void {
     $this->artisan('e2e:prepare-topology', ['kind' => 'control-gateway-dev'])
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-control')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-gateway')
-        ->expectsOutputToContain('orbit-template-control-gateway-dev-dev')
+        ->expectsOutputToContain('planned: orbit-template-control (snapshot: clean-control-gateway-dev)')
+        ->expectsOutputToContain('planned: orbit-template-gateway (snapshot: clean-control-gateway-dev)')
+        ->expectsOutputToContain('planned: orbit-template-dev (snapshot: clean-control-gateway-dev)')
         ->assertSuccessful();
 });
 
@@ -90,7 +90,7 @@ it('outputs json for dry run with default kind', function (): void {
         $templates[] = [
             'role' => $role,
             'name' => IncusTopologyTemplate::templateName($kind, $role),
-            'snapshot' => 'clean',
+            'snapshot' => IncusTopologyTemplate::snapshotName($kind),
         ];
     }
 
@@ -118,7 +118,7 @@ it('outputs json for each supported kind', function (string $kindValue, int $exp
         $templates[] = [
             'role' => $role,
             'name' => IncusTopologyTemplate::templateName($kind, $role),
-            'snapshot' => 'clean',
+            'snapshot' => IncusTopologyTemplate::snapshotName($kind),
         ];
     }
 
@@ -175,7 +175,7 @@ it('--force uses the default Incus host when host environment is unset', functio
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
     ];
     $selectedHost = null;
 
@@ -216,7 +216,7 @@ it('--force builds the source archive and forwards the bundle path to the builde
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
     ];
     $forwardedBundle = null;
 
@@ -247,7 +247,7 @@ it('--force records prepare topology phase timings', function (): void {
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
     ];
     $capturedTimer = null;
 
@@ -273,6 +273,7 @@ it('--force records prepare topology phase timings', function (): void {
     $eventNames = array_column($capturedTimer?->events() ?? [], 'name');
 
     expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
+        ->and($capturedTimer->streamsCheckpoints())->toBeTrue()
         ->and($eventNames)->toContain('bundle.local')
         ->and($eventNames)->toContain('bundle.push')
         ->and($eventNames)->toContain('builder.build')
@@ -284,7 +285,7 @@ it('--branch uses git archive instead of tar', function (): void {
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
@@ -312,7 +313,7 @@ it('--source-archive forwards the provided archive', function (): void {
 
     try {
         $manifest = [
-            ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+            ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
         ];
 
         $builder = m::mock(IncusTopologyBuilder::class);
@@ -372,7 +373,7 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'control', 'name' => 'orbit-template-control-control', 'snapshot' => 'clean'],
+        ['role' => 'control', 'name' => 'orbit-template-control', 'snapshot' => 'clean-control'],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
@@ -411,7 +412,7 @@ it('--force surfaces builder failure as command failure', function (): void {
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle');
     $builder->shouldReceive('build')
-        ->andThrow(new RuntimeException('Required source image [orbit-base-ubuntu-26.04] not found.'));
+        ->andThrow(new RuntimeException('Required blank image [orbit-blank-ubuntu-26.04] not found.'));
 
     $command = app(E2EPrepareTopologyCommand::class);
     $command->setBuilderFactory(fn () => $builder);
@@ -421,6 +422,6 @@ it('--force surfaces builder failure as command failure', function (): void {
         'kind' => 'control',
         '--force' => true,
     ])
-        ->expectsOutputToContain('Required source image [orbit-base-ubuntu-26.04] not found.')
+        ->expectsOutputToContain('Required blank image [orbit-blank-ubuntu-26.04] not found.')
         ->assertFailed();
 });

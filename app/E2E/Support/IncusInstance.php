@@ -147,7 +147,7 @@ final class IncusInstance implements E2EInstance
         $deadline = time() + $this->host->config->timeoutSeconds;
 
         while (time() < $deadline) {
-            $ipv4 = $this->ipv4();
+            $ipv4 = $this->providerIpv4();
 
             if ($ipv4 !== null) {
                 $this->ipv4 = $ipv4;
@@ -249,10 +249,10 @@ final class IncusInstance implements E2EInstance
         }
     }
 
-    private function ipv4(): ?string
+    private function providerIpv4(): ?string
     {
         $result = $this->host->run(sprintf(
-            "incus list %s --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true",
+            "incus list %s --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -v '^10\\.6\\.' | head -n 1 || true",
             escapeshellarg($this->name),
         ), timeoutSeconds: 10);
 

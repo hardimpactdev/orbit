@@ -13,7 +13,11 @@ final readonly class E2EBaseProvisioner
 
     public function provision(E2ERun $run, string $suffix, string $role, ?string $controlUser = null): E2EInstance
     {
-        $instance = $run->launchBase($suffix);
+        if ($role !== 'control') {
+            throw new \RuntimeException("E2E direct provisioning only installs control nodes; got [{$role}].");
+        }
+
+        $instance = $run->launchBlank($suffix);
 
         $this->provider->host->waitForCloudInit($instance->name());
         $instance->waitForAgent();

@@ -327,7 +327,7 @@ Orbit runs from source.
 Control node setup is local:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash -s -- --role=control
+curl -fsSL https://raw.githubusercontent.com/hardimpactdev/orbit/main/bin/install-orbit | bash
 ```
 
 The installer prepares the host before Orbit can run: it installs PHP, Composer,

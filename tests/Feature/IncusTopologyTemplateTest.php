@@ -72,7 +72,9 @@ it('maps each topology kind to expected roles', function (): void {
 
 it('generates correct template and clone names', function (): void {
     expect(IncusTopologyTemplate::templateName(E2ETopologyKind::ControlGateway, 'gateway'))
-        ->toBe('orbit-template-control-gateway-gateway')
+        ->toBe('orbit-template-gateway')
+        ->and(IncusTopologyTemplate::snapshotName(E2ETopologyKind::ControlGateway))
+        ->toBe('clean-control-gateway')
         ->and(IncusTopologyTemplate::cloneName('abc123', 'control'))
         ->toBe('orbit-e2e-abc123-control');
 });
@@ -83,9 +85,10 @@ it('returns true when all template instances and clean snapshots exist', functio
         ->once()
         ->withArgs(function (string $command, int $timeoutSeconds): bool {
             return $timeoutSeconds === 30
-                && str_contains($command, 'orbit-template-control-gateway-dev-control')
-                && str_contains($command, 'orbit-template-control-gateway-dev-gateway')
-                && str_contains($command, 'orbit-template-control-gateway-dev-dev')
+                && str_contains($command, 'orbit-template-control')
+                && str_contains($command, 'orbit-template-gateway')
+                && str_contains($command, 'orbit-template-dev')
+                && str_contains($command, 'clean-control-gateway-dev')
                 && substr_count($command, 'grep -q') === 3;
         })
         ->andReturn(successfulProcessResult());
@@ -221,7 +224,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
 
     // Every role gets a backgrounded copy with a captured pid.
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        expect($script)->toContain("incus copy 'orbit-template-control-gateway-dev-prod-{$role}/clean' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain("incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
     }
@@ -230,7 +233,7 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
     // copy/wait/limits/start/wait, in that order).
     $firstStartPos = strpos($script, 'incus start');
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
-        $copyPos = strpos($script, "incus copy 'orbit-template-control-gateway-dev-prod-{$role}/clean'");
+        $copyPos = strpos($script, "incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod'");
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
 });
@@ -246,8 +249,8 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::ControlGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-control-gateway-control/clean' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-control-gateway-gateway/clean' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)->toContain("incus copy 'orbit-template-control/clean-control-gateway' 'orbit-e2e-runZ-control' --storage 'orbit-e2e' &")
+        ->and($script)->toContain("incus copy 'orbit-template-gateway/clean-control-gateway' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
 it('enables stateful migration before starting clones when stateful reset is requested', function (): void {

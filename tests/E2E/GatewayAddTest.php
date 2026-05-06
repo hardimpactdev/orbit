@@ -2,13 +2,10 @@
 
 declare(strict_types=1);
 
-use App\E2E\Support\E2EBaseProvisioner;
 use App\E2E\Support\E2ECommand;
 use App\E2E\Support\E2EConfig;
-use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2EImage;
 use App\E2E\Support\E2EInstance;
-use App\E2E\Support\E2ENetwork;
 use App\E2E\Support\E2EProvisioningBundle;
 use App\E2E\Support\E2ERun;
 use App\E2E\Support\IncusProvider;
@@ -20,7 +17,7 @@ pest()->group('e2e-provision');
 it('derives the gateway IP and joins a provisioned gateway from a provisioned control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
-    $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
+    $selection = (new ProviderPool([$provider]))->select(E2EImage::Blank);
 
     if (! $selection->available()) {
         $this->markTestSkipped($selection->message);
@@ -32,29 +29,16 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
 
     try {
         $bundle = E2EProvisioningBundle::stage($provider);
-        $provisioner = new E2EBaseProvisioner($provider, $bundle);
         $key = $run->createSshKeyPair();
-        $control = e2eProvisionStep('provision control from base', fn () => $provisioner->provision($run, 'control', 'control', $config->controlUser));
-        $gateway = e2eProvisionStep('provision gateway from base', fn () => $provisioner->provision($run, 'gateway', 'gateway'));
-
-        $control->authorizeSsh($config->controlUser, $key);
-        $gateway->authorizeSsh('orbit', $key);
-
-        $control->waitForSsh($config->controlUser, $key);
-        $gateway->waitForSsh('orbit', $key);
+        $control = e2eProvisionControlFromBlank($provider, $run, $bundle, $config, $key);
+        [$gateway] = e2eProvisionGatewayThroughNodeNew($provider, $run, $config, $control, $key);
 
         $controlIp = $control->waitForIpv4();
         $gatewayIp = $gateway->waitForIpv4();
 
         expect($controlIp)->not->toBe($gatewayIp);
 
-        E2ENetwork::assignWireGuardIp($control, '10.6.0.3');
-        E2ENetwork::assignWireGuardIp($gateway, '10.6.0.2');
-        E2ENetwork::routeWireGuardPeer($control, '10.6.0.2', $gatewayIp, '10.6.0.3');
-        E2ENetwork::routeWireGuardPeer($gateway, '10.6.0.3', $controlIp, '10.6.0.2');
-        E2EGatewayApi::seedControlIdentity($gateway, $controlIp, $config->controlUser);
-        E2EGatewayApi::start($gateway, 'gateway-add');
-        E2EGatewayApi::waitForGatewayApi($control, $config->controlUser, $key);
+        gatewayAddE2EResetControlState($control, $config->controlUser, $key);
 
         $gatewayAdd = E2ECommand::ssh(
             $control,
@@ -67,7 +51,7 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
         $payload = json_decode(trim($gatewayAdd->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($payload['success']['data']['result']['action'])->toBe('added')
-            ->and($payload['success']['data']['gateway']['name'])->toBe('gateway')
+            ->and($payload['success']['data']['gateway']['name'])->toBe('gateway-1')
             ->and($payload['success']['data']['gateway']['addresses']['wireguard'])->toBe('10.6.0.2')
             ->and($payload['success']['data']['local_node']['name'])->toBe('control-1')
             ->and($payload['success']['data']['local_node']['addresses']['wireguard'])->toBe('10.6.0.3')
@@ -131,6 +115,22 @@ it('derives the gateway IP and joins a provisioned gateway from a provisioned co
         $bundle?->cleanup();
     }
 });
+
+function gatewayAddE2EResetControlState(E2EInstance $control, string $controlUser, SshKeyPair $key): void
+{
+    $php = <<<'PHP'
+\Illuminate\Support\Facades\DB::table('local_gateway_settings')->delete();
+\Illuminate\Support\Facades\DB::table('wireguard_peers')->delete();
+\Illuminate\Support\Facades\DB::table('nodes')->delete();
+PHP;
+
+    E2ECommand::ssh(
+        $control,
+        $controlUser,
+        $key,
+        'cd /home/'.$controlUser.'/orbit && php artisan tinker --execute='.escapeshellarg($php),
+    );
+}
 
 /**
  * @return array<string, mixed>

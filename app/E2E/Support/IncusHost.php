@@ -90,8 +90,9 @@ class IncusHost
     }
 
     /**
-     * Push a remote bundle into an Incus instance and run bin/e2e-provision-node
-     * inside it. Throws if any step fails.
+     * Push a remote bundle into an Incus instance and run the control-node
+     * installer inside it. Gateway and app topology roles are provisioned later
+     * through node:new from the prepared control node.
      */
     public function provisionInstance(
         string $instanceName,
@@ -100,6 +101,10 @@ class IncusHost
         ?string $controlUser = null,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
+        if ($role !== 'control') {
+            throw new RuntimeException("Incus topology provisioning only installs control nodes directly; got [{$role}].");
+        }
+
         $bundleTarget = "{$instanceName}/tmp/";
 
         $clearExistingBundle = $this->run(sprintf(
