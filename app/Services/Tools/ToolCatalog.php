@@ -89,7 +89,7 @@ final readonly class ToolCatalog
                 'install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'credentials', 'safe-fix', 'safe-adopt',
             ],
             'php' => ['install', 'remove', 'update'],
-            'polyscope-server', 'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'safe-fix'],
+            'polyscope-server', 'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'safe-fix'],
             default => [],
         };
     }
@@ -132,6 +132,20 @@ final readonly class ToolCatalog
         return match ($tool) {
             'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => $this->dockerComposeInstallScript($tool, $config),
             'composer', 'caddy', 'gh' => $this->probeMetadata($tool)['update_command'] ?? null,
+            default => null,
+        };
+    }
+
+    public function reconfigureScript(string $tool, array $config = []): ?string
+    {
+        if (! $this->hasCapability($tool, 'reconfigure')) {
+            return null;
+        }
+
+        // Reconfigure scripts are tool-specific and will be expanded as needed.
+        // Currently only polyscope-server and opencode-server declare this capability.
+        return match ($tool) {
+            'polyscope-server', 'opencode-server' => 'echo "reconfigure not yet implemented for '.$tool.'"',
             default => null,
         };
     }
