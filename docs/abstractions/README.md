@@ -29,14 +29,14 @@ because its command docs were converted.
    edits. If the family file is missing, the worker should mark the todo
    `needs-direction` instead of inventing patterns.
 3. **Post-family review pass.** When all read commands in a family are ported,
-   or when a deliberate subset proves the implementation shape, `docs/PORTING.md`
+   or when a deliberate subset proves the implementation shape, `docs/porting/PORTING.md`
    lists a concrete family-review candidate. The pipeline filler turns that
    candidate into a normal Solo worker todo tagged `family-review`.
 4. **No next family implementation while review is open.** The next family's
    abstraction seed may be authored in parallel once the previous family-review
    candidate exists. The next family's implementation todos wait until the
    previous `family-review` todo is merged or explicitly deferred in
-   `docs/PORTING.md`.
+   `docs/porting/PORTING.md`.
 
 ## Promotion Rules
 

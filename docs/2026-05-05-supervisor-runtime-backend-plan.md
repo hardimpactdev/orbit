@@ -4,7 +4,7 @@
 
 **Goal:** Update Orbit's product documentation so processes and schedules are defined in concept-first terms, with Supervisor as the runtime backend and a resident `orbit-scheduler` daemon as the executor for recurring work. Replace systemd as the product-level runtime, not parallelize alongside it.
 
-**Architecture:** Documentation changes only. The clean-rebuild process and schedule code is not yet ported (`docs/PORTING.md` shows both workstreams entirely `[ ]`), so there is no in-clean-repo migration burden. Old systemd evidence in `../orbit-old-may` remains porting reference, not canon.
+**Architecture:** Documentation changes only. The clean-rebuild process and schedule code is not yet ported (`docs/porting/PORTING.md` shows both workstreams entirely `[ ]`), so there is no in-clean-repo migration burden. Old systemd evidence in `../orbit-old-may` remains porting reference, not canon.
 
 **Tech Stack:** Laravel CLI documentation, Orbit command contracts, Supervisor (`supervisord`), `orbit-scheduler` Artisan-command daemon supervised by Supervisor, Incus E2E, Docker E2E.
 
@@ -31,7 +31,7 @@ App-node platform support is not changing in this plan. Gateways and app nodes r
 - Modify `docs/commands/9_schedule/README.md`, `docs/commands/9_schedule/schedule-concepts.md`, `docs/commands/9_schedule/schedule-doctor.md`, and `docs/commands/9_schedule/*/technical/*.md`.
 - Modify `docs/commands/6_workspace/README.md`, `docs/commands/6_workspace/workspace-concepts.md`, and the technical contracts that reference inherited process runtime artifacts.
 - Modify `TESTING.md`: provider capability matrix and E2E selection rules.
-- Modify `docs/PORTING.md`: add a Supervisor / Scheduler workstream and update Process and Schedule workstream pointers.
+- Modify `docs/porting/PORTING.md`: add a Supervisor / Scheduler workstream and update Process and Schedule workstream pointers.
 
 ## Runtime Vocabulary
 
@@ -1150,7 +1150,7 @@ git commit -m "docs(testing): runtime backend provider capability matrix"
 ## Task 9: PORTING.md
 
 **Files:**
-- Modify `docs/PORTING.md`
+- Modify `docs/porting/PORTING.md`
 
 - [x] **Step 1: Update the Process Workstream**
 
@@ -1256,7 +1256,7 @@ real WireGuard, trust-store mutation, and VPS-adjacent behavior.
 commit:
 
 ```bash
-git add docs/PORTING.md
+git add docs/porting/PORTING.md
 git commit -m "docs(porting): add runtime backend and scheduler workstream"
 ```
 

@@ -70,7 +70,7 @@
 - `tests/Feature/Services/Gateway/FetchGatewayRootCaTest.php`, `GatewayApiRuntimeInstallerTest.php`
 
 **Docs updated (final task):**
-- `docs/PORTING.md` — reverse `GATEWAY-API-0` decision, document new rationale
+- `docs/porting/PORTING.md` — reverse `GATEWAY-API-0` decision, document new rationale
 - `docs/abstractions/cross-cutting.md` — replace transport pattern guidance
 
 ---
@@ -2470,17 +2470,17 @@ git commit -m "refactor(gateway): remove hand-rolled HTTP abstraction in favor o
 ### Task 13: Reverse GATEWAY-API-0 docs decision + update cross-cutting guidance
 
 **Files:**
-- Modify: `docs/PORTING.md` (`GATEWAY-API-0` section, ~lines 845-926)
+- Modify: `docs/porting/PORTING.md` (`GATEWAY-API-0` section, ~lines 845-926)
 - Modify: `docs/abstractions/cross-cutting.md` (transport pattern section)
 
 - [ ] **Step 1: Read both files** to find the exact sections.
 
 ```bash
-grep -n "GATEWAY-API-0" docs/PORTING.md
+grep -n "GATEWAY-API-0" docs/porting/PORTING.md
 grep -n "Gateway API\|GatewayClient\|GatewayRequestSender" docs/abstractions/cross-cutting.md
 ```
 
-- [ ] **Step 2: Rewrite the `GATEWAY-API-0` section in `docs/PORTING.md`**
+- [ ] **Step 2: Rewrite the `GATEWAY-API-0` section in `docs/porting/PORTING.md`**
 
 Replace the existing decision block (the one currently saying "Decided — thin `GatewayClient` wrapper over Laravel `Http` facade") with:
 
@@ -2582,7 +2582,7 @@ Expected: green.
 - [ ] **Step 7: Commit docs**
 
 ```bash
-git add docs/PORTING.md docs/abstractions/cross-cutting.md
+git add docs/porting/PORTING.md docs/abstractions/cross-cutting.md
 git commit -m "docs(gateway): reverse GATEWAY-API-0 decision in favor of Saloon"
 ```
 

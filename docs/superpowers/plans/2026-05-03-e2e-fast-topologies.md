@@ -103,7 +103,7 @@ Incus host selection:
 - Modify: `tests/Pest.php`
 - Modify: `composer.json`
 - Modify: `TESTING.md`
-- Modify: `docs/PORTING.md`
+- Modify: `docs/porting/PORTING.md`
 
 - [ ] Add two Pest groups while preserving the existing `e2e` group:
 
@@ -786,7 +786,7 @@ Expected: pass.
 **Files:**
 
 - Modify: `TESTING.md`
-- Modify: `docs/PORTING.md`
+- Modify: `docs/porting/PORTING.md`
 - Modify: `docs/commands/README.md` if command testing guidance mentions E2E lanes.
 
 Document:

@@ -50,7 +50,7 @@ That's the full design. Everything else is code organization.
 - `app/Console/Commands/E2EPrepareIncusImagesCommand.php` — accept only `blank` (existing). Remove `control`/`gateway`/`devapp`/`prodapp` role inputs entirely. The base image is built via `e2e:prepare-base-image`.
 - `composer.json` — add `e2e:prepare-base-image` script alongside the existing `e2e:prepare-incus-images`.
 - `TESTING.md` — replace the "Ready image aliases" section with the base-image lane. Drop `ORBIT_E2E_CONTROL_IMAGE` / `ORBIT_E2E_GATEWAY_IMAGE` / dev / prod env vars; add `ORBIT_E2E_BASE_IMAGE`.
-- `docs/PORTING.md` — add `[~] E2E-IMAGE-ARCH-1` under "Testing Infrastructure" with a checklist mirroring the tasks below.
+- `docs/porting/PORTING.md` — add `[~] E2E-IMAGE-ARCH-1` under "Testing Infrastructure" with a checklist mirroring the tasks below.
 
 ### Deleted (same PR)
 
@@ -102,7 +102,7 @@ That's the full design. Everything else is code organization.
 - [ ] Strip `control`/`gateway`/`devapp`/`prodapp` role inputs from `E2EPrepareIncusImagesCommand`.
 - [ ] One-shot host cleanup: `ssh beast 'incus image delete orbit-ready-{control,gateway,devapp,prodapp} || true'`.
 - [ ] Drop `controlImage`, `gatewayImage`, dev/prod aliases from `E2EConfig`. Add `baseImageAlias`.
-- [ ] Update `TESTING.md` and `docs/PORTING.md` per the File Map.
+- [ ] Update `TESTING.md` and `docs/porting/PORTING.md` per the File Map.
 
 ### Task 6 — Wall-time check
 
@@ -179,5 +179,5 @@ composer test:live
 
 Title: `E2E-IMAGE-ARCH-1: stable base image + per-run Orbit provisioner`
 Tags: `e2e`, `infra`, `harness-author`
-Status entry path: `[~] E2E-IMAGE-ARCH-1` under `## Testing Infrastructure` in `docs/PORTING.md`.
+Status entry path: `[~] E2E-IMAGE-ARCH-1` under `## Testing Infrastructure` in `docs/porting/PORTING.md`.
 Lane: implementer (not e2e-gate). On land: todo `254 / E2E-NODE-READ-1` flips to dispatchable. Other E2E-NODE-* gate todos that today say "skipped: prepared topology unavailable" become dispatchable too.

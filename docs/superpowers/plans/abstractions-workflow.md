@@ -14,7 +14,7 @@ should not duplicate those product rules. It should be an implementation-pattern
 index that points workers at proven code and test shapes before they write new
 command code.
 
-`docs/PORTING.md` also contains historical abstraction decisions, especially
+`docs/porting/PORTING.md` also contains historical abstraction decisions, especially
 the Gateway API transport workstream. Those decisions are useful evidence, but
 they are buried inside the tracker and are not part of the implementer prompt's
 read-first context.
@@ -56,7 +56,7 @@ These docs are not product authority. Product behavior remains in
 
 ## Approaches Considered
 
-1. **Leave patterns inside `docs/PORTING.md`.** Lowest upfront work, but the
+1. **Leave patterns inside `docs/porting/PORTING.md`.** Lowest upfront work, but the
    file is already a tracker, decision log, and work queue. Workers can miss the
    relevant sections.
 2. **Create code abstractions immediately.** Tempting for caller-role
@@ -186,7 +186,7 @@ Pointers:
 - `docs/BLUEPRINT.md`
 - `docs/BUILDING-BLOCKS.md`
 - `docs/commands/1_node/README.md`
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 
 Decision matrix:
 
@@ -203,7 +203,7 @@ Decision matrix:
 
 Pointers:
 
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 - `TESTING.md`
 - `composer.json`
 - `tests/E2E/**`
@@ -218,7 +218,7 @@ Lane decision matrix:
 - `none`: docs-only work, pure refactors, or commands with no observable
   runtime behavior outside Pest.
 
-`TESTING.md` and `docs/PORTING.md` remain the authority for lane names, safety,
+`TESTING.md` and `docs/porting/PORTING.md` remain the authority for lane names, safety,
 and current command invocations. This entry only keeps the decision point in the
 worker's read-first context.
 
@@ -317,7 +317,7 @@ Evidence pointers:
 
 ## Workflow Gates
 
-Encode in `docs/PORTING.md` and the solo implementer prompt:
+Encode in `docs/porting/PORTING.md` and the solo implementer prompt:
 
 1. **Pre-implementation gate per family.** Before the first implementation todo
    for a family is promoted to `worker-ready`, `docs/abstractions/<n>_<family>.md`
@@ -328,7 +328,7 @@ Encode in `docs/PORTING.md` and the solo implementer prompt:
    `needs-direction` instead of inventing patterns.
 3. **Post-family review pass.** When all read commands in a family are ported,
    or when a deliberate subset proves the implementation shape,
-   `docs/PORTING.md` must list a concrete family-review candidate. The
+   `docs/porting/PORTING.md` must list a concrete family-review candidate. The
    pipeline filler turns that candidate into a normal Solo worker todo tagged
    `family-review`. The review compares the family against other implemented
    families, promotes patterns with two or more concrete callers into
@@ -338,7 +338,7 @@ Encode in `docs/PORTING.md` and the solo implementer prompt:
    abstraction seed may be authored in parallel once the previous family's
    family-review candidate exists. The next family's implementation todos must
    not be promoted to `worker-ready` until the previous `family-review` todo is
-   merged or explicitly deferred in `docs/PORTING.md` with a reason.
+   merged or explicitly deferred in `docs/porting/PORTING.md` with a reason.
 
 `family-review` is a normal Solo worker todo kind, not a new Solo phase or
 dispatcher path. It follows the standard worker lifecycle (`draft` ->
@@ -356,7 +356,7 @@ refactor scope.
    above.
 4. Write `docs/abstractions/1_node.md`, `2_gateway.md`, and
    `11_operation.md`.
-5. Update `docs/PORTING.md`:
+5. Update `docs/porting/PORTING.md`:
    - add a top-of-file pointer to `docs/abstractions/`;
    - add the four workflow gates to `## Rules`;
    - update `## Implementation Order` so family implementation begins only
@@ -367,9 +367,9 @@ refactor scope.
    - add explicit family-review candidate rows to the relevant queue sections,
      starting with the node-family review candidate after the current
      read-forwarding chain proves the shape with `node:list` and `node:show`.
-6. Move reusable Gateway API transport guidance from `docs/PORTING.md` into
+6. Move reusable Gateway API transport guidance from `docs/porting/PORTING.md` into
    `docs/abstractions/cross-cutting.md` once it exists, leaving only tracker
-   status and historical decision evidence in `docs/PORTING.md`.
+   status and historical decision evidence in `docs/porting/PORTING.md`.
 7. Update `docs/superpowers/plans/solo-orchestration/implementer.md` so the tick
    procedure requires reading `docs/abstractions/cross-cutting.md` and the
    relevant family file for command-port todos.
@@ -379,11 +379,11 @@ refactor scope.
 9. Update pipeline filler and todo scout prompts to read the family-review
    template when creating or validating todos tagged `family-review`.
 10. Keep the Solo orchestration loop generic. Do not add a `family-review`
-   phase tag or dispatcher. `docs/PORTING.md` carries candidate queue entries;
+   phase tag or dispatcher. `docs/porting/PORTING.md` carries candidate queue entries;
    the dedicated template carries todo shape.
 11. Do not create placeholder files for every converted command family yet. The
    first just-in-time seed after the initial set should be the next family that
-   receives implementation todos. Based on current `docs/PORTING.md` ordering,
+   receives implementation todos. Based on current `docs/porting/PORTING.md` ordering,
    that is `5_app.md` after node-family review; if the Solo queue promotes a
    different family first, create that family seed instead.
 12. Run documentation verification relevant to touched files. If command docs or
@@ -393,8 +393,8 @@ refactor scope.
 Done when `docs/abstractions/README.md`,
 `docs/abstractions/cross-cutting.md`, `docs/abstractions/1_node.md`,
 `docs/abstractions/2_gateway.md`, and `docs/abstractions/11_operation.md`
-exist; `docs/PORTING.md` references them at the top and in `## Rules`;
-`docs/PORTING.md` contains a family-review pointer and at least the first
+exist; `docs/porting/PORTING.md` references them at the top and in `## Rules`;
+`docs/porting/PORTING.md` contains a family-review pointer and at least the first
 node-family review candidate; the dedicated family-review todo template exists;
 pipeline filler and todo scout read that template for `family-review` todos;
 and `implementer.md` includes the read-first step.
@@ -436,7 +436,7 @@ and `implementer.md` includes the read-first step.
    after the node-family review; the Solo queue may override this if it
    deliberately promotes another family first.
 2. Post-family review representation: list concrete family-review candidates in
-   `docs/PORTING.md`; pipeline-filler creates normal worker todos tagged
+   `docs/porting/PORTING.md`; pipeline-filler creates normal worker todos tagged
    `family-review` from those entries using the dedicated family-review todo
    template. Do not rely on a human-triggered memory step.
 3. Gate 4 concurrency: the next family's abstraction seed may proceed while the

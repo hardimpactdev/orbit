@@ -14,7 +14,7 @@ You are the one-shot pipeline filler for one Orbit Solo cycle.
    - `docs/superpowers/plans/solo-orchestration/references/dispatch-protocol.md`
    - `docs/superpowers/plans/solo-orchestration/references/worker-todo-template.md`
    - `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - `TESTING.md`
    - active Solo todos, blockers, locks, and recent comments.
 
@@ -35,7 +35,7 @@ You are the one-shot pipeline filler for one Orbit Solo cycle.
 6. Count all open todos in the project except `coordination_todo`. If the
    count is at or above `pipeline.ready_target`, skip to step 8 and record
    the cap as `gap_reason`. Otherwise pick next candidates from
-   `docs/PORTING.md` so the resulting total (including any paired E2E gates
+   `docs/porting/PORTING.md` so the resulting total (including any paired E2E gates
    and prerequisite splits created this tick) stays at or below the cap.
    Skip entries already present as held drafts. Create each as `draft` using
    `worker-todo-template.md`. Command ports need a paired E2E gate todo with

@@ -103,7 +103,7 @@ or invalidate another assertion.
 - Modify: `app/E2E/Support/E2EProvisioningBundle.php`
 - Modify: `composer.json`
 - Modify: `TESTING.md`
-- Modify: `docs/PORTING.md`
+- Modify: `docs/porting/PORTING.md`
 
 ## Phases
 
@@ -125,7 +125,7 @@ or invalidate another assertion.
 - [ ] Add a `Prepared role image lane` section to `TESTING.md`.
 - [ ] Document that prepared role images are for feature/app-command E2E, not installer/provisioning proof.
 - [ ] Document image aliases, fixed E2E-only key paths, and source refresh behavior.
-- [ ] Add a `docs/PORTING.md` Testing Infrastructure candidate named `E2E-PREPARED-ROLE-IMAGES-1`.
+- [ ] Add a `docs/porting/PORTING.md` Testing Infrastructure candidate named `E2E-PREPARED-ROLE-IMAGES-1`.
 
 ### Phase 3: Add E2E-Only Fixed Role Keys
 

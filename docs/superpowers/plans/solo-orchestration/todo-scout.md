@@ -11,7 +11,7 @@ You are the one-shot scout for exactly one draft Solo todo.
    - `docs/superpowers/plans/solo-orchestration/references/family-review-todo-template.md`
      when the assigned todo is tagged `family-review`
    - the assigned todo and comments
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - product docs named by the todo
    - relevant `docs/commands/**`
    - relevant `../orbit-old-may` evidence

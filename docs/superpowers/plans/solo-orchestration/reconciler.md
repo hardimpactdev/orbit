@@ -21,7 +21,7 @@ You are the one-shot reconciler for one Orbit Solo cycle.
    - `REVIEW_APPROVED` is present and the latest `E2E_DONE` for the todo's
      declared lane has `status=PASSED`.
 
-   Sort the queue in `docs/PORTING.md` order, then by todo id.
+   Sort the queue in `docs/porting/PORTING.md` order, then by todo id.
 
 5. For each queued todo, in order, run the merge sub-procedure at
    `docs/superpowers/plans/solo-orchestration/references/worktree/merge.md`.

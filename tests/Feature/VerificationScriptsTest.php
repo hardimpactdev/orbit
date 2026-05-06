@@ -82,10 +82,10 @@ it('documents the supported verification lanes', function (): void {
 });
 
 it('keeps active porting and orchestration docs on current e2e script names', function (): void {
-    $porting = file_get_contents(base_path('docs/PORTING.md'));
+    $testingInfra = file_get_contents(base_path('docs/porting/testing-infrastructure.md'));
     $orchestration = file_get_contents(base_path('docs/superpowers/plans/solo-orchestration/README.md'));
 
-    expect($porting)
+    expect($testingInfra)
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:provision')
         ->not->toContain('composer test:e2e:features')

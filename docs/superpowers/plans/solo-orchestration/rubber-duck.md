@@ -10,13 +10,13 @@ You are one rubber duck in a two-agent blocker review.
    - the blocker comment named by the orchestrator
    - product docs named by the todo
    - relevant `docs/commands/**` authoritive on how features need to work
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - relevant `../orbit-old-may` evidence
    - current code/tests touching the blocker.
 
    Do not consult the other duck.
 
-2. Apply the evidence stack — current docs, then `docs/PORTING.md`, then
+2. Apply the evidence stack — current docs, then `docs/porting/PORTING.md`, then
    `../orbit-old-may`, then current code/tests — and return `verdict=PATH`
    only if that stack selects one safe path aligned with the clean rebuild.
    Otherwise return `verdict=NEEDS_USER_DIRECTION`.

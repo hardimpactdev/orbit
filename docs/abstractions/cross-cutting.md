@@ -180,7 +180,7 @@ the product topology before implementing forwarding or node-side execution.
 - `docs/BLUEPRINT.md`
 - `docs/BUILDING-BLOCKS.md`
 - `docs/commands/1_node/README.md`
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 
 **Decision matrix:**
 
@@ -200,7 +200,7 @@ duplicating the full testing contract.
 
 **Current pointers:**
 
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 - `TESTING.md`
 - `composer.json`
 - `tests/E2E/**`
@@ -215,7 +215,7 @@ duplicating the full testing contract.
 - `none`: docs-only work, pure refactors, or commands with no observable
   runtime behavior outside Pest.
 
-`TESTING.md` and `docs/PORTING.md` remain the authority for lane names, safety,
+`TESTING.md` and `docs/porting/PORTING.md` remain the authority for lane names, safety,
 and current command invocations. This entry keeps the decision point in the
 worker's read-first context.
 

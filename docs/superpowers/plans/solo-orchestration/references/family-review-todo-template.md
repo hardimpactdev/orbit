@@ -39,7 +39,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 - `docs/abstractions/cross-cutting.md`
 - `docs/abstractions/<n>_<family>.md`
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 - `<family command docs and implementation files that prove the repeated shape>`
 - `<family tests that prove the repeated shape>`
 
@@ -77,7 +77,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 ### Owned Files Or Domains
 
 - `docs/abstractions/**`
-- `docs/PORTING.md`
+- `docs/porting/PORTING.md`
 - `<bounded family implementation/test files only if refactor is in scope>`
 
 ### Required Checks
@@ -87,7 +87,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 - Remove or rewrite duplicated family-local notes after promotion.
 - Identify refactor candidates and either make bounded refactors or create
   follow-up todos.
-- Evaluate any named promotion candidate from `docs/PORTING.md`.
+- Evaluate any named promotion candidate from `docs/porting/PORTING.md`.
 - Treat no-op as valid when no pattern meets the evidence threshold; record the
   negative finding in close-out and do not manufacture a promotion.
 
@@ -111,7 +111,7 @@ Run focused tests and `vendor/bin/pint --dirty --format agent` when PHP changes.
 - Evidence threshold is met for every promotion.
 - Authority boundaries are preserved; product behavior remains in command docs.
 - No placeholder abstraction files are added.
-- `docs/PORTING.md` sequencing reflects review outcome.
+- `docs/porting/PORTING.md` sequencing reflects review outcome.
 - No-op outcome is justified if nothing is promoted.
 
 ### Stop Conditions

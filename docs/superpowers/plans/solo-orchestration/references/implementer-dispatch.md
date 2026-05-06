@@ -16,7 +16,7 @@ to its own next step until every candidate has reached a terminal outcome
 
 2. Select up to `slots` candidate todos that are `worker-ready`, unblocked,
    unlocked, and not E2E gate todos. Order by `pipeline.dispatch_order`
-   precedence, then by `docs/PORTING.md` order.
+   precedence, then by `docs/porting/PORTING.md` order.
 
 3. For each candidate, run steps 4–8 in parallel.
 

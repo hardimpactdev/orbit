@@ -177,7 +177,7 @@ If `--domain` is supplied:
 
 Emitted through the gateway API Loggable contract when the forwarded control
 path lands. The initial gateway-local implementation slice is tracked in
-`docs/PORTING.md`; API activity emission remains part of the control-forwarding
+`docs/porting/PORTING.md`; API activity emission remains part of the control-forwarding
 slice.
 
 | Field | Value |

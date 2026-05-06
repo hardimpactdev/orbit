@@ -19,7 +19,7 @@ You are the long-lived implementer for exactly one Solo todo.
    - the assigned todo and all comments
    - product docs named by the todo
    - relevant `docs/commands/**`
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - for command-port todos:
      - `docs/abstractions/cross-cutting.md`
      - the matching `docs/abstractions/<n>_<family>.md`

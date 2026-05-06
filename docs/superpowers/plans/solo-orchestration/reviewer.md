@@ -12,7 +12,7 @@ You are the one-shot reviewer for exactly one Solo todo tagged `review-ready`.
    - latest `WORKER_DONE`
    - product docs named by the todo
    - relevant `docs/commands/**`
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - relevant `../orbit-old-may` evidence
    - assigned worktree path and branch from the todo's `Worktree Assignment`
    - other open todos that were `in-progress` while this work ran, plus

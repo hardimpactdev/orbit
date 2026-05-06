@@ -10,7 +10,7 @@ reviewer-approved implementation todo.
    - `docs/superpowers/plans/solo-orchestration/references/todo-state.md`
    - the assigned todo and comments
    - `TESTING.md`
-   - `docs/PORTING.md`
+   - `docs/porting/PORTING.md`
    - relevant `docs/commands/**`
    - assigned worktree path and branch from the todo's `Worktree Assignment`.
 
@@ -30,7 +30,7 @@ reviewer-approved implementation todo.
    For `e2e-feature`, reject any command that rebuilds images or templates
    to make branch code visible. Feature gates must use the prepared
    topology plus the checkout overlay/cache described in `TESTING.md` and
-   `docs/PORTING.md`.
+   `docs/porting/PORTING.md`.
 
 3. If lane is `none`, post
    `E2E_DONE status=SKIPPED lane=none reason=<todo's reason>` and jump to

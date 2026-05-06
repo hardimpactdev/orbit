@@ -145,7 +145,7 @@ role stops with `NEEDS_DIRECTION`.
 Use this evidence order when product or architecture choices fork:
 
 1. Current docs as product authority.
-2. `docs/PORTING.md` for migration order and tracker state.
+2. `docs/porting/PORTING.md` for migration order and tracker state.
 3. `../orbit-old-may` as legacy implementation evidence.
 4. Current code, tests, and todo comments as implementation evidence.
 
@@ -280,7 +280,7 @@ that a prompt landed.
 
 ## Manual Priority Todos
 
-`docs/PORTING.md` drives the auto-filled port pipeline via the pipeline filler.
+`docs/porting/PORTING.md` drives the auto-filled port pipeline via the pipeline filler.
 Other priority work — doc-driven feature changes, bug reports, ad-hoc requests —
 is created manually as Solo todos by the user. When product docs shift in ways
 that affect open work, the user revises sibling todos to match. Manually-created
@@ -341,7 +341,7 @@ assigned behavior conflicts with `docs/commands/**`, `docs/abstractions/**`,
 `docs/BLUEPRINT.md`, `docs/MISSION.md`, or `docs/CONCEPTS.md`, the worker marks
 the todo `needs-direction` instead of changing the contract locally. Product
 authority docs may change only through an explicit docs/design todo or direct
-human instruction. Progress and accounting docs such as `docs/PORTING.md` may be
+human instruction. Progress and accounting docs such as `docs/porting/PORTING.md` may be
 updated with implementation status, gate evidence, and accepted deferrals.
 
 For `e2e-feature` gates, prepared topology images and templates are reusable
@@ -369,4 +369,4 @@ The loop is complete only when:
 - each completed implementation todo has reviewer approval;
 - intended changes are committed to `main`;
 - required E2E has passed or a tracked blocker explains why it cannot run;
-- follow-up work is captured in Solo and, when durable, `docs/PORTING.md`.
+- follow-up work is captured in Solo and, when durable, `docs/porting/PORTING.md`.
