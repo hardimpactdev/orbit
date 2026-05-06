@@ -116,6 +116,51 @@ describe('ToolsProbe', function (): void {
                 'observed_state' => 'stopped',
             ]);
     });
+
+    it('detects missing managed config files when config intent declares a path and hash', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/redis/redis.conf',
+                    'hash' => str_repeat('a', 64),
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\trunning\t0\t\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.config_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects managed config hash mismatches', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/redis/redis.conf',
+                    'hash' => str_repeat('a', 64),
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\trunning\t1\t".str_repeat('b', 64)."\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
+                'path' => '/etc/redis/redis.conf',
+                'expected_hash' => str_repeat('a', 64),
+                'observed_hash' => str_repeat('b', 64),
+            ]);
+    });
 });
 
 final readonly class ToolsProbeRemoteShell implements RemoteShell

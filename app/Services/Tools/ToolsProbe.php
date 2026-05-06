@@ -42,7 +42,8 @@ final readonly class ToolsProbe
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
-        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version=""; state="unknown";';
+        $configPath = $this->managedConfigPath($tool);
+        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version=""; state="unknown"; config_exists=""; config_hash="";';
 
         if (is_string($versionCommand) && $versionCommand !== '') {
             $script .= ' version=$('.$versionCommand.' 2>/dev/null | head -n 1 || true);';
@@ -52,16 +53,21 @@ final readonly class ToolsProbe
             $script .= ' if systemctl is-active --quiet "$ORBIT_TOOL_SERVICE" 2>/dev/null; then state="running"; else state="stopped"; fi;';
         }
 
-        $script .= ' printf "%s\t%s\t%s\n" "$path" "$version" "$state"';
+        if ($configPath !== null) {
+            $script .= ' if [ -f "$ORBIT_TOOL_CONFIG_PATH" ]; then config_exists="1"; config_hash=$(sha256sum "$ORBIT_TOOL_CONFIG_PATH" | awk \'{print $1}\'); else config_exists="0"; fi;';
+        }
+
+        $script .= ' printf "%s\t%s\t%s\t%s\t%s\n" "$path" "$version" "$state" "$config_exists" "$config_hash"';
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
             'env' => [
                 'ORBIT_TOOL_BINARY' => $binary,
                 'ORBIT_TOOL_SERVICE' => is_string($service) ? $service : '',
+                'ORBIT_TOOL_CONFIG_PATH' => $configPath ?? '',
             ],
         ]);
-        $parts = explode("\t", trim($result->stdout), 3);
+        $parts = explode("\t", trim($result->stdout), 5);
 
         return new ProbeSnapshot([
             $tool->name => [
@@ -69,6 +75,8 @@ final readonly class ToolsProbe
                 'path' => ($parts[0] ?? '') !== '' ? $parts[0] : null,
                 'version' => ($parts[1] ?? '') !== '' ? $parts[1] : null,
                 'state' => ($parts[2] ?? '') !== '' ? $parts[2] : null,
+                'config_exists' => ($parts[3] ?? '') !== '' ? $parts[3] === '1' : null,
+                'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
             ],
         ]);
     }
@@ -85,6 +93,7 @@ final readonly class ToolsProbe
             ...$this->checkCapabilityPresence($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
             ...$this->checkLifecycleState($tool, $snapshot),
+            ...$this->checkConfigState($tool, $snapshot),
         ];
     }
 
@@ -267,5 +276,74 @@ final readonly class ToolsProbe
                 ],
             ),
         ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkConfigState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $path = $this->managedConfigPath($tool);
+        $expectedHash = $this->managedConfigHash($tool);
+
+        if ($path === null || $expectedHash === null) {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        if (($observed['config_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.config_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} managed configuration is missing.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'path' => $path,
+                    ],
+                ),
+            ];
+        }
+
+        $observedHash = is_string($observed['config_hash'] ?? null) ? $observed['config_hash'] : null;
+
+        if ($observedHash === null || hash_equals($expectedHash, $observedHash)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.config_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool {$tool->name} managed configuration differs from gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'path' => $path,
+                    'expected_hash' => $expectedHash,
+                    'observed_hash' => $observedHash,
+                ],
+            ),
+        ];
+    }
+
+    private function managedConfigPath(NodeTool $tool): ?string
+    {
+        $path = $tool->config['managed_config']['path'] ?? null;
+
+        return is_string($path) && $path !== '' ? $path : null;
+    }
+
+    private function managedConfigHash(NodeTool $tool): ?string
+    {
+        $hash = $tool->config['managed_config']['hash'] ?? null;
+
+        return is_string($hash) && $hash !== '' ? $hash : null;
     }
 }
