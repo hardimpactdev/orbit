@@ -1738,7 +1738,7 @@ for the Saloon-based gateway transport pattern.
       defines runtime config, managed ownership, stale artifact inventory, and
       adoption scan inputs, or explicitly narrow `workspace-doctor` to source,
       PHP, and FPM reality until lifecycle commands are unblocked.
-- [~] Port process doctor contracts and checks.
+- [x] Port process doctor contracts and checks.
   - [x] Registry-only `ProcessesProbe` foundation: process record completeness,
     owner-app eligibility, and runtime context expansion checks.
   - [x] Runtime backend availability checks.
