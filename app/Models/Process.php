@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -24,6 +25,8 @@ use Illuminate\Support\Carbon;
  */
 class Process extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'app_id',
         'name',

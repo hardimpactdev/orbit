@@ -1,0 +1,138 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Enums\ProcessCrashNotification;
+use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Process;
+use App\Models\Workspace;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const PROCESS_LIST_CALLER_WG_IP = '10.6.0.88';
+
+function createProcessListCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => PROCESS_LIST_CALLER_WG_IP,
+        'wireguard_address' => PROCESS_LIST_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantProcessListAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('ProcessListController', function (): void {
+    it('lists app processes in process order with runtime units', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        grantProcessListAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+            'command' => 'php artisan queue:work',
+            'restart_policy' => ProcessRestartPolicy::Always,
+            'crash_notification' => ProcessCrashNotification::None,
+            'sort_order' => 20,
+        ]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'vite',
+            'command' => 'npm run dev',
+            'restart_policy' => ProcessRestartPolicy::Never,
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'sort_order' => 10,
+        ]);
+
+        $response = $this->call('GET', '/api/processes?app=docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.context', ['app' => 'docs', 'workspace' => null])
+            ->assertJsonPath('success.data.processes.0.name', 'vite')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.processes.0.last_event', null)
+            ->assertJsonPath('success.data.processes.1.name', 'queue');
+    });
+
+    it('uses workspace context for inherited process runtime units', function (): void {
+        createProcessListCallerNode(['role' => 'gateway']);
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
+
+        $response = $this->call('GET', '/api/processes?app=docs&workspace=feature-docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.context', ['app' => 'docs', 'workspace' => 'feature-docs'])
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+    });
+
+    it('omits process intent hidden from the caller', function (): void {
+        $caller = createProcessListCallerNode();
+        $visibleNode = Node::factory()->create(['role' => 'app']);
+        $hiddenNode = Node::factory()->create(['role' => 'app']);
+        grantProcessListAccess($caller, $visibleNode);
+
+        App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
+        Process::factory()->create(['app_id' => $hiddenApp->id, 'name' => 'queue']);
+
+        $response = $this->call('GET', '/api/processes?app=hidden', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app');
+    });
+
+    it('returns authorization failure when the caller has no process visibility', function (): void {
+        createProcessListCallerNode();
+        $appNode = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id]);
+
+        $response = $this->call('GET', '/api/processes?app=docs', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'control');
+    });
+
+    it('returns validation errors for missing and unknown contexts', function (string $query, string $field): void {
+        createProcessListCallerNode(['role' => 'gateway']);
+        Node::factory()->create(['role' => 'app']);
+
+        $response = $this->call('GET', "/api/processes{$query}", [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', $field);
+    })->with([
+        'missing app' => ['', 'app'],
+        'unknown app' => ['?app=missing', 'app'],
+        'unknown workspace' => ['?workspace=missing', 'workspace'],
+    ]);
+
+    it('rejects unauthenticated requests', function (): void {
+        $response = $this->getJson('/api/processes?app=docs');
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
+    });
+});
