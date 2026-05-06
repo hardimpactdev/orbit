@@ -1380,7 +1380,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     DTOs, and focused API / gateway-client coverage.
   - [x] Run-history intake was already present through the authenticated
     `POST /api/schedules/runs` endpoint and typed scheduler gateway request.
-- [ ] Port schedule doctor probe and fix map.
+- [!] Port schedule doctor probe and fix map.
+  - Blocked by missing global `doctor` command/family dispatcher and doctor API
+    transport. Next action: implement the global doctor orchestration slice in
+    the State Families And Doctor Workstream, then wire the schedule-family
+    probe/fix map into that dispatcher.
 
 ## Runtime Backend And Scheduler Workstream
 
@@ -1422,8 +1426,8 @@ across the process and schedule families.
   - `SupervisorProgramRenderer` now lives under the runtime-backend service
     boundary and renders reusable Supervisor program definitions plus install
     scripts. The process-family renderer builds process-specific definitions
-    on top of that shared renderer; scheduler enactment can reuse the same
-    backend renderer when the `orbit_scheduler` daemon slice lands.
+    on top of that shared renderer; schedule-family code now builds the
+    `orbit_scheduler` program definition through the same backend renderer.
 - [x] Add the `orbit-scheduler` Artisan-command daemon.
   - Hidden `orbit-scheduler` command runs the resident daemon loop and supports
     one-tick execution for tests/smoke checks. The current tick is intentionally
@@ -1593,7 +1597,11 @@ for the Saloon-based gateway transport pattern.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
 - [ ] Port tool family.
-- [ ] Port schedule family.
+- [!] Port schedule family.
+  - Blocked by missing global `doctor` command/family dispatcher and doctor API
+    transport; schedule command-family behavior is otherwise ported through
+    logs/run/CRUD, scheduler daemon rendering, heartbeat intake, and run-history
+    intake.
 - [ ] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
 
