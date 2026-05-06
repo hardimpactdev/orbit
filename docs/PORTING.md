@@ -1795,8 +1795,15 @@ for the Saloon-based gateway transport pattern.
   - [x] Read foundation exists for registry-backed `tool:list` / `tool:show`
     command wiring: node tool intent schema/model, gateway API list/show
     controllers, and typed gateway client requests.
-  - [!] Tool-family live inspection, doctor probes, fix/adopt map, and any
+  - [~] Tool-family live inspection, doctor probes, fix/adopt map, and any
     future write/enactment commands remain outstanding.
+    - [x] Tool doctor probe foundation covers registry completeness, node
+      eligibility, catalog definition checks, and live capability presence.
+    - [!] Version, configuration, credential, lifecycle drift, fix/adopt action
+      handlers, and future write/enactment commands remain outstanding.
+    - Next concrete action: expand tool definitions with backend probe metadata
+      for version/config/lifecycle checks, then add safe `--fix` action handlers
+      for definitions that declare repair commands.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through

@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -109,6 +110,22 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
 
+    it('accepts the tool family scope and returns tool drift', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell('', 1));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['tool'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.capability_missing');
+    });
+
     it('denies app-node write mode requests', function (): void {
         createDoctorRunCallerNode(['role' => 'app']);
 
@@ -127,6 +144,7 @@ final class DoctorRunRemoteShell implements RemoteShell
 {
     public function __construct(
         private readonly string $stdout,
+        private readonly int $exitCode = 0,
     ) {}
 
     /**
@@ -134,6 +152,6 @@ final class DoctorRunRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
     }
 }

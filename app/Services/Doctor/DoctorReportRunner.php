@@ -7,16 +7,18 @@ namespace App\Services\Doctor;
 use App\Data\Doctor\DriftEntry;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\Tools\ToolsProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule'];
+    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule', 'tool'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
@@ -24,6 +26,7 @@ final readonly class DoctorReportRunner
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
         private ProxyRouteFixer $proxyRouteFixer,
+        private ToolsProbe $toolsProbe,
     ) {}
 
     /**
@@ -102,6 +105,19 @@ final readonly class DoctorReportRunner
                         $actions[] = $action;
                     }
                 }
+            }
+        }
+
+        if (in_array('tool', $selectedFamilies, true)) {
+            foreach (NodeTool::query()->with('node')->get() as $tool) {
+                $snapshot = $this->toolsProbe->introspect($tool);
+                $issues = [
+                    ...$issues,
+                    ...array_map(
+                        fn (DriftEntry $entry): array => $this->toolIssuePayload($entry, $tool),
+                        $this->toolsProbe->diff($tool, $snapshot),
+                    ),
+                ];
             }
         }
 
@@ -196,6 +212,23 @@ final readonly class DoctorReportRunner
         return [
             'family' => $entry->family,
             'node' => $rule->node->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toolIssuePayload(DriftEntry $entry, NodeTool $tool): array
+    {
+        $tool->loadMissing('node');
+
+        return [
+            'family' => $entry->family,
+            'node' => $tool->node?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,

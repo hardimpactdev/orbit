@@ -8,6 +8,7 @@ use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
@@ -231,6 +232,25 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('reports tool family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell('', 1));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'kind' => 'missing',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 
@@ -302,6 +322,7 @@ final class DoctorProxyRemoteShell implements RemoteShell
 {
     public function __construct(
         private readonly string $stdout,
+        private readonly int $exitCode = 0,
     ) {}
 
     /**
@@ -309,7 +330,7 @@ final class DoctorProxyRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
     }
 }
 
