@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -55,6 +56,28 @@ describe('WorkspaceStepDeleteController', function (): void {
 
         expect(WorkspaceStep::query()->whereKey($removed->id)->exists())->toBeFalse()
             ->and(WorkspaceStep::query()->where('app_id', $app->id)->where('phase', WorkspaceLifecyclePhase::Setup)->orderBy('sort_order')->pluck('sort_order')->all())->toBe([1, 2]);
+    });
+
+    it('logs destructive activity for successful workspace step deletion', function (): void {
+        $caller = createWorkspaceStepDeleteCallerNode();
+        $node = Node::factory()->create(['role' => 'app']);
+        grantWorkspaceStepDeleteAccess($caller, $node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $removed = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown, 'sort_order' => 1]);
+
+        $response = $this->call('DELETE', "/api/workspaces/steps/teardown/{$removed->id}", ['app' => 'docs'], [], [], [
+            'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
+        ]);
+
+        $response->assertOk();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('api:DELETE /workspaces/steps/{phase}/{step}');
+        expect($entry->subject_type)->toBe(WorkspaceStep::class);
+        expect($entry->subject_id)->toBe($removed->id);
+        expect($entry->properties->get('type'))->toBe('destructive');
     });
 
     it('rejects app-node callers', function (): void {

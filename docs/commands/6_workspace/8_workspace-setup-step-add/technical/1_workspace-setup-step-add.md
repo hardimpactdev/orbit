@@ -154,6 +154,19 @@ defines no command-specific numeric exit codes.
 - Family doctor behavior is documented in
   [`workspace-doctor.md`](../../workspace-doctor.md).
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+setup-step creation attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /workspaces/steps/{phase}` |
+| Effect | `write` |
+| Subject | `WorkspaceStep` when the setup step is created; `none` for validation, app-resolution, or authorization failures before a step can be logged. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -170,6 +170,19 @@ the source of truth for setup and teardown. `workspace-teardown-step:remove` is
 the only path that deletes a teardown-step record; doctor will not converge an
 absent step into existence or a present step out of existence.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+teardown-step removal attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /workspaces/steps/{phase}/{step}` |
+| Effect | `destructive` |
+| Subject | `WorkspaceStep` when the teardown step is resolved before deletion; `none` for validation, not-found, or authorization failures before a step can be logged. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

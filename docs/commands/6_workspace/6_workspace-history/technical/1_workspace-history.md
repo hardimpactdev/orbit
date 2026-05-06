@@ -158,6 +158,19 @@ including when the result set is empty.
   current reality was reached (or why it failed); doctor verifies whether
   reality matches intent today.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+workspace run-history reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces/{name-or-path}/history` |
+| Effect | `read` |
+| Subject | `Workspace` when the workspace is resolved and visible; `none` for not-found, ambiguous, validation, or authorization failures before a workspace can be logged. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

@@ -129,6 +129,19 @@ HTTP probe results. Live workspace reality belongs to
 - Workspace hostname artifact convergence belongs to `doctor --family=proxy`;
   inherited process-unit convergence belongs to `doctor --family=process`.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+workspace registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

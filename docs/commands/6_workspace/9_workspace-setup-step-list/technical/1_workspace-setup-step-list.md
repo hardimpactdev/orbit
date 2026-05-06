@@ -147,6 +147,19 @@ command-specific numeric exit codes.
 - Drift between setup-step policy and workspace runtime reality is the
   doctor's job, not this command's.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+setup-step policy reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces/steps/{phase}` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

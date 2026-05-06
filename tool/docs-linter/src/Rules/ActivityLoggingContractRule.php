@@ -36,6 +36,16 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'node-revoke',
         'node-remove',
         'node-agent-ide',
+        'workspace-list',
+        'workspace-show',
+        'workspace-history',
+        'workspace-log',
+        'workspace-setup-step-add',
+        'workspace-setup-step-list',
+        'workspace-setup-step-remove',
+        'workspace-teardown-step-add',
+        'workspace-teardown-step-list',
+        'workspace-teardown-step-remove',
     ];
 
     /**

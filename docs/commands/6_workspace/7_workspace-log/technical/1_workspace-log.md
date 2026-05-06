@@ -164,6 +164,19 @@ plus zero-length stdout/stderr is a valid result, not a failure).
   or repair captured `workspace:log` history; it converges live workspace
   reality against current intent.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+workspace run-log reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces/runs/{run}/log` |
+| Effect | `read` |
+| Subject | `WorkspaceRun` when the run is resolved and visible; `none` for not-found, validation, or authorization failures before a run can be logged. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

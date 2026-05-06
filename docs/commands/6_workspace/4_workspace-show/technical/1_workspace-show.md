@@ -144,6 +144,19 @@ metadata.
 - [`doctor --family=workspace`](../../workspace-doctor.md) is the convergence
   interface for workspace drift and owns repair behavior.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+workspace detail reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces/{name-or-path}` |
+| Effect | `read` |
+| Subject | `Workspace` when the workspace is resolved and visible; `none` for not-found, ambiguous, validation, or authorization failures before a workspace can be logged. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

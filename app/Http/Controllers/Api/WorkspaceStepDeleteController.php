@@ -223,7 +223,7 @@ final class WorkspaceStepDeleteController implements Loggable
 
     public function effect(): ActivityLogType
     {
-        return ActivityLogType::Write;
+        return ActivityLogType::Destructive;
     }
 
     public function activityLogType(): ActivityLogType

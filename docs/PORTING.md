@@ -1033,7 +1033,7 @@ that produced the controller's Loggable wiring.
 - [ ] `3_tool`.
 - [ ] `4_firewall`.
 - [x] `5_app`.
-- [ ] `6_workspace`.
+- [x] `6_workspace`.
 - [ ] `7_process`.
 - [ ] `8_proxy`.
 - [ ] `9_schedule`.
@@ -1087,6 +1087,17 @@ that produced the controller's Loggable wiring.
   - [x] `app:register`, `app:root`, `app:remove`, and `app:agent-ide` now
     declare their `## Activity Logging` tech contracts and are enforced by
     `ActivityLoggingContractRule`.
+- [x] `ACTIVITY-WORKSPACE-FAMILY-1` — add activity logging contracts to the
+  implemented workspace family surface while workspace commands use typed
+  gateway APIs.
+  - [x] `workspace:list`, `workspace:show`, `workspace:history`, and
+    `workspace:log` now declare their `## Activity Logging` tech contracts and
+    are enforced by `ActivityLoggingContractRule`.
+  - [x] `workspace-setup-step:*` and `workspace-teardown-step:*` policy
+    commands now declare their `## Activity Logging` tech contracts and are
+    enforced by `ActivityLoggingContractRule`.
+  - [x] Step removal activity now emits `effect=destructive`, matching the
+    command contracts for destructive policy deletion.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the
