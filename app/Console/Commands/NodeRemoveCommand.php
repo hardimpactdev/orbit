@@ -266,9 +266,7 @@ class NodeRemoveCommand extends Command
 
     protected function isInteractiveInput(): bool
     {
-        return ! $this->option('json')
-            && function_exists('posix_isatty')
-            && @posix_isatty(STDOUT);
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function renderProgressTree(string $name): void

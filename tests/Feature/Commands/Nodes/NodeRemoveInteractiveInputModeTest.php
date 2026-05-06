@@ -90,6 +90,20 @@ describe('node:remove interactive input mode contract', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse();
     });
 
+    it('cancels before removing when interactive confirmation is declined', function (): void {
+        setupNodeRemoveGatewayCallerInteractive();
+        DB::table('nodes')->insert(nodeRemoveInteractiveRow());
+
+        $this->artisan('node:remove', [
+            'name' => 'app-1',
+        ])
+            ->expectsConfirmation("Remove node 'app-1'? This cannot be undone.", 'no')
+            ->expectsOutputToContain('Operation cancelled.')
+            ->assertExitCode(1);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+    });
+
     it('rejects app-node callers before prompts in interactive mode', function (): void {
         DB::table('nodes')->insert(nodeRemoveInteractiveRow([
             'name' => 'mini',
@@ -148,7 +162,7 @@ describe('node:remove interactive input mode contract', function (): void {
             ->and($payload['error']['meta'])->toBe(['field' => 'name']);
     });
 
-    it('uses confirm primitive with default false for destructive consent', function (): void {
+    it('uses the console interactive flag for destructive prompts', function (): void {
         $command = new NodeRemoveCommand;
         $command->setLaravel(app());
 
@@ -173,10 +187,9 @@ describe('node:remove interactive input mode contract', function (): void {
         $method = new ReflectionMethod($command, 'isInteractiveInput');
         $method->setAccessible(true);
 
-        // In non-TTY test environment, isInteractiveInput should return false
         $isInteractive = $method->invoke($command);
 
-        expect($isInteractive)->toBeFalse();
+        expect($isInteractive)->toBeTrue();
     });
 
     it('prompts for missing name in interactive mode instead of validation_failed', function (): void {

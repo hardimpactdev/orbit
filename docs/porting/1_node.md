@@ -110,8 +110,17 @@ Detail file for the node command family. Top-level command status lives in
   - E2E gate implemented: Docker feature coverage verifies a configured control
     caller removes a gateway-owned node access grant through the Gateway API and
     reads the removed grant state back through forwarded `node:show`.
-  - Contract gaps:
-    - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
+  - Interactive confirmation decline coverage implemented: command interactive
+    detection now uses Symfony's console input flag, allowing Laravel's console
+    test harness to exercise destructive confirmation decline without requiring
+    a real TTY.
+  - [!] Residual interactive prompt-abort coverage remains blocked by the
+    current Laravel fallback prompt harness, which can answer expected prompts
+    but does not provide a stable way to simulate terminal abort for these
+    command-level tests. Next concrete action: decide whether to introduce a
+    command prompt abstraction for abort simulation, accept a documented
+    prompt-abort test deferral, or rely on higher-level console framework
+    behavior for abort handling.
 - [~] Port `node:remove`.
   - Files:
     - `app/Console/Commands/NodeRemoveCommand.php` (gateway-local bootstrap slice)
@@ -136,8 +145,17 @@ Detail file for the node command family. Top-level command status lives in
   - Node-family development DNS fix implemented: `NodesProbe` detects missing,
     mismatched, and publicly exposed gateway development DNS mappings and
     `--fix` rewrites them through the safe enactor.
-  - Contract gaps:
-    - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
+  - Interactive confirmation decline coverage implemented: command interactive
+    detection now uses Symfony's console input flag, allowing Laravel's console
+    test harness to exercise destructive confirmation decline without requiring
+    a real TTY.
+  - [!] Residual interactive prompt-abort coverage remains blocked by the
+    current Laravel fallback prompt harness, which can answer expected prompts
+    but does not provide a stable way to simulate terminal abort for these
+    command-level tests. Next concrete action: decide whether to introduce a
+    command prompt abstraction for abort simulation, accept a documented
+    prompt-abort test deferral, or rely on higher-level console framework
+    behavior for abort handling.
 - [~] Port `node:agent-ide`.
   - Current implementation: `app/Console/Commands/NodeAgentIdeCommand.php`
   - Current docs: `docs/commands/1_node/10_node-agent-ide`

@@ -107,6 +107,30 @@ describe('node:revoke interactive input mode contract', function (): void {
         expect(DB::table('node_access')->count())->toBe(0);
     });
 
+    it('cancels before revoking when interactive confirmation is declined', function (): void {
+        setupNodeRevokeGatewayCallerInteractive();
+        DB::table('nodes')->insert(nodeRevokeInteractiveRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeRevokeInteractiveRow());
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
+
+        $this->artisan('node:revoke', [
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ])
+            ->expectsConfirmation("Revoke access from 'control-1' to 'app-1'? This cannot be undone.", 'no')
+            ->expectsOutputToContain('Operation cancelled.')
+            ->assertExitCode(1);
+
+        expect(DB::table('node_access')->count())->toBe(1);
+    });
+
     it('rejects app-node callers before prompts in interactive mode', function (): void {
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'mini',
@@ -193,7 +217,7 @@ describe('node:revoke interactive input mode contract', function (): void {
             ->and($payload['error']['meta'])->toBe(['field' => 'serving_node']);
     });
 
-    it('uses confirm primitive with default false for destructive consent', function (): void {
+    it('uses the console interactive flag for destructive prompts', function (): void {
         $command = new NodeRevokeCommand;
         $command->setLaravel(app());
 
@@ -219,10 +243,9 @@ describe('node:revoke interactive input mode contract', function (): void {
         $method = new ReflectionMethod($command, 'isInteractiveInput');
         $method->setAccessible(true);
 
-        // In non-TTY test environment, isInteractiveInput should return false
         $isInteractive = $method->invoke($command);
 
-        expect($isInteractive)->toBeFalse();
+        expect($isInteractive)->toBeTrue();
     });
 
     it('prompts for missing consuming_node in interactive mode instead of validation_failed', function (): void {

@@ -258,6 +258,7 @@ describe('node:revoke human renderer contract', function (): void {
         $exitCode = Artisan::call('node:revoke', [
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
+            '--no-interaction' => true,
         ]);
         $output = Artisan::output();
 

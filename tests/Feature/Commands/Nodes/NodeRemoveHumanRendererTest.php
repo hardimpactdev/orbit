@@ -189,6 +189,7 @@ describe('node:remove human renderer contract', function (): void {
 
         $exitCode = Artisan::call('node:remove', [
             'name' => 'app-1',
+            '--no-interaction' => true,
         ]);
         $output = Artisan::output();
 
