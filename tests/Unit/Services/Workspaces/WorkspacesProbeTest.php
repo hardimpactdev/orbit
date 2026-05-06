@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Workspaces;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
@@ -37,10 +39,79 @@ describe('interface contract', function (): void {
     });
 });
 
+describe('source path reality', function (): void {
+    it('introspects workspace source path reality on the parent app node', function (): void {
+        $app = workspaceableApp();
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature',
+                'path' => "{$app->path}/workspaces/feature",
+            ]);
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\n");
+
+        $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
+
+        expect($snapshot->get('feature'))->toMatchArray([
+            'path_exists' => true,
+            'path_usable' => true,
+        ]);
+        expect($shell->scripts[0])->toContain('ORBIT_WORKSPACE_SPEC');
+        expect($shell->nodes[0]->is($app->node))->toBeTrue();
+    });
+
+    it('detects missing workspace paths', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => [
+                'path_exists' => false,
+                'path_usable' => false,
+            ],
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.path_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'workspace.path_unusable'))->toBeNull();
+    });
+
+    it('detects unusable workspace paths after the path exists', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => [
+                'path_exists' => true,
+                'path_usable' => false,
+            ],
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.path_unusable')?->kind)->toBe(DriftKind::Unverifiable);
+    });
+
+    it('detects workspace paths outside the parent app path', function (): void {
+        $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature',
+                'path' => '/home/orbit/other/feature',
+            ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+    });
+});
+
 describe('registry intent', function (): void {
     it('passes complete workspace records with eligible parent apps', function (): void {
         $app = workspaceableApp();
-        $workspace = Workspace::factory()->for($app, 'app')->create();
+        $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -71,9 +142,7 @@ describe('registry intent', function (): void {
 
     it('accepts PHP version inherited from the parent app', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
-        $workspace = Workspace::factory()
-            ->for($app, 'app')
-            ->create(['php_version' => null]);
+        $workspace = workspaceFor($app, ['php_version' => null]);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
         $recordIssues = array_filter(
@@ -86,9 +155,7 @@ describe('registry intent', function (): void {
 
     it('requires an effective PHP version', function (): void {
         $app = workspaceableApp(['php_version' => '']);
-        $workspace = Workspace::factory()
-            ->for($app, 'app')
-            ->create(['php_version' => null]);
+        $workspace = workspaceFor($app, ['php_version' => null]);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -100,7 +167,7 @@ describe('parent app eligibility', function (): void {
     it('requires a parent app on an active app node', function (array $nodeState): void {
         $node = Node::factory()->create($nodeState);
         $app = App::factory()->for($node, 'node')->create();
-        $workspace = Workspace::factory()->for($app, 'app')->create();
+        $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -127,4 +194,45 @@ function workspaceableApp(array $overrides = []): App
     return App::factory()
         ->for($node, 'node')
         ->create($overrides);
+}
+
+function workspaceFor(App $app, array $overrides = []): Workspace
+{
+    $name = (string) ($overrides['name'] ?? 'feature');
+
+    return Workspace::factory()
+        ->for($app, 'app')
+        ->create([
+            'name' => $name,
+            'path' => "{$app->path}/workspaces/{$name}",
+            ...$overrides,
+        ]);
+}
+
+final class WorkspacesProbeRecordingRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<Node>
+     */
+    public array $nodes = [];
+
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    public function __construct(private readonly string $stdout) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $this->stdout,
+            stderr: '',
+            durationMs: 1,
+        );
+    }
 }

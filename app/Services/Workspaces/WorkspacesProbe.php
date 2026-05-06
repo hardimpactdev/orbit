@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
@@ -13,6 +14,10 @@ use App\Models\Workspace;
 
 final readonly class WorkspacesProbe
 {
+    public function __construct(
+        private ?RemoteShell $remoteShell = null,
+    ) {}
+
     public function key(): string
     {
         return 'workspaces';
@@ -25,7 +30,59 @@ final readonly class WorkspacesProbe
 
     public function introspect(Workspace $workspace): ProbeSnapshot
     {
-        return new ProbeSnapshot([]);
+        $workspace->loadMissing('app.node');
+
+        if (! $workspace->app instanceof App || ! $workspace->app->node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        $spec = [
+            'name' => $workspace->name,
+            'path' => $workspace->path,
+        ];
+
+        $script = <<<'BASH'
+set -euo pipefail
+php <<'PHP'
+<?php
+$spec = json_decode(base64_decode((string) getenv('ORBIT_WORKSPACE_SPEC')), true);
+$name = (string) ($spec['name'] ?? '');
+$path = (string) ($spec['path'] ?? '');
+
+$pathExists = is_dir($path) ? '1' : '0';
+$pathUsable = is_dir($path) && is_readable($path) && is_executable($path) ? '1' : '0';
+
+printf("%s\t%s\t%s\n", $name, $pathExists, $pathUsable);
+PHP
+BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app->node, $script, [
+            'throw' => true,
+            'env' => ['ORBIT_WORKSPACE_SPEC' => base64_encode((string) json_encode($spec))],
+        ]);
+
+        $items = [];
+
+        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode("\t", $line, 3);
+
+            if (count($parts) !== 3) {
+                continue;
+            }
+
+            [$name, $pathExists, $pathUsable] = $parts;
+
+            $items[$name] = [
+                'path_exists' => $pathExists === '1',
+                'path_usable' => $pathUsable === '1',
+            ];
+        }
+
+        return new ProbeSnapshot($items);
     }
 
     /**
@@ -37,6 +94,7 @@ final readonly class WorkspacesProbe
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($workspace));
         $drift = array_merge($drift, $this->checkParentApp($workspace));
+        $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
 
         return $drift;
     }
@@ -104,5 +162,101 @@ final readonly class WorkspacesProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkSourcePath(Workspace $workspace, ProbeSnapshot $snapshot): array
+    {
+        if ($workspace->path === '') {
+            return [];
+        }
+
+        if ($this->pathEscapesParentApp($workspace)) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.path_outside_policy',
+                    kind: DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} path is outside the parent app path.",
+                    detail: [
+                        'path' => $workspace->path,
+                        'app_path' => $workspace->app?->path,
+                    ],
+                ),
+            ];
+        }
+
+        $observed = $snapshot->get($workspace->name);
+
+        if ($observed === null) {
+            return [];
+        }
+
+        if (($observed['path_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.path_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Workspace {$workspace->name} path is missing on the parent app node.",
+                    detail: [
+                        'expected' => $workspace->path,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['path_usable'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.path_unusable',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Workspace {$workspace->name} path exists but is not usable by Orbit.",
+                    detail: [
+                        'path' => $workspace->path,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    private function pathEscapesParentApp(Workspace $workspace): bool
+    {
+        $workspace->loadMissing('app');
+
+        if (! $workspace->app instanceof App || $workspace->app->path === '') {
+            return false;
+        }
+
+        $appPath = $this->normalizePath($workspace->app->path);
+        $workspacePath = $this->normalizePath($workspace->path);
+
+        return $workspacePath !== $appPath && ! str_starts_with($workspacePath, "{$appPath}/");
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $segments = [];
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                array_pop($segments);
+
+                continue;
+            }
+
+            $segments[] = $segment;
+        }
+
+        return '/'.implode('/', $segments);
     }
 }
