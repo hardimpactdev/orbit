@@ -17,6 +17,7 @@ final class GatewayApiException extends RuntimeException
         private readonly ?string $errorCode = null,
         private readonly array $errorMeta = [],
         ?Throwable $previous = null,
+        private readonly array $errorData = [],
     ) {
         parent::__construct($message, 0, $previous);
     }
@@ -32,5 +33,13 @@ final class GatewayApiException extends RuntimeException
     public function errorMeta(): array
     {
         return $this->errorMeta;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function errorData(): array
+    {
+        return $this->errorData;
     }
 }

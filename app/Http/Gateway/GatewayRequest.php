@@ -39,8 +39,9 @@ abstract class GatewayRequest extends SaloonRequest
                 : "Gateway request failed with HTTP status {$response->status()}";
             $code = is_string($error['code'] ?? null) ? $error['code'] : null;
             $meta = is_array($error['meta'] ?? null) ? $error['meta'] : [];
+            $data = is_array($error['data'] ?? null) ? $error['data'] : [];
 
-            return new GatewayApiException($message, $code, $meta, $senderException);
+            return new GatewayApiException($message, $code, $meta, $senderException, $data);
         }
 
         return new GatewayApiException(

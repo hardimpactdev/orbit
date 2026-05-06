@@ -8,6 +8,7 @@ use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProcessEvent;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,7 @@ class ProcessListPayload
                     'restart_policy' => $process->restart_policy->value,
                     'crash_notification' => $process->crash_notification->value,
                     'runtime_unit' => $this->runtimeUnit($app, $process, $workspace),
-                    'last_event' => null,
+                    'last_event' => $this->lastEvent($process, $workspace),
                 ])
                 ->values()
                 ->all(),
@@ -181,5 +182,31 @@ class ProcessListPayload
         $scope = $workspace instanceof Workspace ? $workspace->name : 'main';
 
         return "orbit_{$app->name}_{$scope}_{$process->name}";
+    }
+
+    /**
+     * @return array{id: int, type: string}|null
+     */
+    private function lastEvent(Process $process, ?Workspace $workspace): ?array
+    {
+        $event = ProcessEvent::query()
+            ->where('process_id', $process->id)
+            ->when(
+                $workspace instanceof Workspace,
+                fn (Builder $query): Builder => $query->where('workspace_id', $workspace->id),
+                fn (Builder $query): Builder => $query->whereNull('workspace_id'),
+            )
+            ->latest('recorded_at')
+            ->latest('id')
+            ->first();
+
+        if (! $event instanceof ProcessEvent) {
+            return null;
+        }
+
+        return [
+            'id' => $event->id,
+            'type' => $event->event->value,
+        ];
     }
 }

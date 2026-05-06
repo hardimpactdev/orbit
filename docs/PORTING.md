@@ -1291,7 +1291,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     projection, human/JSON renderers, focused Pest coverage, and E2E gate
     classified as `lane=none` because the command is a fast gateway-intent read
     with no runtime behavior outside Pest. Latest durable lifecycle events are
-    returned as `null` until the process lifecycle event schema lands.
+    read when lifecycle events exist.
   - [x] `process:add` gateway-local intent write, typed gateway API forwarding,
     access-policy authorization, process-order append behavior, Supervisor
     runtime-unit rendering for main app and existing workspaces, optional
@@ -1308,6 +1308,10 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     repairable warning output after post-intent cleanup drift, human/JSON
     renderers, and focused Pest coverage.
 - [ ] Port process start/stop/restart commands against Supervisor.
+  - [x] `process:start` gateway-owned Supervisor lifecycle action, typed
+    gateway API forwarding for control/app callers, app/workspace context
+    resolution, durable `started` process event recording, partial bulk failure
+    reporting, human/JSON renderers, and focused Pest coverage.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.
 

@@ -1,0 +1,157 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Process;
+use App\Models\ProcessEvent;
+use App\Models\Workspace;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const PROCESS_START_CALLER_WG_IP = '10.6.0.92';
+
+function createProcessStartCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => PROCESS_START_CALLER_WG_IP,
+        'wireguard_address' => PROCESS_START_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantProcessStartAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('ProcessStartController', function (): void {
+    it('starts a process for authorized control callers and records the event', function (): void {
+        $caller = createProcessStartCallerNode();
+        $appNode = Node::factory()->create(['role' => 'app']);
+        grantProcessStartAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.runtimes.0.event.type', 'started')
+            ->assertJsonPath('success.meta', []);
+
+        expect(ProcessEvent::query()->where('event', 'started')->exists())->toBeTrue();
+    });
+
+    it('allows an app-node caller for its own workspace context through the gateway API', function (): void {
+        $appNode = createProcessStartCallerNode(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'workspace' => 'feature-docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+    });
+
+    it('returns partial runtime failure data', function (): void {
+        $caller = createProcessStartCallerNode(['role' => 'gateway']);
+        $appNode = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
+        app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.runtime_action_failed')
+            ->assertJsonPath('error.meta.partial_state', 'partially_started')
+            ->assertJsonPath('error.data.runtimes.1.state', 'failed');
+
+        expect($caller)->toBeInstanceOf(Node::class);
+    });
+
+    it('requires authorization before runtime side effects', function (): void {
+        createProcessStartCallerNode();
+        $appNode = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        $remoteShell = new ProcessStartApiRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+
+    it('denies unknown callers before runtime side effects', function (): void {
+        createProcessStartCallerNode(['role' => 'weird']);
+        $remoteShell = new ProcessStartApiRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes/start', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed');
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+});
+
+final class ProcessStartApiRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+        public array $scripts = [],
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

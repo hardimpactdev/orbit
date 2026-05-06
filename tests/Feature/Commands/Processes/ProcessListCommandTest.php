@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProcessEvent;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -84,6 +85,27 @@ describe('process:list base contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['context'])->toBe(['app' => 'docs', 'workspace' => 'feature-docs'])
             ->and($payload['success']['data']['processes'][0]['runtime_unit'])->toBe('orbit_docs_feature-docs_vite');
+    });
+
+    it('includes the latest durable lifecycle event for the selected context', function (): void {
+        createProcessListLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $process = Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 1]);
+        ProcessEvent::factory()->create([
+            'app_id' => $app->id,
+            'process_id' => $process->id,
+            'node_id' => $node->id,
+            'workspace_id' => null,
+            'event' => 'started',
+            'recorded_at' => now(),
+        ]);
+
+        $exitCode = Artisan::call('process:list', ['--json' => true, '--app' => 'docs']);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['processes'][0]['last_event']['type'])->toBe('started');
     });
 
     it('renders human process output and empty state', function (): void {
