@@ -8,6 +8,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
 use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
+use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
 use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
@@ -67,6 +68,14 @@ it('resolves schedule remove endpoint and query filters', function (): void {
 
     expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
     expect($request->getMethod())->toBe(Method::DELETE);
+    expect($request->query()->all())->toBe(['app' => 'docs']);
+});
+
+it('resolves manual schedule run endpoint and query filters', function (): void {
+    $request = new RunScheduleRequest(name: 'laravel-scheduler', app: 'docs');
+
+    expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler/run');
+    expect($request->getMethod())->toBe(Method::POST);
     expect($request->query()->all())->toBe(['app' => 'docs']);
 });
 

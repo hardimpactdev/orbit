@@ -1357,7 +1357,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     focused Pest coverage.
   - [x] `schedule:remove` gateway-owned destructive intent removal,
     destructive consent, human/JSON renderers, and focused Pest coverage.
-- [ ] Port schedule run command (manual fire / on-demand tick).
+- [x] Port schedule run command (manual fire / on-demand tick).
+  - [x] `schedule:run` gateway-owned manual schedule execution, typed gateway
+    API forwarding, app/node filter validation, target-node execution through
+    the existing remote-shell abstraction, durable run-history persistence,
+    scheduled process failure reporting with captured output, human/JSON
+    renderers, and focused Pest coverage.
 - [ ] Port schedule logs command against scheduler-captured stdout/stderr.
 - [ ] Port `orbit-scheduler` Artisan-command daemon and Supervisor program
   rendering.

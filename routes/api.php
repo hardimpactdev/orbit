@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ScheduleDestroyController;
 use App\Http\Controllers\Api\ScheduleListController;
+use App\Http\Controllers\Api\ScheduleRunController;
 use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\ScheduleShowController;
 use App\Http\Controllers\Api\ScheduleStoreController;
@@ -68,6 +69,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/profile', ProfileController::class);
         Route::get('/schedules', ScheduleListController::class);
         Route::post('/schedules', ScheduleStoreController::class);
+        Route::post('/schedules/{name}/run', ScheduleRunController::class);
         Route::post('/schedules/runs', ScheduleRunStoreController::class);
         Route::delete('/schedules/{name}', ScheduleDestroyController::class);
         Route::get('/schedules/{name}', ScheduleShowController::class);
