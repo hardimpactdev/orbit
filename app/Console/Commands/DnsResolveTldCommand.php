@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Dns\LocalResolver;
 use Illuminate\Console\Attributes\Description;
@@ -21,9 +24,82 @@ use function Laravel\Prompts\text;
     {--force : Confirm destructive operation without prompting}
     {--json : Output as JSON}')]
 #[Description('Configure or remove a caller-local development TLD resolver override')]
-class DnsResolveTldCommand extends Command
+class DnsResolveTldCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
+    private ?string $activityTld = null;
+
+    private ?string $activityTarget = null;
+
+    private ?string $activityAction = null;
+
+    private ?string $activityStatus = null;
+
+    private ?bool $activityChanged = null;
+
+    private ?string $activityResolverBackend = null;
+
     public function handle(LocalResolver $resolver): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeDnsResolveTld($resolver);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return (bool) $this->option('reset')
+            ? ActivityLogType::Destructive
+            : ActivityLogType::Write;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        $tld = $this->activityTld;
+        $target = $this->activityTarget;
+
+        if ($tld === null) {
+            $argument = $this->argument('tld');
+            $tld = is_string($argument) && $argument !== '' ? $argument : null;
+        }
+
+        if ($target === null) {
+            $argument = $this->argument('target');
+            $target = is_string($argument) && $argument !== '' ? $argument : null;
+        }
+
+        return array_filter([
+            'tld' => $tld,
+            'target' => $target,
+            'action' => $this->activityAction ?? ((bool) $this->option('reset') ? 'reset' : 'resolve'),
+            'status' => $this->activityStatus,
+            'changed' => $this->activityChanged,
+            'resolver_backend' => $this->activityResolverBackend,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        if ($this->activityAction === 'reset' && $this->activityTld !== null) {
+            return "Local DNS .{$this->activityTld} resolver override reset";
+        }
+
+        if ($this->activityAction === 'resolve' && $this->activityTld !== null) {
+            return "Local DNS .{$this->activityTld} resolver override configured";
+        }
+
+        return 'Local DNS resolver override attempted';
+    }
+
+    private function executeDnsResolveTld(LocalResolver $resolver): int
     {
         $callerRole = $this->callerRole();
 
@@ -62,12 +138,14 @@ class DnsResolveTldCommand extends Command
         }
 
         $validation = $this->validateTld($tld);
+        $this->activityTld = $tld;
 
         if (is_int($validation)) {
             return $validation;
         }
 
         $isReset = (bool) $this->option('reset');
+        $this->activityAction = $isReset ? 'reset' : 'resolve';
 
         if ($isReset && $this->argument('target') !== null) {
             return $this->failCommand(
@@ -101,6 +179,7 @@ class DnsResolveTldCommand extends Command
         }
 
         $validation = $this->validateTarget($target);
+        $this->activityTarget = $target;
 
         if (is_int($validation)) {
             return $validation;
@@ -178,6 +257,7 @@ class DnsResolveTldCommand extends Command
                 'resolver_backend' => $resolver->backend(),
             ],
         ];
+        $this->captureActivityResult($data['dns']);
 
         if ($this->wantsJson()) {
             return $this->jsonSuccess($data);
@@ -285,6 +365,7 @@ class DnsResolveTldCommand extends Command
                 'resolver_backend' => $resolver->backend(),
             ],
         ];
+        $this->captureActivityResult($data['dns']);
 
         if ($this->wantsJson()) {
             return $this->jsonSuccess($data);
@@ -297,6 +378,28 @@ class DnsResolveTldCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $dns
+     */
+    private function captureActivityResult(array $dns): void
+    {
+        $this->activityTld = is_string($dns['tld'] ?? null) ? $dns['tld'] : $this->activityTld;
+        $this->activityTarget = is_string($dns['target'] ?? null) ? $dns['target'] : null;
+        $this->activityAction = is_string($dns['action'] ?? null) ? $dns['action'] : $this->activityAction;
+        $this->activityStatus = is_string($dns['status'] ?? null) ? $dns['status'] : null;
+        $this->activityChanged = is_bool($dns['changed'] ?? null) ? $dns['changed'] : null;
+        $this->activityResolverBackend = is_string($dns['resolver_backend'] ?? null) ? $dns['resolver_backend'] : null;
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented dns:resolve-tld result.
+        }
     }
 
     private function resolveTld(): string|int

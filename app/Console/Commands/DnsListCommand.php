@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Dns\LocalResolver;
 use Illuminate\Console\Attributes\Description;
@@ -14,9 +17,47 @@ use RuntimeException;
 #[Signature('dns:list
     {--json : Output as JSON}')]
 #[Description('List caller-local Orbit DNS resolver overrides')]
-class DnsListCommand extends Command
+class DnsListCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
+    private ?int $activityCount = null;
+
+    private ?string $activityResolverBackend = null;
+
     public function handle(LocalResolver $resolver): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeDnsList($resolver);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return array_filter([
+            'count' => $this->activityCount,
+            'resolver_backend' => $this->activityResolverBackend,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        return 'Local DNS resolver overrides listed';
+    }
+
+    private function executeDnsList(LocalResolver $resolver): int
     {
         $callerRole = $this->callerRole();
 
@@ -69,6 +110,8 @@ class DnsListCommand extends Command
             'count' => count($dns),
             'resolver_backend' => $resolver->backend(),
         ];
+        $this->activityCount = $meta['count'];
+        $this->activityResolverBackend = $meta['resolver_backend'];
 
         if ($this->wantsJson()) {
             return $this->jsonSuccess(['dns' => $dns], $meta);
@@ -77,6 +120,15 @@ class DnsListCommand extends Command
         $this->renderHuman($dns);
 
         return self::SUCCESS;
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented dns:list result.
+        }
     }
 
     private function callerRole(): string

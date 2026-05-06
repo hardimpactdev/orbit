@@ -32,6 +32,8 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'update',
         'update-all',
         'profile',
+        'dns-list',
+        'dns-resolve-tld',
         'node-new',
         'node-list',
         'node-show',

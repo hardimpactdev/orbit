@@ -7,6 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -91,6 +92,25 @@ describe('dns:list base contract', function (): void {
                     'status' => 'active',
                 ],
             ]);
+    });
+
+    it('logs dns list activity', function (): void {
+        setupDnsListControlCaller();
+        setupDnsListResolver();
+        putDnsListConfig('test', '10.6.0.7');
+
+        $exitCode = Artisan::call('dns:list', [
+            '--json' => true,
+        ]);
+
+        $entry = Activity::query()->first();
+
+        expect($exitCode)->toBe(0);
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('dns:list');
+        expect($entry->properties->get('type'))->toBe('read');
+        expect($entry->properties->get('count'))->toBe(1);
+        expect($entry->properties->get('resolver_backend'))->toBe('dnsmasq');
     });
 
     it('lists configured local resolver overrides on linux control callers', function (): void {

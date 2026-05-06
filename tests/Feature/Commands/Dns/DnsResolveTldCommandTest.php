@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -85,6 +86,37 @@ describe('dns:resolve-tld base contract', function (): void {
         expect(File::exists(storage_path('app/orbit/dnsmasq.d/test.conf')))->toBeTrue();
     });
 
+    it('logs dns resolve activity', function (): void {
+        setupDnsResolveTldControlCaller();
+        setupDnsResolveTldMacosResolver();
+
+        Process::fake([
+            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+        ]);
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('dns:resolve-tld', [
+            'tld' => 'test',
+            'target' => '10.6.0.7',
+            '--json' => true,
+        ]);
+
+        $entry = Activity::query()->first();
+
+        expect($exitCode)->toBe(0);
+        expect($entry)->not->toBeNull();
+        expect($entry->event)->toBe('dns:resolve-tld');
+        expect($entry->properties->get('type'))->toBe('write');
+        expect($entry->properties->get('tld'))->toBe('test');
+        expect($entry->properties->get('target'))->toBe('10.6.0.7');
+        expect($entry->properties->get('action'))->toBe('resolve');
+        expect($entry->properties->get('status'))->toBe('resolved');
+        expect($entry->properties->get('changed'))->toBeTrue();
+        expect($entry->properties->get('resolver_backend'))->toBe('dnsmasq');
+    });
+
     it('returns idempotent success when TLD is already resolved to the same target', function (): void {
         setupDnsResolveTldControlCaller();
         setupDnsResolveTldMacosResolver();
@@ -138,6 +170,13 @@ describe('dns:resolve-tld base contract', function (): void {
             ->and($payload['success']['data']['dns']['status'])->toBe('reset')
             ->and($payload['success']['data']['dns']['changed'])->toBeTrue()
             ->and(File::exists(storage_path('app/orbit/dnsmasq.d/test.conf')))->toBeFalse();
+
+        $entry = Activity::query()->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->properties->get('type'))->toBe('destructive');
+        expect($entry->properties->get('action'))->toBe('reset');
+        expect($entry->properties->get('status'))->toBe('reset');
     });
 
     it('returns idempotent success when reset is already absent', function (): void {

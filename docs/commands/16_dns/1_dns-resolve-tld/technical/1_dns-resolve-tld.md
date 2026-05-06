@@ -138,6 +138,20 @@ before it reads command inputs or renders prompts.
   and gateway-owned development DNS mappings. It is not a substitute for
   listing local resolver overrides.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed local
+resolver mutation attempts. Activity logging is best-effort and must not
+change the documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `dns:resolve-tld` |
+| Effect | `write` for resolve path; `destructive` for reset path. |
+| Subject | `none`; the command mutates caller-local resolver files and does not own a durable DNS entity. |
+| Properties | `tld`, `target` for resolve path, `action` (`resolve` or `reset`), `status`, `changed`, and `resolver_backend` when known. No resolver file contents, process output, public DNS responses, gateway records, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Required split contract tests:

@@ -1047,7 +1047,7 @@ that produced the controller's Loggable wiring.
 - [ ] `13_vpn`.
 - [ ] `14_php`.
 - [ ] `15_agent-ide`.
-- [ ] `16_dns`.
+- [x] `16_dns`.
 
 ### Implementation Slice
 
@@ -1133,6 +1133,14 @@ that produced the controller's Loggable wiring.
   - [x] The implemented operation commands emit best-effort CLI activity entries;
     update commands emit `effect=write`, and `profile` emits `effect=read`.
   - [!] `doctor` remains blocked until the clean `doctor` command exists.
+- [x] `ACTIVITY-DNS-FAMILY-1` — add activity logging contracts and local CLI
+  activity emission to the DNS family surface.
+  - [x] `dns:list` and `dns:resolve-tld` now declare their
+    `## Activity Logging` tech contracts and are enforced by
+    `ActivityLoggingContractRule`.
+  - [x] DNS commands emit best-effort CLI activity entries; `dns:list` emits
+    `effect=read`, `dns:resolve-tld` resolve emits `effect=write`, and reset
+    emits `effect=destructive`.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the
