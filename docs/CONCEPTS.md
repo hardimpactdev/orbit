@@ -390,6 +390,8 @@ Source: [Agent IDE Concepts](commands/15_agent-ide/agent-ide-concepts.md).
 - **Agent IDE integration**
 - **Agent IDE adapter**
 - **Agent IDE adapter registry**
+- **Agent IDE adapter registry model**
+- **Agent IDE adapter choices API**
 - **Active Agent IDE session**
 - **Workspace discovery capability**
 - **Node Agent IDE default**
@@ -398,6 +400,7 @@ Source: [Agent IDE Concepts](commands/15_agent-ide/agent-ide-concepts.md).
 - **Agent IDE input token**
 - **Agent IDE message**
 - **Agent-IDE-domain boundaries**
+- **Registry boundary**
 <!-- /concept-index -->
 
 ## DNS Concepts

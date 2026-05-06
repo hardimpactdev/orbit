@@ -156,11 +156,12 @@ Detail file for the node command family. Top-level command status lives in
   - Contract gaps:
     - [!] Extension-registered adapter registry beyond the core adapters
       (`opencode`, `polyscope`) and reserved `none` token is blocked until the
-      clean repo has a gateway-owned extension registration surface to persist
-      and list agent IDE adapters. Next concrete action: design the shared
-      adapter registry used by both `node:agent-ide` and `app:agent-ide`, then
-      expose a typed gateway request for configured control callers to fetch
-      prompt choices from the gateway.
+      clean repo implements the shared gateway-owned adapter registry and typed
+      choices request defined by the agent-IDE docs. Next concrete action:
+      implement `AgentIdeAdapterRegistry` with core descriptors, expose the
+      gateway adapter choices endpoint/request for configured control callers,
+      and update `node:agent-ide`/`app:agent-ide` prompt choices and validation
+      to use it.
 - [~] Port `node:new`.
   - Current implementation: `app/Console/Commands/NodeNewCommand.php`
   - Current tests:

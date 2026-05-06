@@ -70,7 +70,10 @@ access-policy-driven, not role-driven.
 4. Validate `node_agent_ide.name` immediately.
    - Must match an existing active node record.
 5. Resolve `node_agent_ide.adapter` from `[agent_ide]`. The prompt presents
-   the list of supported adapters.
+   the reserved `none` token followed by the list of supported adapters from
+   the shared Agent IDE adapter registry. Gateway callers read the registry
+   locally; configured control callers query the gateway adapter choices API
+   before rendering the prompt.
 6. Validate `node_agent_ide.adapter` immediately.
    - Must be `none` or appear in the gateway-owned adapter registry. The gateway is the sole
      authority on which adapter names are accepted; the CLI caller does not
@@ -94,6 +97,10 @@ access-policy-driven, not role-driven.
 - Find the node record by name. If not found, fail before side effects.
 - Validate the requested adapter against the gateway-owned adapter registry.
 - The gateway is the sole authority for adapter support.
+- Configured control callers use the typed gateway adapter choices request for
+  prompt choices and still send the write request to the gateway for final
+  authorization and validation. The control caller must not validate against a
+  local hard-coded adapter list.
 - If the adapter is not registered, fail before side effects with
   `node.unsupported_adapter`.
 

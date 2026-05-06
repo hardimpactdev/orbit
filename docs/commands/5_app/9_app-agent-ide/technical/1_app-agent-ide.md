@@ -92,6 +92,10 @@ exceptions such as `workspace:setup`.
    gateway-owned adapter registry. The gateway is the sole authority. If the
    adapter is not registered (and is not the reserved `inherit` or `none`
    value), fail before side effects with `app.unsupported_adapter`.
+   Configured control callers use the typed gateway adapter choices request for
+   prompt choices and still send the write request to the gateway for final
+   authorization and validation. The control caller must not validate against a
+   local hard-coded adapter list.
 3. **Idempotence check.** Compare the requested adapter against the current
    app default.
    - If they match, return success with `action: "converged"`.
