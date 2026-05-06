@@ -1031,22 +1031,40 @@ that produced the controller's Loggable wiring.
   `node:agent-ide`).
 - [x] `2_gateway`.
 - [ ] `3_tool`.
+  - [!] Activity backfill is blocked until `docs/abstractions/3_tool.md` exists
+    and a clean `tool:*` command surface is implemented.
 - [ ] `4_firewall`.
+  - [!] Activity backfill is blocked until
+    `docs/abstractions/4_firewall.md` exists and a clean `firewall:*` command
+    surface is implemented.
 - [x] `5_app`.
 - [x] `6_workspace`.
 - [x] `7_process`.
 - [ ] `8_proxy`.
+  - [!] Activity backfill is blocked until `docs/abstractions/8_proxy.md`
+    exists and a clean `proxy:*` command surface is implemented.
 - [x] `9_schedule`.
 - [ ] `10_deploy`.
+  - [!] Activity backfill is blocked until `docs/abstractions/10_deploy.md`
+    exists and a clean `deploy:*` command surface is implemented.
 - [ ] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
   - [~] `update`, `update:all`, and `profile` activity contracts/emission are
     implemented by `ACTIVITY-OPERATION-IMPLEMENTED-1`.
   - [!] `doctor` activity backfill is blocked until the clean `doctor` command
     is implemented.
 - [ ] `12_cf`.
+  - [!] Activity backfill is blocked until `docs/abstractions/12_cf.md` exists
+    and a clean `cf:*` command surface is implemented.
 - [ ] `13_vpn`.
+  - [!] Activity backfill is blocked until `docs/abstractions/13_vpn.md`
+    exists and a clean `vpn:*` command surface is implemented.
 - [ ] `14_php`.
+  - [!] Activity backfill is blocked until `docs/abstractions/14_php.md`
+    exists and a clean `php:*` command surface is implemented.
 - [ ] `15_agent-ide`.
+  - [!] Activity backfill is blocked until
+    `docs/abstractions/15_agent-ide.md` exists and a clean `agent-ide:*`
+    command surface is implemented.
 - [x] `16_dns`.
 
 ### Implementation Slice
