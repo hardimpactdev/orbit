@@ -1762,11 +1762,13 @@ for the Saloon-based gateway transport pattern.
         dispatch and records unsupported actions as skipped.
       - [x] Fix map handles custom `proxy.route_missing` and
         `proxy.route_mismatch` through Caddy site reconciliation.
-      - [!] TLS repair, safe `proxy.route_extra` cleanup, and custom-route
-        adoption action handlers remain outstanding.
-      - Next concrete action: add Orbit-managed TLS material repair for custom
-        proxy routes, then define selected-route adoption scope for
-        `proxy.route_extra` / compatible `proxy.route_mismatch`.
+      - [x] Fix map handles custom `proxy.tls_missing` and
+        `proxy.tls_mismatch` through Orbit-managed TLS material repair.
+      - [!] Safe `proxy.route_extra` cleanup and custom-route adoption action
+        handlers remain outstanding.
+      - Next concrete action: define selected-route adoption scope for
+        `proxy.route_extra` / compatible `proxy.route_mismatch`, then add the
+        adoption action handler.
 - [~] Port firewall rule family.
   - [x] Firewall abstraction seed exists at `docs/abstractions/4_firewall.md`.
   - [x] Firewall read foundation and `firewall:list`.

@@ -7,12 +7,14 @@ namespace App\Services\Proxy;
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 
 final readonly class ProxyRouteFixer
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private ProxyRouteRenderer $renderer,
+        private OrbitCaService $ca,
     ) {}
 
     /**
@@ -20,7 +22,7 @@ final readonly class ProxyRouteFixer
      */
     public function fix(ProxyRoute $route, DriftEntry $entry): ?array
     {
-        if (! in_array($entry->key, ['proxy.route_missing', 'proxy.route_mismatch'], true)) {
+        if (! in_array($entry->key, ['proxy.route_missing', 'proxy.route_mismatch', 'proxy.tls_missing', 'proxy.tls_mismatch'], true)) {
             return null;
         }
 
@@ -29,6 +31,23 @@ final readonly class ProxyRouteFixer
         }
 
         $route->loadMissing('node');
+
+        if (in_array($entry->key, ['proxy.tls_missing', 'proxy.tls_mismatch'], true)) {
+            $this->repairTls($route);
+
+            return [
+                'family' => 'proxy',
+                'node' => $route->node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => "Repaired Orbit-managed TLS material for proxy route {$route->domain}.",
+                'details' => [
+                    'route' => $route->domain,
+                ],
+            ];
+        }
 
         $content = $this->renderer->render($route);
         $this->remoteShell->run($route->node, $this->installScript($route->domain, $content), ['throw' => true]);
@@ -51,6 +70,21 @@ final readonly class ProxyRouteFixer
         ];
     }
 
+    private function repairTls(ProxyRoute $route): void
+    {
+        $leaf = $this->ca->issueLeaf($route->domain);
+
+        $this->remoteShell->run(
+            $route->node,
+            $this->tlsInstallScript(
+                $route->domain,
+                (string) file_get_contents($leaf['cert']),
+                (string) file_get_contents($leaf['key']),
+            ),
+            ['throw' => true],
+        );
+    }
+
     private function installScript(string $domain, string $content): string
     {
         $sitePath = "/etc/caddy/sites/{$domain}.caddy";
@@ -65,6 +99,29 @@ sudo systemctl reload caddy
 SH,
             escapeshellarg($sitePath),
             $content,
+        );
+    }
+
+    private function tlsInstallScript(string $domain, string $cert, string $key): string
+    {
+        $certPath = "/etc/orbit/certs/{$domain}.crt";
+        $keyPath = "/etc/orbit/certs/{$domain}.key";
+
+        return sprintf(
+            <<<'SH'
+sudo install -d -m 0755 /etc/orbit/certs
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+sudo chmod 0644 %s
+sudo chmod 0600 %s
+sudo systemctl reload caddy
+SH,
+            escapeshellarg(base64_encode($cert)),
+            escapeshellarg($certPath),
+            escapeshellarg(base64_encode($key)),
+            escapeshellarg($keyPath),
+            escapeshellarg($certPath),
+            escapeshellarg($keyPath),
         );
     }
 }

@@ -9,7 +9,9 @@ use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -201,6 +203,34 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported proxy TLS actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        $route->forceFill(['source_hash' => app(ProxyRouteRenderer::class)->sourceHash($route)])->save();
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("1\t{$route->source_hash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t0\t1\n"));
+        app()->instance(OrbitCaService::class, new DoctorProxyFakeCa);
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'proxy.tls_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 
@@ -280,5 +310,26 @@ final class DoctorProxyRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final readonly class DoctorProxyFakeCa extends OrbitCaService
+{
+    /** @return array{cert: string, key: string} */
+    public function issueLeaf(string $host): array
+    {
+        $dir = sys_get_temp_dir().'/orbit-doctor-proxy-ca';
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $cert = "{$dir}/{$host}.crt";
+        $key = "{$dir}/{$host}.key";
+
+        file_put_contents($cert, "fake-cert-for-{$host}");
+        file_put_contents($key, "fake-key-for-{$host}");
+
+        return ['cert' => $cert, 'key' => $key];
     }
 }
