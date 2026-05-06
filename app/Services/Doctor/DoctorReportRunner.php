@@ -5,18 +5,21 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'proxy'];
+    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
         private ProxyRouteProbe $proxyRouteProbe,
+        private FirewallRuleProbe $firewallRuleProbe,
     ) {}
 
     /**
@@ -59,6 +62,19 @@ final readonly class DoctorReportRunner
                     ...array_map(
                         fn (DriftEntry $entry): array => $this->proxyIssuePayload($entry, $route),
                         $this->proxyRouteProbe->diff($route, $snapshot),
+                    ),
+                ];
+            }
+        }
+
+        if (in_array('firewall_rule', $selectedFamilies, true)) {
+            foreach (FirewallRule::query()->with('node')->get() as $rule) {
+                $snapshot = $this->firewallRuleProbe->introspect($rule);
+                $issues = [
+                    ...$issues,
+                    ...array_map(
+                        fn (DriftEntry $entry): array => $this->firewallIssuePayload($entry, $rule),
+                        $this->firewallRuleProbe->diff($rule, $snapshot),
                     ),
                 ];
             }
@@ -109,6 +125,23 @@ final readonly class DoctorReportRunner
         return [
             'family' => $entry->family,
             'node' => $route->node->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function firewallIssuePayload(DriftEntry $entry, FirewallRule $rule): array
+    {
+        $rule->loadMissing('node');
+
+        return [
+            'family' => $entry->family,
+            'node' => $rule->node->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,

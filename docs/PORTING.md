@@ -1764,7 +1764,17 @@ for the Saloon-based gateway transport pattern.
   - [x] Firewall abstraction seed exists at `docs/abstractions/4_firewall.md`.
   - [x] Firewall read foundation and `firewall:list`.
   - [x] Firewall allow/deny/remove intent and runtime warnings.
-  - [ ] Firewall doctor probes, fix/adopt map, and live backend inspection.
+  - [~] Firewall doctor probes, fix/adopt map, and live backend inspection.
+    - [x] Registry intent, node eligibility, and baseline policy boundary probe foundation.
+    - [ ] Backend UFW rule reality inspection.
+    - [!] Fix/adopt map and doctor dispatcher/API integration.
+      - Verify-mode doctor dispatcher/API integration is ported for
+        `--family=firewall_rule`.
+      - Blocked for write modes because the global `doctor` command still
+        rejects `--fix` and `--adopt` before family action maps run.
+      - Next concrete action: port the generic doctor action-map runner for
+        family-owned fix/adopt handlers, then add firewall rule reconcile and
+        selected-rule adoption actions.
 - [~] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
   - [x] Read foundation exists for registry-backed `tool:list` / `tool:show`

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
+use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -155,6 +156,44 @@ describe('doctor command contract', function (): void {
                 'node' => 'app-1',
                 'key' => 'proxy.route_missing',
                 'kind' => 'missing',
+            ]);
+    });
+
+    it('runs the firewall rule family locally for gateway callers', function (): void {
+        createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['scope']['families'])->toBe(['firewall_rule'])
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0);
+    });
+
+    it('reports firewall rule family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'public-ssh',
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => 'any',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+        ]);
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'firewall_rule',
+                'node' => 'app-1',
+                'key' => 'firewall_rule.baseline_conflict',
+                'kind' => 'divergent',
             ]);
     });
 });
