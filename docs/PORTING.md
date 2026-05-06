@@ -1742,7 +1742,7 @@ for the Saloon-based gateway transport pattern.
   - [x] Registry-only `ProcessesProbe` foundation: process record completeness,
     owner-app eligibility, and runtime context expansion checks.
   - [x] Runtime backend availability checks.
-  - [ ] Supervisor program presence and content checks.
+  - [x] Supervisor program presence and content checks.
   - [ ] Restart policy and runtime environment checks.
   - [ ] Lifecycle event notifier material checks.
   - [ ] Stale runtime unit checks.

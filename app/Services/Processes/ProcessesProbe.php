@@ -42,14 +42,66 @@ final readonly class ProcessesProbe
         }
 
         $probe = $this->runtimeBackendProbe()->check($process->app->node);
+        $spec = $this->expectedRuntimeUnitSpecs($process);
 
-        return new ProbeSnapshot([
+        $items = [
             $process->name => [
                 'runtime_backend_available' => $probe->available,
                 'runtime_backend_exit_code' => $probe->exitCode,
                 'runtime_backend_output' => $probe->output,
+                'runtime_units' => [],
             ],
-        ]);
+        ];
+
+        if (! $probe->available) {
+            return new ProbeSnapshot($items);
+        }
+
+        $script = <<<'BASH'
+set -euo pipefail
+php <<'PHP'
+<?php
+$units = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_UNITS')), true);
+
+foreach ($units as $unit) {
+    $name = (string) ($unit['name'] ?? '');
+    $path = (string) ($unit['config_path'] ?? '');
+    $hash = (string) ($unit['config_hash'] ?? '');
+    $exists = is_file($path) ? '1' : '0';
+    $matches = $exists === '1' && hash_file('sha256', $path) === $hash ? '1' : '0';
+
+    printf("%s\t%s\t%s\n", $name, $exists, $matches);
+}
+PHP
+BASH;
+
+        $result = $this->runtimeBackendProbe()
+            ->remoteShell()
+            ->run($process->app->node, $script, [
+                'throw' => true,
+                'env' => ['ORBIT_PROCESS_UNITS' => base64_encode((string) json_encode($spec))],
+            ]);
+
+        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode("\t", $line, 3);
+
+            if (count($parts) !== 3) {
+                continue;
+            }
+
+            [$name, $exists, $matches] = $parts;
+
+            $items[$process->name]['runtime_units'][$name] = [
+                'config_exists' => $exists === '1',
+                'config_matches' => $matches === '1',
+            ];
+        }
+
+        return new ProbeSnapshot($items);
     }
 
     /**
@@ -63,6 +115,7 @@ final readonly class ProcessesProbe
         $drift = array_merge($drift, $this->checkOwnerApp($process));
         $drift = array_merge($drift, $this->checkRuntimeContexts($process));
         $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
 
         return $drift;
     }
@@ -134,6 +187,59 @@ final readonly class ProcessesProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUnits(Process $process, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($process->name);
+
+        if (
+            $observed === null
+            || ($observed['runtime_backend_available'] ?? null) === false
+            || ! is_array($observed['runtime_units'] ?? null)
+        ) {
+            return [];
+        }
+
+        $drift = [];
+
+        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+            $name = $unit['name'];
+            $runtimeUnit = $observed['runtime_units'][$name] ?? null;
+
+            if (! is_array($runtimeUnit) || ($runtimeUnit['config_exists'] ?? null) === false) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.runtime_unit_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Process runtime unit {$name} is missing.",
+                    detail: [
+                        'runtime_unit' => $name,
+                        'expected' => $unit['config_path'],
+                    ],
+                );
+
+                continue;
+            }
+
+            if (($runtimeUnit['config_matches'] ?? null) === false) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.runtime_unit_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Process runtime unit {$name} differs from gateway process intent.",
+                    detail: [
+                        'runtime_unit' => $name,
+                        'expected' => $unit['config_path'],
+                    ],
+                );
+            }
+        }
+
+        return $drift;
     }
 
     /**
@@ -226,6 +332,27 @@ final readonly class ProcessesProbe
 
         return collect([null, ...$process->app->workspaces->all()])
             ->map(fn (?Workspace $workspace): string => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{name: string, config_path: string, config_hash: string}>
+     */
+    private function expectedRuntimeUnitSpecs(Process $process): array
+    {
+        $process->loadMissing('app.workspaces');
+
+        if (! $process->app instanceof App) {
+            return [];
+        }
+
+        return collect([null, ...$process->app->workspaces->all()])
+            ->map(fn (?Workspace $workspace): array => [
+                'name' => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace),
+                'config_path' => $this->supervisorProgramRenderer()->configPath($process->app, $process, $workspace),
+                'config_hash' => hash('sha256', $this->supervisorProgramRenderer()->render($process->app, $process, $workspace)),
+            ])
             ->values()
             ->all();
     }

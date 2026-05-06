@@ -27,6 +27,11 @@ final readonly class SupervisorProgramRenderer
         return $this->renderer->renderInstallScript($this->definition($app, $process, $workspace));
     }
 
+    public function configPath(App $app, Process $process, ?Workspace $workspace = null): string
+    {
+        return $this->renderer->configPath($this->definition($app, $process, $workspace));
+    }
+
     public function definition(App $app, Process $process, ?Workspace $workspace = null): SupervisorProgramDefinition
     {
         $app->loadMissing('node');

@@ -49,6 +49,7 @@ describe('runtime backend availability', function (): void {
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\n", stderr: '', durationMs: 1),
         ]);
 
         $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
@@ -59,7 +60,12 @@ describe('runtime backend availability', function (): void {
             'runtime_backend_output' => 'supervisor OK',
         ]);
         expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1');
+        expect($shell->scripts[1])->toContain('ORBIT_PROCESS_UNITS');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
+        expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
+            'config_exists' => true,
+            'config_matches' => true,
+        ]);
     });
 
     it('detects unavailable supervisor runtime backends and leaves downstream checks to later layers', function (): void {
@@ -94,6 +100,86 @@ describe('runtime backend availability', function (): void {
         ]));
 
         expect(issue($drift, 'process.runtime_backend_unavailable'))->toBeNull();
+    });
+});
+
+describe('supervisor program reality', function (): void {
+    it('detects missing supervisor programs for expected runtime contexts', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature-docs',
+                'path' => "{$app->path}/workspaces/feature-docs",
+            ]);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit_docs_main_vite' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                    ],
+                    'orbit_docs_feature-docs_vite' => [
+                        'config_exists' => false,
+                        'config_matches' => false,
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
+            'runtime_unit' => 'orbit_docs_feature-docs_vite',
+            'expected' => '/etc/supervisor/conf.d/orbit_docs_feature-docs_vite.conf',
+        ]);
+    });
+
+    it('detects supervisor program content mismatches', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit_docs_main_vite' => [
+                        'config_exists' => true,
+                        'config_matches' => false,
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('skips supervisor program checks while runtime backend is unavailable', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => false,
+                'runtime_units' => [
+                    'orbit_docs_main_vite' => [
+                        'config_exists' => false,
+                        'config_matches' => false,
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_missing'))->toBeNull();
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
     });
 });
 

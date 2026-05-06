@@ -25,6 +25,11 @@ final readonly class RuntimeBackendProbe
         );
     }
 
+    public function remoteShell(): RemoteShell
+    {
+        return $this->remoteShell;
+    }
+
     private function script(): string
     {
         return 'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1';
