@@ -183,6 +183,7 @@ describe('doctor command contract', function (): void {
             'port' => '22',
             'protocol' => 'tcp',
         ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
         $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

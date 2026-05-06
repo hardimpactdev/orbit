@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -27,12 +29,131 @@ describe('FirewallRuleProbe interface', function (): void {
             ->and($probe->label())->toBe('Firewall rules');
     });
 
-    it('returns an empty foundation snapshot before live backend probing is added', function (): void {
+    it('returns an empty snapshot when no target node is available', function (): void {
         $rule = new FirewallRule(['name' => 'local-vite']);
 
         expect((new FirewallRuleProbe)->introspect($rule)->isEmpty())->toBeTrue();
     });
 });
+
+describe('firewall backend UFW reality', function (): void {
+    it('introspects UFW rules from the target node', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+[ 2] 5173/tcp (v6)              ALLOW IN    Anywhere (v6)
+UFW);
+
+        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+
+        expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp'))->toMatchArray([
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+            'protocol' => 'tcp',
+        ])
+            ->and($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->scripts[0])->toBe('sudo ufw status numbered');
+    });
+
+    it('detects missing backend rules after UFW inspection', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'local-vite',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+UFW);
+
+        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+
+        expect(firewallProbeIssue($drift, 'firewall_rule.rule_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects backend rule shape mismatches', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'local-vite',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    Anywhere
+UFW);
+
+        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+        $issue = firewallProbeIssue($drift, 'firewall_rule.rule_mismatch');
+
+        expect($issue?->kind)->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['expected']['source'] ?? null)->toBe('10.6.0.0/24')
+            ->and($issue?->detail['observed']['source'] ?? null)->toBe('any');
+    });
+
+    it('passes when backend rule shape matches gateway intent', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'local-vite',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+UFW);
+
+        $snapshot = (new FirewallRuleProbe($shell))->introspect($rule);
+        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+
+        expect($drift)->toBe([]);
+    });
+});
+
+final class FirewallProbeRecordingRemoteShell implements RemoteShell
+{
+    /** @var list<Node> */
+    public array $nodes = [];
+
+    /** @var list<string> */
+    public array $scripts = [];
+
+    public function __construct(
+        private readonly string $stdout,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
 
 describe('firewall registry probe foundation', function (): void {
     it('passes complete firewall rules on active Ubuntu app nodes', function (): void {

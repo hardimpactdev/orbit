@@ -1766,7 +1766,7 @@ for the Saloon-based gateway transport pattern.
   - [x] Firewall allow/deny/remove intent and runtime warnings.
   - [~] Firewall doctor probes, fix/adopt map, and live backend inspection.
     - [x] Registry intent, node eligibility, and baseline policy boundary probe foundation.
-    - [ ] Backend UFW rule reality inspection.
+    - [x] Backend UFW rule reality inspection.
     - [!] Fix/adopt map and doctor dispatcher/API integration.
       - Verify-mode doctor dispatcher/API integration is ported for
         `--family=firewall_rule`.
