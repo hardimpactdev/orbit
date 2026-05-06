@@ -724,7 +724,7 @@ describe('external service stubs', function (): void {
         expect($runtime)->toHaveCount(0);
     });
 
-    it('returns empty for development TLD checks', function (): void {
+    it('detects missing development TLD for development app nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -733,6 +733,46 @@ describe('external service stubs', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $tld = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_tld_missing'));
+
+        expect($tld)->toHaveCount(1);
+        expect($tld[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('accepts configured development TLD for development app nodes', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.development'));
+
+        expect($tld)->toHaveCount(0);
+    });
+
+    it('does not require development TLD for production app nodes', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'production',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);

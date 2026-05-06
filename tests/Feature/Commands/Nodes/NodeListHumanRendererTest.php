@@ -23,6 +23,7 @@ function nodeListHumanRow(array $overrides = []): array
         'status' => 'active',
         'is_local' => false,
         'environment' => 'development',
+        'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),

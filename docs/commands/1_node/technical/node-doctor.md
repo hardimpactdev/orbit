@@ -123,6 +123,9 @@ These layers are implemented without external service dependencies:
    - Detects `NodeAccess` rows referencing missing or non-active nodes.
    - Checks both consumer and serving directions.
 
+6. **Development TLD intent** (`node.development_tld_missing`)
+   - Detects development app-node records without a `nodes.tld` value.
+
 ### Implemented Local External Checks
 
 These layers perform bounded local-only external inspection. They do not SSH
@@ -143,7 +146,7 @@ implementations that require external services:
 - SSH reachability (`node.app_ssh_unreachable`)
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node bootstrap readiness (`node.app_runtime_missing`, `node.node_identity_artifact_missing`)
-- Development TLD readiness (`node.development_tld_missing`, `node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
+- Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
 - Gateway API reachability (`node.gateway_api_unreachable`)

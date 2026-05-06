@@ -1696,7 +1696,9 @@ for the Saloon-based gateway transport pattern.
     - [x] local platform detection.
     - [ ] SSH reachability.
     - [ ] gateway/app runtime readiness.
-    - [ ] development TLD.
+    - [~] development TLD:
+      - [x] missing development app-node TLD intent.
+      - [ ] local TLD reality / DNS mapping reality.
     - [ ] PHP default verification.
 - [ ] Port app doctor contracts and checks.
 - [ ] Port workspace doctor contracts and checks.

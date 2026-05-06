@@ -352,6 +352,21 @@ final readonly class NodesProbe
      */
     private function checkDevelopmentTld(Node $node): array
     {
+        if ($node->role !== 'app' || $node->environment !== 'development') {
+            return [];
+        }
+
+        if (! is_string($node->tld) || trim($node->tld) === '') {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.development_tld_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Development app node {$node->name} is missing a development TLD.",
+                ),
+            ];
+        }
+
         return [];
     }
 
