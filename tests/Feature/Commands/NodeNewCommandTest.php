@@ -153,6 +153,10 @@ describe('node:new', function (): void {
                     );
                 }
 
+                if (str_contains($process->command, 'ssh-keygen -y')) {
+                    return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+                }
+
                 if ($process->command === 'sw_vers -productVersion') {
                     return Process::result(output: "15.4\n");
                 }
@@ -357,6 +361,8 @@ describe('node:new', function (): void {
             && ! str_contains($process->command, 'control-private-key'));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh ')
             && str_contains($process->command, 'orbit:internal:detect-platform --update-local-node'));
+        Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
+            && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
 
         Http::assertSent(fn ($request): bool => $request->method() === 'GET'
             && $request->url() === 'https://10.6.0.2/api/me');

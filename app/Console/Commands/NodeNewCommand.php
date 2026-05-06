@@ -773,7 +773,7 @@ class NodeNewCommand extends Command
 
         return $this->failCommand(
             code: 'node.provisioning_incomplete',
-            message: "App host '{$host}' could not authorize the steady-state SSH user.",
+            message: "Host '{$host}' could not authorize the steady-state SSH user.",
             meta: [
                 'host' => $host,
                 'step' => 'steady_state_ssh_authorization',
@@ -792,7 +792,7 @@ class NodeNewCommand extends Command
 
         return $this->failCommand(
             code: 'node.provisioning_incomplete',
-            message: 'Gateway SSH identity is not available for app-node steady-state access.',
+            message: 'Gateway SSH identity is not available for steady-state access.',
             meta: [
                 'step' => 'steady_state_ssh_authorization',
                 'error' => trim($publicKey->errorOutput()) ?: trim($publicKey->output()) ?: null,
@@ -868,6 +868,16 @@ class NodeNewCommand extends Command
                     'error' => trim($installation->errorOutput) ?: null,
                 ],
             );
+        }
+
+        $sshAuthorization = $this->authorizeRuntimeSshUser(
+            host: $host,
+            sshUser: $sshUser,
+            runtimeUser: $runtimeUser,
+        );
+
+        if (is_int($sshAuthorization)) {
+            return $sshAuthorization;
         }
 
         $bootstrapCommand = sprintf(

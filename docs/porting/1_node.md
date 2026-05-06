@@ -209,8 +209,8 @@ Detail file for the node command family. Top-level command status lives in
   - [~] local node role and identity persistence
   - [ ] Orbit API vhost provisioning
   - [ ] Orbit PHP-FPM pool provisioning
-  - [ ] gateway-to-node SSH trust model
-- [ ] Distribute SSH trust to the runtime user so control nodes can SSH as
+  - [x] gateway-to-node SSH trust model
+- [x] Distribute SSH trust to the runtime user so control nodes can SSH as
   `orbit` after first-gateway provisioning.
 - [!] Restore ephemeral node E2E before treating provisioning and host-mutation
   flows as fully verified.
