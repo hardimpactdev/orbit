@@ -1725,8 +1725,18 @@ for the Saloon-based gateway transport pattern.
   - [x] Source path and parent-app path policy checks.
   - [x] PHP runtime availability checks.
   - [x] PHP-FPM configuration presence and content checks.
-  - [ ] External workspace runtime artifact checks: runtime configuration, stale
+  - [!] External workspace runtime artifact checks: runtime configuration, stale
     artifacts, and adoption hints.
+    - Blocked by missing clean-rebuild lifecycle/enactor implementation for
+      workspace runtime configuration, managed filesystem ownership, stale
+      workspace artifact discovery scope, and explicit adoption-scope inputs.
+      `workspace:new`, `workspace:setup`, and `workspace:remove` remain blocked
+      as full lifecycle commands, so workspace doctor cannot yet safely classify
+      or repair artifacts beyond the currently rendered PHP-FPM pool.
+    - Next concrete action: port the workspace lifecycle/enactor slice that
+      defines runtime config, managed ownership, stale artifact inventory, and
+      adoption scan inputs, or explicitly narrow `workspace-doctor` to source,
+      PHP, and FPM reality until lifecycle commands are unblocked.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
