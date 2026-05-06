@@ -20,9 +20,15 @@ Detail file for the tool command family. Top-level status lives in
   Incus VM-feature because the command exercises host-init managed services.
   Passed gate:
   `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='stops a managed system service tool'`.
-- [ ] `tool:install`, `tool:remove`, `tool:restart`, `tool:logs`,
-  `tool:update`, `tool:credentials`, `tool:reload`, `tool:reconfigure` —
-  write/enactment commands not started.
+- [x] `tool:restart` — gateway-local + Saloon forwarding implementation and
+  focused Pest coverage in
+  `tests/Feature/Commands/Tools/ToolRestartCommandTest.php`. E2E lane:
+  Incus VM-feature because the command exercises host-init managed services.
+  Passed gate:
+  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='restarts a managed system service tool'`.
+- [ ] `tool:install`, `tool:remove`, `tool:logs`, `tool:update`,
+  `tool:credentials`, `tool:reload`, `tool:reconfigure` — write/enactment
+  commands not started.
 
 ## Family doctor
 

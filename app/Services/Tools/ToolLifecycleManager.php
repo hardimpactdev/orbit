@@ -49,6 +49,52 @@ final readonly class ToolLifecycleManager
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
+    public function restart(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
+    {
+        if (! $this->catalog->supports($tool)) {
+            return ToolRegistryFailure::unsupportedAction($tool, 'restart');
+        }
+
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
+
+        if ($model instanceof ToolRegistryFailure) {
+            return $model;
+        }
+
+        $restartCommand = $this->repairCommand($model, 'lifecycle_restarted');
+        $commands = $restartCommand === null ? [] : [$restartCommand];
+
+        if ($restartCommand === null) {
+            $commands = array_values(array_filter([
+                $this->repairCommand($model, 'lifecycle_stopped'),
+                $this->repairCommand($model, 'lifecycle_running'),
+            ]));
+
+            if (count($commands) !== 2) {
+                return ToolRegistryFailure::unsupportedAction($tool, 'restart');
+            }
+        }
+
+        $model->loadMissing('node');
+
+        if ($model->node === null) {
+            return ToolRegistryFailure::remoteActionFailed($tool, '', 'restart', 1, 'Target node is missing.');
+        }
+
+        foreach ($commands as $command) {
+            $result = $this->remoteShell->run($model->node, $command, ['throw' => false]);
+
+            if (! $result->successful()) {
+                return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'restart', $result->exitCode, trim($result->stderr));
+            }
+        }
+
+        return $this->payloads->toArray($model);
+    }
+
+    /**
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
     private function applyLifecycleAction(
         string $tool,
         ?string $node,
