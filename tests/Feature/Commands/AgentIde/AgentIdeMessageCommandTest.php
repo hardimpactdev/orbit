@@ -310,3 +310,60 @@ it('forwards configured control callers through the typed gateway request', func
 
     $mockClient->assertSent(SendAgentIdeMessageRequest::class);
 });
+
+it('forwards configured app callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $mockClient = MockClient::global([
+        SendAgentIdeMessageRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'agent_ide' => [
+                        'adapter' => 'opencode',
+                        'source' => 'app',
+                        'target' => [
+                            'app' => 'docs',
+                            'workspace' => null,
+                            'node' => 'app-2',
+                        ],
+                        'session' => [
+                            'id' => 'sess_789',
+                            'status' => 'active',
+                        ],
+                        'delivery' => [
+                            'status' => 'sent',
+                            'message_bytes' => 13,
+                            'input' => 'argument',
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['target']['node'])->toBe('app-2')
+        ->and($adapter->deliveries)->toBeEmpty();
+
+    $mockClient->assertSent(SendAgentIdeMessageRequest::class);
+});

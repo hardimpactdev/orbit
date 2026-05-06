@@ -31,10 +31,13 @@ transports remain open.
     `SendAgentIdeMessageRequest` / `AgentIdeMessageResponse`, gateway-owned app
     authorization, preserved structured errors, and command forwarding without
     local adapter delivery on control callers.
-  - [!] App-node caller forwarding, workspace targets, current-directory target
-    inference, stdin input, human progress-tree rendering, adapter delivery
-    diagnostics under `error.data`, activity logging for the API endpoint, and
-    real core adapter transports remain unported. Next concrete action: extend
-    the explicit app-target forwarding path to app callers, then add one
-    documented input/rendering/delivery behavior per slice with focused Pest
-    coverage.
+  - [x] Explicit app-target app-node caller forwarding uses the same typed
+    gateway request as control callers; app-node local adapter state is not
+    treated as delivery authority, and gateway authorization is covered for
+    authorized app callers.
+  - [!] Workspace targets, current-directory target inference, stdin input,
+    human progress-tree rendering, adapter delivery diagnostics under
+    `error.data`, activity logging for the API endpoint, and real core adapter
+    transports remain unported. Next concrete action: add one documented
+    input/rendering/delivery behavior per slice with focused Pest coverage,
+    starting with workspace targets.
