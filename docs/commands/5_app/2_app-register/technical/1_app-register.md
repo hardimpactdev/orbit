@@ -172,6 +172,19 @@ See also:
 - `app:register` resolves drift detected by `doctor --family=app`.
 - Family doctor behavior is documented in [`app-doctor.md`](../../app-doctor.md).
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed app
+registration attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /apps/register` |
+| Effect | `write` |
+| Subject | `App` when registration resolves to an app row; `none` for validation, caller-role, authorization, or enactment failures before an app row is resolved. |
+| Properties | `name` (string or null) and `node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

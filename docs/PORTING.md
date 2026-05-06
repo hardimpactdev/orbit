@@ -1032,7 +1032,7 @@ that produced the controller's Loggable wiring.
 - [ ] `2_gateway`.
 - [ ] `3_tool`.
 - [ ] `4_firewall`.
-- [ ] `5_app`.
+- [x] `5_app`.
 - [ ] `6_workspace`.
 - [ ] `7_process`.
 - [ ] `8_proxy`.
@@ -1079,6 +1079,13 @@ that produced the controller's Loggable wiring.
   - [x] `node:agent-ide` now declares its `## Activity Logging` tech contract,
     emits `effect=write` metadata through the gateway API
     `POST /api/nodes/{name}/agent-ide` Loggable contract, and is enforced by
+    `ActivityLoggingContractRule`.
+- [x] `ACTIVITY-APP-FAMILY-1` — add activity logging contracts to the app
+  family while app commands use typed gateway APIs.
+  - [x] `app:list`, `app:show`, and `app:new` were already declared and
+    enforced.
+  - [x] `app:register`, `app:root`, `app:remove`, and `app:agent-ide` now
+    declare their `## Activity Logging` tech contracts and are enforced by
     `ActivityLoggingContractRule`.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may

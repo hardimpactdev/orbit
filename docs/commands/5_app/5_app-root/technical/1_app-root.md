@@ -174,6 +174,19 @@ runtime configuration drift.
   `app.root_missing`) is doctor-owned and never duplicated as `app:root`
   input validation.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+document-root updates.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /apps/{app}/root` |
+| Effect | `write` |
+| Subject | `App` when the app is resolved and visible; `none` for not-found, validation, caller-role, or authorization failures before the target app can be logged. |
+| Properties | `root` (string or null), the requested document root value after static request normalization. No raw shell command text, node-side output, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

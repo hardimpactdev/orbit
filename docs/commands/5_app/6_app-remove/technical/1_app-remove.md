@@ -124,6 +124,19 @@ not a removal failure.
   `process`, `schedule`).
 - `app:remove` does not duplicate per-family drift item shapes; it points operators at the affected `doctor --family=<family> --fix` via the warning's `next_command`.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed app
+removal attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /apps/{app}` |
+| Effect | `destructive` |
+| Subject | `App` when the app is resolved before deletion; `none` for not-found, caller-role, or authorization failures before the target app can be logged. |
+| Properties | `name` (string), the requested route selector for the app being removed. No raw shell command text, node-side output, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

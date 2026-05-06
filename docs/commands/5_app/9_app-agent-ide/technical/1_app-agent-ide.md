@@ -179,6 +179,19 @@ failure.
 - Cross-reference `app-doctor.md` for `doctor --family=app --app=<app>`
   agent-IDE drift checks instead of redefining doctor semantics here.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed app
+agent-IDE override attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /apps/{app}/agent-ide` |
+| Effect | `write` |
+| Subject | `App` when the app is resolved and visible; `none` for not-found, caller-role, authorization, or adapter validation failures before the target app can be logged. |
+| Properties | `target_app` (string), `agent_ide` (string or null effective adapter after the write), and `action` (`set`, `cleared`, `converged`, or null before a write completes). No adapter credentials, workspace paths, raw cleanup output, or secrets. |
+| Description | derived, for example `"App docs agent IDE set to opencode"` or `"App docs agent IDE already set to opencode"`. |
+
 ## Test Mapping
 
 Primary test owners:
