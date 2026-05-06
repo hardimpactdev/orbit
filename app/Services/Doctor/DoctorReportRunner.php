@@ -15,6 +15,7 @@ use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
@@ -32,6 +33,7 @@ final readonly class DoctorReportRunner
         private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
+        private SchedulesFixer $schedulesFixer,
     ) {}
 
     /**
@@ -139,13 +141,23 @@ final readonly class DoctorReportRunner
         if (in_array('schedule', $selectedFamilies, true)) {
             foreach (Schedule::query()->with(['app.node', 'node'])->get() as $schedule) {
                 $snapshot = $this->schedulesProbe->introspect($schedule);
-                $issues = [
-                    ...$issues,
-                    ...array_map(
-                        fn (DriftEntry $entry): array => $this->scheduleIssuePayload($entry, $schedule),
-                        $this->schedulesProbe->diff($schedule, $snapshot),
-                    ),
-                ];
+
+                foreach ($this->schedulesProbe->diff($schedule, $snapshot) as $entry) {
+                    $action = $this->handleScheduleAction($mode, $schedule, $entry);
+
+                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                        $actions[] = $action;
+
+                        continue;
+                    }
+
+                    $issue = $this->scheduleIssuePayload($entry, $schedule);
+                    $issues[] = $issue;
+
+                    if ($action !== null) {
+                        $actions[] = $action;
+                    }
+                }
             }
         }
 
@@ -325,6 +337,33 @@ final readonly class DoctorReportRunner
             return [
                 'family' => $entry->family,
                 'node' => $tool->node?->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleScheduleAction(string $mode, Schedule $schedule, DriftEntry $entry): ?array
+    {
+        if ($mode !== 'fix') {
+            return null;
+        }
+
+        try {
+            return $this->schedulesFixer->fix($schedule, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $this->scheduleNodeName($schedule),
                 'code' => $entry->key,
                 'key' => $entry->key,
                 'mode' => $mode,

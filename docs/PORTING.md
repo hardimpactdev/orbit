@@ -1472,12 +1472,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     presence/liveness, heartbeat freshness, and registry-sync freshness.
   - [x] Verify-mode doctor dispatcher/API integration is ported for
     `--family=schedule`.
-  - [!] Fix map remains outstanding for `schedule.scheduler_missing`,
-    `schedule.scheduler_stopped`, `schedule.lock_stuck`, and
+  - [x] Fix map handles `schedule.scheduler_missing` and
+    `schedule.scheduler_stopped` through `OrbitSchedulerProgramRenderer` and
+    Supervisor control.
+  - [!] Fix map remains outstanding for `schedule.lock_stuck` and
     `schedule.run_history_hook_*`.
-  - Next concrete action: add safe `--fix` handling for scheduler program
-    missing/stopped using `OrbitSchedulerProgramRenderer`, then model stale lock
-    and run-history hook drift.
+  - Next concrete action: model stale lock and run-history hook drift, then add
+    safe `--fix` handling for those codes.
 
 ## Runtime Backend And Scheduler Workstream
 
