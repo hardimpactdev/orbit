@@ -1276,6 +1276,76 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.wireguard_peer_extra'))->toBeNull();
     });
 
+    it('snapshots compatible live WireGuard peer missing for adopt', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.8',
+        ]);
+
+        $snapshot = $probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_peer_missing'))->toBe([
+            'public_key' => 'app-public-key',
+            'observed' => '10.6.0.8',
+            'allowed_ips' => ['10.6.0.8/32'],
+            'artifact' => [
+                'name' => 'test',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ],
+        ]);
+    });
+
+    it('does not snapshot unproven live WireGuard peer missing for adopt', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['name' => 'other']), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.8',
+        ]);
+
+        $snapshot = $probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull();
+    });
+
     it('snapshots available app runtime readiness for adopt', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
@@ -1292,6 +1362,11 @@ describe('adoption', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
         ]);
 
         $snapshot = $probe->snapshotForAdopt($node);
@@ -1323,6 +1398,11 @@ describe('adoption', function (): void {
             'wireguard_address' => '10.6.0.5',
         ]);
 
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
         $snapshot = $probe->snapshotForAdopt($node);
 
         expect($snapshot->get('node.app_runtime_missing'))->toBe([
@@ -1347,9 +1427,10 @@ describe('adoption', function (): void {
 
         $results = $this->probe->adopt($node, new ProbeSnapshot([]));
 
-        expect($results)->toHaveCount(4);
+        expect($results)->toHaveCount(5);
 
         $keys = array_map(fn ($r) => $r->key, $results);
+        expect($keys)->toContain('node.wireguard_peer_missing');
         expect($keys)->toContain('node.wireguard_peer_extra');
         expect($keys)->toContain('node.wireguard_address_mismatch');
         expect($keys)->toContain('node.app_runtime_missing');
@@ -1462,6 +1543,41 @@ describe('adoption', function (): void {
         expect($node->wireguard_address)->toBe('10.6.0.8');
     });
 
+    it('adopts compatible live WireGuard peer missing', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.8',
+        ]);
+
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
+        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_peer_missing'));
+        $peer = WireGuardPeer::query()->where('node_id', $node->id)->first();
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->action)->toBe(AdoptAction::Updated);
+        expect($peer)->toBeInstanceOf(WireGuardPeer::class);
+        expect($peer->public_key)->toBe('app-public-key');
+        expect($peer->private_key)->toBe('');
+        expect($peer->allowed_ips)->toBe('10.6.0.8/32');
+    });
+
     it('adopts available app runtime readiness', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
@@ -1477,6 +1593,11 @@ describe('adoption', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
         ]);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
@@ -1506,6 +1627,11 @@ describe('adoption', function (): void {
             'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
         ]);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
@@ -1543,6 +1669,23 @@ describe('public IP metadata exclusion', function (): void {
         expect($ipIssues)->toHaveCount(0);
     });
 });
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function nodeIdentityArtifactPayload(array $overrides = []): string
+{
+    return json_encode(array_merge([
+        'name' => 'test',
+        'role' => 'app',
+        'local_role' => 'app',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.8',
+        'registry_public_key' => null,
+        'interface_public_key' => 'app-public-key',
+    ], $overrides), JSON_THROW_ON_ERROR);
+}
 
 final class NodesProbeRecordingRemoteShell implements RemoteShell
 {

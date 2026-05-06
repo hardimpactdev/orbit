@@ -946,11 +946,15 @@ describe('node:new', function (): void {
 
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
         $node = DB::table('nodes')->where('name', 'app-unproven-1')->first();
+        $peerExtraResult = array_values(array_filter(
+            $payload['error']['meta']['adoption_results'],
+            fn (array $result): bool => ($result['key'] ?? null) === 'node.wireguard_peer_extra',
+        ))[0] ?? null;
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.provisioning_incomplete')
             ->and($payload['error']['meta']['step'])->toBe('node_adoption')
-            ->and($payload['error']['meta']['adoption_results'][0])->toMatchArray([
+            ->and($peerExtraResult)->toMatchArray([
                 'family' => 'nodes',
                 'key' => 'node.wireguard_peer_extra',
                 'action' => 'skipped',

@@ -214,18 +214,17 @@ Detail file for the node command family. Top-level command status lives in
       Peer-extra adoption activates a selected non-active, non-gateway node
       record only when the registry already contains peer material, the peer
       public key is present in live WireGuard reality, and the live peer has
-      exactly one unambiguous allowed address. `node:new` now uses that result
-      for gateway-local compatible app-node adoption. Active-node missing-peer
-      adoption and unknown-host adoption remain unavailable because the clean
-      registry has no peer public key to bind to unowned live peer material, and
-      the old repo skipped these cases. The node identity artifact proof
-      contract is now documented in the node doctor and `node:new` technical
-      docs, and `NodeIdentityArtifactProbe` can read bounded non-secret
-      identity facts from a selected gateway or app host. Next concrete action:
-      consume `NodeIdentityArtifactProbe` inside `NodesProbe` adoption snapshots
-      so unknown-host and active missing-peer adoption can require selected
-      node-name, role, local-role, platform, and WireGuard public-key/address
-      proof before mutating gateway intent.
+      exactly one unambiguous allowed address. Active app-node missing-peer
+      adoption attaches a gateway peer row only when `NodeIdentityArtifactProbe`
+      proves the selected node name, role, local role, platform, live interface
+      public key, and WireGuard address against live WireGuard reality.
+      `node:new` now uses those node-family adoption results for gateway-local
+      compatible app-node adoption. Unknown-host and gateway-role adoption
+      remain unavailable because the clean registry still needs a safe command
+      path to select or materialize a node record before proof comparison. Next
+      concrete action: design the unknown-host/gateway-role adoption
+      materialization path, then wire it through gateway-local `node:new` and
+      forwarding.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

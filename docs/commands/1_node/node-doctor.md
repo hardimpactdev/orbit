@@ -127,7 +127,7 @@ endpoint.
 | `node.local_role_mismatch` | Replace the local role setting with the role from the verified active node record. |
 | `node.gateway_api_unreachable` | Restart or restore gateway runtime only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
-| `node.wireguard_peer_missing` | Recreate gateway-managed peer material from the active node record. |
+| `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `--adopt`. |
 | `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
@@ -160,6 +160,7 @@ such as `node:new`, `node:update`, `node:grant`, `node:revoke`, and
 
 | Code | `--adopt` behavior |
 | --- | --- |
+| `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer only when a selected active app node's non-secret identity artifact matches gateway intent and live WireGuard reality proves exactly one allowed address. Private key material is not read or adopted. |
 | `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a compatible already-provisioned node identity, the registry peer public key is present in live WireGuard reality, and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
@@ -170,12 +171,14 @@ unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
 tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
 deployments.
 
-Unknown-host adoption and active-node missing-peer adoption remain unavailable
-until the node family can verify a non-secret node identity artifact from the
-target host. That proof must bind the selected node name, role, local role
-setting, supported platform, and any existing WireGuard public key or address to
-gateway intent. An operator-supplied host, a live WireGuard peer, or a registry
-row alone must leave the adoption result as `conflict` or `skipped`.
+Active app-node missing-peer adoption requires non-secret node identity artifact
+proof from the target host. That proof must bind the selected node name, role,
+local role setting, supported platform, live interface public key, and
+WireGuard address to gateway intent and live WireGuard reality. Unknown-host
+adoption remains unavailable until a command path can safely select or
+materialize a node record before proof comparison. An operator-supplied host, a
+live WireGuard peer, or a registry row alone must leave the adoption result as
+`conflict` or `skipped`.
 
 ## Test Mapping
 

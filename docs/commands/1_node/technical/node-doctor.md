@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `--fix`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `--adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active app-node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -175,16 +175,21 @@ additional external services:
     non-gateway node records that already have registry peer material. Adoption
     activates the node only when the registry peer public key is present in live
     WireGuard reality and has exactly one unambiguous allowed address.
-  - Active-node missing peer adoption remains unavailable because the clean
-    registry has no peer public key to bind to live peer material.
+  - `NodesProbe` also consumes this read-only service with
+    `NodeIdentityArtifactProbe` for selected active app-node records missing a
+    registry peer row. Adoption attaches a peer row only when the remote
+    identity artifact matches the selected node intent, the artifact reports the
+    live interface public key, and live WireGuard reality has exactly one
+    allowed address matching the node record.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node identity artifact readiness (`node.node_identity_artifact_missing`)
   - `NodeIdentityArtifactProbe` can read bounded non-secret identity facts from
     the selected host: local active node name, role, status, platform,
     WireGuard address, registry public key, and live interface public key when
     available.
-  - `NodesProbe` does not yet consume this read-only service for
-    unknown-host or active missing-peer adoption.
+  - `NodesProbe` consumes this read-only service for selected active app-node
+    missing-peer adoption. Unknown-host and gateway-role adoption still require
+    a separate materialization path before they can use this proof safely.
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
@@ -203,9 +208,9 @@ address metadata.
 Unknown-host adoption and active-node missing-peer adoption require stronger
 proof than an operator-supplied host, a live WireGuard peer, or a registry row
 alone. `NodeIdentityArtifactProbe` reads bounded, non-secret node identity facts
-from the target host. `NodesProbe` must compare those facts with gateway intent
-before `NodesProbe` or `node:new` may attach unowned live reality to a node
-record.
+from the target host. `NodesProbe` compares those facts with gateway intent for
+selected active app-node missing-peer adoption before it attaches unowned live
+reality to a node record.
 
 The minimum proof set is:
 
@@ -221,7 +226,9 @@ The minimum proof set is:
 The probe must not read private keys, infer identity from public IP metadata, or
 adopt a live WireGuard peer that cannot be tied to a selected node identity.
 When this proof is unavailable, adoption remains a conflict or a
-`doctor --family=node --fix` handoff.
+`doctor --family=node --fix` handoff. Unknown-host adoption remains unavailable
+until the clean registry has a command path that can select or materialize a
+node record before proof comparison.
 
 ## Reconciliation (Fix)
 
@@ -231,7 +238,7 @@ When this proof is unavailable, adoption remains a conflict or a
 | --- | --- |
 | `node.local_role_invalid` | Updates local node record role to match verified active record. |
 | `node.local_role_mismatch` | Updates local node record role to match verified active record. |
-| `node.wireguard_peer_missing` | Stub: reserved for gateway-managed peer recreation. |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records only when identity artifact proof and live WireGuard reality agree. The private key is intentionally left empty because the proof path never reads private keys. |
 | `node.wireguard_address_mismatch` | Stub: reserved for gateway-managed peer rewrite. |
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
 | `node.app_runtime_missing` | Stub: reserved for app-node bootstrap rerun. |
@@ -257,6 +264,7 @@ when a supported compatible record can be safely adopted:
 
 | Key | Behavior |
 | --- | --- |
+| `node.wireguard_peer_missing` | Attaches a gateway peer row for selected active app-node records only when identity artifact proof and live WireGuard reality agree. The private key is intentionally left empty because the proof path never reads private keys. |
 | `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the runtime backend is available; returns a conflict when runtime readiness cannot be verified. |

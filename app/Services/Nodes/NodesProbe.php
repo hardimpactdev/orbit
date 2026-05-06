@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\Nodes\NodeIdentityArtifact;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
@@ -31,6 +32,7 @@ final readonly class NodesProbe
         private ?RemoteShell $remoteShell = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
+        private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
     ) {}
 
     public function key(): string
@@ -514,6 +516,13 @@ final readonly class NodesProbe
         return $this->wireGuardPeerRealityProbe ?? app(WireGuardPeerRealityProbe::class);
     }
 
+    private function nodeIdentityArtifactProbe(): NodeIdentityArtifactProbe
+    {
+        return $this->nodeIdentityArtifactProbe ?? ($this->remoteShell instanceof RemoteShell
+            ? new NodeIdentityArtifactProbe($this->remoteShell)
+            : app(NodeIdentityArtifactProbe::class));
+    }
+
     /**
      * @return list<DriftEntry>
      */
@@ -632,6 +641,51 @@ final readonly class NodesProbe
             ->first();
 
         if (
+            $node->status === 'active'
+            && $node->role === 'app'
+            && is_string($node->wireguard_address)
+            && $node->wireguard_address !== ''
+            && ! $peer instanceof WireGuardPeer
+        ) {
+            try {
+                $artifact = $this->nodeIdentityArtifactProbe()->read($node);
+                $publicKey = $artifact->interfacePublicKey;
+                $peerReality = is_string($publicKey) && $publicKey !== ''
+                    ? $this->wireGuardPeerRealityProbe()->peers()[$publicKey] ?? null
+                    : null;
+            } catch (Throwable) {
+                $artifact = null;
+                $publicKey = null;
+                $peerReality = null;
+            }
+
+            if (
+                $artifact instanceof NodeIdentityArtifact
+                && is_string($publicKey)
+                && $publicKey !== ''
+                && $peerReality !== null
+                && count($peerReality->allowedAddresses) === 1
+                && $this->identityArtifactMatchesNode($node, $artifact, $peerReality->allowedAddresses[0])
+            ) {
+                $items['node.wireguard_peer_missing'] = [
+                    'public_key' => $publicKey,
+                    'observed' => $peerReality->allowedAddresses[0],
+                    'allowed_ips' => $peerReality->allowedIps,
+                    'artifact' => [
+                        'name' => $artifact->name,
+                        'role' => $artifact->role,
+                        'local_role' => $artifact->localRole,
+                        'status' => $artifact->status,
+                        'platform' => $artifact->platform,
+                        'wireguard_address' => $artifact->wireguardAddress,
+                        'registry_public_key' => $artifact->registryPublicKey,
+                        'interface_public_key' => $artifact->interfacePublicKey,
+                    ],
+                ];
+            }
+        }
+
+        if (
             $node->status !== 'active'
             && $node->role !== 'gateway'
             && $peer instanceof WireGuardPeer
@@ -709,12 +763,71 @@ final readonly class NodesProbe
         return new ProbeSnapshot($items);
     }
 
+    private function identityArtifactMatchesNode(Node $node, NodeIdentityArtifact $artifact, string $observedAddress): bool
+    {
+        return $artifact->name === $node->name
+            && $artifact->role === $node->role
+            && $artifact->localRole === $node->role
+            && $artifact->status === 'active'
+            && $artifact->platform === $node->platform
+            && $artifact->wireguardAddress === $node->wireguard_address
+            && $observedAddress === $node->wireguard_address;
+    }
+
     /**
      * @return list<AdoptResult>
      */
     public function adopt(Node $node, ProbeSnapshot $snapshot): array
     {
         $results = [];
+
+        $wireGuardPeerMissing = $snapshot->get('node.wireguard_peer_missing');
+
+        if (! is_array($wireGuardPeerMissing)) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.wireguard_peer_missing',
+                action: AdoptAction::Skipped,
+                summary: 'WireGuard peer missing adoption skipped.',
+            );
+        } else {
+            $publicKey = $wireGuardPeerMissing['public_key'] ?? null;
+            $observedAddress = $wireGuardPeerMissing['observed'] ?? null;
+
+            if (is_string($publicKey) && $publicKey !== '' && is_string($observedAddress) && $observedAddress !== '') {
+                $allowedIps = array_values(array_filter(
+                    is_array($wireGuardPeerMissing['allowed_ips'] ?? null)
+                        ? $wireGuardPeerMissing['allowed_ips']
+                        : [],
+                    is_string(...),
+                ));
+
+                WireGuardPeer::query()->updateOrCreate(
+                    ['node_id' => $node->id],
+                    [
+                        'public_key' => $publicKey,
+                        'private_key' => '',
+                        'allowed_ips' => $allowedIps !== [] ? implode(',', $allowedIps) : "{$observedAddress}/32",
+                    ],
+                );
+
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_peer_missing',
+                    action: AdoptAction::Updated,
+                    summary: "Attached compatible live WireGuard peer reality to {$node->name}.",
+                    detail: $wireGuardPeerMissing,
+                );
+            } else {
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_peer_missing',
+                    action: AdoptAction::Skipped,
+                    summary: 'WireGuard peer missing adoption skipped because public key or address proof is unavailable.',
+                    detail: $wireGuardPeerMissing,
+                );
+            }
+        }
 
         $wireGuardPeerExtra = $snapshot->get('node.wireguard_peer_extra');
 
