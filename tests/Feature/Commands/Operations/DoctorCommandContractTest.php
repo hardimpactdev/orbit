@@ -91,6 +91,20 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['meta']['family'])->toBe('cloudflare');
     });
 
+    it('denies app-node write modes before probes', function (): void {
+        createDoctorLocalNode('app');
+
+        $exitCode = Artisan::call('doctor', ['--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'caller_role' => 'app',
+                'mode' => 'fix',
+            ]);
+    });
+
     it('forwards non-gateway callers through the typed gateway request', function (): void {
         createDoctorLocalNode('control');
 
@@ -195,6 +209,33 @@ describe('doctor command contract', function (): void {
                 'node' => 'app-1',
                 'key' => 'firewall_rule.baseline_conflict',
                 'kind' => 'divergent',
+            ]);
+    });
+
+    it('lets fix mode reach family dispatch and records unsupported actions as skipped', function (): void {
+        createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'local-vite',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['error']['data']['doctor']['summary']['skipped'])->toBe(1)
+            ->and($payload['error']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'firewall_rule',
+                'node' => 'app-1',
+                'key' => 'firewall_rule.rule_missing',
+                'mode' => 'fix',
+                'status' => 'skipped',
             ]);
     });
 });

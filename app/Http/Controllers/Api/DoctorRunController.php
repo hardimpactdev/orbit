@@ -14,8 +14,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class DoctorRunController implements Loggable
+final class DoctorRunController implements Loggable
 {
+    private string $activityMode = 'verify';
+
     public function __invoke(Request $request, DoctorReportRunner $runner, DoctorScopeValidator $validator): JsonResponse
     {
         /** @var mixed $caller */
@@ -32,6 +34,22 @@ final readonly class DoctorRunController implements Loggable
         }
 
         $families = $this->families($request);
+        $mode = $this->mode($request);
+        $this->activityMode = $mode;
+
+        if ($mode !== 'verify' && $caller->role === 'app') {
+            return response()->json([
+                'error' => [
+                    'code' => 'caller_role_not_allowed',
+                    'message' => 'App-node callers may not run doctor --fix or doctor --adopt for this scope.',
+                    'meta' => [
+                        'caller_role' => 'app',
+                        'mode' => $mode,
+                    ],
+                ],
+            ], 403);
+        }
+
         $failure = $validator->validate($families, $runner);
 
         if ($failure instanceof DoctorValidationFailure) {
@@ -44,7 +62,7 @@ final readonly class DoctorRunController implements Loggable
             ], 422);
         }
 
-        $doctor = $runner->run($caller, mode: 'verify', families: $families);
+        $doctor = $runner->run($caller, mode: $mode, families: $families);
 
         return response()->json([
             'success' => [
@@ -69,8 +87,19 @@ final readonly class DoctorRunController implements Loggable
         return array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
     }
 
+    private function mode(Request $request): string
+    {
+        $mode = $request->input('mode');
+
+        return is_string($mode) && in_array($mode, ['verify', 'fix', 'adopt'], true) ? $mode : 'verify';
+    }
+
     public function effect(): ActivityLogType
     {
+        if (in_array($this->activityMode, ['fix', 'adopt'], true)) {
+            return ActivityLogType::Write;
+        }
+
         return ActivityLogType::Read;
     }
 

@@ -234,7 +234,7 @@ entry for remote doctor orchestration requests.
 | Field | Value |
 | --- | --- |
 | Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API transport |
-| Effect | `read` for verify-mode runs; future fix/adopt slices must update this contract before enabling write-mode actions |
+| Effect | `read` for verify-mode runs; `write` for `--fix` and `--adopt` mode orchestration |
 | Subject | `none` |
 | Properties | `mode`, selected `families`, `healthy`, and `issues` when available. API transport context is added by middleware. |
 | Description | `Doctor verification run` for local CLI; derived for gateway API |

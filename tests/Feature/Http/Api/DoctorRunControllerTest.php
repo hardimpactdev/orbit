@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,7 +21,7 @@ beforeEach(function (): void {
     });
 });
 
-const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.95';
+const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.94';
 
 function createDoctorRunCallerNode(array $overrides = []): Node
 {
@@ -27,14 +30,13 @@ function createDoctorRunCallerNode(array $overrides = []): Node
         'role' => 'gateway',
         'host' => DOCTOR_RUN_CALLER_WG_IP,
         'wireguard_address' => DOCTOR_RUN_CALLER_WG_IP,
-        'platform' => 'linux',
-        'is_local' => true,
+        'platform' => 'ubuntu',
     ], $overrides));
 }
 
 describe('DoctorRunController', function (): void {
     it('runs verify mode and returns a doctor report', function (): void {
-        createDoctorRunCallerNode();
+        createDoctorRunCallerNode(['platform' => 'linux', 'is_local' => true]);
 
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['node'],
@@ -47,7 +49,7 @@ describe('DoctorRunController', function (): void {
     });
 
     it('accepts the proxy family scope', function (): void {
-        createDoctorRunCallerNode();
+        createDoctorRunCallerNode(['platform' => 'linux', 'is_local' => true]);
 
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['proxy'],
@@ -65,4 +67,49 @@ describe('DoctorRunController', function (): void {
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
     });
+
+    it('passes fix mode through to the doctor runner', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create(['node_id' => $appNode->id, 'name' => 'local-vite', 'source' => '10.6.0.0/24', 'port' => '5173']);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'fix',
+            'families' => ['firewall_rule'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.summary.skipped', 1)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'skipped');
+    });
+
+    it('denies app-node write mode requests', function (): void {
+        createDoctorRunCallerNode(['role' => 'app']);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'adopt',
+            'families' => ['firewall_rule'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'caller_role_not_allowed')
+            ->assertJsonPath('error.meta.mode', 'adopt');
+    });
 });
+
+final class DoctorRunRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly string $stdout,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}

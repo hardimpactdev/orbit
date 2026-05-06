@@ -1671,8 +1671,10 @@ for the Saloon-based gateway transport pattern.
   - [x] Verify-mode doctor bootstrap exists with `doctor --family=node --json`,
     `POST /api/doctor/run`, typed Saloon request/DTO, and in-memory node-family
     probe orchestration.
-  - [!] `--fix`, `--adopt`, streaming progress, and non-node family dispatch
-    remain blocked until family action maps/probes are ported.
+  - [x] Generic `--fix` / `--adopt` mode routing reaches family dispatch and
+    records unsupported issue actions as skipped without running side effects.
+  - [!] Streaming progress and family-owned fix/adopt action handlers remain
+    blocked until each family action map is ported.
 - [ ] Port long-running SSE progress primitives.
 
 ## State Families And Doctor Workstream
@@ -1755,11 +1757,10 @@ for the Saloon-based gateway transport pattern.
     - [x] Backend route and TLS reality inspection.
     - [!] Fix/adopt map and doctor dispatcher/API integration.
       - Verify-mode doctor dispatcher/API integration is ported for `--family=proxy`.
-      - Blocked for write modes because the global `doctor` command still rejects
-        `--fix` and `--adopt` before family action maps run.
-      - Next concrete action: port the generic doctor action-map runner for
-        family-owned fix/adopt handlers, then add proxy route/TLS reconcile and
-        custom-route adoption actions.
+      - Generic `--fix` / `--adopt` orchestration now reaches family dispatch
+        and records unsupported actions as skipped.
+      - Next concrete action: add proxy route/TLS reconcile and custom-route
+        adoption action handlers.
 - [~] Port firewall rule family.
   - [x] Firewall abstraction seed exists at `docs/abstractions/4_firewall.md`.
   - [x] Firewall read foundation and `firewall:list`.
@@ -1770,11 +1771,10 @@ for the Saloon-based gateway transport pattern.
     - [!] Fix/adopt map and doctor dispatcher/API integration.
       - Verify-mode doctor dispatcher/API integration is ported for
         `--family=firewall_rule`.
-      - Blocked for write modes because the global `doctor` command still
-        rejects `--fix` and `--adopt` before family action maps run.
-      - Next concrete action: port the generic doctor action-map runner for
-        family-owned fix/adopt handlers, then add firewall rule reconcile and
-        selected-rule adoption actions.
+      - Generic `--fix` / `--adopt` orchestration now reaches family dispatch
+        and records unsupported actions as skipped.
+      - Next concrete action: add firewall rule reconcile and selected-rule
+        adoption action handlers.
 - [~] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
   - [x] Read foundation exists for registry-backed `tool:list` / `tool:show`

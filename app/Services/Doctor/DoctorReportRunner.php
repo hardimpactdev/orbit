@@ -80,6 +80,8 @@ final readonly class DoctorReportRunner
             }
         }
 
+        $actions = $this->actionsForUnsupportedMode($mode, $issues);
+
         return [
             'healthy' => $issues === [],
             'mode' => $mode,
@@ -94,11 +96,12 @@ final readonly class DoctorReportRunner
                 'issues' => count($issues),
                 'fixed' => 0,
                 'adopted' => 0,
-                'skipped' => 0,
+                'skipped' => count($actions),
                 'conflicts' => 0,
+                'failed' => 0,
             ],
             'issues' => $issues,
-            'actions' => [],
+            'actions' => $actions,
         ];
     }
 
@@ -147,5 +150,32 @@ final readonly class DoctorReportRunner
             'summary' => $entry->summary,
             'detail' => $entry->detail,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return list<array<string, mixed>>
+     */
+    private function actionsForUnsupportedMode(string $mode, array $issues): array
+    {
+        if ($mode === 'verify') {
+            return [];
+        }
+
+        return array_map(
+            fn (array $issue): array => [
+                'family' => $issue['family'] ?? null,
+                'node' => $issue['node'] ?? null,
+                'code' => $issue['key'] ?? null,
+                'key' => $issue['key'] ?? null,
+                'mode' => $mode,
+                'status' => 'skipped',
+                'summary' => "No {$mode} action is registered for ".(string) ($issue['key'] ?? 'this issue').'.',
+                'detail' => [
+                    'reason' => 'mode_not_supported',
+                ],
+            ],
+            $issues,
+        );
     }
 }

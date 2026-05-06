@@ -79,11 +79,14 @@ class DoctorCommand extends Command implements Loggable
             );
         }
 
-        if ($mode !== 'verify') {
+        if ($mode !== 'verify' && $this->callerRole() === 'app') {
             return $this->failCommand(
-                code: 'mode_not_supported',
-                message: 'Doctor fix/adopt mode is not available until family action maps are ported.',
-                meta: ['mode' => $mode],
+                code: 'caller_role_not_allowed',
+                message: 'App-node callers may not run doctor --fix or doctor --adopt for this scope.',
+                meta: [
+                    'caller_role' => 'app',
+                    'mode' => $mode,
+                ],
             );
         }
 
@@ -94,7 +97,7 @@ class DoctorCommand extends Command implements Loggable
         }
 
         $result = $this->isGatewayCaller()
-            ? $this->runLocalDoctor($runner, $families)
+            ? $this->runLocalDoctor($runner, $mode, $families)
             : $this->runGatewayDoctor($mode, $families);
 
         if ($result instanceof GatewayApiException) {
@@ -131,6 +134,10 @@ class DoctorCommand extends Command implements Loggable
 
     public function effect(): ActivityLogType
     {
+        if (in_array($this->activityMode, ['fix', 'adopt'], true)) {
+            return ActivityLogType::Write;
+        }
+
         return ActivityLogType::Read;
     }
 
@@ -156,11 +163,11 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    private function runLocalDoctor(DoctorReportRunner $runner, array $families): array
+    private function runLocalDoctor(DoctorReportRunner $runner, string $mode, array $families): array
     {
         $node = $this->localNode() ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first() ?? Node::query()->firstOrFail();
 
-        return $runner->run($node, mode: 'verify', families: $families);
+        return $runner->run($node, mode: $mode, families: $families);
     }
 
     /**
