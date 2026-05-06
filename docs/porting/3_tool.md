@@ -68,7 +68,12 @@ Detail file for the tool command family. Top-level status lives in
   `tests/Feature/Commands/Tools/ToolUpdateCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed service
   updates. Passed gate: `composer quality-check`.
-- [ ] `tool:reconfigure` — write/enactment command not started.
+- [x] `tool:reconfigure` — gateway-local + Saloon forwarding implementation,
+  registry config/credential update, placeholder remote script for
+  polyscope-server and opencode-server, and focused Pest coverage in
+  `tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php`. E2E lane:
+  Incus VM-feature because the command exercises host-init managed service
+  reconfiguration. Passed gate: `composer quality-check`.
 
 ## Family doctor
 
