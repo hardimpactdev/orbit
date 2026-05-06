@@ -1749,7 +1749,7 @@ for the Saloon-based gateway transport pattern.
 - [~] Port proxy route family.
   - [x] Proxy abstraction seed exists at `docs/abstractions/8_proxy.md`.
   - [x] Proxy read foundation and `proxy:list`.
-  - [ ] Custom proxy add/remove intent and runtime warnings.
+  - [x] Custom proxy add/remove intent and runtime warnings.
   - [ ] Proxy doctor probes, fix/adopt map, and live backend/TLS inspection.
 - [ ] Port firewall rule family.
 - [~] Port tool family.

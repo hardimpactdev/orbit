@@ -160,8 +160,12 @@ class ProxyRouteQuery
     /**
      * @return array<string, mixed>
      */
-    private function toRouteEntity(ProxyRoute $route): array
+    /**
+     * @return array<string, mixed>
+     */
+    public function toRouteEntity(ProxyRoute $route, ?string $status = null): array
     {
+        $route->loadMissing(['node', 'app', 'workspace']);
         $config = is_array($route->config) ? $route->config : [];
         $tlsManagedBy = $this->stringConfig($config, ['tls.managed_by', 'tls_managed_by']) ?? 'orbit';
 
@@ -182,7 +186,7 @@ class ProxyRouteQuery
                 'managed_by' => $tlsManagedBy,
                 'trusted_by_gateway_ca' => $this->trustedByGatewayCa($config, $tlsManagedBy),
             ],
-            'status' => $this->stringConfig($config, ['status']) ?? 'expected',
+            'status' => $status ?? $this->stringConfig($config, ['status']) ?? 'expected',
         ];
     }
 
