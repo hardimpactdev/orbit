@@ -1285,7 +1285,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   unit vocabulary. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
 - [x] Port process schema and models.
-- [~] Port process add/edit/remove/list commands.
+- [x] Port process add/edit/remove/list commands.
   - [x] `process:list` gateway-local registry read, typed gateway API
     forwarding, app/workspace context resolution, runtime-unit identity
     projection, human/JSON renderers, focused Pest coverage, and E2E gate
@@ -1302,7 +1302,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     Supervisor runtime-unit re-rendering for main app and existing workspaces,
     optional `--restart`, repairable warning output after post-intent runtime
     drift, human/JSON renderers, and focused Pest coverage.
-  - [ ] `process:remove`.
+  - [x] `process:remove` gateway-local destructive intent removal, typed gateway
+    API forwarding, access-policy authorization, destructive consent enforcement,
+    Supervisor runtime-unit cleanup for main app and existing workspaces,
+    repairable warning output after post-intent cleanup drift, human/JSON
+    renderers, and focused Pest coverage.
 - [ ] Port process start/stop/restart commands against Supervisor.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.
