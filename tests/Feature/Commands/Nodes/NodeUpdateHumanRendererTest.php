@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -64,10 +66,32 @@ describe('node:update human renderer contract', function (): void {
             'name' => 'app-1',
             '--host' => '10.6.0.99',
         ])
-            ->expectsOutputToContain('┌ Update Node')
+            ->expectsOutputToContain('┌ Updating Node')
             ->expectsOutputToContain('○ Validate node')
-            ->expectsOutputToContain('○ Update intent')
+            ->expectsOutputToContain('○ Apply and verify node change')
+            ->expectsOutputToContain('○ Apply node artifacts')
             ->expectsOutputToContain("└ Node 'app-1' updated")
+            ->assertSuccessful();
+    });
+
+    it('renders drift prose when artifact re-enactment fails after intent update', function (): void {
+        setupGatewayCallerHuman();
+        DB::table('nodes')->insert(nodeUpdateHumanRow());
+
+        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
+        {
+            public function handle(Node $node, array $changed): array
+            {
+                throw new RuntimeException('artifact failed');
+            }
+        });
+
+        $this->artisan('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.99',
+        ])
+            ->expectsOutputToContain("└ Node 'app-1' updated with drift")
+            ->expectsOutputToContain('Drift detected: Node artifact re-enactment failed after intent update.')
             ->assertSuccessful();
     });
 

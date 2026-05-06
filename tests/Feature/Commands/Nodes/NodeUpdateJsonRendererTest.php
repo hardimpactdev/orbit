@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
+use App\Models\Node;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -102,6 +104,34 @@ describe('node:update JSON renderer contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['changed'])->toBeEmpty()
             ->and($payload['success']['data']['action'])->toBe('updated');
+    });
+
+    it('returns success meta warnings when artifact re-enactment fails after update', function (): void {
+        setupGatewayCallerJson();
+        DB::table('nodes')->insert(nodeUpdateJsonRow());
+
+        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
+        {
+            public function handle(Node $node, array $changed): array
+            {
+                throw new RuntimeException('artifact failed');
+            }
+        });
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.99',
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['warnings'])->toBe([[
+                'code' => 'node.artifact_enactment_failed',
+                'message' => 'Node artifact re-enactment failed after intent update.',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --fix',
+            ]]);
     });
 
     it('returns node.not_found error with correct metadata', function (): void {

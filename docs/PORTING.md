@@ -712,7 +712,7 @@ exist. Those families wait for the node/gateway/app foundations.
 - [x] Reconcile `node:register` with product command contracts.
   - **Decision:** Retire as public command. `node:register` is an internal
     bootstrap utility only. See tracker entry above for rationale.
-- [~] Port `node:update`.
+- [x] Port `node:update`.
   - Current implementation: `app/Console/Commands/NodeUpdateCommand.php`
   - Current docs: `docs/commands/1_node/7_node-update`
   - Current tests:
@@ -734,8 +734,10 @@ exist. Those families wait for the node/gateway/app foundations.
     missing node name, prompt for role-filtered field selection when no field
     flags are supplied, and prompt for the selected field value; app callers
     and unconfigured control callers fail before prompts.
-  - Contract gaps:
-    - artifact re-enactment after intent update.
+  - Artifact re-enactment slice implemented: changed gateway intent invokes a
+    node artifact re-enactment hook; hook failures preserve the committed
+    intent, return success with `node.artifact_enactment_failed` warnings, and
+    point operators to `doctor --family=node --fix`.
 - [x] Port `node:default`.
   - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`
   - Current docs: `docs/commands/1_node/9_node-default`

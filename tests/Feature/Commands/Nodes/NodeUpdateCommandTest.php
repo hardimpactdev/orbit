@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -296,6 +298,44 @@ describe('node:update control forwarding', function (): void {
             ]);
     });
 
+    it('preserves forwarded artifact enactment warnings from the gateway', function (): void {
+        setupControlCallerForNodeUpdate();
+
+        fakeNodeUpdateGateway([
+            'success' => [
+                'data' => [
+                    'name' => 'app-1',
+                    'changed' => ['host'],
+                    'action' => 'updated',
+                ],
+                'meta' => [
+                    'warnings' => [[
+                        'code' => 'node.artifact_enactment_failed',
+                        'message' => 'Node artifact re-enactment failed after intent update.',
+                        'family' => 'node',
+                        'next_command' => 'doctor --family=node --fix',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.8',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['meta']['warnings'])->toBe([[
+                'code' => 'node.artifact_enactment_failed',
+                'message' => 'Node artifact re-enactment failed after intent update.',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --fix',
+            ]]);
+    });
+
     it('passes through structured gateway authorization failures', function (): void {
         setupControlCallerForNodeUpdate();
 
@@ -455,6 +495,36 @@ describe('node:update safety', function (): void {
         ]);
 
         Process::assertNothingRan();
+    });
+
+    it('returns success with a node artifact warning when re-enactment fails after intent update', function (): void {
+        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
+        {
+            public function handle(Node $node, array $changed): array
+            {
+                throw new RuntimeException('artifact failed');
+            }
+        });
+
+        DB::table('nodes')->insert(nodeUpdateBaseRow());
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--host' => '10.6.0.99',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.99')
+            ->and($payload['success']['data']['changed'])->toBe(['host'])
+            ->and($payload['success']['meta']['warnings'])->toBe([[
+                'code' => 'node.artifact_enactment_failed',
+                'message' => 'Node artifact re-enactment failed after intent update.',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --fix',
+            ]]);
     });
 
     it('makes only targeted registry mutations', function (): void {

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -169,6 +170,33 @@ describe('NodeUpdateController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', []);
+    });
+
+    it('returns success warnings when artifact re-enactment fails after intent update', function (): void {
+        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
+        {
+            public function handle(Node $node, array $changed): array
+            {
+                throw new RuntimeException('artifact failed');
+            }
+        });
+
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', [
+            'host' => '10.6.0.8',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['host'])
+            ->assertJsonPath('success.meta.warnings.0.code', 'node.artifact_enactment_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'node')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=node --fix');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.8');
     });
 
     it('rejects unauthenticated requests', function (): void {

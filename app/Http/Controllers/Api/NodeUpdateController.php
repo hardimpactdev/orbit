@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
@@ -23,7 +24,7 @@ final class NodeUpdateController implements Loggable
      */
     private array $activityChangedFields = [];
 
-    public function __invoke(UpdateNodeApiRequest $request, string $name): JsonResponse
+    public function __invoke(UpdateNodeApiRequest $request, string $name, ReenactNodeArtifacts $reenactNodeArtifacts): JsonResponse
     {
         $this->activityTargetName = $name;
 
@@ -91,15 +92,51 @@ final class NodeUpdateController implements Loggable
             $node->update($changes);
         }
 
-        return response()->json([
-            'success' => [
-                'data' => [
-                    'name' => $name,
-                    'changed' => array_keys($changes),
-                    'action' => 'updated',
-                ],
+        $warnings = $this->reenactNodeArtifacts(
+            reenactNodeArtifacts: $reenactNodeArtifacts,
+            node: $node->refresh(),
+            changed: array_keys($changes),
+        );
+
+        $success = [
+            'data' => [
+                'name' => $name,
+                'changed' => array_keys($changes),
+                'action' => 'updated',
             ],
+        ];
+
+        if ($warnings !== []) {
+            $success['meta'] = [
+                'warnings' => $warnings,
+            ];
+        }
+
+        return response()->json([
+            'success' => $success,
         ]);
+    }
+
+    /**
+     * @param  list<string>  $changed
+     * @return list<array<string, string>>
+     */
+    private function reenactNodeArtifacts(ReenactNodeArtifacts $reenactNodeArtifacts, Node $node, array $changed): array
+    {
+        if ($changed === []) {
+            return [];
+        }
+
+        try {
+            return $reenactNodeArtifacts->handle($node, $changed);
+        } catch (\Throwable) {
+            return [[
+                'code' => 'node.artifact_enactment_failed',
+                'message' => 'Node artifact re-enactment failed after intent update.',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --fix',
+            ]];
+        }
     }
 
     private function authorizeControlCaller(Node $caller): ?JsonResponse

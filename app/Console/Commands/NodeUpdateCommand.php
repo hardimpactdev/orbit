@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
@@ -29,7 +30,7 @@ use function Laravel\Prompts\text;
 #[Description('Update node registry metadata and role-owned settings')]
 class NodeUpdateCommand extends Command
 {
-    public function handle(): int
+    public function handle(ReenactNodeArtifacts $reenactNodeArtifacts): int
     {
         $callerRole = $this->callerRole();
 
@@ -161,8 +162,9 @@ class NodeUpdateCommand extends Command
         $node->update($changes);
 
         $changedKeys = array_keys($changes);
+        $warnings = $this->reenactNodeArtifacts($reenactNodeArtifacts, $node->refresh(), $changedKeys);
 
-        return $this->respondSuccess($name, $changedKeys);
+        return $this->respondSuccess($name, $changedKeys, $warnings);
     }
 
     private function resolveName(string $callerRole): ?string
@@ -299,7 +301,25 @@ class NodeUpdateCommand extends Command
         return $this->respondSuccess(
             $dto->name !== '' ? $dto->name : $fallbackName,
             $dto->changed,
+            $dto->warnings,
         );
+    }
+
+    /**
+     * @param  list<string>  $changed
+     * @return list<array<string, string>>
+     */
+    private function reenactNodeArtifacts(ReenactNodeArtifacts $reenactNodeArtifacts, Node $node, array $changed): array
+    {
+        if ($changed === []) {
+            return [];
+        }
+
+        try {
+            return $reenactNodeArtifacts->handle($node, $changed);
+        } catch (Throwable) {
+            return [$this->artifactEnactmentWarning()];
+        }
     }
 
     private function callerRole(): string
@@ -504,7 +524,7 @@ class NodeUpdateCommand extends Command
     /**
      * @param  list<string>  $changed
      */
-    private function respondSuccess(string $name, array $changed): int
+    private function respondSuccess(string $name, array $changed, array $warnings = []): int
     {
         $data = [
             'name' => $name,
@@ -513,16 +533,31 @@ class NodeUpdateCommand extends Command
         ];
 
         if ($this->wantsJson()) {
+            $success = [
+                'data' => $data,
+            ];
+
+            if ($warnings !== []) {
+                $success['meta'] = [
+                    'warnings' => $warnings,
+                ];
+            }
+
             $this->line(json_encode([
                 'success' => [
-                    'data' => $data,
+                    ...$success,
                 ],
             ], JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
         }
 
-        $footer = $changed === [] ? "Node '{$name}' unchanged" : "Node '{$name}' updated";
+        $footer = match (true) {
+            $changed === [] => "Node '{$name}' unchanged",
+            $warnings !== [] => "Node '{$name}' updated with drift",
+            default => "Node '{$name}' updated",
+        };
+
         $this->line("└ {$footer}");
         $this->line('');
 
@@ -532,6 +567,10 @@ class NodeUpdateCommand extends Command
         } else {
             $this->line("Node '{$name}' updated");
             $this->line('  Changed: '.implode(', ', $changed));
+
+            foreach ($warnings as $warning) {
+                $this->line('  Drift detected: '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+            }
         }
 
         return self::SUCCESS;
@@ -570,8 +609,22 @@ class NodeUpdateCommand extends Command
             return;
         }
 
-        $this->line('┌ Update Node');
+        $this->line('┌ Updating Node');
         $this->line('○ Validate node');
-        $this->line('○ Update intent');
+        $this->line('○ Apply and verify node change');
+        $this->line('○ Apply node artifacts');
+    }
+
+    /**
+     * @return array{code: string, message: string, family: string, next_command: string}
+     */
+    private function artifactEnactmentWarning(): array
+    {
+        return [
+            'code' => 'node.artifact_enactment_failed',
+            'message' => 'Node artifact re-enactment failed after intent update.',
+            'family' => 'node',
+            'next_command' => 'doctor --family=node --fix',
+        ];
     }
 }
