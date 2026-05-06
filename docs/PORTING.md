@@ -1368,8 +1368,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     API forwarding, app/node filter validation, run-id selection, independent
     stdout/stderr line limiting, human/JSON renderers, read-only boundary
     tests, and focused Pest coverage.
-- [ ] Port `orbit-scheduler` Artisan-command daemon and Supervisor program
+- [x] Port `orbit-scheduler` Artisan-command daemon and Supervisor program
   rendering.
+  - [x] Hidden `orbit-scheduler` daemon command, one-tick test path,
+    scheduler-specific Supervisor program definition/render/install helper on
+    top of the shared runtime-backend renderer, and focused renderer coverage.
 - [ ] Port scheduler heartbeat reporting and run-history intake endpoint.
 - [ ] Port schedule doctor probe and fix map.
 
