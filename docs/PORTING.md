@@ -1697,7 +1697,13 @@ for the Saloon-based gateway transport pattern.
     records unsupported issue actions as skipped without running side effects.
   - [!] Streaming progress and family-owned fix/adopt action handlers remain
     blocked until each family action map is ported.
-- [ ] Port long-running SSE progress primitives.
+- [x] Port long-running SSE progress primitives.
+  - Server-side progress primitives are available through the shared
+    `ProgressReporter` contract, SSE/null reporters, event-stream emitter, and
+    streamed response factory. Current tests cover frame emission, failure
+    conversion, and reporter restoration. Client-side long-running stream
+    consumers should be ported with the first command that needs cross-node
+    interactive streaming.
 
 ## State Families And Doctor Workstream
 
