@@ -1380,8 +1380,11 @@ across the process and schedule families.
   - `tests/E2E/RuntimeBackendSchedulerTest.php` verifies the prepared Docker
     control-gateway topology exposes a live Supervisor backend with `sshd` and
     `orbit_scheduler` registered and running.
-- [ ] Add Incus E2E coverage where host init or VM-only behavior is part of
+- [x] Add Incus E2E coverage where host init or VM-only behavior is part of
   the assertion.
+  - `tests/E2E/RuntimeBackendHostInitTest.php` requires VM capabilities and
+    verifies `supervisor.service` is active under host init while
+    `supervisorctl status` responds on the gateway.
 
 ## Gateway API Client And Transport Workstream
 
