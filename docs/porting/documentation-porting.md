@@ -59,6 +59,12 @@ E2E gate todos are dispatched only by the orchestrator's E2E role per
 `references/todo-state.md`. Never promote them to `worker-ready` and never
 route them to the implementer agent.
 
+The todo is not the gate result. A command port is not complete until the
+implementation branch contains the paired `tests/E2E/**` coverage, or the
+workstream records a valid `lane=none` reason, and the exact E2E command/filter
+has passed. `composer quality-check` does not satisfy this requirement because
+it excludes E2E.
+
 ### Feature E2E checkout rule
 
 Command-port `e2e-feature` gates must test the branch or worktree that contains

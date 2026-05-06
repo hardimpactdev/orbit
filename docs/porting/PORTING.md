@@ -55,10 +55,17 @@ Implementation-pattern guidance for command porting lives in
 - Provisioning, destructive, host-mutation, live transport, and repair/adoption
   flows require the `e2e-provision` lane before they can be treated as fully
   verified.
-- Every newly-ported command requires focused in-memory Pest coverage and one
-  E2E-* gate todo before its workstream entry can flip to `[x]`. The E2E gate
-  may declare `lane=none` only when the command is docs-only, a pure refactor,
-  or has no observable runtime behavior outside Pest.
+- Every newly-ported command requires focused in-memory Pest coverage and a
+  committed E2E test or an explicit `lane=none` reason before its workstream
+  entry can flip to `[x]`. A Solo `E2E-*` gate todo is coordination
+  bookkeeping; it is not verification evidence by itself.
+- The matching workstream entry must name the E2E test file and the exact
+  `composer test:e2e`, `composer test:e2e:provision`, or `php artisan e2e:*`
+  command/filter that passed. `composer quality-check` is not enough because it
+  runs in-memory Pest and excludes E2E.
+- `lane=none` is allowed only when the command is docs-only, a pure refactor,
+  or has no observable runtime behavior outside Pest. Record the reason in the
+  workstream entry.
 
 ## Status Legend
 
@@ -92,8 +99,15 @@ bootstrap slices that do not yet satisfy the full current contract stay `[~]`.
 9. Implement the smallest useful vertical slice in the clean repo.
 10. Add focused Pest tests that assert the current docs contract, not legacy
     internals.
-11. Run the narrow test, then `composer quality-check`.
-12. Update the matching workstream file under `docs/porting/` and the
+11. Run the narrow in-memory Pest test, then `composer quality-check`.
+12. Add or update the paired E2E test under `tests/E2E/` unless the slice has a
+    documented `lane=none` reason.
+13. Run the paired E2E command/filter and record the exact passing command in
+    the matching workstream entry. For ordinary feature ports this is usually
+    `composer test:e2e -- --filter='<CommandScenario>'`; provisioning,
+    destructive, host-mutation, live transport, and repair/adoption flows use
+    `composer test:e2e:provision -- --filter='<Scenario>'`.
+14. Update the matching workstream file under `docs/porting/` and the
     Command Port Status below in the same commit as the ported slice.
 
 ## Implementation Order

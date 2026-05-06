@@ -18,7 +18,11 @@ Detail file for the gateway command family. Top-level command status lives in
   - [x] Split contract tests: caller role, input contract, interactive/non-interactive input modes, JSON/human renderers.
   - [x] Ephemeral E2E lane: `tests/E2E/GatewayAddTest.php` covers control-node
     `gateway:add` against a disposable gateway VM in the `e2e-provision` lane.
-  - [ ] WireGuard IP derivation from active network interfaces (bootstrap gap: currently requires explicit `gateway_ip` argument).
+  - [x] WireGuard IP derivation from active network interfaces.
+    - `WireGuardGatewayAddressResolver` derives the gateway API address from
+      unambiguous active `10.6.0.0/16` local interface addresses, and
+      `gateway:add` now uses it before prompting or failing when `gateway_ip`
+      is omitted.
   - [ ] Local node context flush after persistence (bootstrap gap: `LocalNodeContext` service not yet in clean repo).
 - [x] Port `gateway:trust`.
 

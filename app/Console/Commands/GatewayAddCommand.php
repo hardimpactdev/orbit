@@ -13,6 +13,7 @@ use App\Services\Gateway\RootCaFetchResult;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\WireGuard\WireGuardGatewayAddressResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -39,12 +40,12 @@ class GatewayAddCommand extends Command implements Loggable
 
     private ?string $activityResult = null;
 
-    public function handle(FetchGatewayRootCa $fetch): int
+    public function handle(FetchGatewayRootCa $fetch, WireGuardGatewayAddressResolver $gatewayAddressResolver): int
     {
         $this->bootActivityLog();
 
         try {
-            return $this->executeGatewayAdd($fetch);
+            return $this->executeGatewayAdd($fetch, $gatewayAddressResolver);
         } finally {
             $this->finishActivityLog();
         }
@@ -83,7 +84,7 @@ class GatewayAddCommand extends Command implements Loggable
         return 'Gateway onboarding attempted';
     }
 
-    private function executeGatewayAdd(FetchGatewayRootCa $fetch): int
+    private function executeGatewayAdd(FetchGatewayRootCa $fetch, WireGuardGatewayAddressResolver $gatewayAddressResolver): int
     {
         // 1. Resolve caller role before any input or side effects
         $callerRole = $this->callerRole();
@@ -109,7 +110,7 @@ class GatewayAddCommand extends Command implements Loggable
         }
 
         // 2. Resolve gateway_ip
-        $gatewayIp = $this->resolveGatewayIp();
+        $gatewayIp = $this->resolveGatewayIp($gatewayAddressResolver);
 
         if ($gatewayIp === null || $gatewayIp === '') {
             $hasJson = $this->input->hasParameterOption('--json', true);
@@ -336,7 +337,7 @@ class GatewayAddCommand extends Command implements Loggable
         return $localRole;
     }
 
-    private function resolveGatewayIp(): ?string
+    private function resolveGatewayIp(WireGuardGatewayAddressResolver $gatewayAddressResolver): ?string
     {
         $gatewayIp = $this->argument('gateway_ip');
 
@@ -344,10 +345,7 @@ class GatewayAddCommand extends Command implements Loggable
             return $gatewayIp;
         }
 
-        // Bootstrap gap: WireGuard network introspection is not yet implemented.
-        // Derivation from active WireGuard interfaces will be added when the
-        // WireGuard enrollment workstream lands.
-        return null;
+        return $gatewayAddressResolver->resolve();
     }
 
     private function isValidWireGuardIp(string $ip): bool
