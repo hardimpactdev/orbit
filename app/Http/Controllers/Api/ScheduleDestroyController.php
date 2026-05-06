@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Schedules\RemoveSchedule;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -13,8 +16,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-final readonly class ScheduleDestroyController
+final readonly class ScheduleDestroyController implements Loggable
 {
+    use LogsScheduleApiActivity;
+
     public function __construct(
         private SchedulePayload $payload,
     ) {}
@@ -37,6 +42,7 @@ final readonly class ScheduleDestroyController
                 ], 403);
             }
 
+            $this->setScheduleActivitySubject($request, $schedule);
             $result = $removeSchedule->handle($schedule);
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->status($e), $e->errorData());
@@ -88,5 +94,15 @@ final readonly class ScheduleDestroyController
     private function status(GatewayApiException $e): int
     {
         return $e->errorCode() === 'schedule.not_found' ? 404 : 422;
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Destructive;
+    }
+
+    public function type(): string
+    {
+        return 'api:DELETE /schedules/{name}';
     }
 }

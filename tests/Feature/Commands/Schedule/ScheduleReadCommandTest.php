@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -158,6 +159,15 @@ it('exposes schedule reads over the authenticated gateway API', function (): voi
         ->assertJsonPath('success.data.schedules.0.name', 'laravel-scheduler');
     $show->assertSuccessful()
         ->assertJsonPath('success.data.schedule.name', 'laravel-scheduler');
+
+    $entries = Activity::query()->orderBy('id')->get();
+
+    expect($entries)->toHaveCount(2);
+    expect($entries[0]->event)->toBe('api:GET /schedules');
+    expect($entries[0]->properties->get('type'))->toBe('read');
+    expect($entries[1]->event)->toBe('api:GET /schedules/{name}');
+    expect($entries[1]->subject_type)->toBe(Schedule::class);
+    expect($entries[1]->properties->get('name'))->toBe('laravel-scheduler');
 });
 
 it('rejects schedule API reads from unauthorized callers', function (): void {

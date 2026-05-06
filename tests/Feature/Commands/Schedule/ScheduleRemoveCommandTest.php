@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -172,4 +173,12 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
 
     $response->assertSuccessful()
         ->assertJsonPath('success.data.schedule.status', 'removed');
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('api:DELETE /schedules/{name}');
+    expect($entry->subject_type)->toBe(Schedule::class);
+    expect($entry->properties->get('type'))->toBe('destructive');
+    expect($entry->properties->get('name'))->toBe('laravel-scheduler');
 });

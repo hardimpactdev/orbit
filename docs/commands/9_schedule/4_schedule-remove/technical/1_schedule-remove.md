@@ -92,6 +92,19 @@ schedule policy. Scheduler-side state drift belongs to
 cleanup only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the
 authoritative `schedule` probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+schedule removal attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /schedules/{name}` |
+| Effect | `destructive` |
+| Subject | `Schedule` when the schedule is resolved before removal; `none` for not-found, validation, or authorization failures before a schedule can be logged. |
+| Properties | `name` (string), `app` (string or null), and `node` (string or null). No runtime output or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

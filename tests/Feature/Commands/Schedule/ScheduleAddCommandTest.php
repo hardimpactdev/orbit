@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -163,4 +164,12 @@ it('exposes schedule add over the authenticated gateway API', function (): void 
 
     $response->assertCreated()
         ->assertJsonPath('success.data.schedule.name', 'laravel-scheduler');
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('api:POST /schedules');
+    expect($entry->subject_type)->toBe(Schedule::class);
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('name'))->toBe('laravel-scheduler');
 });

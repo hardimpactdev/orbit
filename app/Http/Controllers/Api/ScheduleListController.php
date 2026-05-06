@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Schedules\SchedulePayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class ScheduleListController
+final readonly class ScheduleListController implements Loggable
 {
+    use LogsScheduleApiActivity;
+
     public function __construct(
         private SchedulePayload $payload,
     ) {}
@@ -72,5 +77,15 @@ final readonly class ScheduleListController
     private function status(GatewayApiException $e): int
     {
         return $e->errorCode() === 'authorization_failed' ? 403 : 400;
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    public function type(): string
+    {
+        return 'api:GET /schedules';
     }
 }

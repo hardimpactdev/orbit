@@ -104,6 +104,19 @@ One-off runs are gateway history. [`schedule-doctor.md`](../../schedule-doctor.m
 verifies Orbit Scheduler liveness and per-schedule run history, not whether an
 individual manual run succeeded.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+manual schedule run attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /schedules/{name}/run` |
+| Effect | `write` |
+| Subject | `Schedule` when the schedule is resolved and visible; `none` for not-found, validation, or authorization failures before a schedule can be logged. |
+| Properties | `name` (string), `app` (string or null), and `node` (string or null). No captured stdout, stderr, command text, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

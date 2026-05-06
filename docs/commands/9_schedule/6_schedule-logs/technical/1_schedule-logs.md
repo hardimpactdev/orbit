@@ -83,6 +83,19 @@ scheduler state and run-history hook drift belong to
 [`schedule-doctor.md`](../../schedule-doctor.md) verifies current Orbit
 Scheduler state against gateway intent.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+schedule run-log reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /schedules/{name}/logs` |
+| Effect | `read` |
+| Subject | `Schedule` when the schedule is resolved and visible; `none` for not-found, run-not-found, validation, or authorization failures before a schedule can be logged. |
+| Properties | `name` (string), `app` (string or null), `node` (string or null), `run` (integer or null), and `lines` (integer or null). No captured stdout, stderr, command text, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -76,6 +76,19 @@ schedules. It must not read scheduler-side state directly. Drift belongs to
 [`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative
 `schedule` probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+schedule detail reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /schedules/{name}` |
+| Effect | `read` |
+| Subject | `Schedule` when the schedule is resolved and visible; `none` for not-found, validation, or authorization failures before a schedule can be logged. |
+| Properties | `name` (string), `app` (string or null), and `node` (string or null). |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

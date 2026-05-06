@@ -54,6 +54,12 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'process-stop',
         'process-restart',
         'process-logs',
+        'schedule-add',
+        'schedule-list',
+        'schedule-show',
+        'schedule-remove',
+        'schedule-run',
+        'schedule-logs',
     ];
 
     /**

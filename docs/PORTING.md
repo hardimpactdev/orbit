@@ -1036,7 +1036,7 @@ that produced the controller's Loggable wiring.
 - [x] `6_workspace`.
 - [x] `7_process`.
 - [ ] `8_proxy`.
-- [ ] `9_schedule`.
+- [x] `9_schedule`.
 - [ ] `10_deploy`.
 - [ ] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
 - [ ] `12_cf`.
@@ -1105,6 +1105,14 @@ that produced the controller's Loggable wiring.
     `process:start`, `process:stop`, `process:restart`, and `process:logs`
     now declare their `## Activity Logging` tech contracts and are enforced by
     `ActivityLoggingContractRule`.
+- [x] `ACTIVITY-SCHEDULE-FAMILY-1` — add activity logging contracts and API
+  Loggable metadata to the implemented schedule family surface.
+  - [x] `schedule:add`, `schedule:list`, `schedule:show`,
+    `schedule:remove`, `schedule:run`, and `schedule:logs` now declare their
+    `## Activity Logging` tech contracts and are enforced by
+    `ActivityLoggingContractRule`.
+  - [x] Schedule API controllers now implement `Loggable`; removal emits
+    `effect=destructive`.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the

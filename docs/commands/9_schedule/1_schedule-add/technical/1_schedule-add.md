@@ -104,6 +104,19 @@ intent. Drift detection belongs to
 enactment only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the
 authoritative `schedule` probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+schedule creation attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /schedules` |
+| Effect | `write` |
+| Subject | `Schedule` when schedule intent is written; `none` for validation, target-resolution, caller-role, or authorization failures before a schedule can be logged. |
+| Properties | `name` (string or null), `app` (string or null), and `node` (string or null). No raw command text, script contents, runtime output, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

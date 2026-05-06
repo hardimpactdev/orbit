@@ -5,15 +5,21 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Schedules\AddSchedule;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Schedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-final class ScheduleStoreController
+final class ScheduleStoreController implements Loggable
 {
+    use LogsScheduleApiActivity;
+
     public function __invoke(Request $request, AddSchedule $addSchedule): JsonResponse
     {
         /** @var mixed $caller */
@@ -50,6 +56,11 @@ final class ScheduleStoreController
                 executionType: $input['execution_type'],
                 executionValue: $input['execution_value'],
             );
+            $schedule = Schedule::query()->where('name', $input['name'])->first();
+
+            if ($schedule instanceof Schedule) {
+                $this->setScheduleActivitySubject($request, $schedule);
+            }
         } catch (GatewayApiException $e) {
             return $this->error(
                 code: $e->errorCode() ?? 'validation_failed',
@@ -171,5 +182,15 @@ final class ScheduleStoreController
     private function status(GatewayApiException $e): int
     {
         return $e->errorCode() === 'schedule.name_collision' ? 409 : 422;
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function type(): string
+    {
+        return 'api:POST /schedules';
     }
 }

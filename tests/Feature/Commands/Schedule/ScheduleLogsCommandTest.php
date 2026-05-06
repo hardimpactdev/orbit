@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -201,5 +202,13 @@ it('exposes schedule logs over the authenticated gateway API without external pr
 
     $response->assertSuccessful()
         ->assertJsonPath('success.data.output.stdout', "ok\n");
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('api:GET /schedules/{name}/logs');
+    expect($entry->subject_type)->toBe(Schedule::class);
+    expect($entry->properties->get('type'))->toBe('read');
+    expect($entry->properties->get('name'))->toBe('laravel-scheduler');
     ProcessFacade::assertNothingRan();
 });

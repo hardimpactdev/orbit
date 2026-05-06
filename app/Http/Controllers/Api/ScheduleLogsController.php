@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
+use App\Models\Schedule;
 use App\Services\Schedules\ScheduleLogsPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class ScheduleLogsController
+final readonly class ScheduleLogsController implements Loggable
 {
+    use LogsScheduleApiActivity;
+
     public function __construct(
         private ScheduleLogsPayload $payload,
     ) {}
@@ -45,6 +51,11 @@ final readonly class ScheduleLogsController
                 lines: $lines,
                 caller: $caller,
             );
+            $schedule = Schedule::query()->where('name', $name)->first();
+
+            if ($schedule instanceof Schedule) {
+                $this->setScheduleActivitySubject($request, $schedule);
+            }
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->status($e));
         }
@@ -99,5 +110,15 @@ final readonly class ScheduleLogsController
         }
 
         return 422;
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Read;
+    }
+
+    public function type(): string
+    {
+        return 'api:GET /schedules/{name}/logs';
     }
 }

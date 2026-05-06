@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -155,6 +156,14 @@ it('exposes schedule run over the authenticated gateway API', function (): void 
     $response->assertSuccessful()
         ->assertJsonPath('success.data.run.status', 'completed')
         ->assertJsonPath('success.data.output.stdout', "ok\n");
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('api:POST /schedules/{name}/run');
+    expect($entry->subject_type)->toBe(Schedule::class);
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('name'))->toBe('laravel-scheduler');
 });
 
 it('returns not found before running external commands', function (): void {
