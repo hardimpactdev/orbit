@@ -1,0 +1,149 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Firewall;
+
+use App\Http\Gateway\GatewayApiException;
+use App\Models\FirewallRule;
+use App\Models\Node;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+
+class FirewallRuleQuery
+{
+    /**
+     * @return array{
+     *     rules: list<array<string, mixed>>,
+     *     meta: array{node: ?string, count: int},
+     * }
+     */
+    public function list(?string $node = null, ?Node $caller = null): array
+    {
+        $node = $node !== null && trim($node) !== '' ? trim($node) : null;
+        $visibleNodeIds = $this->visibleNodeIds($caller);
+
+        if ($caller instanceof Node && $caller->role !== 'gateway' && $visibleNodeIds === []) {
+            throw new GatewayApiException(
+                message: 'This node is not authorized to read the firewall rule registry.',
+                errorCode: 'authorization_failed',
+                errorMeta: ['caller_role' => $caller->role],
+            );
+        }
+
+        $nodeId = $this->resolveNodeId($node, $caller, $visibleNodeIds);
+
+        /** @var Collection<int, FirewallRule> $firewallRules */
+        $firewallRules = FirewallRule::query()
+            ->with('node')
+            ->whereHas('node', fn (Builder $query): Builder => $this->eligibleNodeQuery($query))
+            ->when($caller instanceof Node && $caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when($nodeId !== null, fn (Builder $query): Builder => $query->where('node_id', $nodeId))
+            ->get();
+
+        $rules = $firewallRules
+            ->sort(fn (FirewallRule $first, FirewallRule $second): int => [
+                mb_strtolower($first->node->name),
+                mb_strtolower($first->name),
+            ] <=> [
+                mb_strtolower($second->node->name),
+                mb_strtolower($second->name),
+            ])
+            ->values()
+            ->map(fn (FirewallRule $rule): array => $this->toRuleEntity($rule))
+            ->all();
+
+        return [
+            'rules' => $rules,
+            'meta' => [
+                'node' => $node,
+                'count' => count($rules),
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<int>  $visibleNodeIds
+     */
+    private function resolveNodeId(?string $node, ?Node $caller, array $visibleNodeIds): ?int
+    {
+        if ($node === null) {
+            return null;
+        }
+
+        $query = Node::query()
+            ->where('name', $node)
+            ->where(fn (Builder $query): Builder => $this->eligibleNodeQuery($query));
+
+        if ($caller instanceof Node && $caller->role !== 'gateway') {
+            $query->whereIn('id', $visibleNodeIds);
+        }
+
+        $nodeId = $query->value('id');
+
+        if (is_int($nodeId)) {
+            return $nodeId;
+        }
+
+        throw new GatewayApiException(
+            message: 'The selected node is not a firewall target.',
+            errorCode: 'validation_failed',
+            errorMeta: [
+                'field' => 'node',
+                'node' => $node,
+            ],
+        );
+    }
+
+    private function eligibleNodeQuery(Builder $query): Builder
+    {
+        return $query
+            ->where('status', 'active')
+            ->where('platform', 'ubuntu')
+            ->whereIn('role', ['gateway', 'app']);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function visibleNodeIds(?Node $caller): array
+    {
+        if (! $caller instanceof Node || $caller->role === 'gateway') {
+            return Node::query()
+                ->where(fn (Builder $query): Builder => $this->eligibleNodeQuery($query))
+                ->pluck('id')
+                ->all();
+        }
+
+        return DB::table('node_access')
+            ->join('nodes', 'nodes.id', '=', 'node_access.serving_node_id')
+            ->where('node_access.consumer_node_id', $caller->id)
+            ->where('nodes.status', 'active')
+            ->where('nodes.platform', 'ubuntu')
+            ->whereIn('nodes.role', ['gateway', 'app'])
+            ->pluck('nodes.id')
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toRuleEntity(FirewallRule $rule, ?string $status = null): array
+    {
+        $rule->loadMissing('node');
+
+        return [
+            'name' => $rule->name,
+            'node' => $rule->node->name,
+            'direction' => $rule->direction,
+            'action' => $rule->action,
+            'source' => $rule->source,
+            'destination' => $rule->destination,
+            'port' => is_numeric($rule->port) ? (int) $rule->port : $rule->port,
+            'protocol' => $rule->protocol,
+            'reason' => $rule->reason,
+            'status' => $status ?? 'expected',
+        ];
+    }
+}

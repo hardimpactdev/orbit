@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\FirewallRule;
+use App\Models\Node;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const FIREWALL_RULE_LIST_CALLER_WG_IP = '10.6.0.98';
+
+function createFirewallRuleListCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => FIREWALL_RULE_LIST_CALLER_WG_IP,
+        'wireguard_address' => FIREWALL_RULE_LIST_CALLER_WG_IP,
+        'platform' => 'ubuntu',
+    ], $overrides));
+}
+
+function grantFirewallRuleListAccess(Node $caller, Node $servingNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $servingNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('FirewallRuleListController', function (): void {
+    it('lists visible firewall rules with metadata', function (): void {
+        $caller = createFirewallRuleListCallerNode();
+        $visibleNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        $hiddenNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app', 'platform' => 'ubuntu']);
+        grantFirewallRuleListAccess($caller, $visibleNode);
+
+        FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'vite']);
+        FirewallRule::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'hidden']);
+
+        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'success.data.rules')
+            ->assertJsonPath('success.data.rules.0.name', 'vite')
+            ->assertJsonPath('success.meta.node', null)
+            ->assertJsonPath('success.meta.count', 1);
+    });
+
+    it('lets gateway callers read all eligible firewall intent', function (): void {
+        createFirewallRuleListCallerNode(['role' => 'gateway']);
+
+        FirewallRule::factory()->count(2)->create();
+
+        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonCount(2, 'success.data.rules');
+    });
+
+    it('returns validation failure for unsupported node scopes', function (): void {
+        createFirewallRuleListCallerNode(['role' => 'gateway']);
+        Node::factory()->create(['name' => 'control-1', 'role' => 'control', 'platform' => 'ubuntu']);
+
+        $response = $this->call('GET', '/api/firewall-rules?node=control-1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'node');
+    });
+
+    it('returns authorization failure when caller has no firewall visibility', function (): void {
+        createFirewallRuleListCallerNode(['role' => 'app']);
+
+        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.caller_role', 'app');
+    });
+});

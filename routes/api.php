@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\DoctorRunController;
+use App\Http\Controllers\Api\FirewallRuleListController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeDefaultController;
@@ -67,6 +68,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/me', MeController::class);
         Route::post('/events/process', ProcessEventIngestController::class);
+        Route::get('/firewall-rules', FirewallRuleListController::class);
         Route::get('/processes', ProcessListController::class);
         Route::post('/processes', ProcessStoreController::class);
         Route::post('/processes/restart', ProcessRestartController::class);

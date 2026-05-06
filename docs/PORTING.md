@@ -1762,7 +1762,7 @@ for the Saloon-based gateway transport pattern.
         custom-route adoption actions.
 - [~] Port firewall rule family.
   - [x] Firewall abstraction seed exists at `docs/abstractions/4_firewall.md`.
-  - [ ] Firewall read foundation and `firewall:list`.
+  - [x] Firewall read foundation and `firewall:list`.
   - [ ] Firewall allow/deny/remove intent and runtime warnings.
   - [ ] Firewall doctor probes, fix/adopt map, and live backend inspection.
 - [~] Port tool family.

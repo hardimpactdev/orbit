@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $status
  * @property bool $is_local
  * @property-read Collection<int, NodeTool> $nodeTools
+ * @property-read Collection<int, FirewallRule> $firewallRules
  * @property-read SchedulerState|null $schedulerState
  * @property-read Collection<int, Schedule> $schedules
  */
@@ -107,6 +108,14 @@ class Node extends Model
     public function nodeTools(): HasMany
     {
         return $this->hasMany(NodeTool::class)->orderBy('name');
+    }
+
+    /**
+     * @return HasMany<FirewallRule, $this>
+     */
+    public function firewallRules(): HasMany
+    {
+        return $this->hasMany(FirewallRule::class)->orderBy('name');
     }
 
     /**
