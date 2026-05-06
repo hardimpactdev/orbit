@@ -1029,7 +1029,7 @@ that produced the controller's Loggable wiring.
 - [x] `1_node` (`node:new`, `node:list`, `node:show`, `node:update`,
   `node:default`, `node:grant`, `node:revoke`, `node:remove`,
   `node:agent-ide`).
-- [ ] `2_gateway`.
+- [x] `2_gateway`.
 - [ ] `3_tool`.
 - [ ] `4_firewall`.
 - [x] `5_app`.
@@ -1113,6 +1113,14 @@ that produced the controller's Loggable wiring.
     `ActivityLoggingContractRule`.
   - [x] Schedule API controllers now implement `Loggable`; removal emits
     `effect=destructive`.
+- [x] `ACTIVITY-GATEWAY-FAMILY-1` — add activity logging contracts and local
+  CLI activity emission to the implemented gateway family surface.
+  - [x] `gateway:add` and `gateway:trust` now declare their
+    `## Activity Logging` tech contracts and are enforced by
+    `ActivityLoggingContractRule`.
+  - [x] The local-only gateway commands now emit best-effort CLI activity
+    entries with `effect=write`; activity-log failures do not alter the
+    documented command result.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the

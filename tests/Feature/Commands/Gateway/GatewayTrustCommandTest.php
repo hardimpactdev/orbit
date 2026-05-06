@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -97,6 +98,35 @@ it('trusts gateway ca when configured via local gateway settings', function (): 
         ->and($settings->ca_sha256)->toBe(hash('sha256', "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"))
         ->and($settings->ca_pem_path)->not->toBeNull()
         ->and($settings->trusted_at)->not->toBeNull();
+});
+
+it('logs gateway trust activity', function (): void {
+    $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----";
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+    ])->save();
+
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => $pem]],
+        ]),
+    ]);
+
+    $this->artisan('gateway:trust', ['--json' => true])
+        ->assertSuccessful();
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('gateway:trust');
+    expect($entry->subject_type)->toBeNull();
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('gateway_url'))->toBe('https://10.6.0.2');
+    expect($entry->properties->get('gateway_ip'))->toBe('10.6.0.2');
+    expect($entry->properties->get('ca_sha256'))->toBe(hash('sha256', $pem));
+    expect($entry->properties->get('status'))->toBe('trusted');
 });
 
 it('falls back to active gateway node when local settings are empty', function (): void {

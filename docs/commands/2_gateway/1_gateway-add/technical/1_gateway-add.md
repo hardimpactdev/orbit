@@ -187,6 +187,20 @@ Already-configured convergence is success, not failure.
 - `gateway:trust` owns the standalone repair command for local gateway CA trust
   after gateway settings already exist.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed
+gateway onboarding attempts. Activity logging is best-effort and must not
+change the documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `gateway:add` |
+| Effect | `write` |
+| Subject | `none`; the command writes caller-local gateway trust and settings, not a gateway-owned registry entity. |
+| Properties | `gateway_ip` when supplied or resolved, plus `gateway_name`, `local_node`, and `result` (`added` or `converged`) when gateway identity verification succeeds. No CA PEM, trust-store output, raw HTTP response body, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary existing test owners:

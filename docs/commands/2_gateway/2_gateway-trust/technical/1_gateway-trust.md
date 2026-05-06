@@ -153,6 +153,20 @@ authority on app nodes or control nodes.
   because it does not select a gateway, verify `/api/me`, store complete
   gateway endpoint configuration, or verify node identity.
 
+## Activity Logging
+
+The local CLI command emits an activity entry for successful and failed
+gateway CA trust repair attempts. Activity logging is best-effort and must not
+change the documented command result.
+
+| Field | Value |
+| --- | --- |
+| Type | `gateway:trust` |
+| Effect | `write` |
+| Subject | `none`; the command writes caller-local trust-store state and local gateway trust metadata, not a gateway-owned registry entity. |
+| Properties | `gateway_url` and `gateway_ip` when a configured gateway resolves; `ca_sha256` and `status` (`trusted` or `already_trusted`) when trust material is successfully installed or converged. No CA PEM, trust-store command output, raw HTTP response body, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Required split contract tests:

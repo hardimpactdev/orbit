@@ -10,6 +10,7 @@ use App\Services\Trust\TrustStoreInstallReason;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -81,6 +82,34 @@ it('resolves gateway_ip from argument', function (): void {
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
         ->assertSuccessful();
+});
+
+it('logs gateway onboarding activity', function (): void {
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'data' => [
+                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+            ],
+        ]),
+    ]);
+
+    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
+        ->assertSuccessful();
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('gateway:add');
+    expect($entry->subject_type)->toBeNull();
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('gateway_ip'))->toBe('10.6.0.2');
+    expect($entry->properties->get('gateway_name'))->toBe('gateway-1');
+    expect($entry->properties->get('local_node'))->toBe('control-1');
+    expect($entry->properties->get('result'))->toBe('added');
 });
 
 it('fails for invalid gateway_ip', function (): void {

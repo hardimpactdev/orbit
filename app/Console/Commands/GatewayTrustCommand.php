@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
@@ -22,11 +24,58 @@ use RuntimeException;
 #[Signature('gateway:trust
     {--json : Output JSON}')]
 #[Description('Trust the gateway root CA in the local OS trust store')]
-class GatewayTrustCommand extends Command
+class GatewayTrustCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
     private const string LABEL = 'orbit';
 
+    private ?string $activityGatewayUrl = null;
+
+    private ?string $activityGatewayIp = null;
+
+    private ?string $activityCaSha256 = null;
+
+    private ?string $activityStatus = null;
+
     public function handle(FetchGatewayRootCa $fetch): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeGatewayTrust($fetch);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return array_filter([
+            'gateway_url' => $this->activityGatewayUrl,
+            'gateway_ip' => $this->activityGatewayIp,
+            'ca_sha256' => $this->activityCaSha256,
+            'status' => $this->activityStatus,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        if ($this->activityStatus === 'already_trusted' && $this->activityGatewayUrl !== null) {
+            return "Gateway CA already trusted for {$this->activityGatewayUrl}";
+        }
+
+        if ($this->activityStatus === 'trusted' && $this->activityGatewayUrl !== null) {
+            return "Gateway CA trusted for {$this->activityGatewayUrl}";
+        }
+
+        return 'Gateway CA trust attempted';
+    }
+
+    private function executeGatewayTrust(FetchGatewayRootCa $fetch): int
     {
         try {
             $installer = app(TrustStoreInstaller::class);
@@ -60,6 +109,8 @@ class GatewayTrustCommand extends Command
 
         $gatewayUrl = $gateway['url'];
         $gatewayIp = $gateway['ip'];
+        $this->activityGatewayUrl = $gatewayUrl;
+        $this->activityGatewayIp = $gatewayIp;
 
         if (! $this->wantsJson()) {
             $this->line('┌ Trust Gateway CA');
@@ -96,6 +147,8 @@ class GatewayTrustCommand extends Command
         }
 
         if ($this->isAlreadyTrusted($installer, $pemPath, $result->sha256)) {
+            $this->captureActivitySuccess($result->sha256, 'already_trusted');
+
             if (! $this->wantsJson()) {
                 $this->line('○ Check local trust');
                 $this->line("└ Gateway CA already trusted for {$gatewayUrl}");
@@ -160,6 +213,8 @@ class GatewayTrustCommand extends Command
             $this->line("Gateway CA trusted for {$gatewayUrl}.");
         }
 
+        $this->captureActivitySuccess($result->sha256, 'trusted');
+
         return $this->jsonSuccess([
             'gateway_trust' => [
                 'gateway_url' => $gatewayUrl,
@@ -168,6 +223,15 @@ class GatewayTrustCommand extends Command
                 'ca_sha256' => $result->sha256,
             ],
         ], ['trusted_at' => $this->trustedAt()->toIso8601String()]);
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented gateway:trust result.
+        }
     }
 
     /**
@@ -281,6 +345,12 @@ class GatewayTrustCommand extends Command
         $settings = LocalGatewaySettings::current();
 
         return $settings->trusted_at ?? now();
+    }
+
+    private function captureActivitySuccess(string $caSha256, string $status): void
+    {
+        $this->activityCaSha256 = $caSha256;
+        $this->activityStatus = $status;
     }
 
     /**

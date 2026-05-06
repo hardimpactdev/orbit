@@ -19,7 +19,7 @@ trait LogsCommandActivity
 
     private bool $activityLogWritten = false;
 
-    abstract public function getName(): string;
+    abstract public function getName(): ?string;
 
     public function effect(): ActivityLogType
     {

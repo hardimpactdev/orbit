@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\LogsCommandActivity;
+use App\Contracts\Loggable;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
@@ -23,11 +25,65 @@ use RuntimeException;
     {gateway_ip? : The WireGuard IP of the gateway}
     {--json : Output JSON}')]
 #[Description('Trust the gateway CA and register the local node connection')]
-class GatewayAddCommand extends Command
+class GatewayAddCommand extends Command implements Loggable
 {
+    use LogsCommandActivity;
+
     private const string LABEL = 'orbit';
 
+    private ?string $activityGatewayIp = null;
+
+    private ?string $activityGatewayName = null;
+
+    private ?string $activityLocalNodeName = null;
+
+    private ?string $activityResult = null;
+
     public function handle(FetchGatewayRootCa $fetch): int
+    {
+        $this->bootActivityLog();
+
+        try {
+            return $this->executeGatewayAdd($fetch);
+        } finally {
+            $this->finishActivityLog();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        $gatewayIp = $this->activityGatewayIp;
+
+        if ($gatewayIp === null) {
+            $argument = $this->argument('gateway_ip');
+            $gatewayIp = is_string($argument) && $argument !== '' ? $argument : null;
+        }
+
+        return array_filter([
+            'gateway_ip' => $gatewayIp,
+            'gateway_name' => $this->activityGatewayName,
+            'local_node' => $this->activityLocalNodeName,
+            'result' => $this->activityResult,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    public function description(): ?string
+    {
+        if ($this->activityResult === 'converged' && $this->activityGatewayIp !== null) {
+            return "Gateway {$this->activityGatewayIp} already configured";
+        }
+
+        if ($this->activityResult === 'added' && $this->activityGatewayIp !== null) {
+            return "Gateway {$this->activityGatewayIp} added";
+        }
+
+        return 'Gateway onboarding attempted';
+    }
+
+    private function executeGatewayAdd(FetchGatewayRootCa $fetch): int
     {
         // 1. Resolve caller role before any input or side effects
         $callerRole = $this->callerRole();
@@ -82,6 +138,8 @@ class GatewayAddCommand extends Command
         }
 
         // 3. Validate IP
+        $this->activityGatewayIp = $gatewayIp;
+
         if (! $this->isValidWireGuardIp($gatewayIp)) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -112,6 +170,7 @@ class GatewayAddCommand extends Command
                 }
 
                 $resultData = $this->buildSuccessData($verifyResult, 'converged', $gatewayIp);
+                $this->captureActivitySuccess($verifyResult, 'converged', $gatewayIp);
 
                 if (! $this->wantsJson()) {
                     $this->renderConvergedTree($gatewayIp);
@@ -231,6 +290,7 @@ class GatewayAddCommand extends Command
 
         // 11. Build result data
         $resultData = $this->buildSuccessData($verifyResult, 'added', $gatewayIp);
+        $this->captureActivitySuccess($verifyResult, 'added', $gatewayIp);
 
         // 12. Render output
         if (! $this->wantsJson()) {
@@ -247,6 +307,15 @@ class GatewayAddCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function finishActivityLog(): void
+    {
+        try {
+            $this->finalizeActivityLog();
+        } catch (\Throwable) {
+            // Activity logging must not change the documented gateway:add result.
+        }
     }
 
     private function callerRole(): string
@@ -445,6 +514,17 @@ class GatewayAddCommand extends Command
         $this->line('○ Verify identity');
         $this->line("└ Gateway {$gatewayIp} is already configured");
         $this->line('');
+    }
+
+    /**
+     * @param  array<string, mixed>  $verifyResult
+     */
+    private function captureActivitySuccess(array $verifyResult, string $result, string $gatewayIp): void
+    {
+        $this->activityGatewayIp = $gatewayIp;
+        $this->activityGatewayName = (string) ($verifyResult['gateway_name'] ?? '');
+        $this->activityLocalNodeName = (string) ($verifyResult['local_node_name'] ?? '');
+        $this->activityResult = $result;
     }
 
     /**
