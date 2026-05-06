@@ -31,6 +31,10 @@ final class AppRemoveController implements Loggable
             return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
         }
 
+        if ($request->boolean('destructive_consent') !== true) {
+            return $this->error('validation_failed', 'Use --force to remove this app.', ['field' => 'force'], 422);
+        }
+
         $targetApp = $this->resolveApp($app);
 
         if (! $targetApp instanceof App) {

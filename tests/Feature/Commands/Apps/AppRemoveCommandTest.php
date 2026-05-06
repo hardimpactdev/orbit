@@ -12,6 +12,8 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -62,6 +64,13 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         'crash_notification' => ProcessCrashNotification::None,
         'sort_order' => 1,
     ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature-api',
+    ]);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+    ]);
 
     $remoteShell = new AppRemoveSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -81,6 +90,8 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         ->and(App::query()->where('name', 'docs')->exists())->toBeFalse()
         ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
         ->and(Process::query()->where('name', 'queue')->exists())->toBeFalse()
+        ->and(Workspace::query()->where('name', 'feature-api')->exists())->toBeFalse()
+        ->and(Schedule::query()->where('name', 'laravel-scheduler')->exists())->toBeFalse()
         ->and($remoteShell->scripts)->toHaveCount(2)
         ->and($remoteShell->scripts[0])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
         ->and($remoteShell->scripts[1])->toContain('/etc/caddy/sites/docs.test.caddy')
@@ -100,8 +111,8 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
         ->and($payload['success']['data']['result']['action'])->toBe('removed')
         ->and($payload['success']['data']['cleanup'])->toMatchArray([
             'proxy_routes_removed' => 1,
-            'workspaces_removed' => 0,
-            'schedules_removed' => 0,
+            'workspaces_removed' => 1,
+            'schedules_removed' => 1,
             'processes_removed' => 1,
             'fpm_config_removed' => true,
             'runtime_config_removed' => true,

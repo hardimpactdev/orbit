@@ -73,7 +73,10 @@ describe('WorkspaceRemoveController', function (): void {
         $response = $this->call(
             'DELETE',
             '/api/workspaces/feature-api?app=docs',
-            ['keep_files' => false],
+            [
+                'keep_files' => false,
+                'destructive_consent' => true,
+            ],
             [],
             [],
             ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP],
@@ -87,6 +90,34 @@ describe('WorkspaceRemoveController', function (): void {
 
         expect(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())->toBeFalse();
+    });
+
+    it('requires destructive consent before removing workspace intent', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $targetNode);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $targetNode->id,
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-api',
+        ]);
+
+        app()->instance(RemoteShell::class, new WorkspaceRemoveApiSequencedRemoteShell([]));
+
+        $response = $this->call('DELETE', '/api/workspaces/feature-api?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force');
+
+        expect(Workspace::query()->whereKey($workspace->id)->exists())->toBeTrue();
     });
 
     it('rejects workspace removal when the caller cannot access the app node', function (): void {
@@ -108,7 +139,9 @@ describe('WorkspaceRemoveController', function (): void {
 
         app()->instance(RemoteShell::class, new WorkspaceRemoveApiSequencedRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/workspaces/feature-api?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP]);
+        $response = $this->call('DELETE', '/api/workspaces/feature-api?app=docs', [
+            'destructive_consent' => true,
+        ], [], [], ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');

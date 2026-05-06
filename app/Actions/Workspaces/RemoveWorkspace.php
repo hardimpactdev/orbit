@@ -86,16 +86,24 @@ final readonly class RemoveWorkspace
                 ];
             }
 
-            $teardownResult = $this->remoteShell->run($node, $this->renderTeardownScript($teardownSteps));
-            $teardownStepsRun = $teardownResult->successful() ? $teardownSteps->count() : 0;
+            foreach ($teardownSteps as $teardownStep) {
+                $teardownStepsRun++;
+                $teardownResult = $this->remoteShell->run($node, $teardownStep->command, [
+                    'cwd' => $workspace->path,
+                    'timeout' => $teardownStep->timeoutSeconds(),
+                    'env' => $this->teardownEnvironment($workspace),
+                ]);
 
-            if (! $teardownResult->successful()) {
-                $warnings[] = [
-                    'code' => 'workspace.artifact_extra',
-                    'family' => 'workspace',
-                    'message' => 'Workspace teardown steps could not be completed during cleanup.',
-                    'next_command' => 'doctor --family=workspace --fix',
-                ];
+                if (! $teardownResult->successful()) {
+                    $warnings[] = [
+                        'code' => 'workspace.teardown_step_failed',
+                        'family' => 'workspace',
+                        'message' => "Workspace teardown step {$teardownStep->id} failed during cleanup.",
+                        'next_command' => 'doctor --family=workspace --fix',
+                        'step_id' => (string) $teardownStep->id,
+                        'exit_code' => (string) $teardownResult->exitCode,
+                    ];
+                }
             }
 
             $fpmResult = $this->remoteShell->run($node, $this->renderFpmRemovalScript($workspace));
@@ -161,20 +169,6 @@ final readonly class RemoveWorkspace
         return implode("\n", $commands);
     }
 
-    /**
-     * @param  iterable<WorkspaceStep>  $steps
-     */
-    private function renderTeardownScript(iterable $steps): string
-    {
-        $commands = [];
-
-        foreach ($steps as $step) {
-            $commands[] = $step->command;
-        }
-
-        return $commands === [] ? 'true' : implode("\n", $commands);
-    }
-
     private function renderFpmRemovalScript(Workspace $workspace): string
     {
         return sprintf(
@@ -185,5 +179,22 @@ SH,
             escapeshellarg($this->fpmPoolRenderer->path($workspace)),
             escapeshellarg($this->fpmPoolRenderer->service($workspace)),
         );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function teardownEnvironment(Workspace $workspace): array
+    {
+        return [
+            'ORBIT_APP' => (string) $workspace->app?->name,
+            'ORBIT_APP_PATH' => (string) $workspace->app?->path,
+            'ORBIT_WORKSPACE_NAME' => $workspace->name,
+            'ORBIT_WORKSPACE_PATH' => $workspace->path,
+            'ORBIT_URL' => $workspace->url(),
+            'ORBIT_PHP_VERSION' => (string) $workspace->effectivePhpVersion(),
+            'VITE_APP_URL' => $workspace->url(),
+            'VITE_VALET_HOST' => (string) parse_url($workspace->url(), PHP_URL_HOST),
+        ];
     }
 }

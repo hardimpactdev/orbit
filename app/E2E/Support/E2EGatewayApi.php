@@ -502,6 +502,29 @@ PHP;
             return run_orbit_command(implode(' ', $parts));
         }
 
+        function run_workspace_remove(string $name, array $query, array $input): array
+        {
+            $parts = [
+                'php artisan workspace:remove',
+                escapeshellarg($name),
+                '--force',
+            ];
+
+            $app = $query['app'] ?? null;
+
+            if (is_scalar($app) && (string) $app !== '') {
+                $parts[] = '--app='.escapeshellarg((string) $app);
+            }
+
+            if (($input['keep_files'] ?? false) === true) {
+                $parts[] = '--keep-files';
+            }
+
+            $parts[] = '--json';
+
+            return run_orbit_command(implode(' ', $parts));
+        }
+
         function orbit_database(): PDO
         {
             global $orbitPath;
@@ -1043,7 +1066,21 @@ PHP;
             }
 
             if (preg_match('#^DELETE /api/workspaces/steps/(setup|teardown)/([^ ?]+)#', $requestLine, $matches) === 1) {
-                read_request_body($connection, $headers);
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input) || ($input['destructive_consent'] ?? false) !== true) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Use --force to remove this workspace step.',
+                            'meta' => ['field' => 'force'],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
                 $path = explode(' ', $requestLine)[1] ?? "/api/workspaces/steps/{$matches[1]}/{$matches[2]}";
                 $queryString = parse_url($path, PHP_URL_QUERY);
                 $query = [];
@@ -1053,6 +1090,50 @@ PHP;
                 }
 
                 [$exitCode, $output] = run_workspace_step_remove($matches[1], urldecode($matches[2]), $query);
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^DELETE /api/workspaces/([^ ?]+)#', $requestLine, $matches) === 1) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                if (($input['destructive_consent'] ?? false) !== true) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Use --force to remove this workspace.',
+                            'meta' => ['field' => 'force'],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                $path = explode(' ', $requestLine)[1] ?? "/api/workspaces/{$matches[1]}";
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                [$exitCode, $output] = run_workspace_remove(urldecode($matches[1]), $query, $input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

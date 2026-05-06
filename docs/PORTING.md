@@ -1358,8 +1358,14 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     typed Saloon request/response, gateway authorization by app-node access,
     structured error preservation, and no local workspace mutation or direct
     app-node SSH from control callers.
-  - Next concrete action: add the paired Docker feature E2E gate for
-    `workspace:remove` control-caller forwarding.
+  - [~] Paired feature E2E gate for `workspace:remove` control-caller forwarding
+    is authored in `tests/E2E/WorkspaceRemoveTest.php` with the matching
+    gateway-api shim in `app/E2E/Support/E2EGatewayApi.php`. Local verification
+    is currently blocked by E2E infrastructure: the Docker feature script cannot
+    reach Docker on `sidecar1`, `sidecar2`, or `beast`, and the available Incus
+    host has no prepared `control-gateway-dev-prod` topology.
+  - Next concrete action: rerun the focused feature E2E gate after Docker or
+    the prepared Incus topology is available, then mark this gate complete.
 - [x] Port workspace setup and teardown step commands.
   - [x] `workspace-setup-step:list` and `workspace-teardown-step:list`
     gateway-local registry reads, typed gateway API forwarding, app/path

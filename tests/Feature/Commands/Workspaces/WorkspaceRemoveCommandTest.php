@@ -15,6 +15,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -34,6 +35,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
     $node = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
+        'tld' => 'test',
         'user' => 'orbit',
     ]);
     $app = App::factory()->create([
@@ -67,6 +69,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         'phase' => WorkspaceLifecyclePhase::Teardown,
         'sort_order' => 1,
         'command' => 'php artisan migrate:rollback --force',
+        'timeout_seconds' => 123,
     ]);
 
     $remoteShell = new WorkspaceRemoveSequencedRemoteShell([
@@ -91,7 +94,19 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())->toBeFalse()
         ->and($remoteShell->scripts)->toHaveCount(4)
         ->and($remoteShell->scripts[0])->toContain('orbit_docs_feature-api_queue')
-        ->and($remoteShell->scripts[1])->toContain('php artisan migrate:rollback --force')
+        ->and($remoteShell->scripts[1])->toBe('php artisan migrate:rollback --force')
+        ->and($remoteShell->options[1]['cwd'])->toBe('/home/orbit/apps/docs/workspaces/feature-api')
+        ->and($remoteShell->options[1]['timeout'])->toBe(123)
+        ->and($remoteShell->options[1]['env'])->toMatchArray([
+            'ORBIT_APP' => 'docs',
+            'ORBIT_APP_PATH' => '/home/orbit/apps/docs',
+            'ORBIT_WORKSPACE_NAME' => 'feature-api',
+            'ORBIT_WORKSPACE_PATH' => '/home/orbit/apps/docs/workspaces/feature-api',
+            'ORBIT_URL' => 'https://feature-api.docs.test',
+            'ORBIT_PHP_VERSION' => '8.5',
+            'VITE_APP_URL' => 'https://feature-api.docs.test',
+            'VITE_VALET_HOST' => 'feature-api.docs.test',
+        ])
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature-api.conf')
         ->and($remoteShell->scripts[3])->toContain("rm -rf '/home/orbit/apps/docs/workspaces/feature-api'")
         ->and($payload['success']['data'])->toMatchArray([
@@ -198,7 +213,6 @@ it('preserves files when keep files is requested', function (): void {
     $remoteShell = new WorkspaceRemoveSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     app()->instance(RemoteShell::class, $remoteShell);
 
@@ -213,7 +227,7 @@ it('preserves files when keep files is requested', function (): void {
 
     expect($exitCode)->toBe(0)
         ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
-        ->and($remoteShell->scripts)->toHaveCount(3)
+        ->and($remoteShell->scripts)->toHaveCount(2)
         ->and(implode("\n", $remoteShell->scripts))->not->toContain('rm -rf')
         ->and($payload['success']['data']['worktree_removed'])->toBeFalse()
         ->and($payload['success']['meta']['kept_files'])->toBeTrue();
@@ -231,7 +245,6 @@ it('reports cleanup drift as success warnings after intent removal', function ()
     ]);
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'process failed', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fpm failed', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'files failed', durationMs: 1),
     ]));
@@ -253,6 +266,137 @@ it('reports cleanup drift as success warnings after intent removal', function ()
         ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('process.runtime_unit_extra')
         ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('workspace.artifact_extra')
         ->and($payload['success']['meta']['warnings'][2]['code'])->toBe('workspace.artifact_extra');
+});
+
+it('continues workspace teardown after a failed step and reports the failed step warning', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+    ]);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature-api',
+        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+    ]);
+    $failedStep = WorkspaceStep::factory()->create([
+        'app_id' => $app->id,
+        'phase' => WorkspaceLifecyclePhase::Teardown,
+        'sort_order' => 1,
+        'command' => 'php artisan cleanup:first',
+        'timeout_seconds' => 11,
+    ]);
+    WorkspaceStep::factory()->create([
+        'app_id' => $app->id,
+        'phase' => WorkspaceLifecyclePhase::Teardown,
+        'sort_order' => 2,
+        'command' => 'php artisan cleanup:second',
+        'timeout_seconds' => 22,
+    ]);
+
+    $remoteShell = new WorkspaceRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 17, stdout: '', stderr: 'first failed', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('workspace:remove', [
+        'name' => 'feature-api',
+        '--app' => 'docs',
+        '--force' => true,
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
+        ->and($remoteShell->scripts[1])->toBe('php artisan cleanup:first')
+        ->and($remoteShell->scripts[2])->toBe('php artisan cleanup:second')
+        ->and($remoteShell->options[1]['timeout'])->toBe(11)
+        ->and($remoteShell->options[2]['timeout'])->toBe(22)
+        ->and($payload['success']['data']['teardown_steps_run'])->toBe(2)
+        ->and($payload['success']['meta']['warnings'])->toHaveCount(1)
+        ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('workspace.teardown_step_failed')
+        ->and($payload['success']['meta']['warnings'][0]['step_id'])->toBe((string) $failedStep->id)
+        ->and($payload['success']['meta']['warnings'][0]['exit_code'])->toBe('17');
+});
+
+it('uses the app context resolved from the current workspace directory', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    $docs = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+    ]);
+    $admin = App::factory()->create([
+        'name' => 'admin',
+        'node_id' => $node->id,
+    ]);
+    $workspacePath = sys_get_temp_dir().'/orbit-workspace-remove-cwd-'.bin2hex(random_bytes(4));
+    $childPath = "{$workspacePath}/nested";
+    mkdir($childPath, 0777, true);
+
+    $workspace = Workspace::factory()->create([
+        'app_id' => $docs->id,
+        'name' => 'feature-api',
+        'path' => $workspacePath,
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $admin->id,
+        'name' => 'feature-api',
+    ]);
+
+    $remoteShell = new WorkspaceRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $originalCwd = getcwd();
+    chdir($childPath);
+
+    try {
+        $exitCode = Artisan::call('workspace:remove', [
+            '--force' => true,
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($originalCwd)) {
+            chdir($originalCwd);
+        }
+
+        File::deleteDirectory($workspacePath);
+    }
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['name'])->toBe('feature-api')
+        ->and($payload['success']['data']['app'])->toBe('docs')
+        ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse()
+        ->and(Workspace::query()->where('app_id', $admin->id)->where('name', 'feature-api')->exists())->toBeTrue();
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
@@ -323,6 +467,11 @@ final class WorkspaceRemoveSequencedRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(
@@ -332,6 +481,7 @@ final class WorkspaceRemoveSequencedRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         return array_shift($this->results) ?? new RemoteShellResult(
             exitCode: 0,

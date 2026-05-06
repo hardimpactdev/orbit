@@ -169,6 +169,7 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
 
     $response = $this->call('DELETE', '/api/schedules/laravel-scheduler', [
         'app' => 'docs',
+        'destructive_consent' => true,
     ], [], [], ['REMOTE_ADDR' => '10.6.0.60']);
 
     $response->assertSuccessful()
@@ -181,4 +182,34 @@ it('exposes schedule remove over the authenticated gateway API', function (): vo
     expect($entry->subject_type)->toBe(Schedule::class);
     expect($entry->properties->get('type'))->toBe('destructive');
     expect($entry->properties->get('name'))->toBe('laravel-scheduler');
+});
+
+it('requires destructive consent on the authenticated schedule remove API', function (): void {
+    $caller = Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'wireguard_address' => '10.6.0.60',
+    ]);
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $node->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $schedule = Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+    ]);
+
+    $response = $this->call('DELETE', '/api/schedules/laravel-scheduler', [
+        'app' => 'docs',
+    ], [], [], ['REMOTE_ADDR' => '10.6.0.60']);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'force');
+
+    expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeTrue();
 });

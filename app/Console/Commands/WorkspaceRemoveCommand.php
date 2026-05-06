@@ -39,8 +39,15 @@ class WorkspaceRemoveCommand extends Command
             );
         }
 
-        $name = $this->stringArgument('name') ?? $this->resolveNameFromCwd($callerRole);
         $app = $this->stringOption('app');
+        $workspaceFromCwd = null;
+        $name = $this->stringArgument('name');
+
+        if ($name === null) {
+            $workspaceFromCwd = $this->resolveWorkspaceFromCwd($callerRole);
+            $name = $workspaceFromCwd?->name;
+            $app ??= $workspaceFromCwd?->app?->name;
+        }
 
         if ($name === null) {
             return $this->failCommand(
@@ -141,7 +148,7 @@ class WorkspaceRemoveCommand extends Command
         ]);
     }
 
-    private function resolveNameFromCwd(string $callerRole): ?string
+    private function resolveWorkspaceFromCwd(string $callerRole): ?Workspace
     {
         if ($callerRole !== 'gateway') {
             return null;
@@ -150,12 +157,13 @@ class WorkspaceRemoveCommand extends Command
         $cwd = realpath((string) getcwd()) ?: (string) getcwd();
 
         return Workspace::query()
+            ->with('app')
             ->get()
             ->first(function (Workspace $workspace) use ($cwd): bool {
                 $workspacePath = realpath($workspace->path) ?: $workspace->path;
 
                 return $workspacePath === $cwd || str_starts_with($cwd, "{$workspacePath}/");
-            })?->name;
+            });
     }
 
     private function callerRole(): string

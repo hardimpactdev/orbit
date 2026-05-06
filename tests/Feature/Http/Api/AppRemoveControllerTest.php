@@ -65,7 +65,9 @@ describe('AppRemoveController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call('DELETE', '/api/apps/docs', [
+            'destructive_consent' => true,
+        ], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs')
@@ -74,6 +76,30 @@ describe('AppRemoveController', function (): void {
 
         expect(App::query()->where('name', 'docs')->exists())->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse();
+    });
+
+    it('requires destructive consent before removing app intent', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $targetNode);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $targetNode->id,
+        ]);
+
+        app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
+
+        $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force');
+
+        expect(App::query()->whereKey($app->id)->exists())->toBeTrue();
     });
 
     it('rejects app removal when the caller cannot access the app node', function (): void {
@@ -91,7 +117,9 @@ describe('AppRemoveController', function (): void {
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call('DELETE', '/api/apps/docs', [
+            'destructive_consent' => true,
+        ], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');

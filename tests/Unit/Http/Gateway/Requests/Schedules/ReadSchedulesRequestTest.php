@@ -75,6 +75,10 @@ it('resolves schedule remove endpoint and query filters', function (): void {
     expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
     expect($request->getMethod())->toBe(Method::DELETE);
     expect($request->query()->all())->toBe(['app' => 'docs']);
+    expect($request->body()->all())->toBe([
+        'destructive_consent' => true,
+        'destructive_consent_source' => 'force',
+    ]);
 });
 
 it('resolves manual schedule run endpoint and query filters', function (): void {

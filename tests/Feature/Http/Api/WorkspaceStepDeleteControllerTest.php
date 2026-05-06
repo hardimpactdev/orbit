@@ -44,7 +44,10 @@ describe('WorkspaceStepDeleteController', function (): void {
         $removed = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup, 'sort_order' => 2, 'command' => 'npm install']);
         WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup, 'sort_order' => 3]);
 
-        $response = $this->call('DELETE', "/api/workspaces/steps/setup/{$removed->id}", ['app' => 'docs'], [], [], [
+        $response = $this->call('DELETE', "/api/workspaces/steps/setup/{$removed->id}", [
+            'app' => 'docs',
+            'destructive_consent' => true,
+        ], [], [], [
             'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         ]);
 
@@ -65,7 +68,10 @@ describe('WorkspaceStepDeleteController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $removed = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown, 'sort_order' => 1]);
 
-        $response = $this->call('DELETE', "/api/workspaces/steps/teardown/{$removed->id}", ['app' => 'docs'], [], [], [
+        $response = $this->call('DELETE', "/api/workspaces/steps/teardown/{$removed->id}", [
+            'app' => 'docs',
+            'destructive_consent' => true,
+        ], [], [], [
             'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         ]);
 
@@ -78,6 +84,24 @@ describe('WorkspaceStepDeleteController', function (): void {
         expect($entry->subject_type)->toBe(WorkspaceStep::class);
         expect($entry->subject_id)->toBe($removed->id);
         expect($entry->properties->get('type'))->toBe('destructive');
+    });
+
+    it('requires destructive consent before deleting workspace steps', function (): void {
+        $caller = createWorkspaceStepDeleteCallerNode();
+        $node = Node::factory()->create(['role' => 'app']);
+        grantWorkspaceStepDeleteAccess($caller, $node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup]);
+
+        $response = $this->call('DELETE', "/api/workspaces/steps/setup/{$step->id}", ['app' => 'docs'], [], [], [
+            'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
+        ]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force');
+
+        expect(WorkspaceStep::query()->whereKey($step->id)->exists())->toBeTrue();
     });
 
     it('rejects app-node callers', function (): void {
@@ -97,7 +121,10 @@ describe('WorkspaceStepDeleteController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown]);
 
-        $response = $this->call('DELETE', "/api/workspaces/steps/setup/{$step->id}", ['app' => 'docs'], [], [], [
+        $response = $this->call('DELETE', "/api/workspaces/steps/setup/{$step->id}", [
+            'app' => 'docs',
+            'destructive_consent' => true,
+        ], [], [], [
             'REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP,
         ]);
 

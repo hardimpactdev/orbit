@@ -33,6 +33,10 @@ final class WorkspaceRemoveController implements Loggable
             return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
         }
 
+        if ($request->boolean('destructive_consent') !== true) {
+            return $this->error('validation_failed', 'Use --force to remove this workspace.', ['field' => 'force'], 422);
+        }
+
         $app = $this->stringQuery($request, 'app');
         $matches = $this->matchingWorkspaces($caller, $name, $app);
 

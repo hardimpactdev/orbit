@@ -40,6 +40,10 @@ final class WorkspaceStepDeleteController implements Loggable
             return $this->callerRoleNotAllowed($caller->role);
         }
 
+        if ($request->boolean('destructive_consent') !== true) {
+            return $this->validationFailed('force', 'Use --force to remove this workspace step.');
+        }
+
         $appSlug = $this->stringValue($request, 'app');
         $path = $this->stringValue($request, 'path');
 

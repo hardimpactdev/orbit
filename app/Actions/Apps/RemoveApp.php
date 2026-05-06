@@ -8,6 +8,8 @@ use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
+use App\Models\Workspace;
 use App\Services\Processes\SupervisorProgramRenderer;
 use Illuminate\Support\Facades\DB;
 
@@ -46,6 +48,12 @@ final readonly class RemoveApp
             ->where('app_id', $app->id)
             ->pluck('id')
             ->all();
+        $workspacesRemoved = Workspace::query()
+            ->where('app_id', $app->id)
+            ->count();
+        $schedulesRemoved = Schedule::query()
+            ->where('app_id', $app->id)
+            ->count();
         $processesRemoved = $app->processes()->count();
         $removeAppPath = ! $app->adopted
             && App::query()
@@ -99,8 +107,8 @@ final readonly class RemoveApp
             'result' => ['action' => 'removed'],
             'cleanup' => [
                 'proxy_routes_removed' => count($proxyRouteIds),
-                'workspaces_removed' => 0,
-                'schedules_removed' => 0,
+                'workspaces_removed' => $workspacesRemoved,
+                'schedules_removed' => $schedulesRemoved,
                 'processes_removed' => $processesRemoved,
                 'fpm_config_removed' => $fpmConfigRemoved,
                 'runtime_config_removed' => $runtimeConfigRemoved,

@@ -35,6 +35,10 @@ it('resolves to DELETE /api/workspaces/steps/{phase}/{step}', function (): void 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/steps/setup/12');
     expect($request->getMethod())->toBe(Method::DELETE);
     expect($request->query()->all())->toBe(['app' => 'docs']);
+    expect($request->body()->all())->toBe([
+        'destructive_consent' => true,
+        'destructive_consent_source' => 'force',
+    ]);
 });
 
 it('returns a WorkspaceStepMutationResponse DTO', function (): void {

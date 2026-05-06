@@ -7,11 +7,15 @@ namespace App\Http\Gateway\Requests\Workspaces;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Http\Gateway\GatewayRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceStepMutationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
+use Saloon\Traits\Body\HasJsonBody;
 
-final class RemoveWorkspaceStepRequest extends GatewayRequest
+final class RemoveWorkspaceStepRequest extends GatewayRequest implements HasBody
 {
+    use HasJsonBody;
+
     protected Method $method = Method::DELETE;
 
     public function __construct(
@@ -35,6 +39,17 @@ final class RemoveWorkspaceStepRequest extends GatewayRequest
             'app' => $this->app,
             'path' => $this->path,
         ], fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function defaultBody(): array
+    {
+        return [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ];
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceStepMutationResponse

@@ -33,6 +33,10 @@ final readonly class ScheduleDestroyController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
+        if ($request->boolean('destructive_consent') !== true) {
+            return $this->error('validation_failed', 'Use --force to remove this schedule.', ['field' => 'force'], 422);
+        }
+
         try {
             $schedule = $this->payload->find($name, $this->stringQuery($request, 'app'), $this->stringQuery($request, 'node'), $caller);
 
