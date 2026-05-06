@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\RemoteShellStream;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Models\LocalGatewaySettings;
@@ -54,7 +55,7 @@ describe('tool:logs command contract', function (): void {
                     ['message' => '2026-05-06 supervisor running'],
                 ],
             ])
-            ->and($shell->scripts)->toBe(["journalctl -u 'supervisor' -n 2 --no-pager --output=short-iso"]);
+            ->and($shell->scripts)->toBe(["sudo journalctl -u 'supervisor' -n 2 --no-pager --output=short-iso"]);
     });
 
     it('rejects tools without a log source before remote work', function (): void {
@@ -91,6 +92,27 @@ describe('tool:logs command contract', function (): void {
             ->and($payload['error']['meta'])->toMatchArray([
                 'field' => 'json',
             ]);
+    });
+
+    it('reads tool logs in follow mode for human output', function (): void {
+        createToolLogsLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'supervisor',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolLogsRecordingShell(stdout: "followed line\n");
+        app()->instance(RemoteShell::class, $shell);
+        $stream = new ToolLogsRecordingStream;
+        app()->instance(RemoteShellStream::class, $stream);
+
+        $this->artisan('tool:logs supervisor --node=app-1 --lines=1 --follow')
+            ->expectsOutputToContain('followed line')
+            ->assertSuccessful();
+
+        expect($shell->scripts)->toBe([])
+            ->and($stream->scripts)->toBe(["sudo journalctl -u 'supervisor' -n 1 -f --no-pager --output=short-iso"]);
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
@@ -145,5 +167,25 @@ final class ToolLogsRecordingShell implements RemoteShell
         $this->scripts[] = $script;
 
         return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class ToolLogsRecordingStream implements RemoteShellStream
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  callable(string): void  $onOutput
+     * @param  array<string, mixed>  $options
+     */
+    public function stream(Node $node, string $script, callable $onOutput, array $options = []): int
+    {
+        $this->scripts[] = $script;
+        $onOutput("followed line\n");
+
+        return 0;
     }
 }

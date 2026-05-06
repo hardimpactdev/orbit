@@ -54,7 +54,7 @@ final readonly class ToolCatalog
         return is_string($command) && $command !== '' ? $command : null;
     }
 
-    public function logCommand(string $tool, int $lines): ?string
+    public function logCommand(string $tool, int $lines, bool $follow = false): ?string
     {
         $metadata = $this->probeMetadata($tool);
         $service = is_array($metadata) && is_string($metadata['service'] ?? null)
@@ -68,9 +68,10 @@ final readonly class ToolCatalog
         $lineCount = max(1, $lines);
 
         return sprintf(
-            'journalctl -u %s -n %d --no-pager --output=short-iso',
+            'sudo journalctl -u %s -n %d%s --no-pager --output=short-iso',
             escapeshellarg($service),
             $lineCount,
+            $follow ? ' -f' : '',
         );
     }
 

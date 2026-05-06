@@ -9,6 +9,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Http\Gateway\Responses\Tools\ToolLogsResponse;
 use App\Models\Node;
+use App\Services\Tools\ToolLogFollower;
 use App\Services\Tools\ToolLogReader;
 use App\Services\Tools\ToolRegistryFailure;
 use Illuminate\Console\Attributes\Description;
@@ -26,7 +27,7 @@ use Throwable;
 #[Description('Read managed tool logs')]
 class ToolLogsCommand extends Command
 {
-    public function handle(ToolLogReader $logs): int
+    public function handle(ToolLogReader $logs, ToolLogFollower $follower): int
     {
         $input = $this->validatedInput();
 
@@ -34,7 +35,35 @@ class ToolLogsCommand extends Command
             return $input;
         }
 
-        $result = $this->isGatewayCaller()
+        $isGatewayCaller = $this->isGatewayCaller();
+
+        if ($input['follow'] && ! $isGatewayCaller) {
+            return $this->failValidation('follow', 'Log following through gateway forwarding is not ported yet.');
+        }
+
+        if ($input['follow']) {
+            $result = $follower->follow(
+                tool: $input['tool'],
+                node: $input['node'],
+                app: $input['app'],
+                lines: $input['lines'],
+                onOutput: function (string $output): void {
+                    $this->output->write($output);
+                },
+            );
+
+            if ($result instanceof ToolRegistryFailure) {
+                return $this->failCommand(
+                    code: $result->code,
+                    message: $result->message,
+                    meta: $result->meta,
+                );
+            }
+
+            return self::SUCCESS;
+        }
+
+        $result = $isGatewayCaller
             ? $logs->read($input['tool'], node: $input['node'], app: $input['app'], lines: $input['lines'])
             : $this->logsViaGateway($input['tool'], node: $input['node'], app: $input['app'], lines: $input['lines']);
 
@@ -60,7 +89,7 @@ class ToolLogsCommand extends Command
     }
 
     /**
-     * @return array{tool: string, app: string|null, node: string|null, lines: int}|int
+     * @return array{tool: string, app: string|null, node: string|null, lines: int, follow: bool}|int
      */
     private function validatedInput(): array|int
     {
@@ -70,12 +99,10 @@ class ToolLogsCommand extends Command
             return $this->failValidation('tool', 'A tool is required.');
         }
 
-        if ($this->option('follow') === true) {
+        if ($this->wantsJson() && $this->option('follow') === true) {
             return $this->failValidation(
-                $this->wantsJson() ? 'json' : 'follow',
-                $this->wantsJson()
-                    ? '--json cannot be combined with --follow.'
-                    : 'Log following is not ported yet.',
+                'json',
+                '--json cannot be combined with --follow.',
             );
         }
 
@@ -90,6 +117,7 @@ class ToolLogsCommand extends Command
             'app' => $this->stringOption('app'),
             'node' => $this->stringOption('node'),
             'lines' => $lines,
+            'follow' => $this->option('follow') === true,
         ];
     }
 

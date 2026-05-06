@@ -40,7 +40,26 @@ it('reads finite managed system service tool logs from an app node through the g
                 'tool' => 'supervisor',
                 'node' => 'app-dev-1',
             ])
-            ->and($payload['success']['data']['logs']['lines'])->not->toBeEmpty();
+            ->and($payload['success']['data']['logs']['lines'])->not->toBeEmpty()
+            ->and(implode("\n", array_column($payload['success']['data']['logs']['lines'], 'message')))->toContain('supervisor');
+
+        $follow = $topology->ssh(
+            'gateway',
+            sprintf(
+                'cd %s && timeout 20s bash -lc %s',
+                escapeshellarg($topology->checkout('gateway')),
+                escapeshellarg(<<<'BASH'
+rm -f /tmp/orbit-tool-follow.log
+timeout 8s php artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
+test -s /tmp/orbit-tool-follow.log
+grep -m 1 supervisor /tmp/orbit-tool-follow.log
+BASH),
+            ),
+            timeoutSeconds: 30,
+        );
+
+        expect($follow->successful())->toBeTrue()
+            ->and(trim($follow->output()))->not->toBe('');
     } finally {
         $topology->cleanup();
     }

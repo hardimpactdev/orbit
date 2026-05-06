@@ -18,7 +18,7 @@ final readonly class ToolLogReader
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function read(string $tool, ?string $node = null, ?string $app = null, int $lines = 100): array|ToolRegistryFailure
+    public function read(string $tool, ?string $node = null, ?string $app = null, int $lines = 100, bool $follow = false): array|ToolRegistryFailure
     {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'logs');
@@ -30,7 +30,7 @@ final readonly class ToolLogReader
             return $model;
         }
 
-        $command = $this->catalog->logCommand($model->name, $lines);
+        $command = $this->catalog->logCommand($model->name, $lines, follow: $follow);
 
         if ($command === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'logs');

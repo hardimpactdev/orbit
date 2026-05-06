@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
+use App\Contracts\RemoteShellStream;
 use App\Contracts\RequestProfiler;
 use App\Http\Gateway\GatewayConnector;
 use App\Services\ActivityLogCorrelation;
@@ -14,6 +15,7 @@ use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
 use App\Services\CurlRequestProfiler;
 use App\Services\Dns\LocalResolver;
 use App\Services\RemoteShell\SshRemoteShell;
+use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
@@ -37,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
         $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
         $this->app->bind(RemoteShell::class, SshRemoteShell::class);
+        $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
 
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);
