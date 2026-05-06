@@ -9,6 +9,7 @@ use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
 use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
+use App\Http\Gateway\Requests\Schedules\ShowScheduleLogsRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
 use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
@@ -77,6 +78,14 @@ it('resolves manual schedule run endpoint and query filters', function (): void 
     expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler/run');
     expect($request->getMethod())->toBe(Method::POST);
     expect($request->query()->all())->toBe(['app' => 'docs']);
+});
+
+it('resolves schedule logs endpoint and query filters', function (): void {
+    $request = new ShowScheduleLogsRequest(name: 'laravel-scheduler', app: 'docs', run: 18, lines: 10);
+
+    expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler/logs');
+    expect($request->getMethod())->toBe(Method::GET);
+    expect($request->query()->all())->toBe(['app' => 'docs', 'run' => 18, 'lines' => 10]);
 });
 
 it('returns schedule list and show response DTOs with meta', function (): void {

@@ -1363,7 +1363,11 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     the existing remote-shell abstraction, durable run-history persistence,
     scheduled process failure reporting with captured output, human/JSON
     renderers, and focused Pest coverage.
-- [ ] Port schedule logs command against scheduler-captured stdout/stderr.
+- [x] Port schedule logs command against scheduler-captured stdout/stderr.
+  - [x] `schedule:logs` gateway-owned durable run-history read, typed gateway
+    API forwarding, app/node filter validation, run-id selection, independent
+    stdout/stderr line limiting, human/JSON renderers, read-only boundary
+    tests, and focused Pest coverage.
 - [ ] Port `orbit-scheduler` Artisan-command daemon and Supervisor program
   rendering.
 - [ ] Port scheduler heartbeat reporting and run-history intake endpoint.
