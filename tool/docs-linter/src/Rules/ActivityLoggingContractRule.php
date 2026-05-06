@@ -75,6 +75,9 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'firewall-allow',
         'firewall-deny',
         'firewall-remove',
+        'proxy-list',
+        'proxy-add',
+        'proxy-remove',
     ];
 
     /**

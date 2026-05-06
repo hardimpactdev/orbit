@@ -26,8 +26,7 @@ Caddy site reconciliation and Orbit-managed TLS material repair.
 
 ## Activity backfill
 
-- [ ] Author `## Activity Logging` sections for `proxy:list`, `proxy:add`,
+- [x] Author `## Activity Logging` sections for `proxy:list`, `proxy:add`,
   `proxy:remove`, then add them to
-  `ActivityLoggingContractRule::ENFORCED_COMMANDS`. Abstraction seed
-  (`docs/abstractions/8_proxy.md`) and command surface are already in
-  place.
+  `ActivityLoggingContractRule::ENFORCED_COMMANDS`. `composer docs-lint`
+  passes.

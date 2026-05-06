@@ -77,6 +77,19 @@ artifacts. Live backend drift belongs to `doctor --family=proxy`.
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to inspect the selected serving node or route owner. | `error.code=authorization_failed` |
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /proxy-routes` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | `derived` |
+
 ## Doctor Relationship
 
 `proxy-list` reports gateway proxy route intent only. [`proxy-doctor.md`](../../proxy-doctor.md)

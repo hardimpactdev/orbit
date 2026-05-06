@@ -68,6 +68,19 @@ service processes. Owned-route removal belongs to the owner domain.
 - [Human renderer](6.1_proxy-remove_output-render_human.md)
 - [JSON renderer](6.2_proxy-remove_output-render_json.md)
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+destructive removals.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /proxy-routes/{domain}` |
+| Effect | `destructive` |
+| Subject | The caller `Node`. |
+| Properties | `domain` (string from route parameter). |
+| Description | `derived` |
+
 ## Failure Semantics
 
 | Failure | Condition | Outcome |

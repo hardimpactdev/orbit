@@ -77,6 +77,19 @@ future tool-owned routes belong to tool-family commands and are only visible in
 - [Human renderer](6.1_proxy-add_output-render_human.md)
 - [JSON renderer](6.2_proxy-add_output-render_json.md)
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+intent writes.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /proxy-routes` |
+| Effect | `write` |
+| Subject | The caller `Node`. |
+| Properties | `domain` (string), `node` (string). |
+| Description | `derived` |
+
 ## Failure Semantics
 
 | Failure | Condition | Outcome |
