@@ -206,7 +206,7 @@ describe('node:show human renderer contract', function (): void {
     it('renders missing name prose error when no local node exists', function (): void {
         DB::table('nodes')->delete();
 
-        $exitCode = Artisan::call('node:show');
+        $exitCode = Artisan::call('node:show', ['--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->not->toBe(0);

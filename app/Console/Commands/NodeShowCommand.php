@@ -157,9 +157,7 @@ class NodeShowCommand extends Command
 
     protected function isInteractiveInput(): bool
     {
-        return ! $this->wantsJson()
-            && function_exists('posix_isatty')
-            && @posix_isatty(STDOUT);
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     protected function promptNodeName(string $callerRole): string

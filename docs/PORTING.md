@@ -279,7 +279,7 @@ yet satisfy the full product contracts.
     - `tests/Unit/Services/Nodes/NodesProbeTest.php` (node-family doctor probe drift)
   - Contract gaps: access-policy visibility, `--doctor`, and E2E verification
     are resolved; remaining node-read gaps are tracked in the node workstream.
-- [~] `node:show`
+- [x] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
   - Current tests:
@@ -296,7 +296,9 @@ yet satisfy the full product contracts.
   - Renderer contracts aligned with 6.1/6.2: `environment`, `platform`, and node
     agent IDE metadata are modeled; grants section always renders in human mode
     with `(none)` sentinel when empty.
-  - Contract gaps tracked in the node workstream below.
+  - Interactive and non-interactive input modes satisfy the documented default
+    resolution chain; prompt label and forwarded prompted-name behavior are
+    covered by focused Pest tests.
 - [~] `node:new`
   - Current implementation: `app/Console/Commands/NodeNewCommand.php`
   - Current docs: `docs/commands/1_node/1_node-new`
@@ -696,7 +698,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] gateway forwarding (control/app CLI callers use typed GatewayConnector;
     E2E gate todo 254 complete).
   - [x] doctor handoff behavior.
-- [~] Complete `node:show` contract gaps:
+- [x] Complete `node:show` contract gaps:
   - [x] modeled `environment`, `platform`, and node agent IDE metadata.
   - [x] JSON renderer contract (envelope shape, field contract, all error codes and metadata).
   - [x] Human renderer contract (field order, grants section, failure prose).
@@ -704,7 +706,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - [x] access-policy authorization.
   - [x] gateway forwarding (control/app CLI callers use typed GatewayConnector;
     E2E gate todo 254 complete).
-  - [ ] interactive prompting.
+  - [x] interactive prompting.
   - [x] default development app-node resolution.
   - [x] real grant metadata for gateway-local and forwarded reads.
 - [x] Reconcile `node:register` with product command contracts.

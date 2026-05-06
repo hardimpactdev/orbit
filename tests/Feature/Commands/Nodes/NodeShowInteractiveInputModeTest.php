@@ -3,12 +3,16 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeShowCommand;
+use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
+use App\Models\LocalGatewaySettings;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -36,6 +40,10 @@ class TestableNodeShowCommand extends NodeShowCommand
 }
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -210,6 +218,43 @@ describe('node:show interactive input mode', function (): void {
             ->and($result['output'])->toContain('Gateway connection is required')
             ->and($result['output'])->not->toContain('Node name is required.')
             ->and($result['output'])->not->toContain('validation_failed');
+    });
+
+    it('uses the documented prompt label and forwards the prompted node name', function (): void {
+        DB::table('nodes')->delete();
+        DB::table('local_node_defaults')->delete();
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        $mock = MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'node' => [
+                            'name' => 'visible-app',
+                            'role' => 'app',
+                            'status' => 'active',
+                            'environment' => 'development',
+                            'platform' => 'ubuntu_24-04',
+                            'wireguard_address' => '10.6.0.7',
+                            'addresses' => ['wireguard' => '10.6.0.7'],
+                            'agent_ide' => ['adapter' => null, 'source' => 'default'],
+                            'grants' => ['consuming_nodes' => [], 'serving_nodes' => []],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('node:show')
+            ->expectsQuestion('Node name', 'visible-app')
+            ->expectsOutputToContain('Node: visible-app')
+            ->assertSuccessful();
+
+        $mock->assertSent(fn (ShowNodeRequest $request): bool => $request->name === 'visible-app');
     });
 
     it('does not prompt when json forces non-interactive mode', function (): void {
