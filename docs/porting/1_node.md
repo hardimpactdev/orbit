@@ -200,21 +200,25 @@ Detail file for the node command family. Top-level command status lives in
       can safely prove compatible already-provisioned host identity.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
+    - [x] Compatible app-node adoption for existing non-active gateway intent
+      when registry peer material is proven against live WireGuard reality.
     - [x] Control-node enrollment path with WireGuard config return.
     - [x] Gateway convergence path.
-    - [!] Gateway adoption path is blocked on node:new command integration.
+    - [!] Remaining gateway adoption paths are blocked on stronger identity
+      probes and forwarding coverage.
       Local platform record adoption, unambiguous WireGuard address adoption,
       app runtime readiness verification/conflict results, and proven live
       WireGuard peer-extra adoption are implemented in node-family adoption.
       Peer-extra adoption activates a selected non-active, non-gateway node
       record only when the registry already contains peer material, the peer
       public key is present in live WireGuard reality, and the live peer has
-      exactly one unambiguous allowed address. Active-node missing-peer adoption
-      remains unavailable because the clean registry has no peer public key to
-      bind to unowned live peer material, and the old repo skipped these cases.
-      Next concrete action: wire `node:new` gateway-local adoption through
-      `NodesProbe::snapshotForAdopt()`/`adopt()` verified results for compatible
-      existing node records, while keeping missing-peer cases as conflict or
+      exactly one unambiguous allowed address. `node:new` now uses that result
+      for gateway-local compatible app-node adoption. Active-node missing-peer
+      adoption and unknown-host adoption remain unavailable because the clean
+      registry has no peer public key to bind to unowned live peer material, and
+      the old repo skipped these cases. Next concrete action: add the matching
+      gateway-forwarded adoption coverage/API contract for configured control
+      callers, while keeping missing-peer cases as conflict or
       `doctor --family=node --fix` handoff until a node identity artifact probe
       can prove them safely.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).

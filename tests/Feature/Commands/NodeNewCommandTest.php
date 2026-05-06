@@ -795,6 +795,173 @@ describe('node:new', function (): void {
             ->and($node->tld)->toBeNull();
     });
 
+    it('adopts a compatible existing app node from proven live WireGuard peer reality', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $nodeId = DB::table('nodes')->insertGetId([
+            'name' => 'app-adopt-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'host' => '192.0.2.30',
+            'wireguard_address' => '10.6.0.8',
+            'gateway_endpoint' => '10.6.0.2',
+            'ssh_user' => 'provisioner',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'decommissioned',
+            'is_local' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        WireGuardPeer::query()->create([
+            'node_id' => $nodeId,
+            'public_key' => 'app-public-key',
+            'private_key' => 'app-private-key',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.9/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-adopt-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.30',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $node = DB::table('nodes')->where('name', 'app-adopt-1')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('adopted')
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'app-adopt-1',
+                'role' => 'app',
+                'environment' => 'development',
+                'tld' => 'test',
+                'platform' => 'ubuntu_24-04',
+                'addresses' => [
+                    'wireguard' => '10.6.0.9',
+                    'gateway_endpoint' => '10.6.0.2',
+                ],
+                'status' => 'active',
+            ])
+            ->and($payload['success']['data']['provisioning'])->toBe([
+                'transport' => 'none',
+                'host' => '192.0.2.30',
+                'status' => 'adopted',
+            ])
+            ->and($payload['success']['data']['development_tld']['gateway_dns']['target'])->toBe('10.6.0.9')
+            ->and($node)->not->toBeNull()
+            ->and($node->status)->toBe('active')
+            ->and($node->wireguard_address)->toBe('10.6.0.9');
+
+        Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
+
+    it('fails app-node adoption without proven live WireGuard peer reality', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $nodeId = DB::table('nodes')->insertGetId([
+            'name' => 'app-unproven-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'host' => '192.0.2.31',
+            'wireguard_address' => '10.6.0.8',
+            'gateway_endpoint' => '10.6.0.2',
+            'ssh_user' => 'provisioner',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'decommissioned',
+            'is_local' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        WireGuardPeer::query()->create([
+            'node_id' => $nodeId,
+            'public_key' => 'app-public-key',
+            'private_key' => 'app-private-key',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "different-public-key\t10.6.0.9/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-unproven-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.31',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $node = DB::table('nodes')->where('name', 'app-unproven-1')->first();
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.provisioning_incomplete')
+            ->and($payload['error']['meta']['step'])->toBe('node_adoption')
+            ->and($payload['error']['meta']['adoption_results'][0])->toMatchArray([
+                'family' => 'nodes',
+                'key' => 'node.wireguard_peer_extra',
+                'action' => 'skipped',
+            ])
+            ->and($node)->not->toBeNull()
+            ->and($node->status)->toBe('decommissioned')
+            ->and($node->wireguard_address)->toBe('10.6.0.8');
+
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
+
     it('requires a tld for development app nodes before side effects', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',

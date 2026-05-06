@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\AdoptAction;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
@@ -12,6 +13,7 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Nodes\NodesProbe;
 use App\Services\OrbitHostInstaller;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Trust\TrustStoreInstaller;
@@ -54,6 +56,7 @@ class NodeNewCommand extends Command
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         PlatformDetector $platformDetector,
         WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
+        NodesProbe $nodesProbe,
     ): int {
         $callerRole = $this->callerRole();
 
@@ -105,7 +108,7 @@ class NodeNewCommand extends Command
                 return $this->forwardAppNodeCreation($name, $inputs);
             }
 
-            return $this->provisionAppNode($installer, $registryWriter, $name, $inputs);
+            return $this->provisionAppNode($installer, $registryWriter, $nodesProbe, $name, $inputs);
         }
 
         if ($callerRole === 'control' && ! $gatewayConfigured && $role === 'control') {
@@ -638,14 +641,20 @@ class NodeNewCommand extends Command
     /**
      * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
      */
-    private function provisionAppNode(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter, string $name, array $inputs): int
+    private function provisionAppNode(OrbitHostInstaller $installer, NodeRegistryWriter $registryWriter, NodesProbe $nodesProbe, string $name, array $inputs): int
     {
-        if (Node::query()->where('name', $name)->where('status', 'active')->exists()) {
+        $existing = Node::query()->where('name', $name)->first();
+
+        if ($existing instanceof Node && $existing->status === 'active') {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node '{$name}' already exists.",
                 meta: ['name' => $name],
             );
+        }
+
+        if ($existing instanceof Node) {
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs);
         }
 
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', 'active')->exists()) {
@@ -738,6 +747,114 @@ class NodeNewCommand extends Command
 
         $this->info("Created app node {$name}.");
         $this->line("Endpoint: {$inputs['host']}");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     */
+    private function adoptExistingAppNode(NodesProbe $nodesProbe, Node $node, array $inputs): int
+    {
+        $incompatibleFields = [];
+
+        if ($node->role !== 'app') {
+            $incompatibleFields['role'] = $node->role;
+        }
+
+        if ($node->host !== $inputs['host']) {
+            $incompatibleFields['host'] = $node->host;
+        }
+
+        if ($node->environment !== $inputs['environment']) {
+            $incompatibleFields['environment'] = $node->environment;
+        }
+
+        if ($node->tld !== $inputs['tld']) {
+            $incompatibleFields['tld'] = $node->tld;
+        }
+
+        if ($incompatibleFields !== []) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Node '{$node->name}' is not compatible with this adoption request.",
+                meta: [
+                    'name' => $node->name,
+                    'requested_role' => 'app',
+                    'incompatible_fields' => $incompatibleFields,
+                ],
+            );
+        }
+
+        $results = $nodesProbe->adopt($node, $nodesProbe->snapshotForAdopt($node));
+        $hasConflict = false;
+        $activated = false;
+
+        foreach ($results as $result) {
+            if ($result->action === AdoptAction::Conflict) {
+                $hasConflict = true;
+            }
+
+            if ($result->key === 'node.wireguard_peer_extra' && $result->action === AdoptAction::Updated) {
+                $activated = true;
+            }
+        }
+
+        $node->refresh();
+
+        if ($hasConflict || ! $activated || $node->status !== 'active') {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "App node '{$node->name}' could not be safely adopted.",
+                meta: [
+                    'node' => $node->name,
+                    'step' => 'node_adoption',
+                    'error' => 'Run `orbit doctor --family=node --adopt --node='.$node->name.'` after resolving the reported node drift.',
+                    'adoption_results' => array_map(fn ($result): array => $result->toArray(), $results),
+                ],
+            );
+        }
+
+        $payload = [
+            'result' => [
+                'action' => 'adopted',
+            ],
+            'node' => [
+                'name' => $node->name,
+                'role' => 'app',
+                'environment' => $node->environment,
+                'tld' => $node->tld,
+                'platform' => $node->platform ?? 'unknown',
+                'addresses' => [
+                    'wireguard' => $node->wireguard_address,
+                    'gateway_endpoint' => $node->gateway_endpoint,
+                ],
+                'status' => 'active',
+            ],
+            'provisioning' => [
+                'transport' => 'none',
+                'host' => $inputs['host'],
+                'status' => 'adopted',
+            ],
+            'next_steps' => [],
+        ];
+
+        if ($node->environment === 'development') {
+            $payload['development_tld'] = [
+                'tld' => $node->tld,
+                'gateway_dns' => [
+                    'domain' => "*.{$node->tld}",
+                    'target' => $node->wireguard_address,
+                    'status' => 'configured',
+                ],
+            ];
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Adopted app node {$node->name}.");
 
         return self::SUCCESS;
     }
