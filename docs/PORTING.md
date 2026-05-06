@@ -1352,7 +1352,11 @@ across the process and schedule families.
     schema-free and reports zero due/executed schedules; schedule sync,
     locks, heartbeat persistence, and run-history reporting remain in the
     dedicated scheduler state/API items below.
-- [ ] Add scheduler local-state schema (locks, heartbeat, last-sync).
+- [x] Add scheduler local-state schema (locks, heartbeat, last-sync).
+  - Added `scheduler_states` for per-node local heartbeat and registry-sync
+    timestamps, plus `schedule_locks` for per-node stable schedule-key locks.
+    Both tables are local-node scheduler state foundations; gateway schedule
+    intent and durable run-history schemas remain separate tracker items.
 - [ ] Add scheduler-to-gateway authentication using the existing WireGuard
   node identity.
 - [ ] Add the gateway run-history intake endpoint and typed request.

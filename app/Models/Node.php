@@ -7,6 +7,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -26,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $orbit_path
  * @property string $status
  * @property bool $is_local
+ * @property-read SchedulerState|null $schedulerState
  */
 class Node extends Model
 {
@@ -77,5 +80,21 @@ class Node extends Model
             foreignPivotKey: 'consumer_node_id',
             relatedPivotKey: 'serving_node_id',
         );
+    }
+
+    /**
+     * @return HasOne<SchedulerState, $this>
+     */
+    public function schedulerState(): HasOne
+    {
+        return $this->hasOne(SchedulerState::class);
+    }
+
+    /**
+     * @return HasMany<ScheduleLock, $this>
+     */
+    public function scheduleLocks(): HasMany
+    {
+        return $this->hasMany(ScheduleLock::class);
     }
 }
