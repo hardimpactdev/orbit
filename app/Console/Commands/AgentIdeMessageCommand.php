@@ -62,15 +62,7 @@ class AgentIdeMessageCommand extends Command
             );
         }
 
-        if ($workspaceSelector !== null) {
-            return $this->failCommand(
-                code: 'target_not_found',
-                message: "Workspace '{$workspaceSelector}' not found or not visible.",
-                meta: ['workspace' => $workspaceSelector],
-            );
-        }
-
-        if ($appSelector === null) {
+        if ($appSelector === null && $workspaceSelector === null) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
@@ -79,11 +71,15 @@ class AgentIdeMessageCommand extends Command
         }
 
         if ($callerRole !== 'gateway') {
-            return $this->forwardAppMessage($appSelector, $message);
+            return $this->forwardMessage($message, $appSelector, $workspaceSelector);
         }
 
         try {
-            return $this->successCommand($delivery->deliverToApp($appSelector, $message));
+            $data = $workspaceSelector !== null
+                ? $delivery->deliverToWorkspace($workspaceSelector, $message)
+                : $delivery->deliverToApp((string) $appSelector, $message);
+
+            return $this->successCommand($data);
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'adapter_delivery_failed',
@@ -93,7 +89,7 @@ class AgentIdeMessageCommand extends Command
         }
     }
 
-    private function forwardAppMessage(string $app, string $message): int
+    private function forwardMessage(string $message, ?string $app, ?string $workspace): int
     {
         if (! $this->hasConfiguredGateway()) {
             return $this->failCommand(
@@ -106,7 +102,7 @@ class AgentIdeMessageCommand extends Command
         try {
             /** @var AgentIdeMessageResponse $dto */
             $dto = app(GatewayConnector::class)
-                ->send(new SendAgentIdeMessageRequest($message, $app))
+                ->send(new SendAgentIdeMessageRequest($message, $app, $workspace))
                 ->dto();
         } catch (GatewayApiException $e) {
             return $this->failCommand(

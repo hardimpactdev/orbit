@@ -7,6 +7,7 @@ use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -106,6 +107,102 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
             'workspace' => null,
             'node' => 'app-1',
         ]);
+});
+
+it('delivers a JSON message to an explicit workspace target on the gateway', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+        'agent_ide_config' => ['adapter' => 'polyscope'],
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'agent_ide' => 'polyscope',
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--workspace' => 'feature-docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['adapter'])->toBe('polyscope')
+        ->and($payload['success']['data']['agent_ide']['source'])->toBe('workspace')
+        ->and($payload['success']['data']['agent_ide']['target'])->toBe([
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'node' => 'app-1',
+        ])
+        ->and($adapter->deliveries)->toHaveCount(1)
+        ->and($adapter->deliveries[0]['target'])->toBe([
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+            'node' => 'app-1',
+        ]);
+});
+
+it('fails when the target workspace has no effective adapter', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'agent_ide' => 'none',
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--workspace' => 'feature-docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload)->toMatchArray([
+            'error' => [
+                'code' => 'no_effective_adapter',
+                'message' => 'No Agent IDE adapter is configured for workspace feature-docs.',
+                'meta' => [
+                    'app' => 'docs',
+                    'workspace' => 'feature-docs',
+                ],
+            ],
+        ])
+        ->and($adapter->deliveries)->toBeEmpty();
 });
 
 it('fails when the target app has no effective adapter', function (): void {
@@ -366,4 +463,62 @@ it('forwards configured app callers through the typed gateway request', function
         ->and($adapter->deliveries)->toBeEmpty();
 
     $mockClient->assertSent(SendAgentIdeMessageRequest::class);
+});
+
+it('forwards configured workspace targets through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $mockClient = MockClient::global([
+        SendAgentIdeMessageRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'agent_ide' => [
+                        'adapter' => 'opencode',
+                        'source' => 'workspace',
+                        'target' => [
+                            'app' => 'docs',
+                            'workspace' => 'feature-docs',
+                            'node' => 'app-1',
+                        ],
+                        'session' => [
+                            'id' => 'sess_999',
+                            'status' => 'active',
+                        ],
+                        'delivery' => [
+                            'status' => 'sent',
+                            'message_bytes' => 13,
+                            'input' => 'argument',
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--workspace' => 'feature-docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['target']['workspace'])->toBe('feature-docs')
+        ->and($adapter->deliveries)->toBeEmpty();
+
+    $mockClient->assertSent(fn (SendAgentIdeMessageRequest $request): bool => $request->workspace === 'feature-docs'
+        && $request->app === null);
 });

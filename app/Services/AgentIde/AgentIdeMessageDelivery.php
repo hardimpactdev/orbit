@@ -7,6 +7,7 @@ namespace App\Services\AgentIde;
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
+use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
 
 final readonly class AgentIdeMessageDelivery
@@ -83,6 +84,84 @@ final readonly class AgentIdeMessageDelivery
         ];
     }
 
+    /**
+     * @return array{agent_ide: array<string, mixed>}
+     */
+    public function deliverToWorkspace(string $selector, string $message): array
+    {
+        $workspace = $this->resolveWorkspace($selector);
+
+        if (! $workspace instanceof Workspace) {
+            throw new GatewayApiException(
+                message: "Workspace '{$selector}' not found or not visible.",
+                errorCode: 'target_not_found',
+                errorMeta: ['workspace' => $selector],
+            );
+        }
+
+        $workspace->loadMissing('app.node');
+        $app = $workspace->app;
+
+        if (! $app instanceof App) {
+            throw new GatewayApiException(
+                message: "Workspace '{$selector}' not found or not visible.",
+                errorCode: 'target_not_found',
+                errorMeta: ['workspace' => $selector],
+            );
+        }
+
+        $adapter = $this->workspaceAdapterPayload($workspace, $app);
+        $adapterName = $adapter['effective_adapter'];
+
+        if ($adapterName === null) {
+            throw new GatewayApiException(
+                message: "No Agent IDE adapter is configured for workspace {$workspace->name}.",
+                errorCode: 'no_effective_adapter',
+                errorMeta: ['app' => $app->name, 'workspace' => $workspace->name],
+            );
+        }
+
+        if (! $this->registry->isRegisteredAdapter($adapterName)) {
+            throw new GatewayApiException(
+                message: "Agent IDE adapter {$adapterName} is not registered.",
+                errorCode: 'no_effective_adapter',
+                errorMeta: ['app' => $app->name, 'workspace' => $workspace->name, 'adapter' => $adapterName],
+            );
+        }
+
+        $target = [
+            'app' => $app->name,
+            'workspace' => $workspace->name,
+            'node' => (string) $app->node?->name,
+        ];
+        $messageAdapter = $this->messageAdapter();
+        $session = $messageAdapter->activeSession($target, $adapterName);
+
+        if ($session === null) {
+            throw new GatewayApiException(
+                message: "No active Agent IDE session found for workspace {$workspace->name}.",
+                errorCode: 'no_active_session',
+                errorMeta: ['app' => $app->name, 'workspace' => $workspace->name, 'adapter' => $adapterName],
+            );
+        }
+
+        $messageAdapter->deliver($target, $adapterName, $session, $message);
+
+        return [
+            'agent_ide' => [
+                'adapter' => $adapterName,
+                'source' => $adapter['source'],
+                'target' => $target,
+                'session' => $session,
+                'delivery' => [
+                    'status' => 'sent',
+                    'message_bytes' => strlen($message),
+                    'input' => 'argument',
+                ],
+            ],
+        ];
+    }
+
     private function resolveApp(string $selector): ?App
     {
         return App::query()
@@ -91,6 +170,36 @@ final readonly class AgentIdeMessageDelivery
             ->first(fn (App $app): bool => $app->name === $selector
                 || $app->domain === $selector
                 || $app->url() === "https://{$selector}");
+    }
+
+    private function resolveWorkspace(string $selector): ?Workspace
+    {
+        $matches = Workspace::query()
+            ->with('app.node')
+            ->where('name', $selector)
+            ->get();
+
+        return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    /**
+     * @return array{source: string, effective_adapter: string|null}
+     */
+    private function workspaceAdapterPayload(Workspace $workspace, App $app): array
+    {
+        if (is_string($workspace->agent_ide) && $workspace->agent_ide !== '') {
+            return [
+                'source' => 'workspace',
+                'effective_adapter' => $workspace->agent_ide === 'none' ? null : $workspace->agent_ide,
+            ];
+        }
+
+        $adapter = $this->appAgentIdeDefaults->payloadFor($app);
+
+        return [
+            'source' => $adapter['source'],
+            'effective_adapter' => $adapter['effective_adapter'],
+        ];
     }
 
     private function messageAdapter(): AgentIdeMessageAdapter

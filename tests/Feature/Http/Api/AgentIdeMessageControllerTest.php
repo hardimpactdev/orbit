@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -144,6 +145,46 @@ it('sends an app-target message for an authorized app caller', function (): void
 
     expect($adapter->deliveries)->toHaveCount(1)
         ->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
+});
+
+it('sends a workspace-target message for an authorized caller', function (): void {
+    $caller = createAgentIdeMessageCallerNode();
+    $appNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'agent_ide_config' => ['adapter' => 'polyscope'],
+    ]);
+    grantAgentIdeMessageAccess($caller, $appNode);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'agent_ide' => 'polyscope',
+    ]);
+
+    $adapter = new FakeApiAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $response = postAgentIdeMessageJson([
+        'message' => 'Ship the docs',
+        'workspace' => 'feature-docs',
+    ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
+
+    $response->assertOk()
+        ->assertJsonPath('success.data.agent_ide.adapter', 'polyscope')
+        ->assertJsonPath('success.data.agent_ide.source', 'workspace')
+        ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.workspace', 'feature-docs')
+        ->assertJsonPath('success.data.agent_ide.target.node', 'app-1');
+
+    expect($adapter->deliveries)->toHaveCount(1)
+        ->and($adapter->deliveries[0]['target']['workspace'])->toBe('feature-docs');
 });
 
 it('rejects unauthorized callers without delivering', function (): void {

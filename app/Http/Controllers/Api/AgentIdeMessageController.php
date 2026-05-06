@@ -8,6 +8,7 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Requests\Api\SendAgentIdeMessageApiRequest;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,12 @@ final readonly class AgentIdeMessageController
                 meta: [],
                 status: 403,
             );
+        }
+
+        $workspaceSelector = $request->workspaceSelector();
+
+        if ($workspaceSelector !== null) {
+            return $this->sendWorkspaceMessage($request, $caller, $workspaceSelector);
         }
 
         $app = $this->resolveApp($request->appSelector());
@@ -76,6 +83,52 @@ final readonly class AgentIdeMessageController
         ]);
     }
 
+    private function sendWorkspaceMessage(SendAgentIdeMessageApiRequest $request, Node $caller, string $workspaceSelector): JsonResponse
+    {
+        $workspace = $this->resolveWorkspace($workspaceSelector);
+
+        if (! $workspace instanceof Workspace || ! $workspace->app instanceof App) {
+            return $this->error(
+                code: 'target_not_found',
+                message: "Workspace '{$workspaceSelector}' not found or not visible.",
+                meta: ['workspace' => $workspaceSelector],
+                status: 404,
+            );
+        }
+
+        $workspace->app->loadMissing('node');
+
+        if (! $workspace->app->node instanceof Node || ! $this->callerCanMessageApp($caller, $workspace->app)) {
+            return $this->error(
+                code: 'authorization_failed',
+                message: "This node is not authorized to message workspace '{$workspace->name}'.",
+                meta: [
+                    'app' => $workspace->app->name,
+                    'workspace' => $workspace->name,
+                    'caller_role' => $caller->role,
+                ],
+                status: 403,
+            );
+        }
+
+        try {
+            $data = $this->delivery->deliverToWorkspace($workspace->name, $request->messageBody());
+        } catch (GatewayApiException $e) {
+            return $this->error(
+                code: $e->errorCode() ?? 'adapter_delivery_failed',
+                message: $e->getMessage(),
+                meta: $e->errorMeta(),
+                status: $this->statusFor($e->errorCode()),
+            );
+        }
+
+        return response()->json([
+            'success' => [
+                'data' => $data,
+            ],
+        ]);
+    }
+
     private function resolveApp(string $selector): ?App
     {
         return App::query()
@@ -84,6 +137,16 @@ final readonly class AgentIdeMessageController
             ->first(fn (App $app): bool => $app->name === $selector
                 || $app->domain === $selector
                 || $app->url() === "https://{$selector}");
+    }
+
+    private function resolveWorkspace(string $selector): ?Workspace
+    {
+        $matches = Workspace::query()
+            ->with('app.node')
+            ->where('name', $selector)
+            ->get();
+
+        return $matches->count() === 1 ? $matches->first() : null;
     }
 
     private function callerCanMessageApp(Node $caller, App $app): bool

@@ -19,7 +19,8 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $message,
-        public readonly string $app,
+        public readonly ?string $app = null,
+        public readonly ?string $workspace = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -32,10 +33,11 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return [
+        return array_filter([
             'message' => $this->message,
             'app' => $this->app,
-        ];
+            'workspace' => $this->workspace,
+        ], fn (?string $value): bool => $value !== null && $value !== '');
     }
 
     public function createDtoFromResponse(Response $response): AgentIdeMessageResponse

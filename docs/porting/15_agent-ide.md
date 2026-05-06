@@ -35,9 +35,12 @@ transports remain open.
     gateway request as control callers; app-node local adapter state is not
     treated as delivery authority, and gateway authorization is covered for
     authorized app callers.
-  - [!] Workspace targets, current-directory target inference, stdin input,
-    human progress-tree rendering, adapter delivery diagnostics under
-    `error.data`, activity logging for the API endpoint, and real core adapter
-    transports remain unported. Next concrete action: add one documented
-    input/rendering/delivery behavior per slice with focused Pest coverage,
-    starting with workspace targets.
+  - [x] Explicit workspace targets: gateway-local delivery, typed gateway
+    forwarding, API authorization, workspace-level adapter overrides including
+    `none`, and app/node inherited target metadata are covered for
+    `--workspace=<workspace>`.
+  - [!] Current-directory target inference, stdin input, human progress-tree
+    rendering, adapter delivery diagnostics under `error.data`, activity
+    logging for the API endpoint, and real core adapter transports remain
+    unported. Next concrete action: add current-directory app/workspace target
+    inference for gateway and forwarded callers with focused Pest coverage.
