@@ -39,6 +39,7 @@ final readonly class WorkspacesProbe
         $spec = [
             'name' => $workspace->name,
             'path' => $workspace->path,
+            'php_version' => $workspace->effectivePhpVersion(),
         ];
 
         $script = <<<'BASH'
@@ -48,11 +49,29 @@ php <<'PHP'
 $spec = json_decode(base64_decode((string) getenv('ORBIT_WORKSPACE_SPEC')), true);
 $name = (string) ($spec['name'] ?? '');
 $path = (string) ($spec['path'] ?? '');
+$phpVersion = (string) ($spec['php_version'] ?? '');
 
 $pathExists = is_dir($path) ? '1' : '0';
 $pathUsable = is_dir($path) && is_readable($path) && is_executable($path) ? '1' : '0';
+$phpFpmAvailable = (
+    is_executable("/usr/sbin/php-fpm{$phpVersion}")
+    || command_exists("php-fpm{$phpVersion}")
+    || command_exists("php{$phpVersion}-fpm")
+    || command_exists('php-fpm')
+)
+        ? '1'
+        : '0';
 
-printf("%s\t%s\t%s\n", $name, $pathExists, $pathUsable);
+printf("%s\t%s\t%s\t%s\n", $name, $pathExists, $pathUsable, $phpFpmAvailable);
+
+function command_exists(string $command): bool
+{
+    $escapedCommand = escapeshellarg($command);
+
+    exec("command -v {$escapedCommand} >/dev/null 2>&1", $output, $exitCode);
+
+    return $exitCode === 0;
+}
 PHP
 BASH;
 
@@ -68,17 +87,18 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 3);
+            $parts = explode("\t", $line, 4);
 
-            if (count($parts) !== 3) {
+            if (count($parts) !== 4) {
                 continue;
             }
 
-            [$name, $pathExists, $pathUsable] = $parts;
+            [$name, $pathExists, $pathUsable, $phpFpmAvailable] = $parts;
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
                 'path_usable' => $pathUsable === '1',
+                'php_fpm_available' => $phpFpmAvailable === '1',
             ];
         }
 
@@ -95,6 +115,7 @@ BASH;
         $drift = array_merge($drift, $this->checkRecordCompleteness($workspace));
         $drift = array_merge($drift, $this->checkParentApp($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
+        $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
 
         return $drift;
     }
@@ -121,6 +142,34 @@ BASH;
                     key: 'workspace.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Workspace record for {$workspace->name} is missing required fields.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkPhpRuntime(Workspace $workspace, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($workspace->name);
+
+        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
+            return [];
+        }
+
+        if (($observed['php_fpm_available'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.php_version_unavailable',
+                    kind: DriftKind::Missing,
+                    summary: "PHP {$workspace->effectivePhpVersion()} FPM is not available for workspace {$workspace->name} on the parent app node.",
+                    detail: [
+                        'php_version' => $workspace->effectivePhpVersion(),
+                    ],
                 ),
             ];
         }

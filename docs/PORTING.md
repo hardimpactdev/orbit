@@ -1723,7 +1723,8 @@ for the Saloon-based gateway transport pattern.
   - [x] Registry-only `WorkspacesProbe` foundation: workspace record
     completeness, parent-app eligibility, and effective PHP inheritance checks.
   - [x] Source path and parent-app path policy checks.
-  - [ ] External workspace runtime checks: PHP runtime, PHP-FPM configuration,
+  - [x] PHP runtime availability checks.
+  - [ ] External workspace runtime artifact checks: PHP-FPM configuration,
     runtime configuration, stale artifacts, and adoption hints.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.

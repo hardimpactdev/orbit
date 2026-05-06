@@ -48,13 +48,14 @@ describe('source path reality', function (): void {
                 'name' => 'feature',
                 'path' => "{$app->path}/workspaces/feature",
             ]);
-        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\n");
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\n");
 
         $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
 
         expect($snapshot->get('feature'))->toMatchArray([
             'path_exists' => true,
             'path_usable' => true,
+            'php_fpm_available' => true,
         ]);
         expect($shell->scripts[0])->toContain('ORBIT_WORKSPACE_SPEC');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
@@ -105,6 +106,45 @@ describe('source path reality', function (): void {
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+    });
+});
+
+describe('PHP runtime reality', function (): void {
+    it('detects unavailable effective PHP-FPM runtimes', function (): void {
+        $app = workspaceableApp(['php_version' => '8.5']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'php_version' => null,
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => [
+                'path_exists' => true,
+                'path_usable' => true,
+                'php_fpm_available' => false,
+            ],
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.php_version_unavailable')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('does not report PHP runtime drift before the workspace path exists', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => [
+                'path_exists' => false,
+                'path_usable' => false,
+                'php_fpm_available' => false,
+            ],
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
     });
 });
 
