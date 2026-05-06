@@ -1551,8 +1551,13 @@ for the Saloon-based gateway transport pattern.
   - The old hand-rolled client/request/parser tests have been deleted in favor
     of `tests/Unit/Http/Gateway/Requests/Nodes/*` plus command feature tests
     using Saloon `MockClient`.
-- [ ] Port app API controllers and typed client requests.
-- [ ] Port workspace API controllers and typed client requests.
+- [x] Port app API controllers and typed client requests.
+  - Implemented with gateway API controllers plus Saloon request/DTO classes
+    for list, show, create, register, root update, remove, and agent IDE
+    override endpoints. Command forwarding paths use typed gateway requests;
+    command, API, and gateway-client coverage lives alongside the app command
+    slices.
+- [x] Port workspace API controllers and typed client requests.
   - [x] `workspace:list` API controller plus Saloon request/DTO.
   - [x] `workspace:show` API controller plus Saloon request/DTO for named
     registry lookup.
@@ -1564,7 +1569,11 @@ for the Saloon-based gateway transport pattern.
     controller plus Saloon request/DTO.
   - [x] `workspace-setup-step:remove` and `workspace-teardown-step:remove` API
     controller plus Saloon request/DTO.
-- [ ] Port process API controllers and typed client requests.
+- [x] Port process API controllers and typed client requests.
+  - Implemented with gateway API controllers plus Saloon request/DTO classes
+    for list, add, edit, remove, start, stop, restart, and logs endpoints.
+    Command forwarding paths use typed gateway requests; command, API, and
+    gateway-client coverage lives alongside the process command slices.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.
 - [ ] Port doctor API controllers and typed client requests after doctor docs
