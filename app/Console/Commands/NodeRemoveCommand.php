@@ -11,6 +11,7 @@ use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -134,6 +135,8 @@ class NodeRemoveCommand extends Command
         $peerRemoved = WireGuardPeer::query()
             ->where('node_id', $node->id)
             ->delete() > 0;
+
+        app(DevelopmentDnsMappingEnactor::class)->remove($node);
 
         $node->delete();
 

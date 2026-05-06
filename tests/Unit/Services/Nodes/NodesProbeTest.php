@@ -18,6 +18,7 @@ use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Tests\TestCase;
@@ -27,6 +28,11 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->probe = new NodesProbe;
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
+
+afterEach(function (): void {
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
 });
 
 describe('interface contract', function (): void {
@@ -968,11 +974,98 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=test',
+            '# bind-scope=orbit_network',
+            'address=/.test/10.6.0.5',
+            '',
+        ]));
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.development'));
 
         expect($tld)->toHaveCount(0);
+    });
+
+    it('detects missing gateway development dns mapping for development app nodes', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_mapping_mismatch'));
+
+        expect($mapping)->toHaveCount(1);
+        expect($mapping[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects wrong gateway development dns mapping targets', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=test',
+            '# bind-scope=orbit_network',
+            'address=/.test/10.6.0.99',
+            '',
+        ]));
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_mapping_mismatch'));
+
+        expect($mapping)->toHaveCount(1);
+        expect($mapping[0]->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects public gateway development dns resolver exposure', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=test',
+            '# bind-scope=public',
+            'address=/.test/10.6.0.5',
+            '',
+        ]));
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $exposure = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.development_dns_public_exposure'));
+
+        expect($exposure)->toHaveCount(1);
+        expect($exposure[0]->kind)->toBe(DriftKind::Divergent);
     });
 
     it('does not require development TLD for production app nodes', function (): void {
@@ -1060,6 +1153,8 @@ describe('reconciliation', function (): void {
             'node.gateway_runtime_unready',
             'node.app_runtime_missing',
             'node.access_grant_invalid',
+            'node.development_dns_mapping_mismatch',
+            'node.development_dns_public_exposure',
         ];
 
         foreach ($supportedKeys as $key) {
@@ -1115,6 +1210,42 @@ describe('reconciliation', function (): void {
         $this->probe->reconcile($consumer, $entry);
 
         expect(NodeAccess::query()->count())->toBe(0);
+    });
+
+    it('repairs gateway development dns mapping drift on reconcile', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        File::ensureDirectoryExists(storage_path('app/orbit/node-development-dns.d'));
+        File::put(storage_path('app/orbit/node-development-dns.d/test.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=test',
+            '# bind-scope=public',
+            'address=/.test/10.6.0.99',
+            '',
+        ]));
+
+        $entry = new DriftEntry(
+            family: 'nodes',
+            key: 'node.development_dns_mapping_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'test',
+        );
+
+        $this->probe->reconcile($node, $entry);
+
+        expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
+            ->toContain('# bind-scope=orbit_network')
+            ->toContain('address=/.test/10.6.0.5');
     });
 });
 

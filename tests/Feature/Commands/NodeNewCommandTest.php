@@ -23,7 +23,10 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(fn (): null => MockClient::destroyGlobal());
-afterEach(fn (): null => MockClient::destroyGlobal());
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
 
 function nodeNewExpectedLocalPlatform(): string
 {
@@ -738,6 +741,11 @@ describe('node:new', function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
             ->and((bool) $node->is_local)->toBeFalse();
+
+        expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
+            ->toContain('orbit-managed=node-development-dns')
+            ->toContain('node=app-dev-1')
+            ->toContain('address=/.test/10.6.0.3');
 
         Process::assertRan(fn ($process): bool => str_contains($process->command, '--role=')
             && str_contains($process->command, 'app')

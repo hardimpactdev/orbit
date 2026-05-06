@@ -7,8 +7,13 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
 
 const CALLER_WG_IP = '10.6.0.99';
 

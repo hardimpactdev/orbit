@@ -5,11 +5,17 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -204,6 +210,7 @@ describe('node:list human renderer contract', function (): void {
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        app(DevelopmentDnsMappingEnactor::class)->converge(Node::query()->where('name', 'healthy-app')->firstOrFail());
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,

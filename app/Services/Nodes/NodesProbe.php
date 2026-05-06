@@ -33,6 +33,7 @@ final readonly class NodesProbe
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
+        private ?DevelopmentDnsMappingProbe $developmentDnsMappingProbe = null,
     ) {}
 
     public function key(): string
@@ -543,7 +544,51 @@ final readonly class NodesProbe
             ];
         }
 
-        return [];
+        return $this->checkDevelopmentDnsMapping($node);
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkDevelopmentDnsMapping(Node $node): array
+    {
+        $mapping = $this->developmentDnsMappingProbe()->inspect($node);
+        $drift = [];
+
+        if (($mapping['expected_target'] ?? null) === null) {
+            return [];
+        }
+
+        if (
+            ($mapping['exists'] ?? false) !== true
+            || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
+            || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
+        ) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.development_dns_mapping_mismatch',
+                kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
+                summary: "Gateway development DNS mapping for {$node->name} is missing or mismatched.",
+                detail: $mapping,
+            );
+        }
+
+        if (($mapping['public_exposure'] ?? false) === true) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.development_dns_public_exposure',
+                kind: DriftKind::Divergent,
+                summary: "Gateway development DNS mapping for {$node->name} is publicly exposed.",
+                detail: $mapping,
+            );
+        }
+
+        return $drift;
+    }
+
+    private function developmentDnsMappingProbe(): DevelopmentDnsMappingProbe
+    {
+        return $this->developmentDnsMappingProbe ?? app(DevelopmentDnsMappingProbe::class);
     }
 
     /**
@@ -574,6 +619,8 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready',
             'node.app_runtime_missing',
             'node.access_grant_invalid',
+            'node.development_dns_mapping_mismatch',
+            'node.development_dns_public_exposure',
         ];
 
         if (! in_array($entry->key, $fixableKeys, true)) {
@@ -587,6 +634,7 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
             'node.app_runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
+            'node.development_dns_mapping_mismatch', 'node.development_dns_public_exposure' => $this->reconcileDevelopmentDnsMapping($node),
         };
     }
 
@@ -630,6 +678,11 @@ final readonly class NodesProbe
                 $query->select('id')->from('nodes')->where('status', 'active');
             })
             ->delete();
+    }
+
+    private function reconcileDevelopmentDnsMapping(Node $node): void
+    {
+        app(DevelopmentDnsMappingEnactor::class)->converge($node);
     }
 
     public function snapshotForAdopt(Node $node): ProbeSnapshot

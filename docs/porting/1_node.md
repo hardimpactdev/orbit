@@ -130,16 +130,13 @@ Detail file for the node command family. Top-level command status lives in
   - E2E gate implemented: Docker feature coverage verifies a configured control
     caller removes a gateway-owned app-node record through the Gateway API and
     reads the removed state back through forwarded `node:show`.
+  - Gateway-owned development DNS cleanup implemented: dev-app node removal
+    removes the derived `*.{nodes.tld}` gateway resolver artifact through the
+    internal node-family `DevelopmentDnsMappingEnactor`.
+  - Node-family development DNS fix implemented: `NodesProbe` detects missing,
+    mismatched, and publicly exposed gateway development DNS mappings and
+    `--fix` rewrites them through the safe enactor.
   - Contract gaps:
-    - [!] DNS mapping cleanup for dev-app nodes is blocked until the clean repo
-      implements the gateway-owned development DNS mapping enactor/probe
-      defined by the node-family docs. Current `dns:*` commands intentionally
-      manage caller-local resolver overrides only and do not own gateway
-      development DNS mappings. Next concrete action: implement the internal
-      node-family `DevelopmentDnsMappingEnactor` and
-      `DevelopmentDnsMappingProbe`, wire `node:new`, `node:remove`, and
-      `NodesProbe` to them, then cover provisioning, cleanup, drift, and
-      public-exposure behavior with focused Pest tests.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:agent-ide`.
   - Current implementation: `app/Console/Commands/NodeAgentIdeCommand.php`
@@ -237,9 +234,14 @@ Detail file for the node command family. Top-level command status lives in
       WireGuard reality agree. Gateway API forwarding exposes the same behavior
       through `POST /api/nodes`, with controller coverage proving authenticated
       control callers receive the adopted response and gateway-owned row/peer
-      materialization. Gateway-role materialization remains blocked until the
-      command can prove the target host is the executing gateway identity before
-      writing a missing gateway row.
+      materialization. Gateway-owned development DNS mapping convergence is now
+      wired through the node-family `DevelopmentDnsMappingEnactor` for
+      development app-node provisioning and adoption/materialization, and
+      `NodesProbe` reports missing, mismatched, or publicly exposed gateway
+      development DNS mappings. Node-family `--fix` rewrites those mappings
+      through the safe enactor. Gateway-role materialization remains blocked
+      until the command can prove the target host is the executing gateway
+      identity before writing a missing gateway row.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

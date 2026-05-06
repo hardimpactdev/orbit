@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Models\LocalGatewaySettings;
+use App\Models\Node;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -14,7 +17,10 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(fn (): null => MockClient::destroyGlobal());
-afterEach(fn (): null => MockClient::destroyGlobal());
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+    File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
+});
 
 /**
  * @param  array<string, mixed>  $overrides
@@ -181,6 +187,28 @@ describe('node:remove base contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['wireguard_peer_removed'])->toBeFalse();
+    });
+
+    it('removes the gateway-owned development dns mapping for removed development app nodes', function (): void {
+        setupNodeRemoveGatewayCaller();
+        DB::table('nodes')->insert(nodeRemoveRow([
+            'tld' => 'test',
+            'wireguard_address' => '10.6.0.7',
+        ]));
+
+        $node = Node::query()->where('name', 'app-1')->firstOrFail();
+        app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
+        expect(File::exists(storage_path('app/orbit/node-development-dns.d/test.conf')))->toBeTrue();
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        expect(File::exists(storage_path('app/orbit/node-development-dns.d/test.conf')))->toBeFalse();
     });
 
     it('rejects gateway-node removal before side effects', function (): void {

@@ -13,6 +13,7 @@ use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\NodesProbe;
@@ -715,7 +716,7 @@ class NodeNewCommand extends Command
         $wireguardAddress = $this->nextWireguardAddress();
         $gatewayEndpoint = $this->gatewayEndpoint();
 
-        $registryWriter->writeAppNode(
+        $node = $registryWriter->writeAppNode(
             name: $name,
             environment: $inputs['environment'],
             tld: $inputs['tld'],
@@ -725,6 +726,8 @@ class NodeNewCommand extends Command
             sshUser: $inputs['sshUser'],
             user: $runtimeUser,
         );
+
+        $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
         $payload = [
             'result' => [
@@ -755,7 +758,7 @@ class NodeNewCommand extends Command
                 'gateway_dns' => [
                     'domain' => "*.{$inputs['tld']}",
                     'target' => $wireguardAddress,
-                    'status' => 'configured',
+                    'status' => $developmentDns['status'],
                 ],
             ];
         }
@@ -939,6 +942,8 @@ class NodeNewCommand extends Command
             );
         }
 
+        $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+
         $payload = [
             'result' => [
                 'action' => 'adopted',
@@ -969,7 +974,7 @@ class NodeNewCommand extends Command
                 'gateway_dns' => [
                     'domain' => "*.{$node->tld}",
                     'target' => $node->wireguard_address,
-                    'status' => 'configured',
+                    'status' => $developmentDns['status'],
                 ],
             ];
         }
