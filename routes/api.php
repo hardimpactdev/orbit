@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\ProcessStopController;
 use App\Http\Controllers\Api\ProcessStoreController;
 use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ProxyRouteListController;
 use App\Http\Controllers\Api\ScheduleDestroyController;
 use App\Http\Controllers\Api\ScheduleListController;
 use App\Http\Controllers\Api\ScheduleLogsController;
@@ -73,6 +74,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/processes/{name}', ProcessDestroyController::class);
         Route::patch('/processes/{name}', ProcessUpdateController::class);
         Route::get('/profile', ProfileController::class);
+        Route::get('/proxy-routes', ProxyRouteListController::class);
         Route::get('/schedules', ScheduleListController::class);
         Route::post('/schedules', ScheduleStoreController::class);
         Route::post('/schedules/heartbeat', SchedulerHeartbeatController::class);

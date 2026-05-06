@@ -17,7 +17,7 @@ class NodeFactory extends Factory
         return [
             'name' => fake()->unique()->bothify('node-####'),
             'role' => 'app',
-            'host' => $this->faker->domainName(),
+            'host' => fake()->unique()->bothify('node-####.test'),
             'ssh_user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
