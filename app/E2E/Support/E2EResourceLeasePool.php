@@ -183,7 +183,7 @@ final readonly class E2EResourceLeasePool
     private function hasConflictingHostLease(string $backend, string $host): bool
     {
         foreach ($this->leaseFiles() as $path) {
-            $payload = json_decode((string) file_get_contents($path), true);
+            $payload = $this->readLeasePayload($path);
 
             if (! is_array($payload)) {
                 continue;
@@ -227,6 +227,10 @@ final readonly class E2EResourceLeasePool
             return false;
         }
 
+        if ($this->reclaimDeadProcessLeasePath($path)) {
+            return true;
+        }
+
         $modifiedAt = filemtime($path);
 
         if ($modifiedAt === false || (time() - $modifiedAt) < $this->staleSeconds) {
@@ -236,6 +240,53 @@ final readonly class E2EResourceLeasePool
         @unlink($path);
 
         return true;
+    }
+
+    private function reclaimDeadProcessLeasePath(string $path): bool
+    {
+        if (! function_exists('posix_kill')) {
+            return false;
+        }
+
+        $payload = $this->readLeasePayload($path);
+
+        if (! is_array($payload)) {
+            return false;
+        }
+
+        $pid = $payload['pid'] ?? null;
+
+        if (! is_int($pid) || $pid < 1) {
+            return false;
+        }
+
+        if (@posix_kill($pid, 0)) {
+            return false;
+        }
+
+        if (posix_get_last_error() === 1) {
+            return false;
+        }
+
+        @unlink($path);
+
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function readLeasePayload(string $path): ?array
+    {
+        $contents = @file_get_contents($path);
+
+        if ($contents === false) {
+            return null;
+        }
+
+        $payload = json_decode($contents, true);
+
+        return is_array($payload) ? $payload : null;
     }
 
     private function ensureDirectory(): void

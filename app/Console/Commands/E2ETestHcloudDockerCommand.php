@@ -21,7 +21,7 @@ use RuntimeException;
     {--resource-slots= : Resource slots as location/server-type/image:slots}
     {--prefix=orbit-e2e : Resource name prefix}
     {--kind=control-gateway-dev-prod : Docker topology kind to prepare}
-    {--processes=2 : Pest worker count for composer test:e2e}
+    {--processes=2 : Pest worker count for composer test:e2e:docker}
     {--timeout=3600 : Timeout in seconds for long hcloud Docker E2E steps}
     {--json : Output as JSON}')]
 #[Description('Run Docker feature E2E on a temporary Hetzner Cloud Docker host')]
@@ -90,13 +90,13 @@ class E2ETestHcloudDockerCommand extends Command
             $this->line('Dry run. Pass --force to create a temporary Hetzner Docker host.');
             $this->line("planned: create Hetzner server in {$options->location}");
             $this->line("planned: prepare Docker topology {$options->kind}");
-            $this->line('planned: run composer test:e2e against Docker on that server');
+            $this->line('planned: run composer test:e2e:docker against Docker on that server');
 
             return;
         }
 
         $this->line("prepared: {$result['docker_host']}");
-        $this->line('passed: composer test:e2e');
+        $this->line('passed: composer test:e2e:docker');
     }
 
     private function failCommand(string $message): int

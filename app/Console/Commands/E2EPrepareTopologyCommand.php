@@ -104,7 +104,7 @@ class E2EPrepareTopologyCommand extends Command
 
         $bundleDir = null;
         $remoteBundle = null;
-        $timer = new E2EPhaseTimer(stream: true);
+        $timer = new E2EPhaseTimer(stream: ! $this->laravel->runningUnitTests());
 
         try {
             $bundleDir = $timer->measure('bundle.local', fn (): string => $this->buildLocalBundle());

@@ -10,9 +10,11 @@ use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
+use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -141,6 +143,87 @@ describe('doctor command contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['doctor']['healthy'])->toBeTrue();
+    });
+
+    it('reports app family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("docs\t0\t0\t1\t1\t0\t0\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['app'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'app',
+                'node' => 'app-1',
+                'key' => 'app.path_missing',
+                'kind' => 'missing',
+            ]);
+    });
+
+    it('reports workspace family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature',
+            'path' => '/home/orbit/apps/docs/workspaces/feature',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("feature\t0\t0\t1\t0\t0\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['workspace'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'workspace',
+                'node' => 'app-1',
+                'key' => 'workspace.path_missing',
+                'kind' => 'missing',
+            ]);
+    });
+
+    it('reports process family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorSequenceRemoteShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+        ]));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['process'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_backend_unavailable',
+                'kind' => 'unverifiable',
+            ]);
     });
 
     it('runs the proxy family locally for gateway callers', function (): void {
@@ -511,6 +594,24 @@ final class DoctorProxyRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class DoctorSequenceRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
 

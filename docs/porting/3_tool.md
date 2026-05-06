@@ -13,67 +13,83 @@ Detail file for the tool command family. Top-level status lives in
   `tests/Feature/Commands/Tools/ToolStartCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed services.
   Passed gate:
-  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='starts a managed system service tool'`.
+  `composer test:e2e:incus -- --filter='starts a managed system service tool'`.
 - [x] `tool:stop` — gateway-local + Saloon forwarding implementation and
   focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolStopCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed services.
   Passed gate:
-  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='stops a managed system service tool'`.
+  `composer test:e2e:incus -- --filter='stops a managed system service tool'`.
 - [x] `tool:restart` — gateway-local + Saloon forwarding implementation and
   focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolRestartCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed services.
   Passed gate:
-  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='restarts a managed system service tool'`.
+  `composer test:e2e:incus -- --filter='restarts a managed system service tool'`.
 - [x] `tool:reload` — gateway-local + Saloon forwarding implementation,
   interactive omitted-tool selector, and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolReloadCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed services.
   Passed gate:
-  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='reloads a managed system service tool'`.
-- [~] `tool:logs` — finite log snapshot gateway-local + Saloon forwarding,
+  `composer test:e2e:incus -- --filter='reloads a managed system service tool'`.
+- [x] `tool:logs` — finite log snapshot gateway-local + Saloon forwarding,
   gateway-local human `--follow`, and gateway-forwarded streaming `--follow`
   for non-gateway callers, with focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolLogsCommandTest.php` and
   `tests/Feature/Http/Api/ToolLogsStreamControllerTest.php`. E2E lane:
   Incus VM-feature because the command reads host-init managed service logs.
   Passed gate:
-  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='reads finite managed system service tool logs'`.
-  Fixed: `stream_orbit_command` in the E2E gateway TLS shim was missing
-  `VIEW_COMPILED_PATH`, causing the Laravel runtime to fail with
-  "Please provide a valid cache path." before the stream reached the control
-  caller. The shim now matches `run_orbit_command` by exporting that variable.
-  Verification pending Incus environment; `composer quality-check` passes.
-- [~] `tool:remove` — gateway-local + Saloon forwarding implementation,
-  destructive consent (`--force`), credential clearing before node-side cleanup,
+  `composer test:e2e:incus -- --filter='reads finite managed system service tool logs'`.
+  Fixed: the E2E gateway test shim must stop prepared-topology Caddy before
+  binding its current-checkout HTTP/TLS test servers, and must force a concrete
+  compiled-view path for shimmed command execution.
+- [x] `tool:remove` — gateway-local + Saloon forwarding implementation,
+  destructive consent (`--force`), credential clearing after node-side cleanup,
   and focused Pest coverage in
-  `tests/Feature/Commands/Tools/ToolRemoveCommandTest.php`. E2E lane: Incus
-  VM-feature because the command exercises host-init managed service removal.
-  E2E verification pending Incus environment; `composer quality-check` passes.
-- [x] `tool:credentials` — gateway-local + Saloon forwarding implementation
+  `tests/Feature/Commands/Tools/ToolRemoveCommandTest.php`. E2E lane: Docker
+  feature because the test validates gateway intent plus Docker compose command
+  generation with a controlled Docker CLI.
+  Passed gate:
+  `composer test:e2e:docker -- --filter='removes a docker-managed tool'`.
+  Fixed: retry material is now preserved when remote cleanup fails; credentials
+  are cleared only after the node-side remove script succeeds.
+- [~] `tool:credentials` — gateway-local + Saloon forwarding implementation
   and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php`. E2E lane:
-  Incus VM-feature because the command reads host-init managed tool credentials.
-  Passed gate: `composer quality-check`.
-- [x] `tool:install` — gateway-local + Saloon forwarding implementation,
+  Docker feature because the command reads gateway intent and does not require
+  VM-only behavior.
+  Passed gate:
+  `composer test:e2e:docker -- --filter='reads managed tool credentials'`.
+  Remaining: reconcile catalog credential support for credential-bearing tools
+  such as `opencode-server`.
+- [~] `tool:install` — gateway-local + Saloon forwarding implementation,
   registry intent creation, remote script enactment for Docker-based tools,
   and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolInstallCommandTest.php`. E2E lane:
-  Incus VM-feature because the command exercises host-init managed service
-  installation. Passed gate: `composer quality-check`.
-- [x] `tool:update` — gateway-local + Saloon forwarding implementation,
+  Docker feature because the test validates gateway intent plus Docker compose
+  command generation with a controlled Docker CLI. Passed gate:
+  `composer test:e2e:docker -- --filter='installs a docker-managed tool'`.
+  Remaining: reconcile documented credential generation, endpoint intent, and
+  `--status=installed` behavior.
+- [~] `tool:update` — gateway-local + Saloon forwarding implementation,
   registry version update, remote script enactment for Docker-based and
   package-managed tools, and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolUpdateCommandTest.php`. E2E lane:
-  Incus VM-feature because the command exercises host-init managed service
-  updates. Passed gate: `composer quality-check`.
-- [x] `tool:reconfigure` — gateway-local + Saloon forwarding implementation,
+  Docker feature because the test validates gateway intent plus Docker compose
+  command generation with a controlled Docker CLI. Passed gate:
+  `composer test:e2e:docker -- --filter='updates a docker-managed tool'`.
+  Fixed: requested version intent is preserved when remote enactment fails.
+  Decision captured: the CLI uses `--expected-version` because `--version`
+  collides with Symfony's global console option. Remaining: align `[tool]` /
+  bulk update contract, catalog update capabilities, and bulk result shape.
+- [~] `tool:reconfigure` — gateway-local + Saloon forwarding implementation,
   registry config/credential update, placeholder remote script for
   polyscope-server and opencode-server, and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed service
-  reconfiguration. Passed gate: `composer quality-check`.
+  reconfiguration. Remaining: align optional-tool selector contract, replace
+  placeholder scripts with real tool-specific behavior, validate password
+  support, and add paired E2E.
 
 ## Family doctor
 
@@ -89,7 +105,7 @@ drift, managed config rows (path/hash/content), and managed credential rows.
   `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
   Paired E2E fix coverage exists in
   `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` via
-  `composer test:e2e -- --filter='repairs managed tool configuration drift'`.
+  `composer test:e2e:docker -- --filter='repairs managed tool configuration drift'`.
 - [!] Capability fix handlers and adopt action handlers are outstanding. Next:
   define scoped adopt behavior for selected observed tool reality, or add
   capability fix once catalog definitions declare safe install/restore commands.
@@ -99,3 +115,6 @@ drift, managed config rows (path/hash/content), and managed credential rows.
 - [x] `docs/abstractions/3_tool.md` exists.
 - [x] `node_tools` schema/model/factory, `GET /api/tools`,
   `GET /api/tools/{tool}`, and typed Saloon list/show requests.
+- [x] Tool API action endpoints scope the requested `--node` / `--app` target
+  to the authenticated caller before invoking local gateway services. Coverage:
+  `tests/Feature/Http/Api/ToolTargetAuthorizationControllerTest.php`.

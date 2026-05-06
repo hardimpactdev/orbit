@@ -102,6 +102,28 @@ describe('tool:remove command contract', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
+    it('keeps retry material when remote cleanup fails', function (): void {
+        createToolRemoveLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+            'credentials' => ['fields' => ['password' => 'secret']],
+        ]);
+        $shell = new ToolRemoveRecordingShell(exitCode: 42, stderr: 'compose failed');
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:remove', ['tool' => 'redis', '--node' => 'app-1', '--force' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $tool->refresh();
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('tool.remote_action_failed')
+            ->and($tool->credentials)->toBe(['fields' => ['password' => 'secret']])
+            ->and($shell->scripts)->toHaveCount(1);
+    });
+
     it('forwards non-gateway callers through the typed gateway request', function (): void {
         createToolRemoveLocalNode('control');
 
@@ -139,6 +161,11 @@ final class ToolRemoveRecordingShell implements RemoteShell
      */
     public array $scripts = [];
 
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
     /**
      * @param  array<string, mixed>  $options
      */
@@ -146,6 +173,6 @@ final class ToolRemoveRecordingShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: '', stderr: $this->stderr, durationMs: 1);
     }
 }

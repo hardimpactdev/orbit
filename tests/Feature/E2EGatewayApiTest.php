@@ -82,5 +82,53 @@ it('runs gateway api shim commands as the orbit runtime user', function (): void
 
     expect($script)
         ->toContain('sudo -iu orbit bash -lc')
-        ->toContain('$script = \'cd \'.escapeshellarg($orbitPath).\' && VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;');
+        ->toContain('mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs')
+        ->toContain('VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;');
+});
+
+it('prepares runtime environment before issuing gateway api certificates', function (): void {
+    $instance = new class implements E2EInstance
+    {
+        /** @var list<string> */
+        public array $commands = [];
+
+        public function name(): string
+        {
+            return 'gateway';
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return Process::result();
+        }
+
+        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return Process::result();
+        }
+
+        public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '10.6.0.2';
+        }
+
+        public function waitForSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+
+    E2EGatewayApi::start($instance, 'runtime-env', '/home/orbit/orbit-current', '10.6.0.2');
+
+    expect($instance->commands[0])
+        ->toContain('([ -f .env ] || cp .env.example .env)')
+        ->toContain('APP_KEY=base64:')
+        ->toContain('php artisan key:generate --force --no-interaction');
 });

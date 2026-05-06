@@ -63,7 +63,15 @@
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=${ORBIT_E2E_PARALLEL_PROCESSES:-2} @additional_args"
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args"
+        ],
+        "test:e2e:docker": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args"
+        ],
+        "test:e2e:incus": [
+            "Composer\\Config::disableProcessTimeout",
+            "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args"
         ],
         "test:e2e:topology-contract": [
             "Composer\\Config::disableProcessTimeout",

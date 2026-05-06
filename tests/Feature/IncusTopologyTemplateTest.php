@@ -227,15 +227,19 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
         expect($script)->toContain("incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod' 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
+        expect($script)->toContain("incus config device override 'orbit-e2e-runX-{$role}' eth0 hwaddr=");
     }
 
     // All copy commands appear before any start command (the dev block is
     // copy/wait/limits/start/wait, in that order).
     $firstStartPos = strpos($script, 'incus start');
+    $firstIdentityPos = strpos($script, 'incus config device override');
     foreach (['control', 'gateway', 'dev', 'prod'] as $role) {
         $copyPos = strpos($script, "incus copy 'orbit-template-{$role}/clean-control-gateway-dev-prod'");
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
+
+    expect($firstIdentityPos)->toBeLessThan($firstStartPos);
 });
 
 it('adds an explicit storage pool to topology clone copies when configured', function (): void {
@@ -304,7 +308,8 @@ it('clones runs the batch script through the host and waits for each agent', fun
     expect($instances)->toHaveKeys(['control', 'gateway'])
         ->and($captured)->toContain('incus copy')
         ->and($captured)->toContain("'orbit-e2e-runY-control'")
-        ->and($captured)->toContain("'orbit-e2e-runY-gateway'");
+        ->and($captured)->toContain("'orbit-e2e-runY-gateway'")
+        ->and($captured)->toContain("incus config device override 'orbit-e2e-runY-control' eth0 hwaddr=");
 });
 
 it('throws when the batch script fails, surfacing the host error output', function (): void {

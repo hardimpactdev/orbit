@@ -273,7 +273,7 @@ it('--force records prepare topology phase timings', function (): void {
     $eventNames = array_column($capturedTimer?->events() ?? [], 'name');
 
     expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
-        ->and($capturedTimer->streamsCheckpoints())->toBeTrue()
+        ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
         ->and($eventNames)->toContain('bundle.local')
         ->and($eventNames)->toContain('bundle.push')
         ->and($eventNames)->toContain('builder.build')

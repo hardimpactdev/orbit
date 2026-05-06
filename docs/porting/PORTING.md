@@ -31,10 +31,12 @@ guidance; the old repo is implementation evidence only.
 - **Testing pairing.** Every command and feature ships an in-memory Pest
   test plus an E2E test. The E2E lane is one of:
   - **Docker feature** — `pest()->group('e2e-feature')` + `e2eTopology()`,
-    run via `composer test:e2e -- --filter=<Scenario>`. Default lane.
+    run via `composer test:e2e:docker -- --filter=<Scenario>`. Default lane
+    for command-port E2E.
   - **Incus VM-feature** — `e2eVmTopology()` requiring
-    `E2ETopologyCapabilities::vm()`. Use only when the test needs real
-    systemd, kernel networking, or host init.
+    `E2ETopologyCapabilities::vm()`, grouped with `e2e-provider-incus`, and
+    run via `composer test:e2e:incus -- --filter=<Scenario>`. Use only when
+    the test needs real systemd, kernel networking, or host init.
   - **Incus provision** — `pest()->group('e2e-provision')`, run via
     `composer test:e2e:provision -- --filter=<Scenario>`. Use for installer,
     WireGuard enrollment, SSH trust, destructive host mutation.
@@ -68,7 +70,7 @@ ported and the activity backfill is in place.
 4. Add or update the paired E2E test under `tests/E2E/`. Pick the lane per
    the testing-pairing rule above.
 5. Run `composer quality-check` and the exact
-   `composer test:e2e[…:provision] -- --filter=<Scenario>`.
+   `composer test:e2e[:docker|:incus|:provision] -- --filter=<Scenario>`.
 6. In the same commit, update the family workstream file plus the Command
    Port Status below; cite the passing E2E command.
 

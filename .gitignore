@@ -23,8 +23,10 @@
 /public/build
 /public/hot
 /public/storage
+/storage/framework/e2e/
 /storage/*.key
 /storage/pail
+/tests/E2E/.docker-feature-tests/
 /vendor
 _ide_helper.php
 Homestead.json

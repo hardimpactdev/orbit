@@ -19,7 +19,7 @@ it('reports the runtime backend as available when supervisorctl status succeeds'
         ->and($result->exitCode)->toBe(0)
         ->and($result->output)->toBe('orbit_worker RUNNING')
         ->and($remoteShell->scripts)->toBe([
-            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1',
         ])
         ->and($remoteShell->options[0]['timeout'])->toBe(15);
 });

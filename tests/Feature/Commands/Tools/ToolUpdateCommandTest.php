@@ -100,6 +100,26 @@ describe('tool:update command contract', function (): void {
             ->and($tool->fresh()->expected_version)->toBe('7.0');
     });
 
+    it('keeps requested version intent when remote update fails', function (): void {
+        createToolUpdateLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+            'expected_version' => '6.0',
+        ]);
+        $shell = new ToolUpdateRecordingShell(exitCode: 42, stderr: 'pull failed');
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:update', ['tool' => 'redis', '--node' => 'app-1', '--expected-version' => '7.0', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('tool.remote_action_failed')
+            ->and($tool->fresh()->expected_version)->toBe('7.0');
+    });
+
     it('forwards non-gateway callers through the typed gateway request', function (): void {
         createToolUpdateLocalNode('control');
 
@@ -133,6 +153,11 @@ describe('tool:update command contract', function (): void {
 
 final class ToolUpdateRecordingShell implements RemoteShell
 {
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
     /**
      * @var list<string>
      */
@@ -145,6 +170,6 @@ final class ToolUpdateRecordingShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: '', stderr: $this->stderr, durationMs: 1);
     }
 }

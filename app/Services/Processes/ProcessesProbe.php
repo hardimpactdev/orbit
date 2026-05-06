@@ -26,7 +26,7 @@ final readonly class ProcessesProbe
 
     public function key(): string
     {
-        return 'processes';
+        return 'process';
     }
 
     public function label(): string

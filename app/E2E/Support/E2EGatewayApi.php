@@ -112,7 +112,7 @@ PHP;
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && grep -v '^VIEW_COMPILED_PATH=' .env > .env.tmp && mv .env.tmp .env && printf '\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && ([ -f .env ] || cp .env.example .env) && grep -v '^VIEW_COMPILED_PATH=' .env > .env.tmp && mv .env.tmp .env && printf '\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && (grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction) && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -122,6 +122,12 @@ PHP;
             $gateway,
             "cat > {$scriptPath} <<'PHP'\n".self::tlsServerScript($orbitPath, $gatewayIp)."\nPHP",
             'Could not write gateway TLS test server',
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            'systemctl stop caddy >/dev/null 2>&1 || true',
+            'Could not stop gateway Caddy before starting gateway test servers',
         );
 
         E2ECommand::exec(
@@ -244,7 +250,7 @@ PHP;
         
             $output = [];
             $exitCode = 0;
-            $script = 'cd '.escapeshellarg($orbitPath).' && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
+            $script = 'cd '.escapeshellarg($orbitPath).' && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
             exec('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', $output, $exitCode);
         
             return [$exitCode, implode("\n", $output)];
@@ -254,7 +260,7 @@ PHP;
         {
             global $orbitPath;
 
-            $script = 'cd '.escapeshellarg($orbitPath).' && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
+            $script = 'cd '.escapeshellarg($orbitPath).' && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
             $process = popen('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', 'r');
 
             fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nConnection: close\r\n\r\n");

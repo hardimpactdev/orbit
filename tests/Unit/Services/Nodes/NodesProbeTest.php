@@ -778,7 +778,7 @@ describe('external service stubs', function (): void {
         expect($ssh)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([
             'true',
-            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1',
         ]);
         expect($remoteShell->options[0]['timeout'])->toBe(10);
     });
@@ -882,7 +882,7 @@ describe('external service stubs', function (): void {
         expect($runtime)->toHaveCount(0);
         expect($remoteShell->scripts)->toBe([
             'true',
-            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1',
         ]);
     });
 
@@ -1508,7 +1508,7 @@ describe('adoption', function (): void {
             'output' => 'supervisor OK',
         ]);
         expect($remoteShell->scripts)->toBe([
-            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1',
         ]);
     });
 

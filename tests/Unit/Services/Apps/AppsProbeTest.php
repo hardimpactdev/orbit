@@ -25,7 +25,7 @@ beforeEach(function (): void {
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
-        expect($this->probe->key())->toBe('apps');
+        expect($this->probe->key())->toBe('app');
         expect($this->probe->label())->toBe('Apps');
     });
 
@@ -237,7 +237,7 @@ describe('registry intent', function (): void {
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
 
         expect($drift)->toHaveCount(1);
-        expect($drift[0]->family)->toBe('apps');
+        expect($drift[0]->family)->toBe('app');
         expect($drift[0]->key)->toBe('app.record_incomplete');
         expect($drift[0]->kind)->toBe(DriftKind::Missing);
     });

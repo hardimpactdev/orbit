@@ -76,6 +76,7 @@ final readonly class IncusTopologyTemplate
             $clone = self::cloneName($runId, $role);
             $instance = new IncusInstance($host, $clone, commandTransport: true);
             $timer->measure("agent-ready.{$role}", fn () => $instance->waitForAgent());
+            $timer->measure("network-identity.{$role}", fn () => $instance->refreshNetworkIdentity());
             $instances[$role] = $instance;
         }
 
@@ -96,6 +97,7 @@ final readonly class IncusTopologyTemplate
         $copyLines = [];
         $waitCopyLines = [];
         $limitLines = [];
+        $identityLines = [];
         $statefulLines = [];
         $startLines = [];
         $waitStartLines = [];
@@ -108,10 +110,12 @@ final readonly class IncusTopologyTemplate
             $index++;
             $template = escapeshellarg(self::templateName($kind, $role)."/{$snapshot}");
             $clone = escapeshellarg(self::cloneName($runId, $role));
+            $macAddress = escapeshellarg(self::cloneMacAddress($runId, $role));
 
             $copyLines[] = "incus copy {$template} {$clone}{$storagePool} & PID_COPY_{$index}=\$!";
             $waitCopyLines[] = "wait \$PID_COPY_{$index}";
             $limitLines[] = "incus config set {$clone} limits.cpu={$cpus} limits.memory={$memory}";
+            $identityLines[] = "incus config device override {$clone} eth0 hwaddr={$macAddress}";
 
             if ($statefulReset) {
                 $statefulLines[] = "incus config device set {$clone} root size.state={$stateSize} || incus config device override {$clone} root size.state={$stateSize}";
@@ -126,9 +130,17 @@ final readonly class IncusTopologyTemplate
             ...$copyLines,
             ...$waitCopyLines,
             ...$limitLines,
+            ...$identityLines,
             ...$statefulLines,
             ...$startLines,
             ...$waitStartLines,
         ]);
+    }
+
+    private static function cloneMacAddress(string $runId, string $role): string
+    {
+        $hash = substr(sha1("{$runId}:{$role}"), 0, 6);
+
+        return '00:16:3e:'.implode(':', str_split($hash, 2));
     }
 }

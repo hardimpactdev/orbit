@@ -27,7 +27,7 @@ beforeEach(function (): void {
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
-        expect($this->probe->key())->toBe('workspaces');
+        expect($this->probe->key())->toBe('workspace');
         expect($this->probe->label())->toBe('Workspaces');
     });
 
@@ -227,7 +227,7 @@ describe('registry intent', function (): void {
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
         expect($drift)->toHaveCount(1);
-        expect($drift[0]->family)->toBe('workspaces');
+        expect($drift[0]->family)->toBe('workspace');
         expect($drift[0]->key)->toBe('workspace.record_incomplete');
         expect($drift[0]->kind)->toBe(DriftKind::Missing);
     });

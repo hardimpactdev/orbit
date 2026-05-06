@@ -128,14 +128,31 @@ final class IncusInstance implements E2EInstance
         $deadline = time() + $this->host->config->timeoutSeconds;
 
         while (time() < $deadline) {
-            if ($this->host->run(sprintf('incus exec %s -- true', escapeshellarg($this->name)), timeoutSeconds: 10)->successful()) {
-                return;
+            try {
+                if ($this->host->run(sprintf('incus exec %s -- true', escapeshellarg($this->name)), timeoutSeconds: 15)->successful()) {
+                    return;
+                }
+            } catch (\Throwable) {
             }
 
             sleep(2);
         }
 
         throw new \RuntimeException("Incus agent never became ready on {$this->name}.");
+    }
+
+    public function refreshNetworkIdentity(): void
+    {
+        $this->ipv4 = null;
+
+        $result = $this->exec(
+            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl restart systemd-networkd 2>/dev/null || systemctl restart NetworkManager 2>/dev/null || true)',
+            timeoutSeconds: 60,
+        );
+
+        if (! $result->successful()) {
+            throw new \RuntimeException("Could not refresh network identity for {$this->name}: {$result->errorOutput()}");
+        }
     }
 
     public function waitForIpv4(): string
@@ -167,10 +184,13 @@ final class IncusInstance implements E2EInstance
             $deadline = time() + $this->host->config->timeoutSeconds;
 
             while (time() < $deadline) {
-                $result = $this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 10);
+                try {
+                    $result = $this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 15);
 
-                if ($result->successful()) {
-                    return;
+                    if ($result->successful()) {
+                        return;
+                    }
+                } catch (\Throwable) {
                 }
 
                 sleep(1);
@@ -182,8 +202,11 @@ final class IncusInstance implements E2EInstance
         $deadline = time() + $this->host->config->timeoutSeconds;
 
         while (time() < $deadline) {
-            if ($this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 10)->successful()) {
-                return;
+            try {
+                if ($this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 15)->successful()) {
+                    return;
+                }
+            } catch (\Throwable) {
             }
 
             sleep(3);
@@ -251,10 +274,14 @@ final class IncusInstance implements E2EInstance
 
     private function providerIpv4(): ?string
     {
-        $result = $this->host->run(sprintf(
-            "incus list %s --format csv -c 4 | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -v '^10\\.6\\.' | head -n 1 || true",
-            escapeshellarg($this->name),
-        ), timeoutSeconds: 10);
+        try {
+            $result = $this->host->run(sprintf(
+                "incus list %s --format csv -c 4 | grep -v '(wg-orbit)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true",
+                escapeshellarg($this->name),
+            ), timeoutSeconds: 30);
+        } catch (\Throwable) {
+            return null;
+        }
 
         $output = trim($result->output());
 

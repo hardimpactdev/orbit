@@ -50,7 +50,7 @@ it('restarts a managed system service tool on an app node from the gateway', fun
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway-dev');
 
 function toolRestartSeedGatewayIntent(E2ETopologyHarness $topology): void
 {

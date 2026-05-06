@@ -52,7 +52,7 @@ it('renders and enacts supervisor programs for app process definitions', functio
 
     expect($warnings)->toBe([])
         ->and($remoteShell->scripts)->toHaveCount(2)
-        ->and($remoteShell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1')
+        ->and($remoteShell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1')
         ->and($remoteShell->scripts[1])->toContain('/etc/supervisor/conf.d/orbit_docs_main_vite.conf')
         ->and($remoteShell->scripts[1])->toContain('[program:orbit_docs_main_vite]')
         ->and($remoteShell->scripts[1])->toContain('directory=/home/orbit/apps/docs')

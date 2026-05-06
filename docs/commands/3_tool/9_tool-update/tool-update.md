@@ -11,14 +11,14 @@ not for configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:update redis --node=app-1
-orbit tool:update redis --node=app-1 --version=7.2
+orbit tool:update redis --node=app-1 --expected-version=7.2
 orbit tool:update --node=app-1
 orbit tool:update redis --app=docs --json
 ```
@@ -27,8 +27,9 @@ orbit tool:update redis --app=docs --json
 
 - `tool`: Optional tool name. When omitted, Orbit attempts to update all managed
   tools on the target node that support updates.
-- `--version`: Specific target version. When omitted, the tool definition's
-  latest supported version is used.
+- `--expected-version`: Specific target version. This avoids Symfony's global
+  `--version` console option. When omitted, the tool definition's latest
+  supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.

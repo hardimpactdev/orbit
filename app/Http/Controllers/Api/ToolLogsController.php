@@ -33,10 +33,16 @@ final class ToolLogsController implements Loggable
             return $this->authorizationFailed('This node is not authorized to inspect tools.');
         }
 
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
         $result = $logs->read(
             tool: $tool,
-            node: $this->requestString($request, 'node'),
-            app: $this->requestString($request, 'app'),
+            node: $target['node'],
+            app: $target['app'],
             lines: $this->positiveInteger($request, 'lines', 100),
         );
 
@@ -52,13 +58,6 @@ final class ToolLogsController implements Loggable
                 'meta' => (object) [],
             ],
         ]);
-    }
-
-    private function requestString(Request $request, string $key): ?string
-    {
-        $value = $request->input($key);
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function positiveInteger(Request $request, string $key, int $default): int

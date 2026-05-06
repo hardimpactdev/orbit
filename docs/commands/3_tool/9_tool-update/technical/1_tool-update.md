@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
-| `version` | `--version` | `Optional.` | `when tool is omitted.` | `latest supported version` | `Supported version string.` |
+| `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | `Supported version string.` |
 | `node` | `--node` | `Required when no app or local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |

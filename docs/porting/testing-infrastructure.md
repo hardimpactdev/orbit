@@ -8,18 +8,19 @@ match the test's needs to the lane's capabilities.
 - **Docker feature** (default).
   - Helper: `e2eTopology(E2ETopologyKind::…)` from `tests/E2E/Support/Pest.php`.
   - Group: `pest()->group('e2e-feature', …)`.
-  - Run: `composer test:e2e -- --filter='<Scenario>'`.
+  - Run: `composer test:e2e:docker -- --filter='<Scenario>'`.
   - Use when the test exercises gateway/control flow, SSH between Docker
     instances, Supervisor + scheduler inside containers, or any product
     behavior that does not require host init or kernel networking.
 - **Incus VM-feature.**
   - Helper: `e2eVmTopology(E2ETopologyKind::…)` requiring
     `E2ETopologyCapabilities::vm()`.
-  - Group: `pest()->group('e2e-feature', …)`.
-  - Run: same `composer test:e2e` command; the helper auto-skips on Docker.
+  - Group: `pest()->group('e2e-feature', 'e2e-provider-incus', …)`.
+  - Run: `composer test:e2e:incus -- --filter='<Scenario>'`.
   - Use only when the assertion needs real systemd, kernel networking,
     `iptables`/`nftables`, host init, trust-store mutation, or other
-    VPS-realism behavior.
+    VPS-realism behavior. The helper skips when Incus or the required
+    prepared topology is unavailable.
 - **Incus provision.**
   - Group: `pest()->group('e2e-provision')`.
   - Run: `composer test:e2e:provision -- --filter='<Scenario>'`.
@@ -39,7 +40,10 @@ the real-host realism behavior; reach for it only when the rubric forces it.
 E2E harness is complete. Both Docker and Incus topology providers are
 available; provisioning tests run on Beast (Incus) and feature tests run on
 the shared Docker pool by default. Composer scripts: `test`, `test:e2e`,
-`test:e2e:provision`, `test:e2e:topology-contract`. Artisan helpers:
+`test:e2e:docker`, `test:e2e:incus`, `test:e2e:provision`,
+`test:e2e:topology-contract`. `test:e2e` runs the selected prepared-topology
+feature lanes through `php artisan e2e:test`; `ORBIT_E2E_LANES` defaults to
+`docker,incus`, and provisioning stays separate. Artisan helpers:
 `e2e:prepare-incus-images`, `e2e:prepare-topology`,
 `e2e:prepare-docker-runtime`, `e2e:prepare-docker-topology`.
 
@@ -104,7 +108,12 @@ The force path streams `[orbit-e2e] <phase> started|done|failed` checkpoints to
 STDERR, so a long topology refresh shows which phase currently owns the wait
 without corrupting JSON output on STDOUT.
 
-Run feature tests with `composer test:e2e` (Docker default, Pest parallel,
-checkout overlay per test). Narrow to a scenario with `--filter='<Name>'`.
-Run provisioning tests with `composer test:e2e:provision -- --filter=<X>`
-and leave failed VMs for inspection.
+Run Docker feature tests with `composer test:e2e:docker -- --filter='<Name>'`
+(Pest parallel, checkout overlay per test). Run Incus VM-feature tests with
+`composer test:e2e:incus -- --filter='<Name>'`; they use prepared Incus
+topology clones and skip when Incus is unavailable. Run the aggregate prepared
+feature lane with `composer test:e2e`; override its lane set with
+`ORBIT_E2E_LANES=docker`, `ORBIT_E2E_LANES=incus`, or
+`ORBIT_E2E_LANES=docker,incus`. Run provisioning tests with
+`composer test:e2e:provision -- --filter=<X>` and leave failed VMs for
+inspection.

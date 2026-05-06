@@ -34,10 +34,16 @@ final class ToolLogsStreamController implements Loggable
             return $this->authorizationFailed('This node is not authorized to inspect tools.');
         }
 
+        $authorizedTarget = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($authorizedTarget instanceof JsonResponse) {
+            return $authorizedTarget;
+        }
+
         $target = $logs->streamTarget(
             tool: $tool,
-            node: $this->requestString($request, 'node'),
-            app: $this->requestString($request, 'app'),
+            node: $authorizedTarget['node'],
+            app: $authorizedTarget['app'],
             lines: $this->positiveInteger($request, 'lines', 100),
         );
 
@@ -64,13 +70,6 @@ final class ToolLogsStreamController implements Loggable
             'Content-Type' => 'text/plain; charset=UTF-8',
             'X-Accel-Buffering' => 'no',
         ]);
-    }
-
-    private function requestString(Request $request, string $key): ?string
-    {
-        $value = $request->input($key);
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function positiveInteger(Request $request, string $key, int $default): int

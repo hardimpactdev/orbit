@@ -46,7 +46,7 @@ class ToolLogsCommand extends Command
                     app: $input['app'],
                     lines: $input['lines'],
                     onOutput: function (string $output): void {
-                        $this->output->write($output);
+                        $this->writeStreamOutput($output);
                     },
                 )
                 : $gatewayStream->follow(
@@ -55,7 +55,7 @@ class ToolLogsCommand extends Command
                     app: $input['app'],
                     lines: $input['lines'],
                     onOutput: function (string $output): void {
-                        $this->output->write($output);
+                        $this->writeStreamOutput($output);
                     },
                 );
 
@@ -199,6 +199,15 @@ class ToolLogsCommand extends Command
     private function isGatewayCaller(): bool
     {
         return $this->callerRole() === 'gateway';
+    }
+
+    private function writeStreamOutput(string $output): void
+    {
+        $this->output->write($output);
+
+        if (defined('STDOUT')) {
+            fflush(STDOUT);
+        }
     }
 
     private function callerRole(): string

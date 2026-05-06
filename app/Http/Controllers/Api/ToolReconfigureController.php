@@ -35,8 +35,14 @@ final class ToolReconfigureController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'app');
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $node = $target['node'];
+        $app = $target['app'];
         $password = $this->requestString($request, 'password');
         $config = $request->input('config', []);
 

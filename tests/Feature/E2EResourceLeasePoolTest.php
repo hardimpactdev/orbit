@@ -132,6 +132,23 @@ it('reclaims stale leases before acquiring', function (): void {
     $fresh->release();
 });
 
+it('reclaims leases owned by dead processes before acquiring', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 1, staleSeconds: 3600);
+
+    $lease = $pool->acquire('docker', ['beast' => 1]);
+    $leasePath = "{$this->leaseDirectory}/docker-beast-1.lease";
+    $payload = json_decode((string) file_get_contents($leasePath), true, flags: JSON_THROW_ON_ERROR);
+    $payload['pid'] = 999_999_999;
+    file_put_contents($leasePath, json_encode($payload, JSON_THROW_ON_ERROR));
+
+    $fresh = $pool->acquire('docker', ['beast' => 1]);
+
+    expect($lease->slot())->toBe(1)
+        ->and($fresh->slot())->toBe(1);
+
+    $fresh->release();
+});
+
 it('uses an explicit lease directory from the environment', function (): void {
     withE2EEnvironment([], [
         'ORBIT_E2E_LEASE_DIRECTORY' => $this->leaseDirectory,

@@ -21,7 +21,7 @@ final readonly class AppsProbe
 
     public function key(): string
     {
-        return 'apps';
+        return 'app';
     }
 
     public function label(): string

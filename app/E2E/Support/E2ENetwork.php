@@ -11,7 +11,8 @@ final readonly class E2ENetwork
         E2ECommand::exec(
             $instance,
             sprintf(
-                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; ip addr add %s dev "$iface" 2>/dev/null || true; ip link set "$iface" up',
+                'iface="$(ip -o -4 route show default | awk \'{print $5; exit}\')"; test -n "$iface"; for stale in 10.6.0.2/16 10.6.0.3/16 10.6.0.4/16 10.6.0.5/16 %s; do ip addr del "$stale" dev "$iface" 2>/dev/null || true; done; ip addr add %s dev "$iface" 2>/dev/null || true; ip link set "$iface" up',
+                escapeshellarg("{$wireGuardIp}/16"),
                 escapeshellarg("{$wireGuardIp}/16"),
             ),
             "Could not assign {$wireGuardIp} to {$instance->name()}",

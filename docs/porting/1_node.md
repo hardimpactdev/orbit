@@ -54,7 +54,7 @@ Detail file for the node command family. Top-level status lives in
 
 Passed command-family E2E:
 
-- `composer test:e2e -- --filter='NodeListTopology|NodeShowGrant|NodeUpdate|NodeGrant|NodeRevoke|NodeRemove|NodeAgentIde'`
+- `composer test:e2e:docker -- --filter='NodeListTopology|NodeShowGrant|NodeUpdate|NodeGrant|NodeRevoke|NodeRemove|NodeAgentIde'`
 - `composer test:e2e:provision -- --filter='NodeNewGateway|NodeNewGatewayApiVerify|NodeNewGatewayCaVerify|NodeNewDevelopmentApp|NodeNewProductionApp'`
 
 ## Family doctor

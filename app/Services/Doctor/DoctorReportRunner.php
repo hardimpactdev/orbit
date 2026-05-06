@@ -5,27 +5,36 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
+use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
+use App\Models\Workspace;
+use App\Services\Apps\AppsProbe;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Processes\ProcessesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
+use App\Services\Workspaces\WorkspacesProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+    private const array SUPPORTED_FAMILIES = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
+        private AppsProbe $appsProbe,
+        private WorkspacesProbe $workspacesProbe,
+        private ProcessesProbe $processesProbe,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
@@ -67,6 +76,36 @@ final readonly class DoctorReportRunner
                     $this->nodesProbe->diff($node, $snapshot),
                 ),
             ];
+        }
+
+        if (in_array('app', $selectedFamilies, true)) {
+            foreach (App::query()->with('node')->get() as $app) {
+                $snapshot = $this->appsProbe->introspect($app);
+
+                foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
+                    $issues[] = $this->appIssuePayload($entry, $app);
+                }
+            }
+        }
+
+        if (in_array('workspace', $selectedFamilies, true)) {
+            foreach (Workspace::query()->with('app.node')->get() as $workspace) {
+                $snapshot = $this->workspacesProbe->introspect($workspace);
+
+                foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
+                    $issues[] = $this->workspaceIssuePayload($entry, $workspace);
+                }
+            }
+        }
+
+        if (in_array('process', $selectedFamilies, true)) {
+            foreach (Process::query()->with(['app.node', 'app.workspaces'])->get() as $process) {
+                $snapshot = $this->processesProbe->introspect($process);
+
+                foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
+                    $issues[] = $this->processIssuePayload($entry, $process);
+                }
+            }
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
@@ -180,6 +219,57 @@ final readonly class DoctorReportRunner
             'summary' => $summary,
             'issues' => $issues,
             'actions' => $actions,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function appIssuePayload(DriftEntry $entry, App $app): array
+    {
+        $app->loadMissing('node');
+
+        return [
+            'family' => $entry->family,
+            'node' => $app->node?->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): array
+    {
+        $workspace->loadMissing('app.node');
+
+        return [
+            'family' => $entry->family,
+            'node' => $workspace->app?->node?->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function processIssuePayload(DriftEntry $entry, Process $process): array
+    {
+        $process->loadMissing('app.node');
+
+        return [
+            'family' => $entry->family,
+            'node' => $process->app->node?->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
         ];
     }
 

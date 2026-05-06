@@ -44,8 +44,14 @@ final class ToolRemoveController implements Loggable
             );
         }
 
-        $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'app');
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $node = $target['node'];
+        $app = $target['app'];
         $result = $remover->remove($tool, node: $node, app: $app);
 
         if ($result instanceof ToolRegistryFailure) {
@@ -62,13 +68,6 @@ final class ToolRemoveController implements Loggable
                 'meta' => (object) [],
             ],
         ]);
-    }
-
-    private function requestString(Request $request, string $key): ?string
-    {
-        $value = $request->input($key);
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function failureResponse(ToolRegistryFailure $failure): JsonResponse

@@ -39,9 +39,12 @@ excludes E2E and is not enough.
 
 The lane is chosen per the rubric in
 [`testing-infrastructure.md`](testing-infrastructure.md): Docker feature
-(default), Incus VM-feature (real systemd/kernel networking), Incus provision
-(installer, WireGuard, SSH trust, destructive host mutation), or
-`lane=none` with a recorded reason.
+(default, `composer test:e2e:docker`), Incus VM-feature (real systemd/kernel
+networking, `composer test:e2e:incus`), Incus provision (installer, WireGuard,
+SSH trust, destructive host mutation, `composer test:e2e:provision`), or
+`lane=none` with a recorded reason. `composer test:e2e` runs the Docker and
+Incus prepared-topology feature lanes together by default through
+`ORBIT_E2E_LANES=docker,incus` and intentionally excludes provisioning.
 
 ## Feature E2E checkout rule
 

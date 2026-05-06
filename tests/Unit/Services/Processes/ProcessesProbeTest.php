@@ -31,7 +31,7 @@ beforeEach(function (): void {
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
-        expect($this->probe->key())->toBe('processes');
+        expect($this->probe->key())->toBe('process');
         expect($this->probe->label())->toBe('Processes');
     });
 
@@ -60,7 +60,7 @@ describe('runtime backend availability', function (): void {
             'runtime_backend_exit_code' => 0,
             'runtime_backend_output' => 'supervisor OK',
         ]);
-        expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1');
+        expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1');
         expect($shell->scripts[1])->toContain('ORBIT_PROCESS_UNITS');
         expect($shell->scripts[1])->toContain('ORBIT_PROCESS_EVENT_NOTIFIER');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
@@ -418,7 +418,7 @@ describe('registry intent', function (): void {
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
         expect($drift)->toHaveCount(1);
-        expect($drift[0]->family)->toBe('processes');
+        expect($drift[0]->family)->toBe('process');
         expect($drift[0]->key)->toBe('process.record_incomplete');
         expect($drift[0]->kind)->toBe(DriftKind::Missing);
     });

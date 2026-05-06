@@ -31,11 +31,16 @@ Pest when the behavior is a command or contract concern.
 
 ## Ephemeral E2E
 
-Use `composer test:e2e` for the default feature E2E lane. It runs
-`e2e-feature` tests against the prepared Docker full topology:
+Use `composer test:e2e` for the prepared-topology feature aggregate. It runs
+the selected Docker-backed and Incus-backed feature lanes through
+`php artisan e2e:test`. The default lane set is `docker,incus`; override it
+with `ORBIT_E2E_LANES=docker`, `ORBIT_E2E_LANES=incus`, or
+`ORBIT_E2E_LANES=all`. Provisioning tests are not part of this aggregate:
 
 ```bash
 composer test:e2e
+composer test:e2e:docker
+composer test:e2e:incus
 composer test:e2e:topology-contract
 ```
 
@@ -49,6 +54,10 @@ php artisan e2e:prepare-incus-images --role=blank --force
 composer e2e:prepare-topology -- --force control-gateway-dev-prod
 composer test:e2e:provision
 ```
+
+Use `composer test:e2e:provision` only when topology, installer, image,
+`node:new`, WireGuard provisioning, or other VM setup behavior changes. Ordinary
+command ports should add prepared-topology feature tests instead.
 
 The VM E2E harness uses Incus VMs on the configured E2E host (`beast` by
 default). It builds one reusable blank image plus cumulative role templates
@@ -135,16 +144,34 @@ ORBIT_E2E_KEEP=1
 ### Provider Selection Rules
 
 Use Docker for feature tests whose correctness depends on gateway API, CA
-trust, registry state, the runtime backend, the Orbit Scheduler, or
-Orbit-managed process and schedule lifecycle.
+trust, registry state, command forwarding, current-checkout command behavior,
+the runtime backend, the Orbit Scheduler, or Orbit-managed process and schedule
+lifecycle. This is the default for prepared-topology `e2e-feature` tests.
 
 Use Incus for tests whose correctness depends on real VM behavior:
 WireGuard kernel networking, cloud-init, package installation, OS
 trust-store mutation, real SSH daemon behavior, sudo prompts, or host
-init.
+init. Mark these tests with `e2e-provider-incus` so Docker-only runs skip them
+without probing an unsuitable provider.
 
 Provisioning, installer, and host-mutation tests stay in the
 `e2e-provision` lane on Incus regardless of family.
+
+### Lane Examples
+
+| Test concern | Lane | Why |
+| --- | --- | --- |
+| CLI validation, JSON envelopes, renderers, DTOs, authorization branches | In-memory Pest | Deterministic contract behavior; fake external boundaries. |
+| Gateway API forwarding, CA trust, registry reads/writes, Saloon request/response paths | Docker feature | Prepared topology is enough; fast and parallelizable. |
+| Docker-backed tool intent and compose command generation (`redis`, `postgres`, `mailpit`, etc.) | Docker feature | The command contract is gateway intent plus generated Docker command; fake or controlled Docker CLI is acceptable unless real Docker daemon behavior is the subject. |
+| Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run Supervisor and the Orbit Scheduler under `tini`. |
+| Host-init service control (`systemctl`, journalctl for systemd units, OS service reloads) | Incus VM-feature | Requires real systemd/host init semantics. |
+| OS package installs/upgrades, trust-store mutation, sudo behavior, real SSH daemon behavior | Incus VM-feature | Depends on VM/OS behavior Docker does not model. |
+| Blank image, installer, topology preparation, `node:new`, WireGuard peer routing | Incus provision | Mutates disposable VMs and proves production-style provisioning. |
+
+When in doubt, start with Docker feature. Move to Incus only when the assertion
+would be false confidence in Docker because the kernel, VM boot, host init, or
+OS package/trust layer is the behavior under test.
 
 ## E2E Lanes
 
@@ -162,7 +189,10 @@ The ephemeral E2E suite is split into two explicit lanes at the Pest group level
   ported commands, forwarding chains, or read-only behavior. They must not run
   installer or provisioning commands unless the feature under test explicitly
   requires it. These tests are grouped with `pest()->group('e2e-feature')` at the
-  file level and run via `composer test:e2e`. The default provider is Docker.
+  file level. Run Docker-eligible feature tests with `composer test:e2e:docker`;
+  run Incus-only feature tests with `composer test:e2e:incus`. The aggregate
+  `composer test:e2e` runs both prepared-topology feature lanes. Incus-only
+  feature tests add `e2e-provider-incus`.
 
 Each prepared topology has its own contract group:
 
@@ -179,14 +209,25 @@ health check, while `composer test:e2e` excludes topology-contract tests and
 runs feature assertions only.
 
 Both lanes still carry the umbrella `e2e` group via `tests/Pest.php`, but
-`composer test:e2e` runs only feature assertions with Pest parallel mode. Each
-worker process gets one cached Docker superset topology and reuses it for the
-tests assigned to that worker. Provision tests are intentionally on demand
-because they run real installer/provisioning paths and are much slower than
-prepared-topology feature tests. They run with Pest parallel mode by default,
-limited by `ORBIT_E2E_PROVISION_PARALLEL_PROCESSES`, and each worker must
-acquire an Incus slot from `ORBIT_E2E_INCUS_HOST_SLOTS` before it creates a
-disposable VM.
+`composer test:e2e` runs only feature assertions. It delegates to
+`php artisan e2e:test`, which plans one or both prepared-topology lanes from
+`ORBIT_E2E_LANES` and runs selected lanes concurrently by default. Use
+`--sequential-lanes` for local debugging when interleaved output is hard to
+read.
+
+`composer test:e2e:docker` selects the Docker lane: all `e2e-feature` tests
+except `e2e-provider-incus` and topology-contract groups, using Docker, Pest
+parallel mode, and one cached Docker superset topology per worker.
+
+`composer test:e2e:incus` selects the Incus lane: only `e2e-provider-incus`
+feature tests, using Incus prepared topology clones. If Incus or the required
+prepared topology is unavailable, those tests mark themselves skipped.
+
+Provision tests are intentionally on demand because they run real
+installer/provisioning paths and are much slower than prepared-topology feature
+tests. They run with Pest parallel mode by default, limited by
+`ORBIT_E2E_PROVISION_PARALLEL_PROCESSES`, and each worker must acquire an Incus
+slot from `ORBIT_E2E_INCUS_HOST_SLOTS` before it creates a disposable VM.
 
 Provision tests clean up on success. On failure they keep tracked VMs/templates
 for inspection and print their names plus a reap command. Set
@@ -332,8 +373,10 @@ Common requirements for every prepared topology:
 # Default in-memory Pest (excludes E2E)
 composer test
 
-# Ephemeral E2E lanes (requires ORBIT_E2E=1)
+# Ephemeral E2E lanes (set ORBIT_E2E=1 internally)
 composer test:e2e
+composer test:e2e:docker
+composer test:e2e:incus
 composer test:e2e:provision
 composer test:e2e:topology-contract
 
@@ -353,7 +396,7 @@ composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
 # Prepare Docker feature topology images on every configured Docker host
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 
 # Reap stale E2E resources
@@ -363,30 +406,49 @@ composer e2e:reap-docker
 composer e2e:reap-docker -- --force --older-than=0m
 ```
 
-`composer test:e2e` is the fast feature regression lane. It runs all
+`composer test:e2e` is the complete prepared-topology feature regression lane.
+It runs `php artisan e2e:test`, which selects lanes from `ORBIT_E2E_LANES`
+(`docker,incus` by default) and excludes `e2e-provision`. Docker and Incus
+lanes run concurrently by default; pass `--sequential-lanes` when you need
+single-lane-at-a-time debugging output.
+
+When `composer test:e2e`, `composer test:e2e:docker`, or
+`composer test:e2e:incus` receives `SIGINT` or `SIGTERM`, `php artisan
+e2e:test` stops the active lane process, removes generated local test artifacts,
+and runs the selected lane reapers with `--force --older-than=0m` before
+exiting with the conventional signal code (`130` for Ctrl-C). If a run is killed
+with `SIGKILL` or the host dies, run the reaper commands manually.
+
+`composer test:e2e:docker` is the fast feature lane. It runs all Docker-eligible
 `e2e-feature` tests in parallel against cached Docker full topologies, one
 topology per Pest worker process.
+
+`composer test:e2e:incus` runs only `e2e-provider-incus` feature tests against
+Incus prepared topology clones. The local Beast baseline runs three workers:
+three maximum-size prepared topologies use up to 12 VMs, with each disposable
+topology VM capped at 1 vCPU through `ORBIT_E2E_TOPOLOGY_CPUS=1`.
+
 Use `composer test:e2e:topology-contract` when you want to prove the prepared
-Docker topology itself. Provisioning E2E runs in parallel too, but it leases
-Incus slots and remains intentionally on demand because it exercises real
-machine setup.
+Docker topology itself. Provisioning E2E leases Incus slots and remains
+intentionally on demand because it exercises real machine setup.
 
 ### Docker Feature Topologies
 
-Docker is the default provider for `composer test:e2e`. Once `.env.e2e` points
-at the standing Docker host pool and the runtime/topology images are prepared on
-those hosts, the ordinary feature-lane command is just:
+Docker is the default provider for Docker-eligible feature tests. Once
+`.env.e2e` points at the standing Docker host pool and the runtime/topology
+images are prepared on those hosts, the Docker-only lane is:
 
 ```bash
-composer test:e2e
+composer test:e2e:docker
 ```
 
-`composer test:e2e` does not rebuild Docker images. On a fresh host pool, after
-Dockerfile or system dependency changes, or when remote images look stale, first
-refresh every configured Docker host:
+`composer test:e2e:docker` and the Docker lane of `composer test:e2e` do not
+rebuild Docker images. On a fresh host pool, after Dockerfile or system
+dependency changes, or when remote images look stale, first refresh every
+configured Docker host:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 ```
 
@@ -430,13 +492,15 @@ Do not switch the E2E provider to `ssh host docker ...`; the supported remote
 Docker transport is `DOCKER_HOST=ssh://<host>`.
 
 The recommended local topology is to run Docker containers on `sidecar1` and
-`sidecar2` first, with `beast` as overflow capacity only when it is not running
-Incus provisioning E2E. Incus provisioning runs on `beast` only. Set
-`ORBIT_E2E_EXCLUSIVE_HOSTS=beast` so Docker leases on Beast and Incus leases on
-Beast block each other while still allowing multiple Docker slots on Beast when
-provisioning is idle. Docker exercises gateway API, certificate, and registry
-behavior over a WireGuard-shaped `10.6.0.0/16` Docker bridge, but it does not
-exercise real WireGuard interfaces, peer routing, VM boot, or systemd.
+`sidecar2`. Incus runs on `beast` only. Keep Beast out of the default Docker
+pool so the aggregate `composer test:e2e` run does not make Docker feature tests
+compete with Incus feature tests on the same machine. Add Beast to the Docker
+pool only as explicit overflow for Docker-only runs or when Incus is idle. Keep
+`ORBIT_E2E_EXCLUSIVE_HOSTS=beast` when Beast appears in both pools so Docker and
+Incus leases on Beast block each other. Docker exercises gateway API,
+certificate, and registry behavior over a WireGuard-shaped `10.6.0.0/16`
+Docker bridge, but it does not exercise real WireGuard interfaces, peer
+routing, VM boot, or systemd.
 
 Docker topologies are disposable containers seeded from per-role prepared
 images. They are useful for fast command, registry, gateway API, CA trust,
@@ -459,31 +523,32 @@ installation, real SSH daemon behavior, sudo prompts, OS trust-store
 mutation, real WireGuard interfaces and peer routing, and host init
 itself.
 
-`composer test:e2e` runs with Pest parallel mode. The script fallback process
-count is `2`; the shared local `.env.e2e` uses
-`ORBIT_E2E_PARALLEL_PROCESSES=7` to match the sidecar1, sidecar2, and Beast
-overflow slot pool. Keep the value within Docker host capacity: a full topology
-uses four containers, so a host with
+`composer test:e2e:docker` runs with Pest parallel mode. The script fallback
+process count is `2`; the shared local `.env.e2e` uses
+`ORBIT_E2E_PARALLEL_PROCESSES=4` to match the sidecar1 and sidecar2 slot pool.
+Keep the value within Docker host capacity: a full topology uses four
+containers, so a host with
 `ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8` can safely run two full-topology
-workers. Add Docker hosts with
-`ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2,beast` or raise the per-host
-container limit when the runner can handle more.
+workers. Add Beast as Docker overflow only for Docker-only runs or idle-Incus
+windows.
 
 For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:2 \
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
-ORBIT_E2E_PARALLEL_PROCESSES=7 \
-composer test:e2e
+ORBIT_E2E_PARALLEL_PROCESSES=6 \
+composer test:e2e:docker
 ```
 
-With that example, up to two workers can lease `sidecar1`, two can lease
-`sidecar2`, and three can lease `beast` when no Incus provisioning lease is
-active on Beast. The mapping is a blocking lease pool, not a worker-number map:
+The normal local pool is `sidecar1:2,sidecar2:2` with
+`ORBIT_E2E_PARALLEL_PROCESSES=4`. With the Beast overflow example above, up to
+two workers can lease `sidecar1`, two can lease `sidecar2`, and two can lease
+`beast` when no Incus lease is active on Beast. The mapping is a blocking lease
+pool, not a worker-number map:
 a worker takes the first free Docker slot, waits when all slots are busy or when
-Beast is reserved by provisioning, and releases its slot during topology
+Beast is reserved by Incus, and releases its slot during topology
 cleanup. Stale lease files are reclaimed after `ORBIT_E2E_SLOT_STALE_SECONDS`.
 Lease files are shared across Git worktrees by default: worktree runs resolve
 the lease directory to the main checkout's `storage/framework/e2e/leases`. Set
@@ -526,7 +591,7 @@ Use the aggregate host preparation command to build fresh runtime and topology
 images across the configured Docker host pool:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 ```
 
@@ -549,7 +614,7 @@ composer test:e2e:hcloud-docker -- --force --processes=3
 
 The wrapper creates a temporary Hetzner Cloud server with Docker installed,
 prepares the Docker runtime and topology images on that server, runs
-`composer test:e2e` with `ORBIT_E2E_DOCKER_HOSTS=root@<server-ip>`, then deletes
+`composer test:e2e:docker` with `ORBIT_E2E_DOCKER_HOSTS=root@<server-ip>`, then deletes
 the server and temporary SSH key unless `--keep` is set. This is intentionally
 separate from the always-on Docker host pool: use it when local/standing Docker
 capacity is unavailable or when CI needs disposable Docker capacity. When
@@ -564,6 +629,30 @@ composer e2e:reap-docker
 composer e2e:reap-docker -- --force --older-than=0m
 ```
 
+### Incus VM-Feature Tests
+
+Incus VM-feature tests are still `e2e-feature` tests, but they carry the
+`e2e-provider-incus` group and call
+`E2ETopologyFactory::fromEnvironment()->requireCapabilities(E2ETopologyCapabilities::vm())`.
+This keeps Docker-only runs focused while allowing the aggregate
+`composer test:e2e` command to include VM-feature coverage when the Incus lane
+is selected and available.
+
+Use this lane for prepared-topology tests that need real VM semantics but do
+not rebuild topology images and do not run provisioning:
+
+```bash
+composer test:e2e:incus
+```
+
+When Incus is unavailable or the required prepared topology is missing, the test
+should catch `E2ETopologyUnavailable` and call `markTestSkipped()`. That makes
+`composer test:e2e` usable on Docker-only hosts and on temporary external
+Docker capacity such as Hetzner.
+
+Do not put provisioning tests in `e2e-provider-incus`. Provisioning tests stay
+in `e2e-provision` and run only through `composer test:e2e:provision`.
+
 ## Environment
 
 The Composer E2E scripts source `.env.e2e` when that file exists, then apply
@@ -574,27 +663,29 @@ the same slot configuration.
 
 ```bash
 ORBIT_E2E=1                           # Enable ephemeral E2E tests
+ORBIT_E2E_LANES=docker,incus          # composer test:e2e lane set: docker, incus, docker,incus, or all
 ORBIT_E2E_PROVIDER=incus              # Backend provider (incus is current)
 ORBIT_E2E_PROVIDERS=incus             # Ordered provisioning provider pool
-ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for composer test:e2e
+ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for direct artisan/Pest runs
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
-ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2,beast  # Recommended Docker daemon pool
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3  # Docker feature-test lease pool
+ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2  # Docker feature-test lease pool
 ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
-ORBIT_E2E_PARALLEL_PROCESSES=7        # Pest workers for composer test:e2e
+ORBIT_E2E_PARALLEL_PROCESSES=4        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
-ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool
+ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Pest workers for composer test:e2e:incus
 ORBIT_E2E_HCLOUD_LOCATION_SLOTS=nbg1:2,fsn1:1  # Hetzner provisioning-test lease pool
 ORBIT_E2E_HCLOUD_RESOURCE_SLOTS=nbg1/cx23/ubuntu-24.04:2,fsn1/cpx31/ubuntu-24.04:1  # Hetzner location/type/image pool
 ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1  # Pest workers for composer test:e2e:provision
-ORBIT_E2E_EXCLUSIVE_HOSTS=beast       # Prevent Docker/Incus overlap on shared hosts
+ORBIT_E2E_EXCLUSIVE_HOSTS=beast       # Prevent Docker/Incus overlap if Beast is used for both
 ORBIT_E2E_SLOT_WAIT_SECONDS=900       # How long Docker/Incus workers wait for a free slot
 ORBIT_E2E_SLOT_STALE_SECONDS=7200     # Reclaim abandoned local lease files after this TTL
 ORBIT_E2E_LEASE_DIRECTORY=            # Optional override; default is shared across repo worktrees
 ORBIT_E2E_INCUS_IMAGE_BUILD_HOST=beast # Build Incus images once here, then import to Incus hosts
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e  # Optional Incus storage pool for launch/copy operations
-ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4    # VM quota per host
+ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12   # VM quota per host; 3 max-size 4-node topologies
 ORBIT_E2E_TOPOLOGY_STRATEGY=minimal   # Topology selection strategy
 ORBIT_E2E_TOPOLOGY_CACHE=process      # Reuse acquired topologies for the current PHP process
 ORBIT_E2E_CHECKOUT_CACHE=process      # Reuse branch checkout installs within one PHP process
@@ -618,28 +709,34 @@ opt-in: use `ORBIT_E2E_PROVIDER=hcloud`, `ORBIT_E2E_PROVIDERS=hcloud`, or the
 dedicated `composer test:e2e:hcloud-docker -- --force` wrapper when a run should
 create paid Hetzner resources.
 
-`composer test:e2e` sets `ORBIT_E2E_TOPOLOGY_PROVIDER=docker` explicitly.
-`ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still expands to `incus` for direct artisan
-or Pest invocations unless the provider selection code is changed.
+`composer test:e2e` runs `php artisan e2e:test`, which reads
+`ORBIT_E2E_LANES` and starts the selected prepared-topology lanes concurrently.
+The lane aliases set `ORBIT_E2E_LANES` before invoking the same orchestrator:
+`composer test:e2e:docker` selects `docker`, and `composer test:e2e:incus`
+selects `incus`. The Docker lane sets
+`ORBIT_E2E_TOPOLOGY_PROVIDER=docker`; the Incus lane sets
+`ORBIT_E2E_TOPOLOGY_PROVIDER=incus`. `ORBIT_E2E_TOPOLOGY_PROVIDER=auto` still
+expands to `incus` for direct artisan or Pest invocations unless the provider
+selection code is changed.
 
 `composer test:e2e:provision` runs serially when
 `ORBIT_E2E_PROVISION_PARALLEL_PROCESSES=1`. Set the value above `1` to enable
 Pest parallel mode for provision tests; every worker still acquires a
 provisioning lease before creating Incus or Hetzner resources.
 
-`composer test:e2e` and `composer test:e2e:provision` use separate lease
-namespaces in the same shared lease directory. Docker feature tests read
+`composer test:e2e:docker` and `composer test:e2e:provision` use separate
+lease namespaces in the same shared lease directory. Docker feature tests read
 `ORBIT_E2E_DOCKER_HOST_SLOTS`; Incus provisioning tests read
 `ORBIT_E2E_INCUS_HOST_SLOTS`; Hetzner Cloud provisioning tests read
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` first and fall back to
 `ORBIT_E2E_HCLOUD_LOCATION_SLOTS`. By default those namespaces do not block each
 other. Add a host to `ORBIT_E2E_EXCLUSIVE_HOSTS` when the same machine appears
 in more than one backend pool and the backend families must not overlap. The
-local Beast setup uses `ORBIT_E2E_EXCLUSIVE_HOSTS=beast`, so Beast Docker
-overflow waits while Beast is running Incus provisioning E2E, and provisioning
-waits while Docker is using Beast. Same-backend slots still run concurrently,
-so `beast:3` can host three Docker feature workers when no provisioning lease is
-active.
+local setup keeps Beast in `ORBIT_E2E_EXCLUSIVE_HOSTS` for the opt-in overflow
+case: Beast Docker overflow waits while Beast is running Incus E2E, and Incus
+waits while Docker is using Beast. Same-backend slots still run concurrently, so
+`beast:2` can host two Docker feature workers with the default container cap
+when no Incus lease is active.
 
 `ORBIT_E2E_HCLOUD_RESOURCE_SLOTS` treats each key as
 `location/server-type/image` and applies all three values before creating
@@ -653,6 +750,27 @@ is CPU- and package-manager-bound. Topology feature clones default to 1 vCPU
 because the work is mostly SSH, SQLite, command execution, small API calls, and
 readiness polling — more 1-vCPU clones in parallel beats fewer 2-vCPU clones.
 
+Prepared Incus feature tests do not use `ORBIT_E2E_INCUS_HOST_SLOTS`.
+`ORBIT_E2E_INCUS_HOST_SLOTS` is for provisioning/image-prep leases, where a
+test mutates Incus host state by creating new blank or base VMs. Prepared
+feature tests clone existing topology snapshots and choose a host through
+`ORBIT_E2E_INCUS_HOSTS` plus `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`. Their
+concurrency is bounded by:
+
+- `ORBIT_E2E_INCUS_PARALLEL_PROCESSES`, the Pest worker count for the Incus
+  lane.
+- `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST`, the maximum number of Orbit-owned
+  prepared-topology VMs allowed on an Incus host.
+- The topology size requested by each test, e.g. three VMs for
+  `control-gateway-dev` and four VMs for `control-gateway-dev-prod`.
+
+For example, `ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3`,
+`ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12`, and
+`ORBIT_E2E_TOPOLOGY_CPUS=1` allow Beast to run three 4-node prepared
+topologies at once. `composer test:e2e` starts Docker and Incus lanes together;
+it is normal for Docker to finish first and for only the Incus lane to remain
+visible afterward.
+
 `ORBIT_E2E_INCUS_MAX_VMS_PER_HOST` is enforced by the host pool. When a feature
 test asks for a topology, the pool walks the configured hosts and picks the
 first one that has both the prepared templates *and* enough free Orbit-owned
@@ -662,9 +780,11 @@ counted. Recommended baseline:
 
 ```bash
 ORBIT_E2E_INCUS_HOSTS=beast
-ORBIT_E2E_INCUS_HOST_SLOTS=beast:1
+ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # provisioning only
 ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e
-ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=4
+ORBIT_E2E_INCUS_MAX_VMS_PER_HOST=12
+ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3
+ORBIT_E2E_TOPOLOGY_CPUS=1
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast
 ```
 

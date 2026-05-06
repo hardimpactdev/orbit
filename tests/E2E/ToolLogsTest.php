@@ -62,6 +62,15 @@ it('reads finite managed system service tool logs from an app node through the g
             ->and($payload['success']['data']['logs']['lines'])->not->toBeEmpty()
             ->and(implode("\n", array_column($payload['success']['data']['logs']['lines'], 'message')))->toContain('supervisor');
 
+        $topology->ssh('dev', 'logger -t supervisor "supervisor follow local e2e"', timeoutSeconds: 30);
+        $seededLocal = $topology->ssh(
+            'dev',
+            'sudo journalctl _SYSTEMD_UNIT=supervisor.service + SYSLOG_IDENTIFIER=supervisor -n 3 --no-pager --output=short-iso',
+            timeoutSeconds: 30,
+        );
+
+        expect($seededLocal->output())->toContain('supervisor follow local e2e');
+
         $follow = $topology->ssh(
             'gateway',
             sprintf(
@@ -71,7 +80,7 @@ it('reads finite managed system service tool logs from an app node through the g
 rm -f /tmp/orbit-tool-follow.log
 timeout 8s php artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow.log 2>&1 || true
 test -s /tmp/orbit-tool-follow.log
-grep -m 1 supervisor /tmp/orbit-tool-follow.log
+grep -m 1 supervisor /tmp/orbit-tool-follow.log || { cat /tmp/orbit-tool-follow.log >&2; exit 1; }
 BASH),
             ),
             timeoutSeconds: 30,
@@ -79,6 +88,8 @@ BASH),
 
         expect($follow->successful())->toBeTrue()
             ->and(trim($follow->output()))->not->toBe('');
+
+        $topology->ssh('dev', 'logger -t supervisor "supervisor follow forwarded e2e"', timeoutSeconds: 30);
 
         $forwardedFollow = $topology->ssh(
             'control',
@@ -100,7 +111,7 @@ BASH),
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-control-gateway-dev');
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway-dev');
 
 function toolLogsUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
 {

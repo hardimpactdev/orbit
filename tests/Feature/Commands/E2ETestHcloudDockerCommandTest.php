@@ -15,7 +15,7 @@ it('shows the hcloud docker test plan without side effects by default', function
     $this->artisan('e2e:test-hcloud-docker')
         ->expectsOutputToContain('Dry run. Pass --force to create a temporary Hetzner Docker host.')
         ->expectsOutputToContain('planned: create Hetzner server in nbg1')
-        ->expectsOutputToContain('planned: run composer test:e2e against Docker on that server')
+        ->expectsOutputToContain('planned: run composer test:e2e:docker against Docker on that server')
         ->assertSuccessful();
 
     Process::assertNothingRan();
@@ -50,7 +50,7 @@ it('creates a temporary hcloud docker host, runs docker e2e, and cleans up', fun
         && str_contains($process->command, 'control-gateway')
         && ($process->environment['ORBIT_E2E_DOCKER_HOSTS'] ?? null) === 'root@203.0.113.42');
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer test:e2e')
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains($process->command, 'composer test:e2e:docker')
         && ($process->environment['ORBIT_E2E_DOCKER_HOSTS'] ?? null) === 'root@203.0.113.42'
         && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '3');
 

@@ -6,14 +6,6 @@ namespace App\E2E\Support;
 
 final readonly class IncusTopologyProvider implements E2ETopologyProvider
 {
-    private const string GatewayWireGuardIp = '10.6.0.2';
-
-    private const string ControlWireGuardIp = '10.6.0.3';
-
-    private const string DevWireGuardIp = '10.6.0.4';
-
-    private const string ProdWireGuardIp = '10.6.0.5';
-
     public function __construct(
         private E2EConfig $config,
     ) {}
@@ -43,6 +35,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     {
         $pool = IncusHostPool::fromEnvironment($this->config);
         $host = $timer->measure('availability', fn () => $pool->firstAvailableFor($kind));
+        $networkPlan = DockerTopologyNetworkPlan::fromEnvironment();
 
         if ($host === null) {
             throw new \RuntimeException("Prepared topology {$kind->value} is not available on any Incus host");
@@ -51,16 +44,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $instances = IncusTopologyTemplate::clone($host, $kind, $runId, $timer);
 
         $sshKeyPair = $this->createSshKeyPair($host, $runId);
-        $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options);
-        $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi);
+        $primaryUsers = $this->prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $networkPlan);
+        $snapshotReset = $this->prepareSnapshotReset($host, $instances, $primaryUsers, $sshKeyPair, $timer, $options->startGatewayApi, $networkPlan);
 
-        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options): array {
+        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $sshKeyPair, $options, $networkPlan): array {
             $newInstances = IncusTopologyTemplate::clone($host, $kind, $runId, $cycleTimer);
-            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options);
+            $newPrimaryUsers = $this->prepareInstances($newInstances, $this->config, $sshKeyPair, $cycleTimer, $options, $networkPlan);
 
             return [
                 'instances' => $newInstances,
-                'snapshotReset' => $this->prepareSnapshotReset($host, $newInstances, $newPrimaryUsers, $sshKeyPair, $cycleTimer, $options->startGatewayApi),
+                'snapshotReset' => $this->prepareSnapshotReset($host, $newInstances, $newPrimaryUsers, $sshKeyPair, $cycleTimer, $options->startGatewayApi, $networkPlan),
             ];
         };
 
@@ -73,6 +66,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sshKeyPair: $sshKeyPair,
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
+            gatewayApiIp: $networkPlan->ipForRole('gateway'),
         );
     }
 
@@ -80,7 +74,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  array<string, IncusInstance>  $instances
      * @return array<string, string>
      */
-    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): array
+    private function prepareInstances(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options, DockerTopologyNetworkPlan $networkPlan): array
     {
         $sshUsers = $this->sshUsersFor($instances, $config, $options);
         $primaryUsers = [];
@@ -97,10 +91,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $timer->measure("command-ready.{$role}", fn () => $instance->waitForSsh($primaryUser, $sshKeyPair));
         }
 
-        $timer->measure('wireguard', fn () => $this->reestablishWireGuardRoutes($instances));
+        $timer->measure('wireguard', fn () => $this->reestablishWireGuardRoutes($instances, $networkPlan));
+        $timer->measure('retarget', fn () => $this->retargetTopology($instances, $config, $sshKeyPair, $networkPlan));
+        $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $networkPlan));
 
         if ($options->startGatewayApi && isset($instances['gateway'])) {
-            $timer->measure('gateway-api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'topology-lease'));
+            $timer->measure('gateway-api.start', fn () => E2EGatewayApi::start(
+                $instances['gateway'],
+                'topology-lease',
+                gatewayIp: $networkPlan->ipForRole('gateway'),
+            ));
         }
 
         return $primaryUsers;
@@ -132,7 +132,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  array<string, IncusInstance>  $instances
      * @param  array<string, string>  $primaryUsers
      */
-    private function prepareSnapshotReset(IncusHost $host, array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, bool $startGatewayApi): ?\Closure
+    private function prepareSnapshotReset(IncusHost $host, array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, E2EPhaseTimer $timer, bool $startGatewayApi, DockerTopologyNetworkPlan $networkPlan): ?\Closure
     {
         if (! $this->shouldPrepareSnapshotReset()) {
             return null;
@@ -152,7 +152,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         return $strategy === 'stateful-restore'
             ? $this->statefulResetFor($host, $instances, $primaryUsers, $sshKeyPair)
-            : $this->snapshotResetFor($instances, $primaryUsers, $sshKeyPair, $startGatewayApi);
+            : $this->snapshotResetFor($instances, $primaryUsers, $sshKeyPair, $startGatewayApi, $networkPlan);
     }
 
     private function shouldPrepareSnapshotReset(): bool
@@ -167,9 +167,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         return is_string($strategy) && $strategy !== '' ? $strategy : 'fresh-clone';
     }
 
-    private function snapshotResetFor(array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, bool $startGatewayApi): \Closure
+    private function snapshotResetFor(array $instances, array $primaryUsers, SshKeyPair $sshKeyPair, bool $startGatewayApi, DockerTopologyNetworkPlan $networkPlan): \Closure
     {
-        return function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair, $startGatewayApi): void {
+        return function (E2EPhaseTimer $cycleTimer) use ($instances, $primaryUsers, $sshKeyPair, $startGatewayApi, $networkPlan): void {
             foreach ($instances as $role => $instance) {
                 $cycleTimer->measure("reset.stop.{$role}", fn () => $instance->stop());
                 $cycleTimer->measure("reset.restore.{$role}", fn () => $instance->restoreSnapshot('lease-clean'));
@@ -180,10 +180,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer->measure("reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
             }
 
-            $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuardRoutes($instances));
+            $cycleTimer->measure('reset.wireguard', fn () => $this->reestablishWireGuardRoutes($instances, $networkPlan));
+            $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology($instances, $this->config, $sshKeyPair, $networkPlan));
+            $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes($instances, $networkPlan));
 
             if ($startGatewayApi && isset($instances['gateway'])) {
-                $cycleTimer->measure('reset.gateway-api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'topology-reset'));
+                $cycleTimer->measure('reset.gateway-api.start', fn () => E2EGatewayApi::start(
+                    $instances['gateway'],
+                    'topology-reset',
+                    gatewayIp: $networkPlan->ipForRole('gateway'),
+                ));
             }
 
             foreach ($primaryUsers as $role => $primaryUser) {
@@ -236,7 +242,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function reestablishWireGuardRoutes(array $instances): void
+    private function reestablishWireGuardRoutes(array $instances, DockerTopologyNetworkPlan $networkPlan): void
     {
         $control = $instances['control'] ?? null;
         $gateway = $instances['gateway'] ?? null;
@@ -247,17 +253,19 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         $controlIp = $control->waitForIpv4();
         $gatewayIp = $gateway->waitForIpv4();
+        $controlWireGuardIp = $networkPlan->ipForRole('control');
+        $gatewayWireGuardIp = $networkPlan->ipForRole('gateway');
 
-        E2ENetwork::assignWireGuardIp($control, self::ControlWireGuardIp);
-        E2ENetwork::assignWireGuardIp($gateway, self::GatewayWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($control, self::GatewayWireGuardIp, $gatewayIp, self::ControlWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($gateway, self::ControlWireGuardIp, $controlIp, self::GatewayWireGuardIp);
+        E2ENetwork::assignWireGuardIp($control, $controlWireGuardIp);
+        E2ENetwork::assignWireGuardIp($gateway, $gatewayWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($control, $gatewayWireGuardIp, $gatewayIp, $controlWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($gateway, $controlWireGuardIp, $controlIp, $gatewayWireGuardIp);
 
-        $this->routeAppPeer($gateway, $gatewayIp, $instances['dev'] ?? null, self::DevWireGuardIp);
-        $this->routeAppPeer($gateway, $gatewayIp, $instances['prod'] ?? null, self::ProdWireGuardIp);
+        $this->routeAppPeer($gateway, $gatewayIp, $gatewayWireGuardIp, $instances['dev'] ?? null, $networkPlan->ipForRole('dev'));
+        $this->routeAppPeer($gateway, $gatewayIp, $gatewayWireGuardIp, $instances['prod'] ?? null, $networkPlan->ipForRole('prod'));
     }
 
-    private function routeAppPeer(IncusInstance $gateway, string $gatewayIp, ?IncusInstance $app, string $appWireGuardIp): void
+    private function routeAppPeer(IncusInstance $gateway, string $gatewayIp, string $gatewayWireGuardIp, ?IncusInstance $app, string $appWireGuardIp): void
     {
         if ($app === null) {
             return;
@@ -266,8 +274,124 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $appIp = $app->waitForIpv4();
 
         E2ENetwork::assignWireGuardIp($app, $appWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($gateway, $appWireGuardIp, $appIp, self::GatewayWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($app, self::GatewayWireGuardIp, $gatewayIp, $appWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($gateway, $appWireGuardIp, $appIp, $gatewayWireGuardIp);
+        E2ENetwork::routeWireGuardPeer($app, $gatewayWireGuardIp, $gatewayIp, $appWireGuardIp);
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function retargetTopology(array $instances, E2EConfig $config, SshKeyPair $sshKeyPair, DockerTopologyNetworkPlan $networkPlan): void
+    {
+        $control = $instances['control'] ?? null;
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($control === null || $gateway === null) {
+            return;
+        }
+
+        $gatewayIp = $networkPlan->ipForRole('gateway');
+        $controlIp = $networkPlan->ipForRole('control');
+
+        E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+            'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install',
+            escapeshellarg($gatewayIp),
+        ), timeoutSeconds: 120);
+        E2EGatewayApi::seedControlIdentity($gateway, $controlIp, $config->controlUser, $gatewayIp, $controlIp);
+
+        $this->retargetControl($control, $config, $networkPlan, $sshKeyPair);
+
+        if (isset($instances['dev'])) {
+            E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=%s --wireguard-address=%s --environment=development --tld=test --gateway-endpoint=%s --ssh-user=orbit --user=orbit',
+                escapeshellarg($networkPlan->ipForRole('dev')),
+                escapeshellarg($networkPlan->ipForRole('dev')),
+                escapeshellarg($gatewayIp),
+            ), timeoutSeconds: 120);
+        }
+
+        if (isset($instances['prod'])) {
+            E2ECommand::ssh($gateway, 'orbit', $sshKeyPair, sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --ssh-user=orbit --user=orbit',
+                escapeshellarg($networkPlan->ipForRole('prod')),
+                escapeshellarg($networkPlan->ipForRole('prod')),
+                escapeshellarg($gatewayIp),
+            ), timeoutSeconds: 120);
+        }
+    }
+
+    private function retargetControl(IncusInstance $control, E2EConfig $config, DockerTopologyNetworkPlan $networkPlan, SshKeyPair $sshKeyPair): void
+    {
+        $gatewayIpValue = var_export($networkPlan->ipForRole('gateway'), true);
+
+        $php = <<<PHP
+\\App\\Models\\Node::query()->updateOrCreate(
+    ['name' => 'gateway'],
+    [
+        'role' => 'gateway',
+        'environment' => null,
+        'tld' => null,
+        'platform' => 'unknown',
+        'host' => {$gatewayIpValue},
+        'wireguard_address' => {$gatewayIpValue},
+        'gateway_endpoint' => null,
+        'ssh_user' => 'orbit',
+        'user' => 'orbit',
+        'orbit_path' => '/home/orbit/orbit',
+        'status' => 'active',
+        'is_local' => false,
+    ],
+);
+
+\$settings = \\App\\Models\\LocalGatewaySettings::current();
+\$settings->fill([
+    'gateway_url' => 'https://'.{$gatewayIpValue},
+    'gateway_wg_ip' => {$gatewayIpValue},
+]);
+\$settings->save();
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $sshKeyPair,
+            'cd /home/'.$config->controlUser.'/orbit && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function waitForPeerRoutes(array $instances, DockerTopologyNetworkPlan $networkPlan): void
+    {
+        $gateway = $instances['gateway'] ?? null;
+
+        if ($gateway === null) {
+            return;
+        }
+
+        foreach (['dev', 'prod'] as $role) {
+            if (! isset($instances[$role])) {
+                continue;
+            }
+
+            $this->waitForGatewaySsh($gateway, $networkPlan->ipForRole($role));
+        }
+    }
+
+    private function waitForGatewaySsh(IncusInstance $gateway, string $wireGuardIp): void
+    {
+        E2ECommand::ssh(
+            $gateway,
+            'orbit',
+            new SshKeyPair('/dev/null', '/dev/null'),
+            sprintf(
+                'deadline=$((SECONDS+60)); until ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 orbit@%s true; do if [ "$SECONDS" -ge "$deadline" ]; then exit 1; fi; sleep 2; done',
+                escapeshellarg($wireGuardIp),
+            ),
+            timeoutSeconds: 75,
+        );
     }
 
     private function createSshKeyPair(IncusHost $host, string $runId): SshKeyPair

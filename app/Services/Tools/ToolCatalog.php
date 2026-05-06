@@ -67,10 +67,33 @@ final readonly class ToolCatalog
 
         $lineCount = max(1, $lines);
 
+        if (! $follow) {
+            return sprintf(
+                'sudo bash -lc %s',
+                escapeshellarg(sprintf(
+                    'output="$(%s 2>/dev/null | sed "/^-- No entries --$/d")"; if [ -n "$output" ]; then printf "%%s\n" "$output"; else systemctl status %s --no-pager --lines=%d 2>/dev/null || true; fi',
+                    $this->journalctlCommand($service, $lineCount),
+                    escapeshellarg($service),
+                    $lineCount,
+                )),
+            );
+        }
+
         return sprintf(
-            'sudo journalctl -u %s -n %d%s --no-pager --output=short-iso',
+            'sudo %s',
+            $this->journalctlCommand($service, $lineCount, follow: true),
+        );
+    }
+
+    private function journalctlCommand(string $service, int $lines, bool $follow = false): string
+    {
+        $unit = str_contains($service, '.') ? $service : "{$service}.service";
+
+        return sprintf(
+            'journalctl _SYSTEMD_UNIT=%s + SYSLOG_IDENTIFIER=%s -n %d%s --no-pager --output=short-iso',
+            escapeshellarg($unit),
             escapeshellarg($service),
-            $lineCount,
+            $lines,
             $follow ? ' -f' : '',
         );
     }

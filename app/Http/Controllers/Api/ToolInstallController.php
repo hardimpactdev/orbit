@@ -35,8 +35,14 @@ final class ToolInstallController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'app');
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $node = $target['node'];
+        $app = $target['app'];
         $status = (string) $request->input('status', 'installed');
         $version = $this->requestString($request, 'version');
         $toolConfig = $request->input('config', []);

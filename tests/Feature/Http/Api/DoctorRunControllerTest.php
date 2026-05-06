@@ -8,9 +8,11 @@ use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
+use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -127,6 +129,79 @@ describe('DoctorRunController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
             ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.capability_missing');
+    });
+
+    it('accepts the app family scope and returns app drift', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("docs\t0\t0\t1\t1\t0\t0\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['app'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.scope.families', ['app'])
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'app.path_missing');
+    });
+
+    it('accepts the workspace family scope and returns workspace drift', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature',
+            'path' => '/home/orbit/apps/docs/workspaces/feature',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("feature\t0\t0\t1\t0\t0\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['workspace'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.scope.families', ['workspace'])
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'workspace.path_missing');
+    });
+
+    it('accepts the process family scope and returns process drift', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        Process::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'queue',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell('', 1));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['process'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.scope.families', ['process'])
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'process.runtime_backend_unavailable');
     });
 
     it('passes tool fix mode through to the doctor runner', function (): void {

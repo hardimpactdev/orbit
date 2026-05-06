@@ -57,7 +57,12 @@ describe('tool:logs command contract', function (): void {
                     ['message' => '2026-05-06 supervisor running'],
                 ],
             ])
-            ->and($shell->scripts)->toBe(["sudo journalctl -u 'supervisor' -n 2 --no-pager --output=short-iso"]);
+            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts[0])->toContain('journalctl _SYSTEMD_UNIT=')
+            ->and($shell->scripts[0])->toContain('SYSLOG_IDENTIFIER=')
+            ->and($shell->scripts[0])->toContain('supervisor')
+            ->and($shell->scripts[0])->toContain('--no-pager --output=short-iso')
+            ->and($shell->scripts[0])->toContain('systemctl status');
     });
 
     it('rejects tools without a log source before remote work', function (): void {
@@ -114,7 +119,10 @@ describe('tool:logs command contract', function (): void {
             ->assertSuccessful();
 
         expect($shell->scripts)->toBe([])
-            ->and($stream->scripts)->toBe(["sudo journalctl -u 'supervisor' -n 1 -f --no-pager --output=short-iso"]);
+            ->and($stream->scripts)->toHaveCount(1)
+            ->and($stream->scripts[0])->toContain('journalctl _SYSTEMD_UNIT=')
+            ->and($stream->scripts[0])->toContain('SYSLOG_IDENTIFIER=')
+            ->and($stream->scripts[0])->toContain('-n 1 -f --no-pager --output=short-iso');
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {

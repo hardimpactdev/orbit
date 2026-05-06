@@ -45,15 +45,14 @@ final readonly class ToolRemover
             return ToolRegistryFailure::unsupportedAction($tool, 'remove');
         }
 
-        $model->credentials = null;
-        $model->save();
-
         $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'remove', $result->exitCode, trim($result->stderr));
         }
 
+        $model->credentials = null;
+        $model->save();
         $model->delete();
 
         return [

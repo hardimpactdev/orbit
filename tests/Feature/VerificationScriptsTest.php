@@ -11,6 +11,7 @@ use App\Console\Commands\E2EPrepareTopologyCommand;
 use App\Console\Commands\E2EReapDockerCommand;
 use App\Console\Commands\E2EReapHcloudCommand;
 use App\Console\Commands\E2EReapIncusCommand;
+use App\Console\Commands\E2ETestCommand;
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
     expect(base_path('bin/e2e'))->not->toBeFile();
@@ -52,9 +53,19 @@ it('runs default ephemeral e2e through prepared topology lanes', function (): vo
             fn ($script) => $script->toContain('pest --exclude-group=e2e'),
         );
 
+    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; php artisan e2e:test @additional_args';
+    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args';
+    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args';
+
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=superset php artisan test --testsuite=E2E --group=e2e-feature --exclude-group=e2e-topology-contract --parallel --processes=${ORBIT_E2E_PARALLEL_PROCESSES:-2} @additional_args',
+        $e2eScript,
+    ])->and($composer['scripts']['test:e2e:docker'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        $dockerE2eScript,
+    ])->and($composer['scripts']['test:e2e:incus'])->toBe([
+        'Composer\\Config::disableProcessTimeout',
+        $incusE2eScript,
     ]);
 
     expect($composer['scripts']['test:e2e:provision'])->toBe([
@@ -73,6 +84,8 @@ it('documents the supported verification lanes', function (): void {
         ->toContain('## Ephemeral E2E')
         ->toContain('Docker-backed feature E2E')
         ->toContain('composer test:e2e')
+        ->toContain('composer test:e2e:docker')
+        ->toContain('composer test:e2e:incus')
         ->toContain('composer test:e2e:provision')
         ->toContain('composer test')
         ->not->toContain('composer test:e2e:features')
@@ -87,6 +100,8 @@ it('keeps active porting and orchestration docs on current e2e script names', fu
 
     expect($testingInfra)
         ->toContain('composer test:e2e')
+        ->toContain('composer test:e2e:docker')
+        ->toContain('composer test:e2e:incus')
         ->toContain('composer test:e2e:provision')
         ->not->toContain('composer test:e2e:features')
         ->not->toContain('composer test:e2e:features:docker');
@@ -183,6 +198,7 @@ it('registers the e2e artisan commands', function (): void {
         E2EReapDockerCommand::class,
         E2EReapIncusCommand::class,
         E2EReapHcloudCommand::class,
+        E2ETestCommand::class,
     ];
 
     foreach ($commands as $class) {

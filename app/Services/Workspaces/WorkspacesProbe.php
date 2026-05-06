@@ -21,7 +21,7 @@ final readonly class WorkspacesProbe
 
     public function key(): string
     {
-        return 'workspaces';
+        return 'workspace';
     }
 
     public function label(): string

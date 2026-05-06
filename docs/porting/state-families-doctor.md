@@ -13,10 +13,13 @@ contract references every family contract.
 ## Doctor dispatcher coverage
 
 `DoctorReportRunner::SUPPORTED_FAMILIES` currently dispatches verify-mode for
-`node`, `proxy`, `firewall_rule`, `tool`, and `schedule`. `AppsProbe`,
-`WorkspacesProbe`, and `ProcessesProbe` are implemented but not yet wired
-into `DoctorReportRunner` / `DoctorScopeValidator` — adding them is a
-prerequisite for `doctor --family=app|workspace|process` verify-mode use.
+`node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, and
+`schedule`. `AppsProbe`, `WorkspacesProbe`, and `ProcessesProbe` are wired
+into `DoctorReportRunner` / `DoctorScopeValidator` for verify-mode use.
+
+Family-owned `--fix` / `--adopt` handlers for `app`, `workspace`, and
+`process` remain separate family implementation work; verify-mode dispatch does
+not imply those convergence actions are complete.
 
 Probe class names follow the `<Domain>Probe` shape; the proxy and
 firewall-rule probes are named `ProxyRouteProbe` and `FirewallRuleProbe`.

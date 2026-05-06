@@ -50,6 +50,11 @@ final readonly class ToolUpdater
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
         }
 
+        if ($expectedVersion !== null) {
+            $model->expected_version = $expectedVersion;
+            $model->save();
+        }
+
         $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
 
         if (! $result->successful()) {
@@ -60,11 +65,6 @@ final readonly class ToolUpdater
                 $result->exitCode,
                 trim($result->stderr),
             );
-        }
-
-        if ($expectedVersion !== null) {
-            $model->expected_version = $expectedVersion;
-            $model->save();
         }
 
         return [

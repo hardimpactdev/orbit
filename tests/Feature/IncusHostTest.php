@@ -135,7 +135,19 @@ it('ignores topology WireGuard addresses when resolving an Incus provider IPv4',
     $instance = new IncusInstance($host, 'orbit-template-control');
 
     expect($instance->waitForIpv4())->toBe('10.231.0.10')
-        ->and($commands[0])->toContain("grep -v '^10\\.6\\.'");
+        ->and($commands[0])->toContain("grep -v '(wg-orbit)'");
+});
+
+it('restarts journald after refreshing cloned instance network identity', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+    $instance = new IncusInstance($host, 'orbit-e2e-run-dev');
+
+    $instance->refreshNetworkIdentity();
+
+    expect($commands[0])->toContain('systemd-machine-id-setup')
+        ->and($commands[0])->toContain('systemctl restart systemd-journald')
+        ->and($commands[0])->toContain('systemctl restart systemd-networkd');
 });
 
 it('can restore snapshots concurrently', function (): void {

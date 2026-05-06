@@ -204,7 +204,7 @@ final class HcloudDockerE2ERunner
     private function runDockerE2E(string $dockerHost, HcloudDockerE2ERunOptions $options): void
     {
         $this->runCommand(
-            'composer test:e2e',
+            'composer test:e2e:docker',
             timeoutSeconds: $options->timeoutSeconds,
             environment: [
                 'ORBIT_E2E_DOCKER_HOSTS' => $dockerHost,

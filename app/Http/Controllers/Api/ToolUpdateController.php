@@ -35,8 +35,14 @@ final class ToolUpdateController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'app');
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $node = $target['node'];
+        $app = $target['app'];
         $version = $this->requestString($request, 'version');
 
         $result = $updater->update(
