@@ -169,6 +169,10 @@ These layers return empty arrays. They are reserved for future probe
 implementations that require external services:
 
 - WireGuard live interface reality (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
+  - `WireGuardPeerRealityProbe` can read and parse live `wg show <interface>
+    allowed-ips` output by public key.
+  - `NodesProbe` does not yet consume this read-only service for missing/extra
+    peer adoption.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node identity artifact readiness (`node.node_identity_artifact_missing`)
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
