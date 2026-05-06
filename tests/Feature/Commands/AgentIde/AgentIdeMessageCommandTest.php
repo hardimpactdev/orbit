@@ -112,6 +112,44 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
         ]);
 });
 
+it('renders the human progress tree for an app target', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    app()->instance(AgentIdeMessageAdapter::class, new FakeAgentIdeMessageAdapter);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+    ]);
+
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('┌ Sending Agent IDE message to docs')
+        ->and($output)->toContain('● Resolved target')
+        ->and($output)->toContain('● Resolved effective adapter')
+        ->and($output)->toContain('● Found active session')
+        ->and($output)->toContain('● Delivered message')
+        ->and($output)->toContain('└ Sent Agent IDE message to docs through opencode')
+        ->and($output)->toContain('Sent message to docs through opencode.')
+        ->and($output)->not->toContain('"success"');
+});
+
 it('delivers a stdin message to an explicit app target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
@@ -237,6 +275,45 @@ it('delivers a JSON message to an explicit workspace target on the gateway', fun
             'workspace' => 'feature-docs',
             'node' => 'app-1',
         ]);
+});
+
+it('renders the human progress tree for a workspace target', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'agent_ide' => 'polyscope',
+    ]);
+
+    app()->instance(AgentIdeMessageAdapter::class, new FakeAgentIdeMessageAdapter);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--workspace' => 'feature-docs',
+    ]);
+
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('┌ Sending Agent IDE message to docs/feature-docs')
+        ->and($output)->toContain('└ Sent Agent IDE message to docs/feature-docs through polyscope')
+        ->and($output)->toContain('Sent message to docs/feature-docs through polyscope.')
+        ->and($output)->not->toContain('"success"');
 });
 
 it('fails when the target workspace has no effective adapter', function (): void {

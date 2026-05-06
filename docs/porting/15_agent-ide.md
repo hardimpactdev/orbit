@@ -45,7 +45,9 @@ transports remain open.
   - [x] Stdin input reads the command input stream, preserves multiline bodies
     while removing one shell-added trailing newline, and fails before target
     resolution when combined with a positional message.
-  - [!] Human progress-tree rendering, adapter delivery diagnostics under
-    `error.data`, activity logging for the API endpoint, and real core adapter
-    transports remain unported. Next concrete action: add the documented human
-    progress-tree renderer for successful and failed delivery paths.
+  - [x] Human success rendering includes the documented completed progress tree
+    and app/workspace delivery summaries without leaking JSON envelopes.
+  - [!] Adapter delivery diagnostics under `error.data`, activity logging for
+    the API endpoint, and real core adapter transports remain unported. Next
+    concrete action: preserve adapter delivery failure diagnostics in
+    `error.data` for JSON and gateway-forwarded failures.

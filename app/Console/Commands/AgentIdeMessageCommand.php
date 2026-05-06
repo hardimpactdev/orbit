@@ -220,9 +220,20 @@ class AgentIdeMessageCommand extends Command
         $agentIde = $data['agent_ide'];
         $target = $agentIde['target'];
         $app = (string) ($target['app'] ?? '');
+        $workspace = $target['workspace'] ?? null;
+        $targetLabel = is_string($workspace) && $workspace !== ''
+            ? "{$app}/{$workspace}"
+            : $app;
         $adapter = (string) ($agentIde['adapter'] ?? '');
 
-        $this->line("Sent message to {$app} through {$adapter}.");
+        $this->line("┌ Sending Agent IDE message to {$targetLabel}");
+        $this->line('● Resolved target');
+        $this->line('● Resolved effective adapter');
+        $this->line('● Found active session');
+        $this->line('● Delivered message');
+        $this->line("└ Sent Agent IDE message to {$targetLabel} through {$adapter}");
+        $this->newLine();
+        $this->line("Sent message to {$targetLabel} through {$adapter}.");
 
         return self::SUCCESS;
     }
