@@ -131,7 +131,12 @@ Detail file for the node command family. Top-level command status lives in
     caller removes a gateway-owned app-node record through the Gateway API and
     reads the removed state back through forwarded `node:show`.
   - Contract gaps:
-    - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
+    - [!] DNS mapping cleanup for dev-app nodes is blocked until the clean repo
+      has gateway-owned development DNS mapping state. Current `dns:*`
+      commands intentionally manage caller-local resolver overrides only and
+      do not own gateway development DNS mappings. Next concrete action: design
+      the gateway-owned development DNS mapping model/API used by node
+      provisioning, node removal, and node doctor.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:agent-ide`.
   - Current implementation: `app/Console/Commands/NodeAgentIdeCommand.php`
@@ -191,12 +196,19 @@ Detail file for the node command family. Top-level command status lives in
     - [x] App-node creation forwarding.
     - [x] Control-node enrollment forwarding.
     - [x] Gateway convergence forwarding.
-    - [ ] Gateway adoption forwarding.
+    - [!] Gateway adoption forwarding is blocked until gateway-local adoption
+      can safely prove compatible already-provisioned host identity.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
     - [x] Control-node enrollment path with WireGuard config return.
     - [x] Gateway convergence path.
-    - [ ] Gateway adoption path.
+    - [!] Gateway adoption path is blocked on node-family adoption probes.
+      `NodesProbe::snapshotForAdopt()` currently returns an empty snapshot and
+      `NodesProbe::adopt()` skips the compatible identity cases that `node:new`
+      would need for safe gateway/app host adoption. Next concrete action:
+      implement the node-family compatible-host adoption probe for WireGuard
+      identity, platform, and runtime readiness, then wire `node:new` adoption
+      through that verified result.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
