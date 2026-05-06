@@ -3,9 +3,20 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(PlatformDetector::class, new class extends PlatformDetector
+    {
+        public function detectLocal(): string
+        {
+            return 'linux';
+        }
+    });
+});
 
 const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.95';
 

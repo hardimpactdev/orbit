@@ -5,12 +5,23 @@ declare(strict_types=1);
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(PlatformDetector::class, new class extends PlatformDetector
+    {
+        public function detectLocal(): string
+        {
+            return 'linux';
+        }
+    });
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();

@@ -12,13 +12,19 @@ use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Services\Platform\PlatformDetector;
 use RuntimeException;
+use Throwable;
 
 final readonly class NodesProbe
 {
     private const array SUPPORTED_ROLES = ['control', 'gateway', 'app'];
 
     private const array SUPPORTED_AGENT_IDE_ADAPTERS = ['none', 'opencode', 'polyscope'];
+
+    public function __construct(
+        private ?PlatformDetector $platformDetector = null,
+    ) {}
 
     public function key(): string
     {
@@ -282,6 +288,38 @@ final readonly class NodesProbe
      */
     private function checkPlatformReality(Node $node): array
     {
+        if (! $node->is_local) {
+            return [];
+        }
+
+        try {
+            $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
+        } catch (Throwable $e) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.platform_unsupported',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Could not detect local platform for {$node->name}: {$e->getMessage()}",
+                ),
+            ];
+        }
+
+        if ($node->platform !== $observedPlatform) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.platform_record_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Node platform record '{$node->platform}' does not match local platform '{$observedPlatform}'.",
+                    detail: [
+                        'recorded' => $node->platform,
+                        'observed' => $observedPlatform,
+                    ],
+                ),
+            ];
+        }
+
         return [];
     }
 

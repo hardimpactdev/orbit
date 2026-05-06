@@ -12,6 +12,7 @@ use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -587,7 +588,7 @@ describe('external service stubs', function (): void {
         expect($wireguard)->toHaveCount(0);
     });
 
-    it('returns empty for platform reality checks', function (): void {
+    it('returns empty for platform reality checks on remote nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -604,6 +605,67 @@ describe('external service stubs', function (): void {
         $platform = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.platform'));
 
         expect($platform)->toHaveCount(0);
+    });
+
+    it('detects local platform record mismatches', function (): void {
+        $probe = new NodesProbe(new class extends PlatformDetector
+        {
+            public function detectLocal(): string
+            {
+                return 'macos_15-4';
+            }
+        });
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14-0',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_record_mismatch'));
+
+        expect($platform)->toHaveCount(1);
+        expect($platform[0]->kind)->toBe(DriftKind::Divergent);
+        expect($platform[0]->detail)->toBe([
+            'recorded' => 'macos_14-0',
+            'observed' => 'macos_15-4',
+        ]);
+    });
+
+    it('detects unsupported local platform detection', function (): void {
+        $probe = new NodesProbe(new class extends PlatformDetector
+        {
+            public function detectLocal(): string
+            {
+                throw new RuntimeException('Unsupported platform family: Solaris');
+            }
+        });
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'solaris_11',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_unsupported'));
+
+        expect($platform)->toHaveCount(1);
+        expect($platform[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($platform[0]->summary)->toBe('Could not detect local platform for test: Unsupported platform family: Solaris');
     });
 
     it('returns empty for SSH reachability checks', function (): void {

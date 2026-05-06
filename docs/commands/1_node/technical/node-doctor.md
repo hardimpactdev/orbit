@@ -123,13 +123,23 @@ These layers are implemented without external service dependencies:
    - Detects `NodeAccess` rows referencing missing or non-active nodes.
    - Checks both consumer and serving directions.
 
+### Implemented Local External Checks
+
+These layers perform bounded local-only external inspection. They do not SSH
+into remote nodes or mutate host state:
+
+- Platform reality (`node.platform_unsupported`, `node.platform_record_mismatch`)
+  - Runs only for the local node record.
+  - Detects the current host platform using `PlatformDetector`.
+  - Reports mismatch when the local node record's platform identifier differs
+    from local detection.
+
 ### Stubs (External Service Required)
 
 These layers return empty arrays. They are reserved for future probe
 implementations that require external services:
 
 - WireGuard identity (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
-- Platform reality (`node.platform_unsupported`, `node.platform_record_mismatch`)
 - SSH reachability (`node.app_ssh_unreachable`)
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node bootstrap readiness (`node.app_runtime_missing`, `node.node_identity_artifact_missing`)
