@@ -13,6 +13,7 @@ class ProxyRouteIntent
 {
     public function __construct(
         private readonly ProxyRouteQuery $query,
+        private readonly ProxyRouteRenderer $renderer,
     ) {}
 
     /**
@@ -59,7 +60,7 @@ class ProxyRouteIntent
                 'owner_type' => 'custom',
                 'kind' => $kind,
                 'config' => $config,
-                'source_hash' => $this->sourceHash($domain, $node->name, $kind, $config),
+                'source_hash' => $this->sourceHash($domain, $node->id, $kind, $config),
             ],
         );
 
@@ -184,14 +185,15 @@ class ProxyRouteIntent
     /**
      * @param  array<string, mixed>  $config
      */
-    private function sourceHash(string $domain, string $node, string $kind, array $config): string
+    private function sourceHash(string $domain, int $nodeId, string $kind, array $config): string
     {
-        return hash('sha256', json_encode([
+        return $this->renderer->sourceHash(new ProxyRoute([
+            'node_id' => $nodeId,
             'domain' => $domain,
-            'node' => $node,
             'kind' => $kind,
+            'owner_type' => 'custom',
             'config' => $config,
-        ], JSON_THROW_ON_ERROR));
+        ]));
     }
 
     /**
@@ -202,7 +204,7 @@ class ProxyRouteIntent
         return [
             'code' => 'proxy.enactment_deferred',
             'family' => 'proxy',
-            'message' => 'Proxy route intent was saved, but backend/TLS enactment is deferred until the proxy doctor enactor is ported.',
+            'message' => 'Proxy route intent was saved, but backend/TLS enactment is deferred to proxy doctor fix mode.',
             'next_command' => "doctor --family=proxy --fix --node={$node}",
         ];
     }
@@ -215,7 +217,7 @@ class ProxyRouteIntent
         return [
             'code' => 'proxy.cleanup_deferred',
             'family' => 'proxy',
-            'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred until the proxy doctor enactor is ported.',
+            'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.',
             'next_command' => "doctor --family=proxy --fix --node={$node}",
         ];
     }

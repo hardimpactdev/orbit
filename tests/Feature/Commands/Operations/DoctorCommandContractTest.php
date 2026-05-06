@@ -173,6 +173,34 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported proxy actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("0\t\t\t\t0\t0\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'proxy.route_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 

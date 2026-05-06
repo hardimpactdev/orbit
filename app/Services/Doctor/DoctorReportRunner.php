@@ -11,6 +11,7 @@ use App\Models\ProxyRoute;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 
 final readonly class DoctorReportRunner
@@ -22,6 +23,7 @@ final readonly class DoctorReportRunner
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
+        private ProxyRouteFixer $proxyRouteFixer,
     ) {}
 
     /**
@@ -60,13 +62,23 @@ final readonly class DoctorReportRunner
         if (in_array('proxy', $selectedFamilies, true)) {
             foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
                 $snapshot = $this->proxyRouteProbe->introspect($route);
-                $issues = [
-                    ...$issues,
-                    ...array_map(
-                        fn (DriftEntry $entry): array => $this->proxyIssuePayload($entry, $route),
-                        $this->proxyRouteProbe->diff($route, $snapshot),
-                    ),
-                ];
+
+                foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
+                    $action = $this->handleProxyAction($mode, $route, $entry);
+
+                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                        $actions[] = $action;
+
+                        continue;
+                    }
+
+                    $issue = $this->proxyIssuePayload($entry, $route);
+                    $issues[] = $issue;
+
+                    if ($action !== null) {
+                        $actions[] = $action;
+                    }
+                }
             }
         }
 
@@ -143,6 +155,35 @@ final readonly class DoctorReportRunner
             'summary' => $entry->summary,
             'detail' => $entry->detail,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleProxyAction(string $mode, ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        if ($mode !== 'fix') {
+            return null;
+        }
+
+        try {
+            return $this->proxyRouteFixer->fix($route, $entry);
+        } catch (\Throwable $e) {
+            $route->loadMissing('node');
+
+            return [
+                'family' => $entry->family,
+                'node' => $route->node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
     }
 
     /**

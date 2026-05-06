@@ -1755,12 +1755,18 @@ for the Saloon-based gateway transport pattern.
   - [~] Proxy doctor probes, fix/adopt map, and live backend/TLS inspection.
     - [x] Registry intent, owner eligibility, node eligibility, and custom-domain conflict probe foundation.
     - [x] Backend route and TLS reality inspection.
-    - [!] Fix/adopt map and doctor dispatcher/API integration.
-      - Verify-mode doctor dispatcher/API integration is ported for `--family=proxy`.
-      - Generic `--fix` / `--adopt` orchestration now reaches family dispatch
-        and records unsupported actions as skipped.
-      - Next concrete action: add proxy route/TLS reconcile and custom-route
-        adoption action handlers.
+    - [~] Fix/adopt map and doctor dispatcher/API integration.
+      - [x] Verify-mode doctor dispatcher/API integration is ported for
+        `--family=proxy`.
+      - [x] Generic `--fix` / `--adopt` orchestration now reaches family
+        dispatch and records unsupported actions as skipped.
+      - [x] Fix map handles custom `proxy.route_missing` and
+        `proxy.route_mismatch` through Caddy site reconciliation.
+      - [!] TLS repair, safe `proxy.route_extra` cleanup, and custom-route
+        adoption action handlers remain outstanding.
+      - Next concrete action: add Orbit-managed TLS material repair for custom
+        proxy routes, then define selected-route adoption scope for
+        `proxy.route_extra` / compatible `proxy.route_mismatch`.
 - [~] Port firewall rule family.
   - [x] Firewall abstraction seed exists at `docs/abstractions/4_firewall.md`.
   - [x] Firewall read foundation and `firewall:list`.

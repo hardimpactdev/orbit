@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -77,6 +78,29 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'fix',
             'families' => ['firewall_rule'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.summary.fixed', 1)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
+    });
+
+    it('passes proxy fix mode through to the doctor runner', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("0\t\t\t\t0\t0\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'fix',
+            'families' => ['proxy'],
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()

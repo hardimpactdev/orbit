@@ -7,6 +7,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteIntent;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -48,6 +49,10 @@ describe('ProxyRouteIntent', function (): void {
             ->and($result['meta']['action'])->toBe('created')
             ->and($result['meta']['warnings'][0]['code'])->toBe('proxy.enactment_deferred')
             ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())->toBeTrue();
+
+        $route = ProxyRoute::query()->where('domain', 'vite.docs.test')->firstOrFail();
+
+        expect($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route));
     });
 
     it('creates redirect intent with redirect code', function (): void {
