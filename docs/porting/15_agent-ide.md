@@ -54,7 +54,19 @@ transports remain open.
     metadata for authorized app/workspace delivery attempts without storing
     full message bodies, adapter credentials, raw adapter output, or secrets;
     the command tech contract is enforced by docs-lint.
-  - [!] Real core adapter transports remain unported. Next concrete action:
-    choose and implement the smallest real core adapter transport slice, or
-    defer it explicitly if external adapter process semantics need a product
-    decision.
+  - [x] OpenCode core message transport: the default container-bound adapter
+    resolves app/workspace targets to stored `agent_ide_workspace_id` values,
+    uses managed `opencode-server` endpoint and credential metadata when
+    present, posts the message to OpenCode's async prompt endpoint, and remains
+    covered by a focused HTTP-faked command test. Current docs:
+    `docs/commands/15_agent-ide/1_agent-ide-message/technical/1_agent-ide-message.md`.
+    Old evidence:
+    `../orbit-old-may/app/Services/OpenCodeDriver.php` and
+    `../orbit-old-may/docs/superpowers/specs/2026-04-13-agentation-webhook-plugin-design.md`.
+  - [!] Polyscope core message transport remains unported. Blocker: the clean
+    rebuild has no current Polyscope SDK dependency, no typed HTTP transport
+    contract, and no preserved Polyscope credential/config schema beyond legacy
+    evidence. Next concrete action: decide whether to add a first-party
+    Polyscope HTTP adapter contract using node/app config keys from the old
+    repo, add an SDK dependency, or defer Polyscope transport until the
+    tool-family Polyscope server credential/config workstream is ported.

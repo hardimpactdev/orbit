@@ -9,10 +9,12 @@ use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -117,6 +119,74 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
             'workspace' => null,
             'node' => 'app-1',
         ]);
+});
+
+it('delivers through the core OpenCode HTTP transport when no test adapter is bound', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+    ]);
+
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature-docs',
+        'path' => '/srv/docs/.worktrees/feature-docs',
+        'agent_ide' => 'opencode',
+        'agent_ide_workspace_id' => 'sess_abc',
+    ]);
+
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'opencode-server',
+        'config' => [
+            'endpoints' => [
+                ['name' => 'opencode', 'kind' => 'http', 'url' => 'https://opencode.app-1.test'],
+            ],
+        ],
+        'credentials' => [
+            'fields' => [
+                'username' => 'orbit',
+                'password' => 'secret',
+            ],
+        ],
+    ]);
+
+    Http::fake([
+        'https://opencode.app-1.test/session/sess_abc/prompt_async' => Http::response('', 204),
+    ]);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['session'])->toBe([
+            'id' => 'sess_abc',
+            'status' => 'active',
+        ])
+        ->and($payload['success']['data']['agent_ide']['delivery']['status'])->toBe('sent');
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://opencode.app-1.test/session/sess_abc/prompt_async'
+        && $request['text'] === 'Ship the docs'
+        && $request['directory'] === '/srv/docs/.worktrees/feature-docs'
+        && $request->hasHeader('Authorization'));
 });
 
 it('renders the human progress tree for an app target', function (): void {
