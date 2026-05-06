@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `--fix`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `--adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots local platform record mismatches. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots unambiguous WireGuard address mismatches and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -219,7 +219,7 @@ when a supported compatible record can be safely adopted:
 | Key | Behavior |
 | --- | --- |
 | `node.wireguard_peer_extra` | Skipped (requires WireGuard peer inspection). |
-| `node.wireguard_address_mismatch` | Skipped (requires peer identity verification). |
+| `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |
 
 ## Extensibility

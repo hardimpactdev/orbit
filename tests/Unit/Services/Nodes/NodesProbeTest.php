@@ -1165,6 +1165,56 @@ describe('adoption', function (): void {
         ]);
     });
 
+    it('snapshots unambiguous WireGuard address mismatches for adopt', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        $snapshot = $this->probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_address_mismatch'))->toBe([
+            'recorded' => '10.6.0.5',
+            'observed' => '10.6.0.8',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+    });
+
+    it('does not snapshot ambiguous WireGuard address mismatches for adopt', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.8/32, fd00::8/128',
+        ]);
+
+        $snapshot = $this->probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_address_mismatch'))->toBeNull();
+    });
+
     it('returns skipped results for adoptable keys', function (): void {
         $node = Node::create([
             'name' => 'test',
@@ -1223,6 +1273,37 @@ describe('adoption', function (): void {
             'observed' => 'macos_15-4',
         ]);
         expect($node->refresh()->platform)->toBe('macos_15-4');
+    });
+
+    it('adopts unambiguous WireGuard address mismatches', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
+        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_address_mismatch'));
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->action)->toBe(AdoptAction::Updated);
+        expect($wireguard[0]->detail)->toBe([
+            'recorded' => '10.6.0.5',
+            'observed' => '10.6.0.8',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+        expect($node->refresh()->wireguard_address)->toBe('10.6.0.8');
     });
 });
 

@@ -343,18 +343,22 @@ final readonly class NodesProbe
 
     private function peerAllowsWireGuardAddress(WireGuardPeer $peer, string $wireGuardAddress): bool
     {
-        $allowedIps = $peer->allowed_ips;
+        return in_array($wireGuardAddress, $this->peerAllowedAddresses($peer), true);
+    }
 
-        if (! is_string($allowedIps) || trim($allowedIps) === '') {
-            return false;
+    /**
+     * @return list<string>
+     */
+    private function peerAllowedAddresses(WireGuardPeer $peer): array
+    {
+        if (! is_string($peer->allowed_ips) || trim($peer->allowed_ips) === '') {
+            return [];
         }
 
-        $addresses = array_map(
+        return array_values(array_filter(array_map(
             fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
-            explode(',', $allowedIps),
-        );
-
-        return in_array($wireGuardAddress, $addresses, true);
+            explode(',', $peer->allowed_ips),
+        )));
     }
 
     /**
@@ -613,6 +617,29 @@ final readonly class NodesProbe
     {
         $items = [];
 
+        $peer = WireGuardPeer::query()
+            ->where('node_id', $node->id)
+            ->first();
+
+        if (
+            $node->status === 'active'
+            && $node->role !== 'gateway'
+            && is_string($node->wireguard_address)
+            && $node->wireguard_address !== ''
+            && $peer instanceof WireGuardPeer
+            && ! $this->peerAllowsWireGuardAddress($peer, $node->wireguard_address)
+        ) {
+            $allowedAddresses = $this->peerAllowedAddresses($peer);
+
+            if (count($allowedAddresses) === 1) {
+                $items['node.wireguard_address_mismatch'] = [
+                    'recorded' => $node->wireguard_address,
+                    'observed' => $allowedAddresses[0],
+                    'allowed_ips' => $peer->allowed_ips,
+                ];
+            }
+        }
+
         if ($node->is_local) {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
@@ -645,12 +672,42 @@ final readonly class NodesProbe
             summary: 'WireGuard peer extra adoption skipped.',
         );
 
-        $results[] = new AdoptResult(
-            family: $this->key(),
-            key: 'node.wireguard_address_mismatch',
-            action: AdoptAction::Skipped,
-            summary: 'WireGuard address mismatch adoption skipped.',
-        );
+        $wireGuardAddressMismatch = $snapshot->get('node.wireguard_address_mismatch');
+
+        if ($wireGuardAddressMismatch === null) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.wireguard_address_mismatch',
+                action: AdoptAction::Skipped,
+                summary: 'WireGuard address mismatch adoption skipped.',
+            );
+        } else {
+            $observedAddress = $wireGuardAddressMismatch['observed'] ?? null;
+
+            if (is_string($observedAddress) && $observedAddress !== '') {
+                $node->update(['wireguard_address' => $observedAddress]);
+
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_address_mismatch',
+                    action: AdoptAction::Updated,
+                    summary: "Updated WireGuard address for {$node->name} to {$observedAddress}.",
+                    detail: [
+                        'recorded' => $wireGuardAddressMismatch['recorded'] ?? $node->wireguard_address,
+                        'observed' => $observedAddress,
+                        'allowed_ips' => $wireGuardAddressMismatch['allowed_ips'] ?? null,
+                    ],
+                );
+            } else {
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_address_mismatch',
+                    action: AdoptAction::Skipped,
+                    summary: 'WireGuard address mismatch adoption skipped because the observed address is unavailable.',
+                    detail: $wireGuardAddressMismatch,
+                );
+            }
+        }
 
         $platformRecordMismatch = $snapshot->get('node.platform_record_mismatch');
 
