@@ -16,6 +16,7 @@ use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
 use App\Services\Platform\PlatformDetector;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use RuntimeException;
 use Throwable;
 
@@ -29,6 +30,7 @@ final readonly class NodesProbe
         private ?PlatformDetector $platformDetector = null,
         private ?RemoteShell $remoteShell = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
+        private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
     ) {}
 
     public function key(): string
@@ -507,6 +509,11 @@ final readonly class NodesProbe
                 : app(RuntimeBackendProbe::class));
     }
 
+    private function wireGuardPeerRealityProbe(): WireGuardPeerRealityProbe
+    {
+        return $this->wireGuardPeerRealityProbe ?? app(WireGuardPeerRealityProbe::class);
+    }
+
     /**
      * @return list<DriftEntry>
      */
@@ -625,6 +632,29 @@ final readonly class NodesProbe
             ->first();
 
         if (
+            $node->status !== 'active'
+            && $node->role !== 'gateway'
+            && $peer instanceof WireGuardPeer
+            && is_string($peer->public_key)
+            && $peer->public_key !== ''
+        ) {
+            try {
+                $peerReality = $this->wireGuardPeerRealityProbe()->peers()[$peer->public_key] ?? null;
+            } catch (Throwable) {
+                $peerReality = null;
+            }
+
+            if ($peerReality !== null && count($peerReality->allowedAddresses) === 1) {
+                $items['node.wireguard_peer_extra'] = [
+                    'recorded_status' => $node->status,
+                    'public_key' => $peer->public_key,
+                    'observed' => $peerReality->allowedAddresses[0],
+                    'allowed_ips' => $peerReality->allowedIps,
+                ];
+            }
+        }
+
+        if (
             $node->status === 'active'
             && $node->role !== 'gateway'
             && is_string($node->wireguard_address)
@@ -686,12 +716,46 @@ final readonly class NodesProbe
     {
         $results = [];
 
-        $results[] = new AdoptResult(
-            family: $this->key(),
-            key: 'node.wireguard_peer_extra',
-            action: AdoptAction::Skipped,
-            summary: 'WireGuard peer extra adoption skipped.',
-        );
+        $wireGuardPeerExtra = $snapshot->get('node.wireguard_peer_extra');
+
+        if ($wireGuardPeerExtra === null) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.wireguard_peer_extra',
+                action: AdoptAction::Skipped,
+                summary: 'WireGuard peer extra adoption skipped.',
+            );
+        } else {
+            $observedAddress = $wireGuardPeerExtra['observed'] ?? null;
+
+            if (is_string($observedAddress) && $observedAddress !== '') {
+                $node->update([
+                    'status' => 'active',
+                    'wireguard_address' => $observedAddress,
+                ]);
+
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_peer_extra',
+                    action: AdoptAction::Updated,
+                    summary: "Activated node {$node->name} from compatible live WireGuard peer reality.",
+                    detail: [
+                        'recorded_status' => $wireGuardPeerExtra['recorded_status'] ?? null,
+                        'public_key' => $wireGuardPeerExtra['public_key'] ?? null,
+                        'observed' => $observedAddress,
+                        'allowed_ips' => $wireGuardPeerExtra['allowed_ips'] ?? [],
+                    ],
+                );
+            } else {
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: 'node.wireguard_peer_extra',
+                    action: AdoptAction::Skipped,
+                    summary: 'WireGuard peer extra adoption skipped because the observed address is unavailable.',
+                    detail: $wireGuardPeerExtra,
+                );
+            }
+        }
 
         $wireGuardAddressMismatch = $snapshot->get('node.wireguard_address_mismatch');
 

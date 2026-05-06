@@ -165,14 +165,18 @@ They do not mutate host state:
 
 ### Stubs (External Service Required)
 
-These layers return empty arrays. They are reserved for future probe
-implementations that require external services:
+These layers are reserved for future probe implementations that require
+additional external services:
 
 - WireGuard live interface reality (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
   - `WireGuardPeerRealityProbe` can read and parse live `wg show <interface>
     allowed-ips` output by public key.
-  - `NodesProbe` does not yet consume this read-only service for missing/extra
-    peer adoption.
+  - `NodesProbe` consumes this read-only service for selected non-active,
+    non-gateway node records that already have registry peer material. Adoption
+    activates the node only when the registry peer public key is present in live
+    WireGuard reality and has exactly one unambiguous allowed address.
+  - Active-node missing peer adoption remains unavailable because the clean
+    registry has no peer public key to bind to live peer material.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node identity artifact readiness (`node.node_identity_artifact_missing`)
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
@@ -222,7 +226,7 @@ when a supported compatible record can be safely adopted:
 
 | Key | Behavior |
 | --- | --- |
-| `node.wireguard_peer_extra` | Skipped until a live WireGuard peer reality probe can prove that the selected scope names a compatible already-provisioned node identity. |
+| `node.wireguard_peer_extra` | Activates the selected non-active node record when existing registry peer material matches a live WireGuard peer by public key and that live peer has exactly one unambiguous allowed address. |
 | `node.wireguard_address_mismatch` | Updates the node record's WireGuard address when an existing gateway-owned peer has exactly one unambiguous allowed address. |
 | `node.app_runtime_missing` | Verifies compatible app runtime readiness when the runtime backend is available; returns a conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Updates the node record to the observed platform when local platform detection is supported and unambiguous. |

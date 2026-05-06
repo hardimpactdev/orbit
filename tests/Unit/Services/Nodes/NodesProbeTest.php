@@ -18,6 +18,7 @@ use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -1214,6 +1215,67 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.wireguard_address_mismatch'))->toBeNull();
     });
 
+    it('snapshots compatible live WireGuard peer extras for adopt', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "peer-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'decommissioned',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'public_key' => 'peer-public-key',
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        $snapshot = $this->probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_peer_extra'))->toBe([
+            'recorded_status' => 'decommissioned',
+            'public_key' => 'peer-public-key',
+            'observed' => '10.6.0.8',
+            'allowed_ips' => ['10.6.0.8/32'],
+        ]);
+    });
+
+    it('does not snapshot unproven live WireGuard peer extras for adopt', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "different-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'decommissioned',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'public_key' => 'peer-public-key',
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        $snapshot = $this->probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.wireguard_peer_extra'))->toBeNull();
+    });
+
     it('snapshots available app runtime readiness for adopt', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
@@ -1360,6 +1422,44 @@ describe('adoption', function (): void {
             'allowed_ips' => '10.6.0.8/32',
         ]);
         expect($node->refresh()->wireguard_address)->toBe('10.6.0.8');
+    });
+
+    it('adopts compatible live WireGuard peer extras', function (): void {
+        Process::preventStrayProcesses();
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "peer-public-key\t10.6.0.8/32\n"),
+        ]);
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'control',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'decommissioned',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'public_key' => 'peer-public-key',
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
+        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_peer_extra'));
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->action)->toBe(AdoptAction::Updated);
+        expect($wireguard[0]->detail)->toBe([
+            'recorded_status' => 'decommissioned',
+            'public_key' => 'peer-public-key',
+            'observed' => '10.6.0.8',
+            'allowed_ips' => ['10.6.0.8/32'],
+        ]);
+        expect($node->refresh()->status)->toBe('active');
+        expect($node->wireguard_address)->toBe('10.6.0.8');
     });
 
     it('adopts available app runtime readiness', function (): void {

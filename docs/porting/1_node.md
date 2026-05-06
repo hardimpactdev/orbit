@@ -202,20 +202,21 @@ Detail file for the node command family. Top-level command status lives in
     - [x] App-node provisioning path.
     - [x] Control-node enrollment path with WireGuard config return.
     - [x] Gateway convergence path.
-    - [!] Gateway adoption path is blocked on node-family adoption probes.
-      Local platform record adoption and unambiguous WireGuard address adoption
-      are implemented, and app runtime readiness now produces adoption
-      verification/conflict results. `node:new` still needs a compatible
-      gateway/app host boundary for missing/extra WireGuard identity before it
-      can safely adopt already-provisioned hosts. The old repo skipped these
-      cases, and the clean repo can currently inspect only gateway registry
-      peer rows, not live WireGuard peer reality or remote node identity
-      artifacts. Registry-only peer rows are insufficient to attach or recreate
-      node identity safely. A read-only `WireGuardPeerRealityProbe` now parses
-      live `wg show <interface> allowed-ips` output by public key. Next concrete
-      action: wire that probe into node-family adoption so missing/extra peer
-      adoption is enabled only for proven compatible identities, then wire
-      `node:new` adoption through the verified node-family adoption result.
+    - [!] Gateway adoption path is blocked on node:new command integration.
+      Local platform record adoption, unambiguous WireGuard address adoption,
+      app runtime readiness verification/conflict results, and proven live
+      WireGuard peer-extra adoption are implemented in node-family adoption.
+      Peer-extra adoption activates a selected non-active, non-gateway node
+      record only when the registry already contains peer material, the peer
+      public key is present in live WireGuard reality, and the live peer has
+      exactly one unambiguous allowed address. Active-node missing-peer adoption
+      remains unavailable because the clean registry has no peer public key to
+      bind to unowned live peer material, and the old repo skipped these cases.
+      Next concrete action: wire `node:new` gateway-local adoption through
+      `NodesProbe::snapshotForAdopt()`/`adopt()` verified results for compatible
+      existing node records, while keeping missing-peer cases as conflict or
+      `doctor --family=node --fix` handoff until a node identity artifact probe
+      can prove them safely.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
