@@ -1373,7 +1373,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Hidden `orbit-scheduler` daemon command, one-tick test path,
     scheduler-specific Supervisor program definition/render/install helper on
     top of the shared runtime-backend renderer, and focused renderer coverage.
-- [ ] Port scheduler heartbeat reporting and run-history intake endpoint.
+- [x] Port scheduler heartbeat reporting and run-history intake endpoint.
+  - [x] Added authenticated scheduler heartbeat intake keyed to the caller's
+    WireGuard node identity, `scheduler_states` upsert behavior, typed
+    `StoreSchedulerHeartbeatRequest` / `SchedulerHeartbeatResponse` client
+    DTOs, and focused API / gateway-client coverage.
+  - [x] Run-history intake was already present through the authenticated
+    `POST /api/schedules/runs` endpoint and typed scheduler gateway request.
 - [ ] Port schedule doctor probe and fix map.
 
 ## Runtime Backend And Scheduler Workstream

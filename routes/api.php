@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ScheduleDestroyController;
 use App\Http\Controllers\Api\ScheduleListController;
 use App\Http\Controllers\Api\ScheduleLogsController;
+use App\Http\Controllers\Api\SchedulerHeartbeatController;
 use App\Http\Controllers\Api\ScheduleRunController;
 use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\ScheduleShowController;
@@ -70,6 +71,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/profile', ProfileController::class);
         Route::get('/schedules', ScheduleListController::class);
         Route::post('/schedules', ScheduleStoreController::class);
+        Route::post('/schedules/heartbeat', SchedulerHeartbeatController::class);
         Route::post('/schedules/{name}/run', ScheduleRunController::class);
         Route::get('/schedules/{name}/logs', ScheduleLogsController::class);
         Route::post('/schedules/runs', ScheduleRunStoreController::class);
