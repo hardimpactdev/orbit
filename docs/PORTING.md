@@ -1307,7 +1307,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     Supervisor runtime-unit cleanup for main app and existing workspaces,
     repairable warning output after post-intent cleanup drift, human/JSON
     renderers, and focused Pest coverage.
-- [ ] Port process start/stop/restart commands against Supervisor.
+- [x] Port process start/stop/restart commands against Supervisor.
   - [x] `process:start` gateway-owned Supervisor lifecycle action, typed
     gateway API forwarding for control/app callers, app/workspace context
     resolution, durable `started` process event recording, partial bulk failure
@@ -1316,6 +1316,10 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     API forwarding for control/app callers, app/workspace context resolution,
     durable `stopped` process event recording, partial bulk failure reporting,
     human/JSON renderers, and focused Pest coverage.
+  - [x] `process:restart` gateway-owned Supervisor lifecycle action, typed
+    gateway API forwarding for control/app callers, app/workspace context
+    resolution, durable `stopped` and `started` process event recording, partial
+    bulk failure reporting, human/JSON renderers, and focused Pest coverage.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.
 
