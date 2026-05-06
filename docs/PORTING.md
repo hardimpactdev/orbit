@@ -276,8 +276,9 @@ yet satisfy the full product contracts.
     - `tests/Feature/Commands/Nodes/NodeListRolePathTest.php` (gateway-local vs control/app forwarding paths)
     - `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` (JSON envelope and field contract)
     - `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` (human table and prose contract)
+    - `tests/Unit/Services/Nodes/NodesProbeTest.php` (node-family doctor probe drift)
   - Contract gaps: access-policy visibility, `--doctor`, and E2E verification
-    remain tracked in the node workstream.
+    are resolved; remaining node-read gaps are tracked in the node workstream.
 - [~] `node:show`
   - Current implementation: `app/Console/Commands/NodeShowCommand.php`
   - Current docs: `docs/commands/1_node/4_node-show`
@@ -1689,7 +1690,7 @@ for the Saloon-based gateway transport pattern.
     contracts.
 - [~] Port node doctor contracts and checks.
   - [x] `NodesProbe` DTOs/enums, technical contract, in-memory registry/access/default checks, and focused unit tests.
-  - [ ] `node:list --doctor` command handoff and renderer integration.
+  - [x] `node:list --doctor` command handoff and renderer integration.
   - [ ] External-reality checks: WireGuard peer reality, platform detection,
     SSH reachability, gateway/app runtime readiness, development TLD, and PHP
     default verification.
