@@ -1,0 +1,150 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Tools\InstallToolRequest;
+use App\Models\LocalGatewaySettings;
+use App\Models\Node;
+use App\Models\NodeTool;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
+
+uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
+
+function createToolInstallLocalNode(string $role = 'gateway'): Node
+{
+    return Node::factory()->create([
+        'name' => "local-{$role}",
+        'role' => $role,
+        'host' => '10.6.0.1',
+        'wireguard_address' => '10.6.0.1',
+        'is_local' => true,
+    ]);
+}
+
+describe('tool:install command contract', function (): void {
+    it('installs a managed tool on a node', function (): void {
+        createToolInstallLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $shell = new ToolInstallRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'redis')->exists())->toBeTrue()
+            ->and($payload['success']['data']['tool'])->toMatchArray([
+                'name' => 'redis',
+                'node' => 'app-1',
+                'state' => 'installed',
+            ])
+            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts[0])->toContain('docker compose')
+            ->and($shell->scripts[0])->toContain('pull')
+            ->and($shell->scripts[0])->toContain('up -d');
+    });
+
+    it('rejects tools without an install action', function (): void {
+        createToolInstallLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $shell = new ToolInstallRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'caddy', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('tool.unsupported_action')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'tool' => 'caddy',
+                'action' => 'install',
+            ])
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('rejects invalid status values', function (): void {
+        createToolInstallLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $shell = new ToolInstallRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1', '--status' => 'invalid', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('invalid_status')
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('forwards non-gateway callers through the typed gateway request', function (): void {
+        createToolInstallLocalNode('control');
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        MockClient::global([
+            InstallToolRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'tool' => [
+                            'name' => 'redis',
+                            'node' => 'app-1',
+                            'state' => 'installed',
+                        ],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool']['name'])->toBe('redis');
+    });
+
+    it('requires node or app when target is ambiguous', function (): void {
+        createToolInstallLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        Node::factory()->create(['name' => 'app-2', 'role' => 'app', 'status' => 'active']);
+        $shell = new ToolInstallRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($shell->scripts)->toBe([]);
+    });
+});
+
+final class ToolInstallRecordingShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
