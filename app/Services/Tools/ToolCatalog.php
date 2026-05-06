@@ -86,7 +86,7 @@ final readonly class ToolCatalog
 
         return match ($tool) {
             'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => [
-                'install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'safe-fix', 'safe-adopt',
+                'install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'credentials', 'safe-fix', 'safe-adopt',
             ],
             'php' => ['install', 'remove', 'update'],
             'polyscope-server', 'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'safe-fix'],

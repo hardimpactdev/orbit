@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\ScheduleShowController;
 use App\Http\Controllers\Api\ScheduleStoreController;
 use App\Http\Controllers\Api\ScheduleSyncController;
+use App\Http\Controllers\Api\ToolCredentialsController;
 use App\Http\Controllers\Api\ToolListController;
 use App\Http\Controllers\Api\ToolLogsController;
 use App\Http\Controllers\Api\ToolLogsStreamController;
@@ -126,6 +127,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/apps/{app}', AppShowController::class);
         Route::get('/tools', ToolListController::class);
         Route::delete('/tools/{tool}', ToolRemoveController::class);
+        Route::get('/tools/{tool}/credentials', ToolCredentialsController::class);
         Route::get('/tools/{tool}/logs/stream', ToolLogsStreamController::class);
         Route::get('/tools/{tool}/logs', ToolLogsController::class);
         Route::post('/tools/{tool}/reload', ToolReloadController::class);
