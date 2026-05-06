@@ -155,4 +155,42 @@ describe('GET /api/me', function (): void {
         expect($json['success']['data']['self'])->not->toHaveKey('id')
             ->and($json['success']['data']['gateway'])->not->toHaveKey('id');
     });
+
+    it('authenticates scheduler clients by wireguard address instead of client headers', function (): void {
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'app-1',
+            'role' => 'app',
+            'wireguard_address' => '10.6.0.9',
+        ]));
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]));
+
+        $response = $this
+            ->withHeaders(['X-Orbit-Client' => 'scheduler'])
+            ->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.self.name', 'app-1')
+            ->assertJsonPath('success.data.self.role', 'app');
+    });
+
+    it('rejects spoofed scheduler client headers without a known wireguard peer', function (): void {
+        DB::table('nodes')->insert(meNodeRow([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'is_local' => true,
+        ]));
+
+        $response = $this
+            ->withHeaders(['X-Orbit-Client' => 'scheduler'])
+            ->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.99']);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+    });
 });

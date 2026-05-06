@@ -1357,8 +1357,13 @@ across the process and schedule families.
     timestamps, plus `schedule_locks` for per-node stable schedule-key locks.
     Both tables are local-node scheduler state foundations; gateway schedule
     intent and durable run-history schemas remain separate tracker items.
-- [ ] Add scheduler-to-gateway authentication using the existing WireGuard
+- [x] Add scheduler-to-gateway authentication using the existing WireGuard
   node identity.
+  - Scheduler-originated gateway calls reuse the existing gateway transport and
+    `WireGuardIdentity` middleware: the gateway authenticates the scheduler by
+    source WireGuard address mapped to an active node, while
+    `GatewayConnector::forScheduler()` only labels the client as `scheduler`
+    for activity/diagnostic context and is not trusted as identity.
 - [ ] Add the gateway run-history intake endpoint and typed request.
 - [ ] Docker E2E base image runs `supervisord -n` as PID 1 (under `tini`)
   and ships pre-installed Supervisor and `orbit_scheduler` program files.

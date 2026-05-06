@@ -42,3 +42,16 @@ it('sends Accept: application/json by default', function (): void {
 
     expect($headers)->toHaveKey('Accept', 'application/json');
 });
+
+it('can identify scheduler-originated gateway clients without changing transport trust', function (): void {
+    $connector = GatewayConnector::forScheduler();
+    $headers = $connector->headers()->all();
+    $config = $connector->config()->all();
+
+    expect($headers)
+        ->toHaveKey('Accept', 'application/json')
+        ->toHaveKey('X-Orbit-Client', 'scheduler')
+        ->and($config)
+        ->toHaveKey('verify', '/path/to/ca.pem')
+        ->toHaveKey('allow_redirects', false);
+});

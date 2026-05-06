@@ -19,7 +19,12 @@ trait HasCorrelationHeader
 
         $pendingRequest->headers()->add(
             'X-Orbit-Client',
-            app()->runningInConsole() ? 'cli' : 'api',
+            $this->orbitClientName(),
         );
+    }
+
+    protected function orbitClientName(): string
+    {
+        return app()->runningInConsole() ? 'cli' : 'api';
     }
 }

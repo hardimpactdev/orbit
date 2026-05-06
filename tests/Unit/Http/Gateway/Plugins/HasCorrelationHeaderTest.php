@@ -47,3 +47,23 @@ it('omits X-Orbit-Request-Id header when no correlation id is active', function 
 
     $trait->bootHasCorrelationHeader($pending);
 });
+
+it('uses an overridden client name when a gateway caller supplies one', function (): void {
+    $trait = new class
+    {
+        use HasCorrelationHeader;
+
+        protected function orbitClientName(): string
+        {
+            return 'scheduler';
+        }
+    };
+
+    $pending = Mockery::mock(PendingRequest::class);
+    $headers = Mockery::mock(ArrayStore::class);
+    $headers->shouldReceive('add')->with('X-Orbit-Client', 'scheduler')->once();
+    $headers->shouldNotReceive('add')->with('X-Orbit-Request-Id', Mockery::any());
+    $pending->shouldReceive('headers')->andReturn($headers);
+
+    $trait->bootHasCorrelationHeader($pending);
+});

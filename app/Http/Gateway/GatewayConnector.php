@@ -14,6 +14,15 @@ final class GatewayConnector extends Connector
     use AlwaysThrowOnErrors;
     use HasCorrelationHeader;
 
+    public function __construct(
+        private readonly string $clientName = 'cli',
+    ) {}
+
+    public static function forScheduler(): self
+    {
+        return new self('scheduler');
+    }
+
     public function resolveBaseUrl(): string
     {
         return LocalGatewaySettings::current()->gateway_url ?? '';
@@ -26,8 +35,13 @@ final class GatewayConnector extends Connector
     {
         return [
             'Accept' => 'application/json',
-            'X-Orbit-Client' => 'cli',
+            'X-Orbit-Client' => $this->orbitClientName(),
         ];
+    }
+
+    protected function orbitClientName(): string
+    {
+        return $this->clientName;
     }
 
     /**
