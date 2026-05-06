@@ -12,6 +12,7 @@ use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\WireGuardPeer;
 use App\Services\Platform\PlatformDetector;
 use RuntimeException;
 use Throwable;
@@ -280,7 +281,76 @@ final readonly class NodesProbe
      */
     private function checkWireguardIdentity(Node $node): array
     {
+        $peer = WireGuardPeer::query()
+            ->where('node_id', $node->id)
+            ->first();
+
+        if ($node->status !== 'active') {
+            if ($peer instanceof WireGuardPeer) {
+                return [
+                    new DriftEntry(
+                        family: $this->key(),
+                        key: 'node.wireguard_peer_extra',
+                        kind: DriftKind::Extra,
+                        summary: "WireGuard peer for non-active node {$node->name} is still present.",
+                    ),
+                ];
+            }
+
+            return [];
+        }
+
+        if ($node->role === 'gateway') {
+            return [];
+        }
+
+        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+            return [];
+        }
+
+        if (! $peer instanceof WireGuardPeer) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.wireguard_peer_missing',
+                    kind: DriftKind::Missing,
+                    summary: "WireGuard peer for node {$node->name} is missing.",
+                ),
+            ];
+        }
+
+        if (! $this->peerAllowsWireGuardAddress($peer, $node->wireguard_address)) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.wireguard_address_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "WireGuard peer for node {$node->name} does not allow recorded address {$node->wireguard_address}.",
+                    detail: [
+                        'recorded' => $node->wireguard_address,
+                        'allowed_ips' => $peer->allowed_ips,
+                    ],
+                ),
+            ];
+        }
+
         return [];
+    }
+
+    private function peerAllowsWireGuardAddress(WireGuardPeer $peer, string $wireGuardAddress): bool
+    {
+        $allowedIps = $peer->allowed_ips;
+
+        if (! is_string($allowedIps) || trim($allowedIps) === '') {
+            return false;
+        }
+
+        $addresses = array_map(
+            fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
+            explode(',', $allowedIps),
+        );
+
+        return in_array($wireGuardAddress, $addresses, true);
     }
 
     /**

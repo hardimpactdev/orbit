@@ -126,6 +126,14 @@ These layers are implemented without external service dependencies:
 6. **Development TLD intent** (`node.development_tld_missing`)
    - Detects development app-node records without a `nodes.tld` value.
 
+7. **WireGuard peer intent** (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
+   - Detects missing `wireguard_peers` rows for active non-gateway node records.
+   - Detects `wireguard_peers` rows attached to non-active node records.
+   - Checks `wireguard_peers.allowed_ips` against the node record's `wireguard_address`.
+   - Gateway node peer rows are not required by this in-memory layer because first
+     gateway bootstrap can complete before gateway-side peer material is mirrored
+     into the clean registry.
+
 ### Implemented Local External Checks
 
 These layers perform bounded local-only external inspection. They do not SSH
@@ -142,7 +150,7 @@ into remote nodes or mutate host state:
 These layers return empty arrays. They are reserved for future probe
 implementations that require external services:
 
-- WireGuard identity (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
+- WireGuard live interface reality (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
 - SSH reachability (`node.app_ssh_unreachable`)
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node bootstrap readiness (`node.app_runtime_missing`, `node.node_identity_artifact_missing`)

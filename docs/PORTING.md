@@ -1690,10 +1690,12 @@ for the Saloon-based gateway transport pattern.
     contracts.
 - [~] Port node doctor contracts and checks.
   - [x] `NodesProbe` DTOs/enums, technical contract, in-memory registry/access/default checks, and focused unit tests.
-  - [x] `node:list --doctor` command handoff and renderer integration.
-  - [~] External-reality checks:
-    - [ ] WireGuard peer reality.
-    - [x] local platform detection.
+	  - [x] `node:list --doctor` command handoff and renderer integration.
+	  - [~] External-reality checks:
+	    - [~] WireGuard peer reality:
+	      - [x] registry-backed peer material intent.
+	      - [ ] live gateway interface reality.
+	    - [x] local platform detection.
     - [ ] SSH reachability.
     - [ ] gateway/app runtime readiness.
     - [~] development TLD:

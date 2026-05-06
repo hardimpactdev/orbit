@@ -191,6 +191,14 @@ describe('node:list human renderer contract', function (): void {
 
     it('renders healthy doctor summary when --doctor finds no issues', function (): void {
         DB::table('nodes')->insert(nodeListHumanRow(['name' => 'healthy-app']));
+        DB::table('wireguard_peers')->insert([
+            'node_id' => DB::table('nodes')->where('name', 'healthy-app')->value('id'),
+            'public_key' => 'healthy-public-key',
+            'private_key' => 'healthy-private-key',
+            'allowed_ips' => '10.6.0.7/32',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $exitCode = Artisan::call('node:list', [
             '--doctor' => true,

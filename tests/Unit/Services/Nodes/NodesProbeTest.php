@@ -11,6 +11,7 @@ use App\Enums\DriftKind;
 use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -569,7 +570,7 @@ describe('access grants', function (): void {
 });
 
 describe('external service stubs', function (): void {
-    it('returns empty for wireguard identity checks', function (): void {
+    it('detects missing WireGuard peer material for active non-gateway nodes', function (): void {
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -583,9 +584,84 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_missing'));
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('accepts matching WireGuard peer material', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $wireguard = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.wireguard'));
 
         expect($wireguard)->toHaveCount(0);
+    });
+
+    it('detects WireGuard peer address mismatches', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_address_mismatch'));
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects WireGuard peers attached to non-active nodes as extra', function (): void {
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'decommissioned',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        WireGuardPeer::factory()->create([
+            'node_id' => $node->id,
+            'allowed_ips' => '10.6.0.5/32',
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_extra'));
+
+        expect($wireguard)->toHaveCount(1);
+        expect($wireguard[0]->kind)->toBe(DriftKind::Extra);
     });
 
     it('returns empty for platform reality checks on remote nodes', function (): void {

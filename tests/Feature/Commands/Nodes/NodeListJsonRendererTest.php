@@ -316,6 +316,14 @@ describe('node:list JSON renderer contract', function (): void {
 
     it('attaches healthy doctor meta without failures when --doctor finds no issues', function (): void {
         DB::table('nodes')->insert(nodeListJsonRow(['name' => 'healthy-app']));
+        DB::table('wireguard_peers')->insert([
+            'node_id' => DB::table('nodes')->where('name', 'healthy-app')->value('id'),
+            'public_key' => 'healthy-public-key',
+            'private_key' => 'healthy-private-key',
+            'allowed_ips' => '10.6.0.7/32',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $exitCode = Artisan::call('node:list', [
             '--json' => true,
