@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
@@ -166,3 +168,169 @@ describe('proxy registry probe foundation', function (): void {
             ->and((new ProxyRouteProbe)->diff($workspaceRoute, new ProbeSnapshot([])))->toBe([]);
     });
 });
+
+describe('proxy backend and TLS reality', function (): void {
+    it('introspects backend route and TLS material for the selected route', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+        );
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspect($route);
+
+        expect($snapshot->get('vite.docs.test'))->toMatchArray([
+            'route_exists' => true,
+            'route_hash' => str_repeat('a', 64),
+            'cert_path' => '/etc/orbit/certs/vite.docs.test.crt',
+            'key_path' => '/etc/orbit/certs/vite.docs.test.key',
+            'cert_exists' => true,
+            'key_exists' => true,
+        ])
+            ->and($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->options[0]['env']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test');
+    });
+
+    it('detects missing backend route reality', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite.docs.test' => [
+                'route_exists' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects backend route hash mismatch', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('b', 64),
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail)->toMatchArray([
+                'expected_hash' => str_repeat('a', 64),
+                'observed_hash' => str_repeat('b', 64),
+            ]);
+    });
+
+    it('detects missing Orbit-managed TLS material', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => false,
+                'key_exists' => true,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects mismatched Orbit-managed TLS paths', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => true,
+                'key_exists' => true,
+                'cert_path' => '/tmp/wrong.crt',
+                'key_path' => '/tmp/wrong.key',
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('skips TLS drift for externally managed routes', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'upstream' => 'http://127.0.0.1:5173',
+                'tls' => ['managed_by' => 'external'],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite.docs.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => false,
+                'key_exists' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+    });
+});
+
+final class ProxyProbeRecordingRemoteShell implements RemoteShell
+{
+    /** @var list<Node> */
+    public array $nodes = [];
+
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
+    public function __construct(
+        private readonly string $stdout,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+        $this->options[] = $options;
+
+        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}

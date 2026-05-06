@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
@@ -18,6 +19,10 @@ final readonly class ProxyRouteProbe
 
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
+    public function __construct(
+        private ?RemoteShell $remoteShell = null,
+    ) {}
+
     public function key(): string
     {
         return 'proxy';
@@ -30,7 +35,60 @@ final readonly class ProxyRouteProbe
 
     public function introspect(ProxyRoute $route): ProbeSnapshot
     {
-        return new ProbeSnapshot([]);
+        $route->loadMissing('node');
+
+        if (! $route->node instanceof Node || $route->domain === '') {
+            return new ProbeSnapshot([]);
+        }
+
+        $script = <<<'BASH'
+set -euo pipefail
+domain="$ORBIT_PROXY_DOMAIN"
+path="/etc/caddy/sites/${domain}.caddy"
+exists=0
+hash=""
+cert=""
+key=""
+cert_exists=0
+key_exists=0
+
+if [ -f "$path" ]; then
+    exists=1
+    hash=$(sha256sum "$path" | awk '{print $1}')
+    cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$path")
+    key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$path")
+    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+fi
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($route->node, $script, [
+            'throw' => true,
+            'env' => [
+                'ORBIT_PROXY_DOMAIN' => $route->domain,
+            ],
+        ]);
+
+        $parts = explode("\t", trim($result->stdout), 6);
+
+        if (count($parts) !== 6) {
+            return new ProbeSnapshot([]);
+        }
+
+        [$exists, $hash, $cert, $key, $certExists, $keyExists] = $parts;
+
+        return new ProbeSnapshot([
+            $route->domain => [
+                'route_exists' => $exists === '1',
+                'route_hash' => $hash,
+                'cert_path' => $cert,
+                'key_path' => $key,
+                'cert_exists' => $certExists === '1',
+                'key_exists' => $keyExists === '1',
+            ],
+        ]);
     }
 
     /**
@@ -43,6 +101,8 @@ final readonly class ProxyRouteProbe
             ...$this->checkOwnerEligibility($route),
             ...$this->checkNodeEligibility($route),
             ...$this->checkCustomDomainConflict($route),
+            ...$this->checkBackendReality($route, $snapshot),
+            ...$this->checkTlsReality($route, $snapshot),
         ];
     }
 
@@ -172,6 +232,118 @@ final readonly class ProxyRouteProbe
                 'owner_type' => $ownerType,
             ],
         );
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkBackendReality(ProxyRoute $route, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($route->domain);
+
+        if ($observed === null) {
+            return [];
+        }
+
+        if (($observed['route_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Proxy backend route {$route->domain} is missing on the serving node.",
+                ),
+            ];
+        }
+
+        if (($observed['route_hash'] ?? null) !== $route->source_hash) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.route_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy backend route {$route->domain} differs from gateway proxy intent.",
+                    detail: [
+                        'expected_hash' => $route->source_hash,
+                        'observed_hash' => $observed['route_hash'] ?? null,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkTlsReality(ProxyRoute $route, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($route->domain);
+
+        if ($observed === null || ! $this->expectsOrbitTls($route)) {
+            return [];
+        }
+
+        if (($observed['route_exists'] ?? null) === false) {
+            return [];
+        }
+
+        if (($observed['cert_exists'] ?? null) === false || ($observed['key_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.tls_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Proxy route {$route->domain} is missing Orbit-managed TLS material.",
+                ),
+            ];
+        }
+
+        $expected = $this->expectedTlsPaths($route);
+
+        if (($observed['cert_path'] ?? null) !== $expected['cert'] || ($observed['key_path'] ?? null) !== $expected['key']) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.tls_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy route {$route->domain} TLS material does not match gateway proxy intent.",
+                    detail: [
+                        'expected' => $expected,
+                        'observed' => [
+                            'cert' => $observed['cert_path'] ?? null,
+                            'key' => $observed['key_path'] ?? null,
+                        ],
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    private function expectsOrbitTls(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $managedBy = $config['tls']['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit';
+
+        return $managedBy === 'orbit';
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    private function expectedTlsPaths(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $cert = $config['tls']['cert_path'] ?? null;
+        $key = $config['tls']['key_path'] ?? null;
+
+        return [
+            'cert' => is_string($cert) && $cert !== '' ? $cert : "/etc/orbit/certs/{$route->domain}.crt",
+            'key' => is_string($key) && $key !== '' ? $key : "/etc/orbit/certs/{$route->domain}.key",
+        ];
     }
 
     private function hasTargetShape(ProxyRoute $route): bool

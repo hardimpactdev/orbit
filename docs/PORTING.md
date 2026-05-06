@@ -1752,7 +1752,7 @@ for the Saloon-based gateway transport pattern.
   - [x] Custom proxy add/remove intent and runtime warnings.
   - [~] Proxy doctor probes, fix/adopt map, and live backend/TLS inspection.
     - [x] Registry intent, owner eligibility, node eligibility, and custom-domain conflict probe foundation.
-    - [ ] Backend route and TLS reality inspection.
+    - [x] Backend route and TLS reality inspection.
     - [ ] Fix/adopt map and doctor dispatcher/API integration.
 - [ ] Port firewall rule family.
 - [~] Port tool family.
