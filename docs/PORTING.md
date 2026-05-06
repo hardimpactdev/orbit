@@ -1348,9 +1348,14 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - Blocked as a full command-contract slice until workspace runtime
     prerequisites are available: proxy route convergence, PHP-FPM artifact
     rendering, inherited Supervisor runtime-unit rendering, and the live runtime
-    backend gates tracked below. Next concrete action while blocked: port the
-    gateway-owned setup/teardown step policy commands, which are registry reads
-    and policy writes that do not require app-node runtime mutation.
+    backend gates tracked below.
+  - [x] `workspace:remove` gateway-local non-interactive bootstrap slice:
+    destructive consent, unambiguous registry resolution, Phase A deletion of
+    workspace-owned proxy intent plus workspace intent, and best-effort
+    node-side cleanup warnings for inherited processes, teardown steps, FPM, and
+    worktree removal.
+  - Next concrete action: add the `workspace:remove` gateway API endpoint and
+    typed control-caller forwarding, then add the paired Docker feature E2E gate.
 - [x] Port workspace setup and teardown step commands.
   - [x] `workspace-setup-step:list` and `workspace-teardown-step:list`
     gateway-local registry reads, typed gateway API forwarding, app/path
