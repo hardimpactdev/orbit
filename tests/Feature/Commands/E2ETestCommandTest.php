@@ -49,6 +49,27 @@ it('disables pest parallel mode for list-tests passthrough', function (): void {
         ->assertSuccessful();
 });
 
+it('uses six docker processes by default', function (): void {
+    $previous = getenv('ORBIT_E2E_PARALLEL_PROCESSES');
+    putenv('ORBIT_E2E_PARALLEL_PROCESSES');
+
+    try {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'docker',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['lanes'][0]['command'])->toContain('--parallel', '--processes=6');
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_E2E_PARALLEL_PROCESSES')
+            : putenv("ORBIT_E2E_PARALLEL_PROCESSES={$previous}");
+    }
+});
+
 it('disables pest parallel mode for a single docker process', function (): void {
     putenv('ORBIT_E2E_PARALLEL_PROCESSES=1');
 

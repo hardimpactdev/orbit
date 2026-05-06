@@ -148,7 +148,7 @@ class E2ETestCommand extends Command
             '--exclude-group=e2e-provider-incus',
         ];
 
-        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 2);
+        $processes = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', 6);
 
         if ($processes > 1 && ! $this->hasListTestsArgument($passThroughArguments)) {
             $command[] = '--parallel';

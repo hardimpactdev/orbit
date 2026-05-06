@@ -396,7 +396,7 @@ composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 
 # Prepare Docker feature topology images on every configured Docker host
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 
 # Reap stale E2E resources
@@ -448,7 +448,7 @@ dependency changes, or when remote images look stale, first refresh every
 configured Docker host:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 ```
 
@@ -524,11 +524,11 @@ mutation, real WireGuard interfaces and peer routing, and host init
 itself.
 
 `composer test:e2e:docker` runs with Pest parallel mode. The script fallback
-process count is `2`; the shared local `.env.e2e` uses
-`ORBIT_E2E_PARALLEL_PROCESSES=4` to match the sidecar1 and sidecar2 slot pool.
+process count is `6`; the shared local `.env.e2e` uses
+`ORBIT_E2E_PARALLEL_PROCESSES=6` to match the sidecar1 and sidecar2 slot pool.
 Keep the value within Docker host capacity: a full topology uses four
 containers, so a host with
-`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8` can safely run two full-topology
+`ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=12` can safely run three full-topology
 workers. Add Beast as Docker overflow only for Docker-only runs or idle-Incus
 windows.
 
@@ -536,15 +536,15 @@ For multi-host parallelism, use host slots and set the Pest worker count to the
 total slot count:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:2 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3,beast:2 \
 ORBIT_E2E_EXCLUSIVE_HOSTS=beast \
-ORBIT_E2E_PARALLEL_PROCESSES=6 \
+ORBIT_E2E_PARALLEL_PROCESSES=8 \
 composer test:e2e:docker
 ```
 
-The normal local pool is `sidecar1:2,sidecar2:2` with
-`ORBIT_E2E_PARALLEL_PROCESSES=4`. With the Beast overflow example above, up to
-two workers can lease `sidecar1`, two can lease `sidecar2`, and two can lease
+The normal local pool is `sidecar1:3,sidecar2:3` with
+`ORBIT_E2E_PARALLEL_PROCESSES=6`. With the Beast overflow example above, up to
+three workers can lease `sidecar1`, three can lease `sidecar2`, and two can lease
 `beast` when no Incus lease is active on Beast. The mapping is a blocking lease
 pool, not a worker-number map:
 a worker takes the first free Docker slot, waits when all slots are busy or when
@@ -591,7 +591,7 @@ Use the aggregate host preparation command to build fresh runtime and topology
 images across the configured Docker host pool:
 
 ```bash
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2 \
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3 \
 composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
 ```
 
@@ -670,9 +670,9 @@ ORBIT_E2E_TOPOLOGY_PROVIDER=docker    # Prepared topology provider for direct ar
 ORBIT_E2E_TOPOLOGY_PROVIDERS=docker   # Ordered prepared topology provider pool
 ORBIT_E2E_GATEWAY_API=1               # Start gateway API/10.6 routes for tests that need it
 ORBIT_E2E_DOCKER_HOSTS=sidecar1,sidecar2  # Recommended Docker daemon pool
-ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2  # Docker feature-test lease pool
-ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=8  # Docker topology capacity per daemon
-ORBIT_E2E_PARALLEL_PROCESSES=4        # Pest workers for composer test:e2e:docker
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:3,sidecar2:3  # Docker feature-test lease pool
+ORBIT_E2E_DOCKER_MAX_CONTAINERS_PER_HOST=12  # Docker topology capacity per daemon
+ORBIT_E2E_PARALLEL_PROCESSES=6        # Pest workers for composer test:e2e:docker
 ORBIT_E2E_INCUS_HOSTS=beast           # Incus provisioning host pool
 ORBIT_E2E_INCUS_HOST_SLOTS=beast:1    # Incus provisioning-test lease pool; not prepared-topology feature parallelism
 ORBIT_E2E_INCUS_PARALLEL_PROCESSES=3  # Pest workers for composer test:e2e:incus
