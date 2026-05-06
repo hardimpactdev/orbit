@@ -8,14 +8,12 @@ Detail file for the tool command family. Top-level status lives in
 - [x] `tool:list` — gateway-local + Saloon forwarding for non-gateway
   callers. `lane=none` (registry read).
 - [x] `tool:show` — gateway-local + Saloon forwarding. `lane=none`.
-- [~] `tool:start` — gateway-local + Saloon forwarding implementation and
+- [x] `tool:start` — gateway-local + Saloon forwarding implementation and
   focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolStartCommandTest.php`. E2E lane:
   Incus VM-feature because the command exercises host-init managed services.
-  Current gate command
-  `ORBIT_E2E_HOST=beast ORBIT_E2E_INCUS_STORAGE_POOL=orbit-e2e composer test:e2e -- --filter='starts a managed system service tool' --display-skipped`
-  skips because no VM topology provider is available in this session; rerun
-  once Incus feature topology is available before flipping to `[x]`.
+  Passed gate:
+  `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='starts a managed system service tool'`.
 - [ ] `tool:install`, `tool:remove`, `tool:stop`, `tool:restart`,
   `tool:logs`, `tool:update`, `tool:credentials`, `tool:reload`,
   `tool:reconfigure` — write/enactment commands not started.
