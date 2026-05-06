@@ -769,7 +769,10 @@ describe('external service stubs', function (): void {
         $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_ssh_unreachable');
 
         expect($ssh)->toHaveCount(0);
-        expect($remoteShell->scripts)->toBe(['true']);
+        expect($remoteShell->scripts)->toBe([
+            'true',
+            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+        ]);
         expect($remoteShell->options[0]['timeout'])->toBe(10);
     });
 
@@ -845,7 +848,13 @@ describe('external service stubs', function (): void {
         expect($runtime)->toHaveCount(0);
     });
 
-    it('returns empty for app runtime checks', function (): void {
+    it('accepts available app runtime backend', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
         $node = Node::create([
             'name' => 'test',
             'role' => 'app',
@@ -854,14 +863,75 @@ describe('external service stubs', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
+            'tld' => 'test',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
 
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
         $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
 
         expect($runtime)->toHaveCount(0);
+        expect($remoteShell->scripts)->toBe([
+            'true',
+            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+        ]);
+    });
+
+    it('detects missing app runtime backend', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $runtime = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing'));
+
+        expect($runtime)->toHaveCount(1);
+        expect($runtime[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($runtime[0]->detail)->toBe([
+            'exit_code' => 127,
+            'output' => 'missing supervisorctl',
+        ]);
+    });
+
+    it('skips app runtime checks for non-app nodes', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'should not run', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'gateway',
+            'role' => 'gateway',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.app_runtime_missing');
+
+        expect($runtime)->toHaveCount(0);
+        expect($remoteShell->scripts)->toBe([]);
     });
 
     it('detects missing development TLD for development app nodes', function (): void {

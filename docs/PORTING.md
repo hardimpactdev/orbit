@@ -1697,7 +1697,9 @@ for the Saloon-based gateway transport pattern.
       - [ ] live gateway interface reality.
     - [x] local platform detection.
     - [x] SSH reachability.
-    - [ ] gateway/app runtime readiness.
+    - [~] gateway/app runtime readiness:
+      - [x] app-node runtime backend readiness.
+      - [ ] gateway runtime/API readiness.
     - [~] development TLD:
       - [x] missing development app-node TLD intent.
       - [ ] local TLD reality / DNS mapping reality.

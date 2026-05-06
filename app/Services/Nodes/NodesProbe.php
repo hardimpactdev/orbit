@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
 use App\Services\Platform\PlatformDetector;
+use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
 use Throwable;
 
@@ -27,6 +28,7 @@ final readonly class NodesProbe
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
         private ?RemoteShell $remoteShell = null,
+        private ?RuntimeBackendProbe $runtimeBackendProbe = null,
     ) {}
 
     public function key(): string
@@ -454,6 +456,47 @@ final readonly class NodesProbe
      */
     private function checkAppRuntime(Node $node): array
     {
+        if ($node->role !== 'app' || $node->status !== 'active') {
+            return [];
+        }
+
+        try {
+            $runtimeBackendProbe = $this->runtimeBackendProbe
+                ?? ($this->remoteShell instanceof RemoteShell
+                    ? new RuntimeBackendProbe($this->remoteShell)
+                    : app(RuntimeBackendProbe::class));
+
+            $result = $runtimeBackendProbe->check($node);
+        } catch (Throwable $e) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.app_runtime_missing',
+                    kind: DriftKind::Unverifiable,
+                    summary: "App node {$node->name} runtime readiness could not be verified: {$e->getMessage()}",
+                    detail: [
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ],
+                ),
+            ];
+        }
+
+        if (! $result->available) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.app_runtime_missing',
+                    kind: DriftKind::Unverifiable,
+                    summary: "App node {$node->name} is missing the required runtime backend.",
+                    detail: [
+                        'exit_code' => $result->exitCode,
+                        'output' => $result->output,
+                    ],
+                ),
+            ];
+        }
+
         return [];
     }
 

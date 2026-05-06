@@ -156,6 +156,13 @@ They do not mutate host state:
   - Reports `Unverifiable` drift when the gateway cannot reach the app node over
     SSH.
 
+- App-node runtime readiness (`node.app_runtime_missing`)
+  - Runs only for active app-node records.
+  - Reuses `RuntimeBackendProbe` to verify the minimum remote runtime backend
+    needed for gateway enactment.
+  - Reports `Unverifiable` drift when supervisor/runtime readiness is missing or
+    cannot be verified.
+
 ### Stubs (External Service Required)
 
 These layers return empty arrays. They are reserved for future probe
@@ -163,7 +170,7 @@ implementations that require external services:
 
 - WireGuard live interface reality (`node.wireguard_peer_missing`, `node.wireguard_peer_extra`, `node.wireguard_address_mismatch`)
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
-- App-node bootstrap readiness (`node.app_runtime_missing`, `node.node_identity_artifact_missing`)
+- App-node identity artifact readiness (`node.node_identity_artifact_missing`)
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
