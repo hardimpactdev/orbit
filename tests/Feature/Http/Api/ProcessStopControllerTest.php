@@ -1,0 +1,118 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Process;
+use App\Models\ProcessEvent;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+
+uses(RefreshDatabase::class);
+
+const PROCESS_STOP_CALLER_WG_IP = '10.6.0.93';
+
+function createProcessStopCallerNode(array $overrides = []): Node
+{
+    return Node::factory()->create(array_merge([
+        'name' => 'caller',
+        'role' => 'control',
+        'host' => PROCESS_STOP_CALLER_WG_IP,
+        'wireguard_address' => PROCESS_STOP_CALLER_WG_IP,
+    ], $overrides));
+}
+
+function grantProcessStopAccess(Node $caller, Node $appNode): void
+{
+    DB::table('node_access')->insert([
+        'consumer_node_id' => $caller->id,
+        'serving_node_id' => $appNode->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+describe('ProcessStopController', function (): void {
+    it('stops a process for authorized control callers and records the event', function (): void {
+        $caller = createProcessStopCallerNode();
+        $appNode = Node::factory()->create(['role' => 'app']);
+        grantProcessStopAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/stop', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.runtimes.0.event.type', 'stopped');
+
+        expect(ProcessEvent::query()->where('event', 'stopped')->exists())->toBeTrue();
+    });
+
+    it('returns partial runtime failure data', function (): void {
+        createProcessStopCallerNode(['role' => 'gateway']);
+        $appNode = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'sort_order' => 10]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'queue', 'sort_order' => 20]);
+        app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
+        ]));
+
+        $response = $this->call('POST', '/api/processes/stop', [
+            'app' => 'docs',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.runtime_action_failed')
+            ->assertJsonPath('error.meta.partial_state', 'partially_stopped')
+            ->assertJsonPath('error.data.runtimes.1.state', 'failed');
+    });
+
+    it('requires authorization before runtime side effects', function (): void {
+        createProcessStopCallerNode();
+        $appNode = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        $remoteShell = new ProcessStopApiRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes/stop', [
+            'app' => 'docs',
+            'name' => 'vite',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect($remoteShell->scripts)->toBe([]);
+    });
+});
+
+final class ProcessStopApiRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+        public array $scripts = [],
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

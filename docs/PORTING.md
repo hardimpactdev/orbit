@@ -1312,6 +1312,10 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     gateway API forwarding for control/app callers, app/workspace context
     resolution, durable `started` process event recording, partial bulk failure
     reporting, human/JSON renderers, and focused Pest coverage.
+  - [x] `process:stop` gateway-owned Supervisor lifecycle action, typed gateway
+    API forwarding for control/app callers, app/workspace context resolution,
+    durable `stopped` process event recording, partial bulk failure reporting,
+    human/JSON renderers, and focused Pest coverage.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.
 
