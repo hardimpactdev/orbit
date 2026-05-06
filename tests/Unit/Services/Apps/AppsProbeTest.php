@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Apps;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
@@ -32,6 +34,80 @@ describe('interface contract', function (): void {
         $snapshot = $this->probe->introspect($app);
 
         expect($snapshot->isEmpty())->toBeTrue();
+    });
+});
+
+describe('source path and document root reality', function (): void {
+    it('introspects source path and document root reality on the owning app node', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'public',
+            ]);
+        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\n");
+
+        $snapshot = (new AppsProbe($shell))->introspect($app);
+
+        expect($snapshot->get('docs'))->toMatchArray([
+            'path_exists' => true,
+            'root_exists' => true,
+            'root_inside_path' => true,
+        ]);
+        expect($shell->scripts[0])->toContain('ORBIT_APP_SPEC');
+        expect($shell->nodes[0]->is($node))->toBeTrue();
+    });
+
+    it('detects missing source paths', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => [
+                'path_exists' => false,
+                'root_exists' => false,
+                'root_inside_path' => true,
+            ],
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.path_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'app.root_missing'))->toBeNull();
+    });
+
+    it('detects missing document roots after the source path exists', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => [
+                'path_exists' => true,
+                'root_exists' => false,
+                'root_inside_path' => true,
+            ],
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.root_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects document roots that resolve outside the app path', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => '../shared/public',
+            ]);
+
+        $drift = (new AppsProbe)->diff($app, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'app.root_outside_path')?->kind)->toBe(DriftKind::Divergent);
     });
 });
 
@@ -141,6 +217,11 @@ describe('app agent IDE defaults', function (): void {
     ]);
 });
 
+function issue(array $drift, string $key): ?DriftEntry
+{
+    return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
+}
+
 function appNode(array $overrides = []): Node
 {
     return Node::factory()->create([
@@ -149,4 +230,32 @@ function appNode(array $overrides = []): Node
         'environment' => 'development',
         ...$overrides,
     ]);
+}
+
+final class AppsProbeRecordingRemoteShell implements RemoteShell
+{
+    /**
+     * @var list<Node>
+     */
+    public array $nodes = [];
+
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    public function __construct(private readonly string $stdout) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+        $this->scripts[] = $script;
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $this->stdout,
+            stderr: '',
+            durationMs: 1,
+        );
+    }
 }

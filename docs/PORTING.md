@@ -1707,9 +1707,10 @@ for the Saloon-based gateway transport pattern.
 - [~] Port app doctor contracts and checks.
   - [x] Registry-only `AppsProbe` foundation: app record completeness,
     owning-node eligibility, and app agent IDE default checks.
-  - [ ] External app reality checks: source path, document root, PHP runtime,
-    PHP-FPM configuration, runtime configuration, production policy,
-    deployment health, and stale app artifacts.
+  - [x] Source path and document root reality checks.
+  - [ ] External app runtime checks: PHP runtime, PHP-FPM configuration,
+    runtime configuration, production policy, deployment health, and stale app
+    artifacts.
 - [ ] Port workspace doctor contracts and checks.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
