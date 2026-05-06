@@ -1358,7 +1358,15 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] `workspace:log` stored-output read, typed gateway API forwarding,
     access-policy filtering, human/JSON renderers, focused Pest coverage, and
     read-only Docker feature E2E gate.
-- [ ] Port workspace progress stream behavior.
+- [x] Port workspace progress stream behavior.
+  - Server-side SSE progress foundation is ported: `ProgressReporter`,
+    null/SSE reporters, progress event emitter, streamed response factory, and
+    focused tests for event frames, exception-to-error conversion, and reporter
+    restoration.
+  - Lifecycle command endpoints remain blocked by the workspace lifecycle entry
+    above; future `workspace:new`, `workspace:setup`, and `workspace:remove`
+    slices should reuse this foundation instead of inventing another stream
+    shape.
 
 ## Process Workstream
 
@@ -1941,15 +1949,16 @@ for the Saloon-based gateway transport pattern.
      behavior.
    - `APP-NEW-GATEWAY-LOCAL-1`, `APP-NEW-FWD-1`, the `app:new`
      interactive/human renderer slice, runtime warning handoff foundation,
-     PHP-FPM pool rendering/reload, proxy route registry/enactment handoff, and
-     process runtime-unit rendering/enactment foundation are implemented. Keep
-     `app:register`, `app:root`, `app:remove`, `app:prune`, and
-     `app:agent-ide` blocked until `app:new` has real source-creation E2E and
-     full registration pipeline convergence coverage.
+     PHP-FPM pool rendering/reload, proxy route registry/enactment handoff,
+     process runtime-unit rendering/enactment foundation, and the paired
+     source-creation/convergence E2E gates are implemented.
+   - `app:register`, `app:root`, and `app:remove` are ported with their paired
+     E2E gates. `app:prune` remains blocked until workspace removal semantics
+     exist. `app:agent-ide` is ported except for workspace cleanup planning,
+     which also waits for workspace removal semantics.
 2. Keep Node destructive/provisioning follow-ups explicit but out of the
    critical path: advanced `node:new` enrollment paths, WireGuard peer teardown,
    and DNS cleanup.
 3. `profile` is available as an app verification helper: gateway-mediated target
-   resolution/request origin coverage, Toolbar-enriched output, and paired
-   Docker feature E2E are implemented. The only remaining profile blocker is
-   workspace cwd inference, which waits for workspace schema/models.
+   resolution/request origin coverage, Toolbar-enriched output, workspace cwd
+   inference, and paired Docker feature E2E are implemented.

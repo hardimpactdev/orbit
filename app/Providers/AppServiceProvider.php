@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
 use App\Contracts\RequestProfiler;
 use App\Http\Gateway\GatewayConnector;
@@ -15,6 +16,7 @@ use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Support\LocalPlatform;
+use App\Support\Streaming\NullProgressReporter;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -29,6 +31,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);
+        $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
         $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
         $this->app->bind(RemoteShell::class, SshRemoteShell::class);
 
