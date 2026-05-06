@@ -117,10 +117,10 @@ that produced the controller's Loggable wiring.
 - [ ] `14_php`.
   - [!] Activity backfill is blocked until `docs/abstractions/14_php.md`
     exists and a clean `php:*` command surface is implemented.
-- [ ] `15_agent-ide`.
-  - [!] Activity backfill is blocked until
-    `docs/abstractions/15_agent-ide.md` exists and a clean `agent-ide:*`
-    command surface is implemented.
+- [~] `15_agent-ide`.
+  - [x] `agent-ide:message` declares its `## Activity Logging` tech contract,
+    emits safe `effect=write` metadata through `POST /api/agent-ide/message`,
+    and is enforced by `ActivityLoggingContractRule`.
 - [x] `16_dns`.
 
 ## Implementation slice

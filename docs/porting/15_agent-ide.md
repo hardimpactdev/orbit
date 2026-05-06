@@ -50,7 +50,11 @@ transports remain open.
   - [x] Adapter delivery diagnostics under `error.data` are preserved for
     gateway-local JSON errors, gateway API errors, and forwarded command
     failures.
-  - [!] Activity logging for the API endpoint and real core adapter transports
-    remain unported. Next concrete action: add `Loggable` activity coverage for
-    `POST /api/agent-ide/message` without storing full message bodies or
-    adapter secrets.
+  - [x] Activity logging for `POST /api/agent-ide/message` emits safe write
+    metadata for authorized app/workspace delivery attempts without storing
+    full message bodies, adapter credentials, raw adapter output, or secrets;
+    the command tech contract is enforced by docs-lint.
+  - [!] Real core adapter transports remain unported. Next concrete action:
+    choose and implement the smallest real core adapter transport slice, or
+    defer it explicitly if external adapter process semantics need a product
+    decision.

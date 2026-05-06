@@ -24,6 +24,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'app-root',
         'app-remove',
         'app-agent-ide',
+        'agent-ide-message',
         'app-show',
         'activity-list',
         'activity-show',

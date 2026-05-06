@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -119,6 +120,43 @@ it('sends an app-target message for an authorized control caller', function (): 
 
     expect($adapter->deliveries)->toHaveCount(1)
         ->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
+});
+
+it('logs message delivery activity without storing message bodies', function (): void {
+    $caller = createAgentIdeMessageCallerNode();
+    $appNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    grantAgentIdeMessageAccess($caller, $appNode);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    app()->instance(AgentIdeMessageAdapter::class, new FakeApiAgentIdeMessageAdapter);
+
+    postAgentIdeMessageJson([
+        'message' => 'Ship the docs with sensitive context',
+        'app' => 'docs',
+    ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP])->assertOk();
+
+    $entry = Activity::query()->first();
+
+    expect($entry)->not->toBeNull();
+    expect($entry->event)->toBe('api:POST /agent-ide/message');
+    expect($entry->subject_type)->toBe(App::class);
+    expect($entry->subject_id)->toBe($app->id);
+    expect($entry->description)->toBe('Agent IDE message sent to docs through opencode');
+    expect($entry->properties->get('type'))->toBe('write');
+    expect($entry->properties->get('target_app'))->toBe('docs');
+    expect($entry->properties->get('target_workspace'))->toBeNull();
+    expect($entry->properties->get('adapter'))->toBe('opencode');
+    expect($entry->properties->get('delivery_status'))->toBe('sent');
+    expect($entry->properties->toArray())->not->toHaveKey('message');
+    expect(json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR))->not->toContain('sensitive context');
 });
 
 it('sends an app-target message for an authorized app caller', function (): void {

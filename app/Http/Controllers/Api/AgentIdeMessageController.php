@@ -4,19 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Requests\Api\SendAgentIdeMessageApiRequest;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
-final readonly class AgentIdeMessageController
+final class AgentIdeMessageController implements Loggable
 {
+    private ?Model $activitySubject = null;
+
+    /**
+     * @var array<string, mixed>
+     */
+    private array $activityProperties = [];
+
     public function __construct(
-        private AgentIdeMessageDelivery $delivery,
+        private readonly AgentIdeMessageDelivery $delivery,
     ) {}
 
     public function __invoke(SendAgentIdeMessageApiRequest $request): JsonResponse
@@ -100,7 +110,10 @@ final readonly class AgentIdeMessageController
 
         try {
             $data = $this->delivery->deliverToApp($app->name, $request->messageBody());
+            $this->rememberDeliveryActivity($app, $data);
         } catch (GatewayApiException $e) {
+            $this->rememberFailureActivity($app, $e);
+
             return $this->error(
                 code: $e->errorCode() ?? 'adapter_delivery_failed',
                 message: $e->getMessage(),
@@ -147,7 +160,10 @@ final readonly class AgentIdeMessageController
 
         try {
             $data = $this->delivery->deliverToWorkspace($workspace->name, $request->messageBody());
+            $this->rememberDeliveryActivity($workspace, $data);
         } catch (GatewayApiException $e) {
+            $this->rememberFailureActivity($workspace, $e);
+
             return $this->error(
                 code: $e->errorCode() ?? 'adapter_delivery_failed',
                 message: $e->getMessage(),
@@ -230,6 +246,38 @@ final readonly class AgentIdeMessageController
             ->exists();
     }
 
+    /**
+     * @param  array{agent_ide: array<string, mixed>}  $data
+     */
+    private function rememberDeliveryActivity(Model $subject, array $data): void
+    {
+        $agentIde = $data['agent_ide'];
+        $target = $agentIde['target'] ?? [];
+
+        $this->activitySubject = $subject;
+        $this->activityProperties = [
+            'target_app' => is_array($target) ? $target['app'] ?? null : null,
+            'target_workspace' => is_array($target) ? $target['workspace'] ?? null : null,
+            'adapter' => $agentIde['adapter'] ?? null,
+            'source' => $agentIde['source'] ?? null,
+            'delivery_status' => $agentIde['delivery']['status'] ?? 'sent',
+        ];
+    }
+
+    private function rememberFailureActivity(Model $subject, GatewayApiException $exception): void
+    {
+        $meta = $exception->errorMeta();
+
+        $this->activitySubject = $subject;
+        $this->activityProperties = [
+            'target_app' => $meta['app'] ?? null,
+            'target_workspace' => $meta['workspace'] ?? null,
+            'adapter' => $meta['adapter'] ?? null,
+            'delivery_status' => 'failed',
+            'failure_code' => $exception->errorCode(),
+        ];
+    }
+
     private function statusFor(?string $code): int
     {
         return match ($code) {
@@ -257,5 +305,77 @@ final readonly class AgentIdeMessageController
         return response()->json([
             'error' => $error,
         ], $status);
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
+    {
+        return 'api:POST /agent-ide/message';
+    }
+
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return $this->activityProperties;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
+    {
+        $targetApp = $this->activityProperties['target_app'] ?? null;
+        $targetWorkspace = $this->activityProperties['target_workspace'] ?? null;
+        $adapter = $this->activityProperties['adapter'] ?? null;
+
+        if (! is_string($targetApp) || $targetApp === '' || ! is_string($adapter) || $adapter === '') {
+            return null;
+        }
+
+        $target = is_string($targetWorkspace) && $targetWorkspace !== ''
+            ? "{$targetApp}/{$targetWorkspace}"
+            : $targetApp;
+
+        if (($this->activityProperties['delivery_status'] ?? null) === 'failed') {
+            return "Agent IDE message failed for {$target} through {$adapter}";
+        }
+
+        return "Agent IDE message sent to {$target} through {$adapter}";
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
     }
 }

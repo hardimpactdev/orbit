@@ -156,6 +156,20 @@ The shared exit status policy applies: `0` for accepted delivery, `1` for
 Orbit-handled command failures, and `2` only for console-runtime invalid usage
 before Orbit can apply this command contract.
 
+## Activity Logging
+
+The gateway API endpoint emits one activity entry for authorized message
+delivery attempts. Activity properties must never include the full message body,
+adapter credentials, raw adapter output, or secrets.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /agent-ide/message` |
+| Effect | `write` |
+| Subject | `App` for app-target delivery; `Workspace` for workspace-target delivery; `none` when no authorized target is resolved. |
+| Properties | `target_app`, `target_workspace`, `adapter`, `source`, `delivery_status`, and `failure_code` when delivery fails. |
+| Description | `Agent IDE message sent to {target} through {adapter}` or `Agent IDE message failed for {target} through {adapter}`. |
+
 ## Doctor Relationship
 
 - `agent-ide:message` is communication, not convergence.
