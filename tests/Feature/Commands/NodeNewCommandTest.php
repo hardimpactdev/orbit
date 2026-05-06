@@ -1000,6 +1000,159 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('forwards control-node enrollment when gateway add only stored local gateway settings', function (): void {
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'enrolled'],
+                    'node' => [
+                        'name' => 'control-2',
+                        'role' => 'control',
+                        'environment' => null,
+                        'tld' => null,
+                        'platform' => 'unknown',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.4',
+                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'wireguard',
+                        'host' => null,
+                        'status' => 'enrolled',
+                    ],
+                    'wireguard' => [
+                        'config' => "[Interface]\nPrivateKey = control-private-key\n",
+                    ],
+                    'next_steps' => [
+                        'Install the returned WireGuard configuration on control-2, then run `orbit gateway:add` from that control node.',
+                    ],
+                ],
+            ],
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'control-2',
+            '--role' => 'control',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['node']['name'])->toBe('control-2')
+            ->and($payload['success']['data']['wireguard']['config'])->toContain('[Interface]')
+            ->and(DB::table('nodes')->where('name', 'control-2')->exists())->toBeFalse();
+
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'control-2',
+                'role' => 'control',
+                'host' => null,
+                'environment' => null,
+                'tld' => null,
+                'ssh_user' => null,
+            ]);
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('enrolls a control node locally on a gateway without SSH side effects', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        WireGuardPeer::query()->create([
+            'node_id' => DB::table('nodes')->where('name', 'gateway-1')->value('id'),
+            'public_key' => 'gateway-public-key',
+            'private_key' => 'gateway-private-key',
+            'allowed_ips' => '10.6.0.2/32',
+        ]);
+
+        Process::fake(function ($process) {
+            if ($process->command === 'wg genkey') {
+                return Process::result(output: "control-private-key\n");
+            }
+
+            if ($process->command === 'wg pubkey') {
+                return Process::result(output: "control-public-key\n");
+            }
+
+            return Process::result(output: '');
+        });
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'control-2',
+            '--role' => 'control',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $control = DB::table('nodes')->where('name', 'control-2')->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('enrolled')
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'control-2',
+                'role' => 'control',
+                'environment' => null,
+                'tld' => null,
+                'platform' => 'unknown',
+                'addresses' => [
+                    'wireguard' => '10.6.0.3',
+                ],
+                'status' => 'active',
+            ])
+            ->and($payload['success']['data']['provisioning'])->toBe([
+                'transport' => 'wireguard',
+                'host' => null,
+                'status' => 'enrolled',
+            ])
+            ->and($payload['success']['data']['wireguard']['config'])->toContain('PrivateKey = control-private-key')
+            ->and($payload['success']['data']['wireguard']['config'])->toContain('PublicKey = gateway-public-key')
+            ->and($payload['success']['data']['next_steps'])->toBe([
+                'Install the returned WireGuard configuration on control-2, then run `orbit gateway:add` from that control node.',
+            ])
+            ->and($control)->not->toBeNull()
+            ->and($control->role)->toBe('control')
+            ->and($control->wireguard_address)->toBe('10.6.0.3')
+            ->and((bool) $control->is_local)->toBeFalse();
+
+        $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
+
+        expect($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
+            ->and($controlPeer->public_key)->toBe('control-public-key')
+            ->and($controlPeer->private_key)->toBe('control-private-key')
+            ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32');
+
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
+
     it('does not reprovision a gateway while gateway forwarding is unavailable', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',

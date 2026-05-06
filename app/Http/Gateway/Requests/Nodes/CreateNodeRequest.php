@@ -20,10 +20,10 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
     public function __construct(
         public readonly string $name,
         public readonly string $role,
-        public readonly string $host,
+        public readonly ?string $host,
         public readonly ?string $environment,
         public readonly ?string $tld,
-        public readonly string $sshUser,
+        public readonly ?string $sshUser,
     ) {}
 
     public function resolveEndpoint(): string

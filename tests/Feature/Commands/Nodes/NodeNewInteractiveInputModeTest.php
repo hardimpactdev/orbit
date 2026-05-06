@@ -48,6 +48,11 @@ function setupNodeNewInteractiveControlCaller(): void
     ])->save();
 }
 
+function setupNodeNewInteractiveUnconfiguredControlCaller(): void
+{
+    DB::table('nodes')->insert(nodeNewInteractiveRow());
+}
+
 function setupNodeNewInteractiveAppCaller(): void
 {
     DB::table('nodes')->insert(nodeNewInteractiveRow([
@@ -72,12 +77,12 @@ function fakeNodeNewGateway(array|string $body, int $status = 200): MockClient
 
 describe('node:new interactive input mode', function (): void {
     it('prompts for missing name and role before control-node path validation', function (): void {
-        setupNodeNewInteractiveControlCaller();
+        setupNodeNewInteractiveUnconfiguredControlCaller();
 
         $this->artisan('node:new')
             ->expectsQuestion('Node name', 'control-2')
             ->expectsChoice('Node role', 'control', ['gateway', 'app', 'control'])
-            ->expectsOutputToContain('Gateway forwarding is required before this node role can be created.')
+            ->expectsOutputToContain('Gateway connection is required before creating app or control nodes.')
             ->assertFailed();
     });
 

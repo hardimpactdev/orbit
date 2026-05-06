@@ -117,11 +117,17 @@ class NodeNewCommand extends Command
         }
 
         if ($role === 'control') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway forwarding is required before this node role can be created.',
-                meta: ['requested_role' => $role],
-            );
+            $forbiddenInput = $this->forbiddenControlInput();
+
+            if ($forbiddenInput !== null) {
+                return $this->validationFailed($forbiddenInput, 'Control nodes do not use SSH/bootstrap-only input.');
+            }
+
+            if ($callerRole === 'control') {
+                return $this->forwardControlNodeEnrollment($name);
+            }
+
+            return $this->enrollControlNode($wireGuardKeyGenerator, $name);
         }
 
         if ($gatewayConfigured || $callerRole === 'gateway') {
@@ -323,6 +329,184 @@ class NodeNewCommand extends Command
         }
 
         $this->info("Created app node {$name}.");
+
+        return self::SUCCESS;
+    }
+
+    private function forwardControlNodeEnrollment(string $name): int
+    {
+        try {
+            /** @var NodeCreateResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new CreateNodeRequest(
+                    name: $name,
+                    role: 'control',
+                    host: null,
+                    environment: null,
+                    tld: null,
+                    sshUser: null,
+                ))
+                ->dto();
+        } catch (GatewayApiException $exception) {
+            return $this->failCommand(
+                code: $exception->errorCode() ?? 'gateway_unavailable',
+                message: $exception->getMessage() !== ''
+                    ? $exception->getMessage()
+                    : 'Gateway API request failed.',
+                meta: $exception->errorMeta(),
+            );
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway API request failed.',
+                meta: [
+                    'requested_role' => 'control',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($dto->data);
+        }
+
+        $this->info("Enrolled control node {$name}.");
+
+        return self::SUCCESS;
+    }
+
+    private function enrollControlNode(WireGuardKeyGenerator $wireGuardKeyGenerator, string $name): int
+    {
+        $existing = Node::query()->where('name', $name)->first();
+
+        if ($existing instanceof Node && $existing->role !== 'control') {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Node '{$name}' already exists with a different role.",
+                meta: [
+                    'name' => $name,
+                    'existing_role' => $existing->role,
+                    'requested_role' => 'control',
+                ],
+            );
+        }
+
+        $wireguardAddress = $existing instanceof Node && is_string($existing->wireguard_address) && $existing->wireguard_address !== ''
+            ? $existing->wireguard_address
+            : $this->nextWireguardAddress();
+
+        $gateway = Node::query()
+            ->where('role', 'gateway')
+            ->where('status', 'active')
+            ->orderByDesc('is_local')
+            ->first();
+
+        if (! $gateway instanceof Node) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway identity is missing locally.',
+                meta: [
+                    'step' => 'gateway_identity',
+                    'error' => 'No active gateway node record exists.',
+                ],
+            );
+        }
+
+        $gatewayPeer = WireGuardPeer::query()->where('node_id', $gateway->id)->first();
+
+        if (! $gatewayPeer instanceof WireGuardPeer) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway WireGuard peer material is missing locally.',
+                meta: [
+                    'step' => 'gateway_wireguard_identity',
+                    'node' => $gateway->name,
+                ],
+            );
+        }
+
+        try {
+            $keys = $wireGuardKeyGenerator->generateKeyPair();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Failed to generate WireGuard identity material.',
+                meta: [
+                    'node' => $name,
+                    'step' => 'wireguard_identity',
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        $node = Node::query()->updateOrCreate(
+            ['name' => $name],
+            [
+                'role' => 'control',
+                'environment' => null,
+                'tld' => null,
+                'platform' => 'unknown',
+                'host' => $wireguardAddress,
+                'wireguard_address' => $wireguardAddress,
+                'gateway_endpoint' => $this->gatewayEndpoint(),
+                'ssh_user' => self::DEFAULT_RUNTIME_USER,
+                'user' => self::DEFAULT_RUNTIME_USER,
+                'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
+                'status' => 'active',
+                'is_local' => false,
+            ],
+        );
+
+        $peer = WireGuardPeer::query()->updateOrCreate(
+            ['node_id' => $node->id],
+            [
+                'public_key' => $keys['public_key'],
+                'private_key' => $keys['private_key'],
+                'allowed_ips' => "{$wireguardAddress}/32",
+            ],
+        );
+
+        $wireguardConfig = $this->controlWireGuardConfig(
+            controlPrivateKey: $peer->private_key,
+            controlWireguardAddress: $wireguardAddress,
+            gatewayPublicKey: $gatewayPeer->public_key,
+            gatewayWireguardAddress: (string) $gateway->wireguard_address,
+            gatewayEndpoint: $gateway->gateway_endpoint ?? $gateway->host,
+        );
+
+        $payload = [
+            'result' => [
+                'action' => 'enrolled',
+            ],
+            'node' => [
+                'name' => $name,
+                'role' => 'control',
+                'environment' => null,
+                'tld' => null,
+                'platform' => 'unknown',
+                'addresses' => [
+                    'wireguard' => $wireguardAddress,
+                ],
+                'status' => 'active',
+            ],
+            'provisioning' => [
+                'transport' => 'wireguard',
+                'host' => null,
+                'status' => 'enrolled',
+            ],
+            'wireguard' => [
+                'config' => $wireguardConfig,
+            ],
+            'next_steps' => [
+                "Install the returned WireGuard configuration on {$name}, then run `orbit gateway:add` from that control node.",
+            ],
+        ];
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($payload);
+        }
+
+        $this->info("Enrolled control node {$name}.");
 
         return self::SUCCESS;
     }
@@ -1183,6 +1367,27 @@ class NodeNewCommand extends Command
     private function sshUserOptionWasSupplied(): bool
     {
         return $this->input->hasParameterOption('--ssh-user', true);
+    }
+
+    private function forbiddenControlInput(): ?string
+    {
+        if ($this->stringOption('host') !== null) {
+            return 'host';
+        }
+
+        if ($this->stringOption('environment') !== null) {
+            return 'environment';
+        }
+
+        if ($this->stringOption('tld') !== null) {
+            return 'tld';
+        }
+
+        if ($this->sshUserOptionWasSupplied()) {
+            return 'ssh_user';
+        }
+
+        return null;
     }
 
     private function isInteractiveInput(): bool
