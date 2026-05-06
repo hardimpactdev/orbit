@@ -179,6 +179,12 @@ additional external services:
     registry has no peer public key to bind to live peer material.
 - Gateway runtime readiness (`node.gateway_runtime_unready`)
 - App-node identity artifact readiness (`node.node_identity_artifact_missing`)
+  - `NodeIdentityArtifactProbe` can read bounded non-secret identity facts from
+    the selected host: local active node name, role, status, platform,
+    WireGuard address, registry public key, and live interface public key when
+    available.
+  - `NodesProbe` does not yet consume this read-only service for
+    unknown-host or active missing-peer adoption.
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
@@ -196,9 +202,10 @@ address metadata.
 
 Unknown-host adoption and active-node missing-peer adoption require stronger
 proof than an operator-supplied host, a live WireGuard peer, or a registry row
-alone. A future node identity artifact probe must read bounded, non-secret node
-identity facts from the target host and compare them with gateway intent before
-`NodesProbe` or `node:new` may attach unowned live reality to a node record.
+alone. `NodeIdentityArtifactProbe` reads bounded, non-secret node identity facts
+from the target host. `NodesProbe` must compare those facts with gateway intent
+before `NodesProbe` or `node:new` may attach unowned live reality to a node
+record.
 
 The minimum proof set is:
 

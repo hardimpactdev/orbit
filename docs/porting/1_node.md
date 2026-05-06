@@ -198,16 +198,16 @@ Detail file for the node command family. Top-level command status lives in
     - [x] Control-node enrollment forwarding.
     - [x] Gateway convergence forwarding.
     - [!] Remaining gateway adoption forwarding is blocked until gateway-local
-      gateway-role and unknown-host adoption can safely prove compatible
-      already-provisioned host identity.
+      gateway-role and unknown-host adoption consume compatible host identity
+      proof.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
     - [x] Compatible app-node adoption for existing non-active gateway intent
       when registry peer material is proven against live WireGuard reality.
     - [x] Control-node enrollment path with WireGuard config return.
     - [x] Gateway convergence path.
-    - [!] Remaining gateway adoption paths are blocked on stronger identity
-      probes and forwarding coverage.
+    - [!] Remaining gateway adoption paths are blocked on consuming stronger
+      identity proof.
       Local platform record adoption, unambiguous WireGuard address adoption,
       app runtime readiness verification/conflict results, and proven live
       WireGuard peer-extra adoption are implemented in node-family adoption.
@@ -220,10 +220,12 @@ Detail file for the node command family. Top-level command status lives in
       registry has no peer public key to bind to unowned live peer material, and
       the old repo skipped these cases. The node identity artifact proof
       contract is now documented in the node doctor and `node:new` technical
-      docs. Next concrete action: implement a read-only node identity artifact
-      probe that can inspect bounded non-secret identity facts from a selected
-      gateway or app host, then use it to unlock unknown-host and active
-      missing-peer adoption.
+      docs, and `NodeIdentityArtifactProbe` can read bounded non-secret
+      identity facts from a selected gateway or app host. Next concrete action:
+      consume `NodeIdentityArtifactProbe` inside `NodesProbe` adoption snapshots
+      so unknown-host and active missing-peer adoption can require selected
+      node-name, role, local-role, platform, and WireGuard public-key/address
+      proof before mutating gateway intent.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
