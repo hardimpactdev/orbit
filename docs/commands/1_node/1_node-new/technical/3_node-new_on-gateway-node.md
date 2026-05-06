@@ -119,6 +119,17 @@ For `--role=app`:
 11. Set `general.local_node_role=app` on the app host as the app-node
     bootstrap commit point.
 
+Compatible app-node adoption may use existing non-active gateway intent only
+when node-family adoption can prove the registry peer material against live
+WireGuard reality. Unknown-host adoption and active-node missing-peer adoption
+require a node identity artifact probe before `node:new` may attach unowned live
+reality to gateway intent. The required proof is the same as node doctor: the
+target host must report the selected node name, role, local role setting,
+supported platform, and any existing WireGuard public key or address through a
+bounded non-secret read. Without that proof, `node:new` reports incomplete
+provisioning or node drift and points to `doctor --family=node --fix` or
+`doctor --family=node --adopt`.
+
 ## Failure Semantics
 
 - Incompatible existing node records fail before destructive changes.

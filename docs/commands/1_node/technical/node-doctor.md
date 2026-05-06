@@ -23,7 +23,7 @@ methods:
 | `canReconcile()` | `bool` | Whether this family supports `--fix`. Returns `true`. |
 | `canAdopt()` | `bool` | Whether this family supports `--adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
-| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
+| `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
 
 ## Data Structures
@@ -191,6 +191,30 @@ additional external services:
 Public IPv4/IPv6 metadata is intentionally excluded from probe behavior, per the
 public contract. The probe never detects, compares, repairs, or adopts public
 address metadata.
+
+### Identity Artifact Proof Contract
+
+Unknown-host adoption and active-node missing-peer adoption require stronger
+proof than an operator-supplied host, a live WireGuard peer, or a registry row
+alone. A future node identity artifact probe must read bounded, non-secret node
+identity facts from the target host and compare them with gateway intent before
+`NodesProbe` or `node:new` may attach unowned live reality to a node record.
+
+The minimum proof set is:
+
+- the target host is reached through the role-appropriate path: local read for
+  the gateway itself or gateway-owned SSH for app nodes;
+- the target host reports the expected Orbit node name and role;
+- the target host reports the expected `general.local_node_role`;
+- if WireGuard is already configured on the target host, the reported
+  WireGuard public key or address matches a gateway-owned peer or the peer
+  being considered for adoption;
+- the target platform is supported for the requested role.
+
+The probe must not read private keys, infer identity from public IP metadata, or
+adopt a live WireGuard peer that cannot be tied to a selected node identity.
+When this proof is unavailable, adoption remains a conflict or a
+`doctor --family=node --fix` handoff.
 
 ## Reconciliation (Fix)
 

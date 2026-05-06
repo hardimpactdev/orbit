@@ -218,11 +218,12 @@ Detail file for the node command family. Top-level command status lives in
       for gateway-local compatible app-node adoption. Active-node missing-peer
       adoption and unknown-host adoption remain unavailable because the clean
       registry has no peer public key to bind to unowned live peer material, and
-      the old repo skipped these cases. Next concrete action: design the node
-      identity artifact probe needed for unknown-host and active missing-peer
-      adoption, while keeping missing-peer cases as conflict or
-      `doctor --family=node --fix` handoff until that probe can prove them
-      safely.
+      the old repo skipped these cases. The node identity artifact proof
+      contract is now documented in the node doctor and `node:new` technical
+      docs. Next concrete action: implement a read-only node identity artifact
+      probe that can inspect bounded non-secret identity facts from a selected
+      gateway or app host, then use it to unlock unknown-host and active
+      missing-peer adoption.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

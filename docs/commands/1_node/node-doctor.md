@@ -170,6 +170,13 @@ unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
 tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
 deployments.
 
+Unknown-host adoption and active-node missing-peer adoption remain unavailable
+until the node family can verify a non-secret node identity artifact from the
+target host. That proof must bind the selected node name, role, local role
+setting, supported platform, and any existing WireGuard public key or address to
+gateway intent. An operator-supplied host, a live WireGuard peer, or a registry
+row alone must leave the adoption result as `conflict` or `skipped`.
+
 ## Test Mapping
 
 Required test files:
