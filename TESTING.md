@@ -385,6 +385,38 @@ composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
 composer test:e2e
 ```
 
+On this Mac, OrbStack provides the local Docker CLI and daemon. The active
+Docker context should normally be `orbstack`:
+
+```bash
+docker context ls
+docker info --format '{{.ServerVersion}} {{.Name}}'
+```
+
+Remote Docker feature hosts are still driven by the local OrbStack/Docker CLI.
+The E2E Docker provider does not run `ssh sidecar1 docker ...`; it runs local
+Docker commands with `DOCKER_HOST=ssh://<host>`. If a feature E2E run reports
+`docker daemon is not reachable`, verify the same transport the provider uses
+before declaring Docker unavailable:
+
+```bash
+for host in sidecar1 sidecar2 beast; do
+  DOCKER_HOST=ssh://$host docker info --format '{{.ServerVersion}} {{.Name}}'
+done
+```
+
+For comparison only, direct SSH can prove the host is reachable, but it does not
+exercise Docker's SSH transport:
+
+```bash
+ssh -o BatchMode=yes sidecar1 'hostname && command -v docker && docker info --format "{{.ServerVersion}} {{.Name}}"'
+```
+
+If the direct SSH check passes but `DOCKER_HOST=ssh://... docker info` fails,
+debug Docker CLI SSH transport, SSH multiplexing, or Docker context/env state.
+Do not switch the E2E provider to `ssh host docker ...`; the supported remote
+Docker transport is `DOCKER_HOST=ssh://<host>`.
+
 The recommended local topology is to run Docker containers on `sidecar1` and
 `sidecar2` first, with `beast` as overflow capacity only when it is not running
 Incus provisioning E2E. Incus provisioning runs on `beast` only. Set
