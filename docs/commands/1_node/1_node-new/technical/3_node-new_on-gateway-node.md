@@ -20,6 +20,9 @@ gateway node.
 - For `--role=app --environment=development`, `node_new.tld` can be resolved,
   is unique in gateway node intent, and is not already mapped to another gateway
   development DNS target.
+- For `--role=app --environment=development`, the gateway can use the internal
+  node-family development DNS enactor to converge `*.{node_new.tld}` to the
+  app node's WireGuard address without exposing a public resolver.
 - For `--role=app`, the target host platform is supported for the app role.
 - For `--role=gateway`, `node_new.host` can be resolved and is compatible with
   the requested gateway identity before convergence or adoption begins.
@@ -123,11 +126,20 @@ For `--role=app`:
 6. Mint or verify WireGuard identity.
 7. Register node intent, including `nodes.tld` for development app nodes.
 8. Configure the app node's local TLD default for development app nodes.
-9. Create or converge the gateway-owned development DNS mapping
-   `*.{node_new.tld} -> nodes.wg_ip`.
+9. Use the internal node-family development DNS enactor to create or converge
+   the gateway-owned mapping `*.{node_new.tld}` to the app node's WireGuard
+   address.
 10. Verify node readiness.
 11. Set `general.local_node_role=app` on the app host as the app-node
     bootstrap commit point.
+
+The gateway-owned development DNS intent model is derived from the active
+development app-node row, not from a public DNS command record. The enactor must
+write only gateway-local Orbit-managed resolver artifacts, bind them to the
+Orbit/WireGuard-reachable resolver surface, and avoid public open-resolver
+exposure. If the node row is written but development DNS convergence fails,
+`node:new` reports partial provisioning with a node-family drift handoff to
+`doctor --family=node --fix`.
 
 Compatible app-node adoption may use existing non-active gateway intent only
 when node-family adoption can prove the registry peer material against live
@@ -169,7 +181,9 @@ before any durable write:
    gateway `wireguard_peers` row using the proven public key and allowed IPs.
    The private key remains empty because adoption never reads private key
    material from nodes.
-7. Run the same node-family adoption/readiness checks used for selected
+7. For development app nodes, converge the derived gateway-owned development
+   DNS mapping through the same node-family enactor used by provisioning.
+8. Run the same node-family adoption/readiness checks used for selected
    app-node adoption. If runtime readiness or other node-owned bootstrap facts
    cannot be verified, fail with `node.provisioning_incomplete` and include the
    adoption results.

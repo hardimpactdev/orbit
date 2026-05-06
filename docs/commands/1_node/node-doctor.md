@@ -72,10 +72,11 @@ The node probe reads gateway node records and checks these layers:
     `firewall_rule`.
 11. **Development TLD readiness:** development app nodes have a `nodes.tld`
    value, the app node's local TLD default matches the node record, and the
-   gateway maps `*.nodes.tld` to the node's WireGuard address. The gateway
-   development DNS resolver must be WireGuard-reachable and must not expose a
-   public open resolver. Production app nodes, gateways, and control nodes have
-   no development TLD mapping.
+   gateway maps `*.{nodes.tld}` to the node's WireGuard address through the
+   node-family development DNS intent model. The gateway development DNS
+   resolver must be WireGuard-reachable and must not expose a public open
+   resolver. Production app nodes, gateways, and control nodes have no
+   development TLD mapping.
 12. **Node-related defaults:** local `node:default` preferences point at
    active, authorized development app nodes when `--self` inspects a control
    node, node-level PHP CLI defaults point at installed supported PHP
@@ -113,7 +114,7 @@ endpoint.
 | `node.bootstrap_network_policy_mismatch` | A gateway or app node's role bootstrap network policy is missing, unsafe, or inconsistent with its role/environment. |
 | `node.development_tld_missing` | A development app-node record has no `nodes.tld` value. |
 | `node.development_tld_mismatch` | The app node's local TLD default differs from the gateway node record. |
-| `node.development_dns_mapping_mismatch` | The gateway development DNS mapping for `*.nodes.tld` is absent or points anywhere other than the app node's WireGuard address. |
+| `node.development_dns_mapping_mismatch` | The gateway development DNS mapping for `*.{nodes.tld}` is absent, is not owned by the selected node, or points anywhere other than the app node's WireGuard address. |
 | `node.development_dns_public_exposure` | Gateway-provisioned development DNS is exposed as a public resolver instead of being reachable only through the Orbit network. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-development app node. |
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway intent is absent on the selected node or the target node's default `php` binary differs from gateway intent. |
@@ -137,8 +138,8 @@ endpoint.
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role/environment with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.development_tld_missing` | Restore the development TLD from gateway node intent when that intent has exactly one value. |
 | `node.development_tld_mismatch` | Rewrite the app node's local TLD default to the value in the gateway node record. |
-| `node.development_dns_mapping_mismatch` | Rewrite the gateway development DNS mapping to the app node's WireGuard address. |
-| `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network. |
+| `node.development_dns_mapping_mismatch` | Reconcile the derived gateway development DNS mapping to the app node's WireGuard address, or remove an orphaned Orbit-managed mapping when no active development app node owns it. |
+| `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network and not bound as a public resolver. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
 `--fix` does not handle `node.record_incomplete`,

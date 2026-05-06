@@ -69,11 +69,36 @@ platform checks; platform drift belongs to `doctor --family=node`.
 Node access grants are gateway-owned policy. They are not transport-specific,
 do not grant SSH, and do not replace WireGuard authentication.
 
+## Development DNS Mapping
+
+- **Gateway-owned development DNS mapping:** Node-family gateway intent and
+  gateway-local resolver reality that maps `*.{nodes.tld}` for an active
+  development app node to that node's WireGuard address.
+- **Development DNS intent model:** Derived from the active app-node row. A
+  mapping exists only when the node row is an active development app node,
+  `nodes.tld` is non-empty, and the node row has a non-empty WireGuard address.
+  The canonical domain is `*.{nodes.tld}` and the canonical target is the
+  node's WireGuard address.
+- **Development DNS enactor:** Internal node-family gateway service that
+  converges or removes gateway-local development DNS resolver artifacts from
+  the derived intent model. It is used by app-node provisioning, app-node
+  adoption/materialization, node removal, and `doctor --family=node --fix`.
+- **Development DNS probe:** Internal node-family gateway service that reads
+  gateway-local resolver reality for derived development DNS intent and reports
+  node-family drift when the mapping is absent, points at another target, or is
+  publicly exposed.
+
+Development DNS mappings are not a public `dns:*` command surface and do not
+create a `dns` state family. The `dns:*` commands own caller-local resolver
+overrides only. The node family owns the gateway mapping lifecycle because it is
+part of development app-node readiness.
+
 ## Node Family Boundaries
 
 The node family owns fleet membership, node roles, supported platforms, gateway
 configuration, node identity, app-node reachability from the gateway, access
-policy, gateway runtime readiness, and node lifecycle checks.
+policy, gateway runtime readiness, gateway-owned development DNS mappings, and
+node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process
 or schedule definitions, proxy route lifecycle, tool registration, or editable

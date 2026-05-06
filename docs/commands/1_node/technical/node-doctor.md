@@ -191,6 +191,19 @@ additional external services:
     missing-peer adoption. Unknown-host and gateway-role adoption still require
     a separate materialization path before they can use this proof safely.
 - Development TLD reality (`node.development_tld_mismatch`, `node.development_dns_mapping_mismatch`, `node.development_dns_public_exposure`)
+  - `DevelopmentDnsMappingProbe` reads gateway-local Orbit-managed development
+    DNS resolver artifacts for the derived node intent model:
+    active development app-node rows with non-empty `nodes.tld` and
+    non-empty WireGuard addresses.
+  - The canonical mapping is `*.{nodes.tld}` to the app node's WireGuard
+    address, owned by the app node name. Missing artifacts, conflicting
+    ownership, and target mismatches report
+    `node.development_dns_mapping_mismatch`.
+  - Resolver bindings or listener configuration that expose the development DNS
+    resolver outside the Orbit/WireGuard network report
+    `node.development_dns_public_exposure`.
+  - Production app nodes, gateway nodes, and control nodes must not have derived
+    development DNS mappings.
 - CLI PHP default (`node.cli_php_default_mismatch`)
 - Local caller identity (`node.identity_unresolved`)
 - Gateway API reachability (`node.gateway_api_unreachable`)
@@ -245,6 +258,8 @@ node names or roles from unselected live reality.
 | `node.gateway_runtime_unready` | Stub: reserved for gateway-side runtime restart. |
 | `node.app_runtime_missing` | Stub: reserved for app-node bootstrap rerun. |
 | `node.access_grant_invalid` | Removes stale `NodeAccess` rows referencing missing or non-active nodes. |
+| `node.development_dns_mapping_mismatch` | Stub: reserved for `DevelopmentDnsMappingEnactor` convergence or orphaned mapping removal. |
+| `node.development_dns_public_exposure` | Stub: reserved for recreating the gateway development DNS resolver with Orbit/WireGuard-only binding. |
 
 ### Unsupported Keys
 

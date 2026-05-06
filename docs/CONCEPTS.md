@@ -82,6 +82,10 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 - **Node reality**
 - **Consuming node**
 - **Serving node**
+- **Gateway-owned development DNS mapping**
+- **Development DNS intent model**
+- **Development DNS enactor**
+- **Development DNS probe**
 <!-- /concept-index -->
 
 ## Gateway Concepts

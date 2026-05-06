@@ -132,11 +132,14 @@ Detail file for the node command family. Top-level command status lives in
     reads the removed state back through forwarded `node:show`.
   - Contract gaps:
     - [!] DNS mapping cleanup for dev-app nodes is blocked until the clean repo
-      has gateway-owned development DNS mapping state. Current `dns:*`
-      commands intentionally manage caller-local resolver overrides only and
-      do not own gateway development DNS mappings. Next concrete action: design
-      the gateway-owned development DNS mapping model/API used by node
-      provisioning, node removal, and node doctor.
+      implements the gateway-owned development DNS mapping enactor/probe
+      defined by the node-family docs. Current `dns:*` commands intentionally
+      manage caller-local resolver overrides only and do not own gateway
+      development DNS mappings. Next concrete action: implement the internal
+      node-family `DevelopmentDnsMappingEnactor` and
+      `DevelopmentDnsMappingProbe`, wire `node:new`, `node:remove`, and
+      `NodesProbe` to them, then cover provisioning, cleanup, drift, and
+      public-exposure behavior with focused Pest tests.
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:agent-ide`.
   - Current implementation: `app/Console/Commands/NodeAgentIdeCommand.php`

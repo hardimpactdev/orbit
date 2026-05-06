@@ -119,8 +119,15 @@ Role-specific behavior is defined in these companion contracts:
 - Delete all `node_access` records where the node is the consumer or the
   serving node.
 - When the removed node is a development app node with a stored TLD, remove the
-  gateway-owned development DNS mapping for `*.nodes.tld`.
+  gateway-owned development DNS mapping for `*.{nodes.tld}` through the
+  internal node-family development DNS enactor before deleting the node row.
 - Delete the node record from the gateway registry.
+
+The development DNS cleanup target is derived from the node row being removed:
+domain `*.{nodes.tld}`, target WireGuard address, and owner node name. Removal
+must delete only Orbit-managed gateway resolver artifacts for that derived
+mapping. It must not call `dns:*`, remove caller-local resolver overrides, or
+edit public/provider DNS.
 
 ### WireGuard Detach Rules
 
@@ -179,6 +186,12 @@ Partial WireGuard detach during removal is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale peer is
 node-family drift. JSON output reports this under `success.meta.warnings` with
 `code=node.wireguard_peer_extra` and
+`next_command=doctor --family=node --fix`.
+
+Partial development DNS cleanup is reported as success with a structured
+warning, not as a command failure. The node record is removed; the stale
+gateway resolver artifact is node-family drift. JSON output reports this under
+`success.meta.warnings` with `code=node.development_dns_mapping_mismatch` and
 `next_command=doctor --family=node --fix`.
 
 The absent-target rule is intentionally different from `node:revoke`.
