@@ -106,6 +106,7 @@ final readonly class AgentIdeMessageController
                 message: $e->getMessage(),
                 meta: $e->errorMeta(),
                 status: $this->statusFor($e->errorCode()),
+                data: $e->errorData(),
             );
         }
 
@@ -152,6 +153,7 @@ final readonly class AgentIdeMessageController
                 message: $e->getMessage(),
                 meta: $e->errorMeta(),
                 status: $this->statusFor($e->errorCode()),
+                data: $e->errorData(),
             );
         }
 
@@ -240,14 +242,20 @@ final readonly class AgentIdeMessageController
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function error(string $code, string $message, array $meta, int $status): JsonResponse
+    private function error(string $code, string $message, array $meta, int $status, array $data = []): JsonResponse
     {
+        $error = [
+            'code' => $code,
+            'message' => $message,
+            'meta' => $meta,
+        ];
+
+        if ($data !== []) {
+            $error['data'] = $data;
+        }
+
         return response()->json([
-            'error' => [
-                'code' => $code,
-                'message' => $message,
-                'meta' => $meta,
-            ],
+            'error' => $error,
         ], $status);
     }
 }

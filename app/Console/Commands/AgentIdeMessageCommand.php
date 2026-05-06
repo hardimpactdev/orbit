@@ -48,6 +48,7 @@ class AgentIdeMessageCommand extends Command
                 code: $e->errorCode() ?? 'validation_failed',
                 message: $e->getMessage(),
                 meta: $e->errorMeta(),
+                data: $e->errorData(),
             );
         }
 
@@ -97,6 +98,7 @@ class AgentIdeMessageCommand extends Command
                 code: $e->errorCode() ?? 'adapter_delivery_failed',
                 message: $e->getMessage(),
                 meta: $e->errorMeta(),
+                data: $e->errorData(),
             );
         }
     }
@@ -123,6 +125,7 @@ class AgentIdeMessageCommand extends Command
                     ? $e->getMessage()
                     : 'Gateway connection is required to send Agent IDE messages.',
                 meta: $e->errorMeta(),
+                data: $e->errorData(),
             );
         } catch (\Throwable) {
             return $this->failCommand(
@@ -241,7 +244,7 @@ class AgentIdeMessageCommand extends Command
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function failCommand(string $code, string $message, array $meta): int
+    private function failCommand(string $code, string $message, array $meta, array $data = []): int
     {
         if (! $this->wantsJson()) {
             $this->error($message);
@@ -249,11 +252,19 @@ class AgentIdeMessageCommand extends Command
             return self::FAILURE;
         }
 
+        $error = [
+            'code' => $code,
+            'message' => $message,
+            'meta' => empty($meta) ? (object) [] : $meta,
+        ];
+
+        if ($data !== []) {
+            $error['data'] = $data;
+        }
+
         $this->line(json_encode([
             'error' => [
-                'code' => $code,
-                'message' => $message,
-                'meta' => empty($meta) ? (object) [] : $meta,
+                ...$error,
             ],
         ], JSON_THROW_ON_ERROR));
 

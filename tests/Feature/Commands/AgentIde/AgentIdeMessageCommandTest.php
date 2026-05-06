@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\AgentIdeMessageCommand;
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -26,6 +27,8 @@ final class FakeAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 {
     public array $deliveries = [];
 
+    public ?GatewayApiException $deliveryException = null;
+
     public ?array $session = [
         'id' => 'sess_123',
         'status' => 'active',
@@ -38,6 +41,10 @@ final class FakeAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
     public function deliver(array $target, string $adapter, array $session, string $message): array
     {
+        if ($this->deliveryException instanceof GatewayApiException) {
+            throw $this->deliveryException;
+        }
+
         $this->deliveries[] = compact('target', 'adapter', 'session', 'message');
 
         return [
@@ -545,6 +552,50 @@ it('fails when the adapter cannot find an active session', function (): void {
         ->and($adapter->deliveries)->toBeEmpty();
 });
 
+it('renders adapter delivery diagnostics under error data for gateway callers', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    $adapter->deliveryException = new GatewayApiException(
+        message: 'Agent IDE adapter opencode could not deliver the message.',
+        errorCode: 'adapter_delivery_failed',
+        errorMeta: [
+            'app' => 'docs',
+            'workspace' => null,
+            'adapter' => 'opencode',
+        ],
+        errorData: [
+            'adapter_error' => [
+                'message' => 'Request timed out',
+            ],
+        ],
+    );
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error']['code'])->toBe('adapter_delivery_failed')
+        ->and($payload['error']['data']['adapter_error']['message'])->toBe('Request timed out')
+        ->and($payload['error']['meta']['adapter'])->toBe('opencode')
+        ->and($payload['error'])->not->toHaveKey('success');
+});
+
 it('does not mutate app node or process state while messaging', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
@@ -785,6 +836,51 @@ it('forwards configured workspace targets through the typed gateway request', fu
 
     $mockClient->assertSent(fn (SendAgentIdeMessageRequest $request): bool => $request->workspace === 'feature-docs'
         && $request->app === null);
+});
+
+it('preserves forwarded adapter delivery diagnostics under error data', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        SendAgentIdeMessageRequest::class => MockResponse::make([
+            'error' => [
+                'code' => 'adapter_delivery_failed',
+                'message' => 'Agent IDE adapter opencode could not deliver the message.',
+                'data' => [
+                    'adapter_error' => [
+                        'message' => 'Request timed out',
+                    ],
+                ],
+                'meta' => [
+                    'app' => 'docs',
+                    'workspace' => null,
+                    'adapter' => 'opencode',
+                ],
+            ],
+        ], 502),
+    ]);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload['error']['code'])->toBe('adapter_delivery_failed')
+        ->and($payload['error']['data']['adapter_error']['message'])->toBe('Request timed out')
+        ->and($payload['error']['meta']['adapter'])->toBe('opencode');
 });
 
 it('forwards current working directory context through the typed gateway request', function (): void {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -18,6 +19,8 @@ final class FakeApiAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 {
     public array $deliveries = [];
 
+    public ?GatewayApiException $deliveryException = null;
+
     public function activeSession(array $target, string $adapter): ?array
     {
         return [
@@ -28,6 +31,10 @@ final class FakeApiAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
     public function deliver(array $target, string $adapter, array $session, string $message): array
     {
+        if ($this->deliveryException instanceof GatewayApiException) {
+            throw $this->deliveryException;
+        }
+
         $this->deliveries[] = compact('target', 'adapter', 'session', 'message');
 
         return [
@@ -223,6 +230,48 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
 
     expect($adapter->deliveries)->toHaveCount(1)
         ->and($adapter->deliveries[0]['target']['workspace'])->toBe('feature-docs');
+});
+
+it('returns adapter delivery diagnostics under error data', function (): void {
+    $caller = createAgentIdeMessageCallerNode();
+    $appNode = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    grantAgentIdeMessageAccess($caller, $appNode);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $adapter = new FakeApiAgentIdeMessageAdapter;
+    $adapter->deliveryException = new GatewayApiException(
+        message: 'Agent IDE adapter opencode could not deliver the message.',
+        errorCode: 'adapter_delivery_failed',
+        errorMeta: [
+            'app' => 'docs',
+            'workspace' => null,
+            'adapter' => 'opencode',
+        ],
+        errorData: [
+            'adapter_error' => [
+                'message' => 'Request timed out',
+            ],
+        ],
+    );
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $response = postAgentIdeMessageJson([
+        'message' => 'Ship the docs',
+        'app' => 'docs',
+    ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
+
+    $response->assertStatus(500)
+        ->assertJsonPath('error.code', 'adapter_delivery_failed')
+        ->assertJsonPath('error.data.adapter_error.message', 'Request timed out')
+        ->assertJsonPath('error.meta.adapter', 'opencode');
 });
 
 it('rejects unauthorized callers without delivering', function (): void {

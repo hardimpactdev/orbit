@@ -47,7 +47,10 @@ transports remain open.
     resolution when combined with a positional message.
   - [x] Human success rendering includes the documented completed progress tree
     and app/workspace delivery summaries without leaking JSON envelopes.
-  - [!] Adapter delivery diagnostics under `error.data`, activity logging for
-    the API endpoint, and real core adapter transports remain unported. Next
-    concrete action: preserve adapter delivery failure diagnostics in
-    `error.data` for JSON and gateway-forwarded failures.
+  - [x] Adapter delivery diagnostics under `error.data` are preserved for
+    gateway-local JSON errors, gateway API errors, and forwarded command
+    failures.
+  - [!] Activity logging for the API endpoint and real core adapter transports
+    remain unported. Next concrete action: add `Loggable` activity coverage for
+    `POST /api/agent-ide/message` without storing full message bodies or
+    adapter secrets.
