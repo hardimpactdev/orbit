@@ -19,10 +19,21 @@ prerequisites are in place:
 - [~] `agent-ide:message`
   - [x] Command docs are converted into the current split-file shape.
   - [x] Family abstraction seed exists.
-  - [!] Implementation is blocked until the first `agent-ide:message` slice
-    defines the clean-rebuild adapter delivery contract and fake adapter driver
-    test seam. Next concrete action: implement a gateway-local in-memory slice
-    that resolves an explicit app target, resolves the effective adapter through
-    current app/node intent, delivers through a container-bound fake adapter
-    driver, and returns the documented JSON success/error envelopes without
-    creating sessions or mutating app/workspace/process/node/tool state.
+  - [x] Gateway-local explicit app-target JSON slice: resolves effective
+    adapters through current app/node intent, validates the core adapter
+    registry, uses a container-bound `AgentIdeMessageAdapter` seam for active
+    session lookup and delivery, returns documented success, no-adapter, and
+    no-active-session JSON envelopes, and proves messaging does not mutate
+    app/workspace/process/node/tool state.
+  - [!] Configured control/app caller forwarding is blocked until the gateway
+    API endpoint and typed `SendAgentIdeMessageRequest`/response DTO are ported.
+    Current command behavior fails non-gateway callers before local state can be
+    treated as authority. Next concrete action: add the gateway API endpoint,
+    authorization path, typed gateway request/DTO, and command forwarding for
+    explicit app targets.
+  - [!] Workspace targets, current-directory target inference, stdin input,
+    human progress-tree rendering, adapter delivery diagnostics under
+    `error.data`, and real core adapter transports remain unported. Next
+    concrete action after forwarding: extend the command in narrow slices that
+    each add one documented input/rendering/delivery behavior with focused Pest
+    coverage.
