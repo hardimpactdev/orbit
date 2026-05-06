@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
@@ -133,5 +134,82 @@ describe('NodeStoreController', function (): void {
 
         expect(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
         Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
+    it('adopts a compatible app node for an authenticated control caller', function (): void {
+        DB::table('nodes')->insert([
+            apiStoreNodeRow(),
+            apiStoreNodeRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'host' => '10.6.0.3',
+                'wireguard_address' => '10.6.0.3',
+                'gateway_endpoint' => '10.6.0.2',
+                'ssh_user' => 'tester',
+                'user' => 'tester',
+                'orbit_path' => '/home/tester/orbit',
+                'is_local' => false,
+            ]),
+        ]);
+
+        $nodeId = DB::table('nodes')->insertGetId(apiStoreNodeRow([
+            'name' => 'app-adopt-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'host' => '192.0.2.30',
+            'wireguard_address' => '10.6.0.8',
+            'gateway_endpoint' => '10.6.0.2',
+            'ssh_user' => 'provisioner',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'decommissioned',
+            'is_local' => false,
+        ]));
+
+        WireGuardPeer::query()->create([
+            'node_id' => $nodeId,
+            'public_key' => 'app-public-key',
+            'private_key' => 'app-private-key',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.9/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'app-adopt-1',
+                'role' => 'app',
+                'host' => '192.0.2.30',
+                'environment' => 'development',
+                'tld' => 'test',
+                'ssh_user' => 'provisioner',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.result.action', 'adopted')
+            ->assertJsonPath('success.data.provisioning.status', 'adopted')
+            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.9');
+
+        $node = DB::table('nodes')->where('name', 'app-adopt-1')->first();
+
+        expect($node)->not->toBeNull()
+            ->and($node->status)->toBe('active')
+            ->and($node->wireguard_address)->toBe('10.6.0.9');
+
+        $entry = Activity::query()
+            ->where('event', 'node.created')
+            ->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->subject?->name)->toBe('app-adopt-1');
+
+        Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
     });
 });

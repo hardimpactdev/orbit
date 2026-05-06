@@ -1173,6 +1173,74 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
+    it('forwards app-node adoption when gateway add only stored local gateway settings', function (): void {
+        DB::table('local_gateway_settings')->insert([
+            'gateway_url' => 'https://10.6.0.2',
+            'gateway_wg_ip' => '10.6.0.2',
+            'ca_sha256' => 'fake',
+            'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+            'trusted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $mock = fakeNodeCreateGateway([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'adopted'],
+                    'node' => [
+                        'name' => 'app-adopt-1',
+                        'role' => 'app',
+                        'environment' => 'development',
+                        'tld' => 'test',
+                        'platform' => 'ubuntu_24-04',
+                        'addresses' => [
+                            'wireguard' => '10.6.0.9',
+                        ],
+                        'status' => 'active',
+                    ],
+                    'provisioning' => [
+                        'transport' => 'none',
+                        'host' => '192.0.2.30',
+                        'status' => 'adopted',
+                    ],
+                ],
+            ],
+        ]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-adopt-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.30',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('adopted')
+            ->and($payload['success']['data']['provisioning']['status'])->toBe('adopted')
+            ->and(DB::table('nodes')->where('name', 'app-adopt-1')->exists())->toBeFalse();
+
+        $mock->assertSent(fn (CreateNodeRequest $request): bool => $request->resolveEndpoint() === '/api/nodes'
+            && $request->body()->all() === [
+                'name' => 'app-adopt-1',
+                'role' => 'app',
+                'host' => '192.0.2.30',
+                'environment' => 'development',
+                'tld' => 'test',
+                'ssh_user' => 'provisioner',
+            ]);
+
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
+
     it('forwards control-node enrollment when gateway add only stored local gateway settings', function (): void {
         DB::table('local_gateway_settings')->insert([
             'gateway_url' => 'https://10.6.0.2',

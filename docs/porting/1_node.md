@@ -194,10 +194,12 @@ Detail file for the node command family. Top-level command status lives in
   - [x] Interactive input mode.
   - [~] Gateway-connected forwarding from configured control nodes.
     - [x] App-node creation forwarding.
+    - [x] Compatible app-node adoption forwarding.
     - [x] Control-node enrollment forwarding.
     - [x] Gateway convergence forwarding.
-    - [!] Gateway adoption forwarding is blocked until gateway-local adoption
-      can safely prove compatible already-provisioned host identity.
+    - [!] Remaining gateway adoption forwarding is blocked until gateway-local
+      gateway-role and unknown-host adoption can safely prove compatible
+      already-provisioned host identity.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
     - [x] Compatible app-node adoption for existing non-active gateway intent
@@ -216,11 +218,11 @@ Detail file for the node command family. Top-level command status lives in
       for gateway-local compatible app-node adoption. Active-node missing-peer
       adoption and unknown-host adoption remain unavailable because the clean
       registry has no peer public key to bind to unowned live peer material, and
-      the old repo skipped these cases. Next concrete action: add the matching
-      gateway-forwarded adoption coverage/API contract for configured control
-      callers, while keeping missing-peer cases as conflict or
-      `doctor --family=node --fix` handoff until a node identity artifact probe
-      can prove them safely.
+      the old repo skipped these cases. Next concrete action: design the node
+      identity artifact probe needed for unknown-host and active missing-peer
+      adoption, while keeping missing-peer cases as conflict or
+      `doctor --family=node --fix` handoff until that probe can prove them
+      safely.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
