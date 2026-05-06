@@ -70,6 +70,19 @@ observed backend rules. Related drift belongs to the owning family doctor.
 - [Human renderer](6.1_firewall-allow_output-render_human.md)
 - [JSON renderer](6.2_firewall-allow_output-render_json.md)
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+intent writes.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /firewall-rules` |
+| Effect | `write` |
+| Subject | The caller `Node`. |
+| Properties | `name` (string), `node` (string), `action` (`allow`), `port` (string). |
+| Description | `derived` |
+
 ## Failure Semantics
 
 | Failure | Condition | Outcome |

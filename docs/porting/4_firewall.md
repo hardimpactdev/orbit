@@ -25,8 +25,7 @@ via `--family=firewall_rule`. Fix map handles `rule_missing` and
 
 ## Activity backfill
 
-- [ ] Author `## Activity Logging` sections for `firewall:list`,
+- [x] Author `## Activity Logging` sections for `firewall:list`,
   `firewall:allow`, `firewall:deny`, `firewall:remove`, then add them to
-  `ActivityLoggingContractRule::ENFORCED_COMMANDS`. Abstraction seed
-  (`docs/abstractions/4_firewall.md`) and command surface are already in
-  place.
+  `ActivityLoggingContractRule::ENFORCED_COMMANDS`. `composer docs-lint`
+  passes.

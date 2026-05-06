@@ -71,6 +71,10 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'schedule-remove',
         'schedule-run',
         'schedule-logs',
+        'firewall-list',
+        'firewall-allow',
+        'firewall-deny',
+        'firewall-remove',
     ];
 
     /**

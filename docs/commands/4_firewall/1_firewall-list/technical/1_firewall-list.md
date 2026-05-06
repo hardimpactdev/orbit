@@ -65,11 +65,24 @@ rules. It must not read backend firewall state directly. Drift belongs to
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to inspect firewall policy for the selected scope. | `error.code=authorization_failed` |
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /firewall-rules` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | `derived` |
+
 ## Doctor Relationship
 
 `firewall-list` reads gateway firewall-rule intent only.
 [`firewall-doctor.md`](../../firewall-doctor.md) owns the authoritative
-`firewall_rule` probe, issue codes, fix map, and adopt map.
+`firewall_rule` probe, drift, fix map, and adopt map.
 
 ## Test Mapping
 

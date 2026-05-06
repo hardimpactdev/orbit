@@ -66,6 +66,19 @@ doctor.
 - [Human renderer](6.1_firewall-remove_output-render_human.md)
 - [JSON renderer](6.2_firewall-remove_output-render_json.md)
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+destructive removals.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /firewall-rules/{name}` |
+| Effect | `destructive` |
+| Subject | The caller `Node`. |
+| Properties | `name` (string from route parameter), `node` (string from query). |
+| Description | `derived` |
+
 ## Failure Semantics
 
 | Failure | Condition | Outcome |

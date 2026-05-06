@@ -116,10 +116,10 @@ MD,
 it('ignores commands that are not in the enforced allowlist', function (): void {
     $rule = new ActivityLoggingContractRule;
     $context = activityLoggingContractContext([
-        '4_firewall/1_firewall-list/technical/1_firewall-list.md' => <<<'MD'
-# Technical Contract: `orbit firewall:list`
+        '3_tool/5_tool-start/technical/1_tool-start.md' => <<<'MD'
+# Technical Contract: `orbit tool:start`
 
-**Owner:** `firewall`.
+**Owner:** `tool`.
 MD,
     ]);
 
