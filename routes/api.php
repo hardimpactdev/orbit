@@ -52,6 +52,7 @@ use App\Http\Controllers\Api\ScheduleStoreController;
 use App\Http\Controllers\Api\ScheduleSyncController;
 use App\Http\Controllers\Api\ToolListController;
 use App\Http\Controllers\Api\ToolShowController;
+use App\Http\Controllers\Api\ToolStartController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
@@ -118,6 +119,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/apps/{app}', AppRemoveController::class);
         Route::get('/apps/{app}', AppShowController::class);
         Route::get('/tools', ToolListController::class);
+        Route::post('/tools/{tool}/start', ToolStartController::class);
         Route::get('/tools/{tool}', ToolShowController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
