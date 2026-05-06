@@ -1297,7 +1297,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     runtime-unit rendering for main app and existing workspaces, optional
     `--start`, repairable warning output after post-intent runtime drift,
     human/JSON renderers, and focused Pest coverage.
-  - [ ] `process:edit` and `process:remove`.
+  - [x] `process:edit` gateway-local intent update, typed gateway API
+    forwarding, access-policy authorization, editable-field validation,
+    Supervisor runtime-unit re-rendering for main app and existing workspaces,
+    optional `--restart`, repairable warning output after post-intent runtime
+    drift, human/JSON renderers, and focused Pest coverage.
+  - [ ] `process:remove`.
 - [ ] Port process start/stop/restart commands against Supervisor.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.

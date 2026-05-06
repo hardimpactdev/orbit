@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\ProcessListController;
 use App\Http\Controllers\Api\ProcessStoreController;
+use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
@@ -47,6 +48,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/processes', ProcessListController::class);
         Route::post('/processes', ProcessStoreController::class);
+        Route::patch('/processes/{name}', ProcessUpdateController::class);
         Route::get('/profile', ProfileController::class);
         Route::post('/schedules/runs', ScheduleRunStoreController::class);
         Route::get('/workspaces', WorkspaceListController::class);
