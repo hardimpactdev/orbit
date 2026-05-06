@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $orbit_path
  * @property string $status
  * @property bool $is_local
+ * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read SchedulerState|null $schedulerState
  * @property-read Collection<int, Schedule> $schedules
  */
@@ -98,6 +99,14 @@ class Node extends Model
     public function schedules(): HasMany
     {
         return $this->hasMany(Schedule::class)->orderBy('name');
+    }
+
+    /**
+     * @return HasMany<NodeTool, $this>
+     */
+    public function nodeTools(): HasMany
+    {
+        return $this->hasMany(NodeTool::class)->orderBy('name');
     }
 
     /**

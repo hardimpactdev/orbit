@@ -96,12 +96,13 @@ trait LogsCommandActivity
 
         $causer = $this->resolveLocalNode();
         $target = app(ActivityLogTargets::class)->primary();
+        $hostName = gethostname() ?: 'unknown';
 
         $extra = [
             'client' => 'cli',
-            'actor_name' => $causer?->name ?? gethostname() ?: 'unknown',
+            'actor_name' => $causer instanceof Node ? $causer->name : $hostName,
             'actor_wg_ip' => $causer?->wireguard_address,
-            'served_by_name' => $causer?->name ?? gethostname() ?: 'unknown',
+            'served_by_name' => $causer instanceof Node ? $causer->name : $hostName,
             'served_by_wg_ip' => $causer?->wireguard_address,
         ];
 

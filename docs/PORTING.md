@@ -1656,6 +1656,9 @@ for the Saloon-based gateway transport pattern.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
+  - [x] Tool read API foundation exists for gateway-owned registry reads:
+    `node_tools` schema/model/factory, `GET /api/tools`,
+    `GET /api/tools/{tool}`, and typed Saloon list/show requests.
 - [ ] Port doctor API controllers and typed client requests after doctor docs
   are converted.
 - [ ] Port long-running SSE progress primitives.
@@ -1687,6 +1690,9 @@ for the Saloon-based gateway transport pattern.
 - [ ] Port firewall rule family.
 - [ ] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
+  - [~] Read foundation exists for registry-backed `tool:list` / `tool:show`
+    command wiring: node tool intent schema/model, gateway API list/show
+    controllers, and typed gateway client requests.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through
