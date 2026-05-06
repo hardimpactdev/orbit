@@ -17,6 +17,7 @@ final readonly class AppsProbe
 
     public function __construct(
         private ?RemoteShell $remoteShell = null,
+        private ?AppFpmPoolRenderer $fpmPoolRenderer = null,
     ) {}
 
     public function key(): string
@@ -42,6 +43,8 @@ final readonly class AppsProbe
             'path' => $app->path,
             'document_root' => $app->document_root,
             'php_version' => $app->php_version,
+            'fpm_pool_path' => $this->fpmPoolPath($app),
+            'fpm_pool_hash' => hash('sha256', $this->fpmPoolRenderer()->content($app)),
         ];
 
         $script = <<<'BASH'
@@ -60,6 +63,8 @@ $rootPath = $root === '' ? $path : $path.'/'.$root;
 $rootExists = is_dir($rootPath) ? '1' : '0';
 $rootInsidePath = str_starts_with(normalize_path($rootPath), normalize_path($path).'/') || normalize_path($rootPath) === normalize_path($path) ? '1' : '0';
 $phpVersion = (string) ($spec['php_version'] ?? '');
+$fpmPoolPath = (string) ($spec['fpm_pool_path'] ?? '');
+$fpmPoolHash = (string) ($spec['fpm_pool_hash'] ?? '');
 $phpFpmAvailable = (
     is_executable("/usr/sbin/php-fpm{$phpVersion}")
     || command_exists("php-fpm{$phpVersion}")
@@ -68,8 +73,10 @@ $phpFpmAvailable = (
 )
         ? '1'
         : '0';
+$fpmConfigExists = is_file($fpmPoolPath) ? '1' : '0';
+$fpmConfigMatches = $fpmConfigExists === '1' && hash_file('sha256', $fpmPoolPath) === $fpmPoolHash ? '1' : '0';
 
-printf("%s\t%s\t%s\t%s\t%s\n", $name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable);
+printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches);
 
 function normalize_path(string $path): string
 {
@@ -115,19 +122,21 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 5);
+            $parts = explode("\t", $line, 7);
 
-            if (count($parts) !== 5) {
+            if (count($parts) !== 7) {
                 continue;
             }
 
-            [$name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable] = $parts;
+            [$name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches] = $parts;
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
                 'root_exists' => $rootExists === '1',
                 'root_inside_path' => $rootInsidePath === '1',
                 'php_fpm_available' => $phpFpmAvailable === '1',
+                'fpm_config_exists' => $fpmConfigExists === '1',
+                'fpm_config_matches' => $fpmConfigMatches === '1',
             ];
         }
 
@@ -146,6 +155,7 @@ BASH;
         $drift = array_merge($drift, $this->checkSourcePath($app, $snapshot));
         $drift = array_merge($drift, $this->checkDocumentRoot($app, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot));
+        $drift = array_merge($drift, $this->checkFpmConfig($app, $snapshot));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($app));
 
         return $drift;
@@ -176,6 +186,52 @@ BASH;
                     key: 'app.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "App record for {$app->name} is missing required fields.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkFpmConfig(App $app, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($app->name);
+
+        if (
+            $observed === null
+            || ($observed['path_exists'] ?? null) === false
+            || ($observed['php_fpm_available'] ?? null) === false
+        ) {
+            return [];
+        }
+
+        if (($observed['fpm_config_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'app.fpm_config_missing',
+                    kind: DriftKind::Missing,
+                    summary: "App {$app->name} PHP-FPM configuration is missing.",
+                    detail: [
+                        'expected' => $this->fpmPoolPath($app),
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['fpm_config_matches'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'app.fpm_config_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "App {$app->name} PHP-FPM configuration differs from gateway app intent.",
+                    detail: [
+                        'expected' => $this->fpmPoolPath($app),
+                    ],
                 ),
             ];
         }
@@ -392,5 +448,15 @@ BASH;
         }
 
         return [];
+    }
+
+    private function fpmPoolPath(App $app): string
+    {
+        return $this->fpmPoolRenderer()->path($app);
+    }
+
+    private function fpmPoolRenderer(): AppFpmPoolRenderer
+    {
+        return $this->fpmPoolRenderer ?? app(AppFpmPoolRenderer::class);
     }
 }

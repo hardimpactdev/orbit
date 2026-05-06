@@ -47,7 +47,7 @@ describe('source path and document root reality', function (): void {
                 'path' => '/home/orbit/apps/docs',
                 'document_root' => 'public',
             ]);
-        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\n");
+        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\t1\t1\n");
 
         $snapshot = (new AppsProbe($shell))->introspect($app);
 
@@ -56,6 +56,8 @@ describe('source path and document root reality', function (): void {
             'root_exists' => true,
             'root_inside_path' => true,
             'php_fpm_available' => true,
+            'fpm_config_exists' => true,
+            'fpm_config_matches' => true,
         ]);
         expect($shell->scripts[0])->toContain('ORBIT_APP_SPEC');
         expect($shell->nodes[0]->is($node))->toBeTrue();
@@ -152,6 +154,56 @@ describe('PHP runtime reality', function (): void {
         $drift = (new AppsProbe)->diff($app, $snapshot);
 
         expect(issue($drift, 'app.php_version_unavailable'))->toBeNull();
+    });
+});
+
+describe('PHP-FPM configuration reality', function (): void {
+    it('detects missing PHP-FPM pool configuration', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => convergedRuntimeSnapshot([
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.fpm_config_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'app.fpm_config_mismatch'))->toBeNull();
+    });
+
+    it('detects PHP-FPM pool configuration mismatches', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => convergedRuntimeSnapshot(['fpm_config_matches' => false]),
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.fpm_config_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('does not report PHP-FPM pool drift before PHP-FPM is available', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => convergedRuntimeSnapshot([
+                'php_fpm_available' => false,
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.fpm_config_missing'))->toBeNull();
+        expect(issue($drift, 'app.fpm_config_mismatch'))->toBeNull();
     });
 });
 
@@ -264,6 +316,19 @@ describe('app agent IDE defaults', function (): void {
 function issue(array $drift, string $key): ?DriftEntry
 {
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
+}
+
+function convergedRuntimeSnapshot(array $overrides = []): array
+{
+    return [
+        'path_exists' => true,
+        'root_exists' => true,
+        'root_inside_path' => true,
+        'php_fpm_available' => true,
+        'fpm_config_exists' => true,
+        'fpm_config_matches' => true,
+        ...$overrides,
+    ];
 }
 
 function appNode(array $overrides = []): Node

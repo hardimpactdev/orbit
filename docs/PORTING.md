@@ -1709,8 +1709,9 @@ for the Saloon-based gateway transport pattern.
     owning-node eligibility, and app agent IDE default checks.
   - [x] Source path and document root reality checks.
   - [x] PHP runtime availability checks.
-  - [ ] External app runtime artifact checks: PHP-FPM configuration, runtime
-    configuration, production policy, deployment health, and stale app artifacts.
+  - [x] PHP-FPM configuration presence and content checks.
+  - [ ] External app runtime artifact checks: runtime configuration, production
+    policy, deployment health, and stale app artifacts.
 - [ ] Port workspace doctor contracts and checks.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
