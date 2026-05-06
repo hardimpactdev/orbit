@@ -1738,7 +1738,14 @@ for the Saloon-based gateway transport pattern.
       defines runtime config, managed ownership, stale artifact inventory, and
       adoption scan inputs, or explicitly narrow `workspace-doctor` to source,
       PHP, and FPM reality until lifecycle commands are unblocked.
-- [ ] Port process doctor contracts and checks.
+- [~] Port process doctor contracts and checks.
+  - [x] Registry-only `ProcessesProbe` foundation: process record completeness,
+    owner-app eligibility, and runtime context expansion checks.
+  - [ ] Runtime backend availability checks.
+  - [ ] Supervisor program presence and content checks.
+  - [ ] Restart policy and runtime environment checks.
+  - [ ] Lifecycle event notifier material checks.
+  - [ ] Stale runtime unit checks.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
 - [~] Port tool family.
