@@ -49,7 +49,7 @@ describe('runtime backend availability', function (): void {
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
         ]);
 
         $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
@@ -65,6 +65,8 @@ describe('runtime backend availability', function (): void {
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
             'config_exists' => true,
             'config_matches' => true,
+            'restart_policy_matches' => true,
+            'environment_matches' => true,
         ]);
     });
 
@@ -121,10 +123,14 @@ describe('supervisor program reality', function (): void {
                     'orbit_docs_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => true,
+                        'restart_policy_matches' => true,
+                        'environment_matches' => true,
                     ],
                     'orbit_docs_feature-docs_vite' => [
                         'config_exists' => false,
                         'config_matches' => false,
+                        'restart_policy_matches' => false,
+                        'environment_matches' => false,
                     ],
                 ],
             ],
@@ -150,6 +156,8 @@ describe('supervisor program reality', function (): void {
                     'orbit_docs_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => false,
+                        'restart_policy_matches' => true,
+                        'environment_matches' => true,
                     ],
                 ],
             ],
@@ -171,6 +179,8 @@ describe('supervisor program reality', function (): void {
                     'orbit_docs_main_vite' => [
                         'config_exists' => false,
                         'config_matches' => false,
+                        'restart_policy_matches' => false,
+                        'environment_matches' => false,
                     ],
                 ],
             ],
@@ -179,6 +189,56 @@ describe('supervisor program reality', function (): void {
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_missing'))->toBeNull();
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+});
+
+describe('supervisor program restart and environment reality', function (): void {
+    it('detects supervisor restart policy mismatches separately from generic unit drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit_docs_main_vite' => [
+                        'config_exists' => true,
+                        'config_matches' => false,
+                        'restart_policy_matches' => false,
+                        'environment_matches' => true,
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.restart_policy_mismatch')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+
+    it('detects supervisor runtime environment mismatches separately from generic unit drift', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_units' => [
+                    'orbit_docs_main_vite' => [
+                        'config_exists' => true,
+                        'config_matches' => false,
+                        'restart_policy_matches' => true,
+                        'environment_matches' => false,
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_environment_mismatch')?->kind)->toBe(DriftKind::Divergent);
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
     });
 });

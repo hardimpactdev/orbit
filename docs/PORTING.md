@@ -1743,7 +1743,7 @@ for the Saloon-based gateway transport pattern.
     owner-app eligibility, and runtime context expansion checks.
   - [x] Runtime backend availability checks.
   - [x] Supervisor program presence and content checks.
-  - [ ] Restart policy and runtime environment checks.
+  - [x] Restart policy and runtime environment checks.
   - [ ] Lifecycle event notifier material checks.
   - [ ] Stale runtime unit checks.
 - [ ] Port proxy route family.

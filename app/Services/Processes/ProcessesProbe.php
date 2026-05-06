@@ -67,10 +67,15 @@ foreach ($units as $unit) {
     $name = (string) ($unit['name'] ?? '');
     $path = (string) ($unit['config_path'] ?? '');
     $hash = (string) ($unit['config_hash'] ?? '');
+    $restartPolicy = (string) ($unit['restart_policy'] ?? '');
+    $environmentLine = (string) ($unit['environment_line'] ?? '');
     $exists = is_file($path) ? '1' : '0';
-    $matches = $exists === '1' && hash_file('sha256', $path) === $hash ? '1' : '0';
+    $content = $exists === '1' ? (string) file_get_contents($path) : '';
+    $matches = $exists === '1' && hash('sha256', $content) === $hash ? '1' : '0';
+    $restartMatches = $exists === '1' && preg_match('/^autorestart='.preg_quote($restartPolicy, '/').'$/m', $content) === 1 ? '1' : '0';
+    $environmentMatches = $exists === '1' && preg_match('/^'.preg_quote($environmentLine, '/').'$/m', $content) === 1 ? '1' : '0';
 
-    printf("%s\t%s\t%s\n", $name, $exists, $matches);
+    printf("%s\t%s\t%s\t%s\t%s\n", $name, $exists, $matches, $restartMatches, $environmentMatches);
 }
 PHP
 BASH;
@@ -87,17 +92,19 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 3);
+            $parts = explode("\t", $line, 5);
 
-            if (count($parts) !== 3) {
+            if (count($parts) !== 5) {
                 continue;
             }
 
-            [$name, $exists, $matches] = $parts;
+            [$name, $exists, $matches, $restartMatches, $environmentMatches] = $parts;
 
             $items[$process->name]['runtime_units'][$name] = [
                 'config_exists' => $exists === '1',
                 'config_matches' => $matches === '1',
+                'restart_policy_matches' => $restartMatches === '1',
+                'environment_matches' => $environmentMatches === '1',
             ];
         }
 
@@ -116,6 +123,8 @@ BASH;
         $drift = array_merge($drift, $this->checkRuntimeContexts($process));
         $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
 
         return $drift;
     }
@@ -192,6 +201,82 @@ BASH;
     /**
      * @return list<DriftEntry>
      */
+    private function checkRestartPolicy(Process $process, ProbeSnapshot $snapshot): array
+    {
+        return $this->checkRuntimeUnitField(
+            process: $process,
+            snapshot: $snapshot,
+            field: 'restart_policy_matches',
+            key: 'process.restart_policy_mismatch',
+            summary: fn (string $name): string => "Process runtime unit {$name} restart policy differs from gateway process intent.",
+        );
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeEnvironment(Process $process, ProbeSnapshot $snapshot): array
+    {
+        return $this->checkRuntimeUnitField(
+            process: $process,
+            snapshot: $snapshot,
+            field: 'environment_matches',
+            key: 'process.runtime_environment_mismatch',
+            summary: fn (string $name): string => "Process runtime unit {$name} environment differs from gateway runtime intent.",
+        );
+    }
+
+    /**
+     * @param  callable(string): string  $summary
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUnitField(
+        Process $process,
+        ProbeSnapshot $snapshot,
+        string $field,
+        string $key,
+        callable $summary,
+    ): array {
+        $observed = $snapshot->get($process->name);
+
+        if (
+            $observed === null
+            || ($observed['runtime_backend_available'] ?? null) === false
+            || ! is_array($observed['runtime_units'] ?? null)
+        ) {
+            return [];
+        }
+
+        $drift = [];
+
+        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+            $name = $unit['name'];
+            $runtimeUnit = $observed['runtime_units'][$name] ?? null;
+
+            if (! is_array($runtimeUnit) || ($runtimeUnit['config_exists'] ?? null) === false) {
+                continue;
+            }
+
+            if (($runtimeUnit[$field] ?? null) === false) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: $key,
+                    kind: DriftKind::Divergent,
+                    summary: $summary($name),
+                    detail: [
+                        'runtime_unit' => $name,
+                        'expected' => $unit['config_path'],
+                    ],
+                );
+            }
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkRuntimeUnits(Process $process, ProbeSnapshot $snapshot): array
     {
         $observed = $snapshot->get($process->name);
@@ -225,7 +310,11 @@ BASH;
                 continue;
             }
 
-            if (($runtimeUnit['config_matches'] ?? null) === false) {
+            if (
+                ($runtimeUnit['config_matches'] ?? null) === false
+                && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
+                && ($runtimeUnit['environment_matches'] ?? null) !== false
+            ) {
                 $drift[] = new DriftEntry(
                     family: $this->key(),
                     key: 'process.runtime_unit_mismatch',
@@ -337,7 +426,7 @@ BASH;
     }
 
     /**
-     * @return list<array{name: string, config_path: string, config_hash: string}>
+     * @return list<array{name: string, config_path: string, config_hash: string, restart_policy: string, environment_line: string}>
      */
     private function expectedRuntimeUnitSpecs(Process $process): array
     {
@@ -348,13 +437,31 @@ BASH;
         }
 
         return collect([null, ...$process->app->workspaces->all()])
-            ->map(fn (?Workspace $workspace): array => [
-                'name' => $this->supervisorProgramRenderer()->programName($process->app, $process, $workspace),
-                'config_path' => $this->supervisorProgramRenderer()->configPath($process->app, $process, $workspace),
-                'config_hash' => hash('sha256', $this->supervisorProgramRenderer()->render($process->app, $process, $workspace)),
-            ])
+            ->map(function (?Workspace $workspace) use ($process): array {
+                $definition = $this->supervisorProgramRenderer()->definition($process->app, $process, $workspace);
+                $content = $this->supervisorProgramRenderer()->render($process->app, $process, $workspace);
+
+                return [
+                    'name' => $definition->name,
+                    'config_path' => $this->supervisorProgramRenderer()->configPath($process->app, $process, $workspace),
+                    'config_hash' => hash('sha256', $content),
+                    'restart_policy' => $definition->restartPolicy,
+                    'environment_line' => $this->environmentLine($content),
+                ];
+            })
             ->values()
             ->all();
+    }
+
+    private function environmentLine(string $content): string
+    {
+        foreach (explode("\n", $content) as $line) {
+            if (str_starts_with($line, 'environment=')) {
+                return $line;
+            }
+        }
+
+        return 'environment=';
     }
 
     private function supervisorProgramRenderer(): SupervisorProgramRenderer
