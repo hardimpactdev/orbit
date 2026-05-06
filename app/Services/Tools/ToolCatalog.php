@@ -43,6 +43,7 @@ final readonly class ToolCatalog
      *     binary: string,
      *     version_command?: string,
      *     service?: string,
+     *     update_command?: string,
      *     repair_commands?: array<string, string>,
      * }|null
      */
@@ -55,11 +56,11 @@ final readonly class ToolCatalog
         return match ($tool) {
             'redis' => ['binary' => 'redis-server', 'version_command' => 'redis-server --version', 'service' => 'redis-server', 'repair_commands' => $this->serviceRepairCommands('redis-server')],
             'php', 'php-cli' => ['binary' => 'php', 'version_command' => 'php -r "echo PHP_VERSION;"'],
-            'composer' => ['binary' => 'composer', 'version_command' => 'composer --version'],
-            'caddy' => ['binary' => 'caddy', 'version_command' => 'caddy version', 'service' => 'caddy', 'repair_commands' => $this->serviceRepairCommands('caddy')],
+            'composer' => ['binary' => 'composer', 'version_command' => 'composer --version', 'update_command' => 'sudo composer self-update 2>/dev/null'],
+            'caddy' => ['binary' => 'caddy', 'version_command' => 'caddy version', 'service' => 'caddy', 'update_command' => 'export DEBIAN_FRONTEND=noninteractive && sudo apt-get update -qq && sudo apt-get install --only-upgrade -y caddy 2>/dev/null', 'repair_commands' => $this->serviceRepairCommands('caddy')],
             'supervisor' => ['binary' => 'supervisord', 'service' => 'supervisor', 'repair_commands' => $this->serviceRepairCommands('supervisor')],
             'docker' => ['binary' => 'docker', 'version_command' => 'docker --version', 'service' => 'docker', 'repair_commands' => $this->serviceRepairCommands('docker')],
-            'gh' => ['binary' => 'gh', 'version_command' => 'gh --version'],
+            'gh' => ['binary' => 'gh', 'version_command' => 'gh --version', 'update_command' => 'export DEBIAN_FRONTEND=noninteractive && sudo apt-get install --only-upgrade -y gh 2>/dev/null'],
             'mysql' => ['binary' => 'mysql', 'version_command' => 'mysql --version'],
             'postgres' => ['binary' => 'psql', 'version_command' => 'psql --version'],
             default => ['binary' => $tool],

@@ -280,6 +280,32 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported tool version actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'composer',
+            'expected_version' => '3.0',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/local/bin/composer\tComposer version 2.8.0\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.version_mismatch',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('lets fix mode complete supported tool config actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);

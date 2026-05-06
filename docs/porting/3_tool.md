@@ -17,13 +17,18 @@ Detail file for the tool command family. Top-level status lives in
 `ToolsProbe` covers registry completeness, node eligibility, catalog
 definitions, live capability presence, version drift, lifecycle drift,
 config drift, and credential drift. Safe `--fix` handlers exist for
-catalog-declared lifecycle repair, managed config rows (path/hash/content),
-and managed credential rows.
+catalog-declared lifecycle repair, safe catalog update commands for version
+drift, managed config rows (path/hash/content), and managed credential rows.
 
-- [!] Capability and version fix handlers, and adopt action handlers, are
-  outstanding. Next: define scoped adopt behavior for selected observed
-  tool reality, or add capability/version fix once catalog definitions
-  declare safe install/update commands.
+- [~] Version fix handlers are ported for catalog definitions with explicit
+  safe update commands (`composer`, `gh`, `caddy`). Pest coverage:
+  `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` and
+  `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
+  E2E close-out remains blocked until `tests/E2E/Ephemeral/ToolsDoctorFixTest.php`
+  can run the destructive repair path against a disposable provisioned node.
+- [!] Capability fix handlers and adopt action handlers are outstanding. Next:
+  define scoped adopt behavior for selected observed tool reality, or add
+  capability fix once catalog definitions declare safe install/restore commands.
 
 ## Foundations
 

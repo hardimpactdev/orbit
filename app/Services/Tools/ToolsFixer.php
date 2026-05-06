@@ -60,6 +60,7 @@ final readonly class ToolsFixer
             : [];
 
         $key = match ($entry->key) {
+            'tool.version_mismatch' => 'update',
             'tool.lifecycle_state_mismatch' => match ($tool->expected_state) {
                 'running' => 'lifecycle_running',
                 'stopped', 'installed' => 'lifecycle_stopped',
@@ -72,7 +73,9 @@ final readonly class ToolsFixer
             return null;
         }
 
-        $command = $commands[$key] ?? null;
+        $command = $key === 'update'
+            ? ($metadata['update_command'] ?? null)
+            : ($commands[$key] ?? null);
 
         return is_string($command) && $command !== '' ? $command : null;
     }

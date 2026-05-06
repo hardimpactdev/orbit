@@ -81,6 +81,39 @@ describe('DoctorReportRunner', function (): void {
             ]);
     });
 
+    it('suppresses resolved tool version issues when a safe update fix completes', function (): void {
+        $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'composer',
+            'expected_version' => '3.0',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['tool']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['issues'])->toBe([])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.version_mismatch',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[1])->toContain('composer self-update');
+    });
+
     it('keeps the issue visible and records a failed action when a fix throws', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
