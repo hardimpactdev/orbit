@@ -61,6 +61,7 @@ use App\Http\Controllers\Api\ToolRestartController;
 use App\Http\Controllers\Api\ToolShowController;
 use App\Http\Controllers\Api\ToolStartController;
 use App\Http\Controllers\Api\ToolStopController;
+use App\Http\Controllers\Api\ToolUpdateController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
@@ -129,6 +130,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/tools', ToolListController::class);
         Route::delete('/tools/{tool}', ToolRemoveController::class);
         Route::post('/tools/{tool}/install', ToolInstallController::class);
+        Route::post('/tools/{tool}/update', ToolUpdateController::class);
         Route::get('/tools/{tool}/credentials', ToolCredentialsController::class);
         Route::get('/tools/{tool}/logs/stream', ToolLogsStreamController::class);
         Route::get('/tools/{tool}/logs', ToolLogsController::class);

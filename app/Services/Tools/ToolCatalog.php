@@ -123,6 +123,19 @@ final readonly class ToolCatalog
         };
     }
 
+    public function updateScript(string $tool, array $config = []): ?string
+    {
+        if (! $this->hasCapability($tool, 'update')) {
+            return null;
+        }
+
+        return match ($tool) {
+            'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => $this->dockerComposeInstallScript($tool, $config),
+            'composer', 'caddy', 'gh' => $this->probeMetadata($tool)['update_command'] ?? null,
+            default => null,
+        };
+    }
+
     private function dockerComposeInstallScript(string $service, array $config): string
     {
         $composePath = $config['compose_path'] ?? '/opt/orbit/docker-compose.yml';
