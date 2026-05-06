@@ -1811,11 +1811,13 @@ for the Saloon-based gateway transport pattern.
       include path, hash, and content intent.
     - [x] Credential drift checks exist for tool rows that declare managed
       secret path/hash intent.
-    - [!] Capability, version, and credential fix handlers; adopt action
-      handlers; and future write/enactment commands remain outstanding.
-    - Next concrete action: add safe credential repair for complete credential
-      intent rows, then define scoped adopt behavior for selected observed tool
-      reality.
+    - [x] Safe `--fix` action handlers exist for managed credential rows that
+      include path, hash, and content intent.
+    - [!] Capability and version fix handlers; adopt action handlers; and future
+      write/enactment commands remain outstanding.
+    - Next concrete action: define scoped adopt behavior for selected observed
+      tool reality, or add capability/version fix support once catalog
+      definitions declare safe install/update commands.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through

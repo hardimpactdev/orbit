@@ -128,6 +128,70 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
+
+    it('rewrites managed secret material when the row contains complete secret intent', function (): void {
+        $secret = 'generated-password';
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => hash('sha256', $secret),
+                    'content' => $secret,
+                ],
+            ],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.credentials_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool opencode-server managed credential material is missing.',
+            detail: [
+                'tool' => 'opencode-server',
+                'path' => '/home/orbit/.config/opencode-server/password',
+            ],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => 'tool.credentials_missing',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0700 '/home/orbit/.config/opencode-server'")
+            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/home/orbit/.config/opencode-server/password' >/dev/null")
+            ->and($shell->scripts[0])->toContain("sudo chmod 0600 '/home/orbit/.config/opencode-server/password'");
+    });
+
+    it('does not repair managed secret material when content does not match declared hash', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => str_repeat('a', 64),
+                    'content' => 'generated-password',
+                ],
+            ],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.credentials_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Tool opencode-server managed credential material differs from gateway intent.',
+            detail: ['tool' => 'opencode-server'],
+        ));
+
+        expect($action)->toBeNull()
+            ->and($shell->scripts)->toBe([]);
+    });
 });
 
 final class ToolsFixerRemoteShell implements RemoteShell

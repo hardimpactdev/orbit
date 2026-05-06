@@ -308,6 +308,37 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported tool credential actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $secret = 'generated-password';
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => hash('sha256', $secret),
+                    'content' => $secret,
+                ],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/opencode-server\t\trunning\t\t\t0\t\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.credentials_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 

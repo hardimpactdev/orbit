@@ -20,9 +20,11 @@ final readonly class ToolsFixer
      */
     public function fix(NodeTool $tool, DriftEntry $entry): ?array
     {
-        $command = $entry->key === 'tool.config_missing' || $entry->key === 'tool.config_mismatch'
-            ? $this->configRepairCommand($tool)
-            : $this->repairCommand($tool, $entry);
+        $command = match ($entry->key) {
+            'tool.config_missing', 'tool.config_mismatch' => $this->configRepairCommand($tool),
+            'tool.credentials_missing', 'tool.credentials_mismatch' => $this->secretRepairCommand($tool),
+            default => $this->repairCommand($tool, $entry),
+        };
 
         if ($command === null) {
             return null;
@@ -98,6 +100,37 @@ final readonly class ToolsFixer
 sudo install -d -m 0755 %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo chmod 0644 %s
+SH,
+            escapeshellarg($directory),
+            escapeshellarg(base64_encode($content)),
+            escapeshellarg($path),
+            escapeshellarg($path),
+        );
+    }
+
+    private function secretRepairCommand(NodeTool $tool): ?string
+    {
+        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
+        $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
+        $path = $managedSecret['path'] ?? null;
+        $hash = $managedSecret['hash'] ?? null;
+        $content = $managedSecret['content'] ?? null;
+
+        if (! is_string($path) || $path === '' || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+            return null;
+        }
+
+        if (! hash_equals($hash, hash('sha256', $content))) {
+            return null;
+        }
+
+        $directory = dirname($path);
+
+        return sprintf(
+            <<<'SH'
+sudo install -d -m 0700 %s
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+sudo chmod 0600 %s
 SH,
             escapeshellarg($directory),
             escapeshellarg(base64_encode($content)),
