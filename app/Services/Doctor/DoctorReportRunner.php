@@ -6,14 +6,17 @@ namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Proxy\ProxyRouteProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node'];
+    private const array SUPPORTED_FAMILIES = ['node', 'proxy'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
+        private ProxyRouteProbe $proxyRouteProbe,
     ) {}
 
     /**
@@ -48,6 +51,19 @@ final readonly class DoctorReportRunner
             ];
         }
 
+        if (in_array('proxy', $selectedFamilies, true)) {
+            foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
+                $snapshot = $this->proxyRouteProbe->introspect($route);
+                $issues = [
+                    ...$issues,
+                    ...array_map(
+                        fn (DriftEntry $entry): array => $this->proxyIssuePayload($entry, $route),
+                        $this->proxyRouteProbe->diff($route, $snapshot),
+                    ),
+                ];
+            }
+        }
+
         return [
             'healthy' => $issues === [],
             'mode' => $mode,
@@ -78,6 +94,21 @@ final readonly class DoctorReportRunner
         return [
             'family' => 'node',
             'node' => $node->name,
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
+    {
+        return [
+            'family' => $entry->family,
+            'node' => $route->node->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,

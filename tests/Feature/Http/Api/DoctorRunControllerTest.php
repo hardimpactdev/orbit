@@ -46,6 +46,19 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
 
+    it('accepts the proxy family scope', function (): void {
+        createDoctorRunCallerNode();
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'families' => ['proxy'],
+            'mode' => 'verify',
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', true)
+            ->assertJsonPath('success.data.doctor.scope.families', ['proxy']);
+    });
+
     it('rejects unauthenticated requests', function (): void {
         $response = $this->postJson('/api/doctor/run', ['families' => ['node']]);
 

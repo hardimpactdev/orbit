@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -118,4 +121,55 @@ describe('doctor command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['doctor']['healthy'])->toBeTrue();
     });
+
+    it('runs the proxy family locally for gateway callers', function (): void {
+        createDoctorLocalNode('gateway');
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['scope']['families'])->toBe(['proxy'])
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0);
+    });
+
+    it('reports proxy family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("0\t\t\t\t0\t0\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'proxy.route_missing',
+                'kind' => 'missing',
+            ]);
+    });
 });
+
+final class DoctorProxyRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly string $stdout,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}

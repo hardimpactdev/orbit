@@ -1753,7 +1753,13 @@ for the Saloon-based gateway transport pattern.
   - [~] Proxy doctor probes, fix/adopt map, and live backend/TLS inspection.
     - [x] Registry intent, owner eligibility, node eligibility, and custom-domain conflict probe foundation.
     - [x] Backend route and TLS reality inspection.
-    - [ ] Fix/adopt map and doctor dispatcher/API integration.
+    - [!] Fix/adopt map and doctor dispatcher/API integration.
+      - Verify-mode doctor dispatcher/API integration is ported for `--family=proxy`.
+      - Blocked for write modes because the global `doctor` command still rejects
+        `--fix` and `--adopt` before family action maps run.
+      - Next concrete action: port the generic doctor action-map runner for
+        family-owned fix/adopt handlers, then add proxy route/TLS reconcile and
+        custom-route adoption actions.
 - [ ] Port firewall rule family.
 - [~] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
