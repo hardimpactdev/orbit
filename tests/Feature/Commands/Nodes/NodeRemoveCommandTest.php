@@ -140,6 +140,49 @@ describe('node:remove base contract', function (): void {
         expect(DB::table('node_access')->count())->toBe(1);
     });
 
+    it('removes a gateway-managed WireGuard peer for the removed node', function (): void {
+        setupNodeRemoveGatewayCaller();
+        DB::table('nodes')->insert(nodeRemoveRow());
+        $nodeId = DB::table('nodes')->where('name', 'app-1')->value('id');
+
+        DB::table('wireguard_peers')->insert([
+            'node_id' => $nodeId,
+            'public_key' => 'app-public-key',
+            'private_key' => 'app-private-key',
+            'allowed_ips' => '10.6.0.7/32',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['wireguard_peer_removed'])->toBeTrue()
+            ->and(DB::table('wireguard_peers')->where('node_id', $nodeId)->exists())->toBeFalse();
+    });
+
+    it('continues successfully when the WireGuard peer is already absent', function (): void {
+        setupNodeRemoveGatewayCaller();
+        DB::table('nodes')->insert(nodeRemoveRow());
+
+        $exitCode = Artisan::call('node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['wireguard_peer_removed'])->toBeFalse();
+    });
+
     it('rejects gateway-node removal before side effects', function (): void {
         setupNodeRemoveGatewayCaller();
         DB::table('nodes')->insert(nodeRemoveRow([

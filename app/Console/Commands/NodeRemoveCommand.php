@@ -10,6 +10,7 @@ use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\WireGuardPeer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -130,8 +131,9 @@ class NodeRemoveCommand extends Command
             ->orWhere('serving_node_id', $node->id)
             ->delete();
 
-        // WireGuard peer teardown is a documented bootstrap gap.
-        $peerRemoved = false;
+        $peerRemoved = WireGuardPeer::query()
+            ->where('node_id', $node->id)
+            ->delete() > 0;
 
         $node->delete();
 

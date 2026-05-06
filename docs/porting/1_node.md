@@ -131,7 +131,6 @@ Detail file for the node command family. Top-level command status lives in
     caller removes a gateway-owned app-node record through the Gateway API and
     reads the removed state back through forwarded `node:show`.
   - Contract gaps:
-    - WireGuard peer teardown (peer model/migration exist but teardown logic not yet implemented; `wireguard_peer_removed: false` in JSON response).
     - DNS mapping cleanup for dev-app nodes (requires gateway API DNS support).
     - Interactive prompt testing in PHPUnit/Pest is limited by non-TTY environment; confirmation decline and prompt abort behavior are covered by command logic but not fully exercised via automated prompts.
 - [~] Port `node:agent-ide`.
