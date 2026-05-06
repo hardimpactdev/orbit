@@ -37,7 +37,7 @@ mode fails before side effects for the same blocker.
 5. Verify HTTPS reachability to `/api/me` using the trusted CA.
 6. Verify the local WireGuard identity is known and accepted by the gateway.
 7. Store the gateway WireGuard IP and trust material in local settings.
-8. Flush cached local node context.
+8. Persist caller-local gateway settings and trust metadata.
 
 The control path must not create or update a local Orbit database as a registry
 mirror of the gateway or current control node. It stores local gateway endpoint
@@ -48,7 +48,8 @@ and trust configuration only.
 - Fails when the gateway is unreachable over the Orbit network.
 - Fails when gateway trust material cannot be fetched or installed.
 - Fails when `/api/me` returns 403 (unregistered peer).
-- Fails when `/api/me` returns a non-success status other than 403.
+- Fails as `gateway_unavailable` when `/api/me` returns a non-success status
+  other than 403.
 - Fails when local config cannot be written despite successful gateway
   verification.
 - Fails when the local platform is not supported for control nodes.
@@ -58,4 +59,4 @@ and trust configuration only.
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Control caller behavior: first add flow, idempotent convergence, local onboarding refresh, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and context flush. |
-| `tests/E2E/Ephemeral/ControlNodeGatewayAddTest.php` | Real-node control node join flow via `gateway:add`. |
+| `tests/E2E/GatewayAddTest.php` | Real-node control node join flow via `gateway:add`, including omitted-argument gateway IP derivation and idempotent convergence. |

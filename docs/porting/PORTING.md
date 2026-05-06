@@ -77,8 +77,8 @@ ported and the activity backfill is in place.
 Family-level status mirrors `docs/commands/`. Per-command checklists,
 family doctor coverage, and decision history live in the linked file.
 
-- [~] [`1_node`](1_node.md)
-- [~] [`2_gateway`](2_gateway.md)
+- [x] [`1_node`](1_node.md)
+- [x] [`2_gateway`](2_gateway.md)
 - [~] [`3_tool`](3_tool.md)
 - [~] [`4_firewall`](4_firewall.md)
 - [~] [`5_app`](5_app.md)

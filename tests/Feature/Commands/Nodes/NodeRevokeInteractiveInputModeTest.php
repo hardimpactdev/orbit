@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeRevokeCommand;
+use App\Exceptions\PromptAborted;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -20,9 +21,29 @@ use Symfony\Component\Console\Output\BufferedOutput;
 #[Description('Revoke one node\'s access to another')]
 class TestableNodeRevokeCommand extends NodeRevokeCommand
 {
+    public static ?string $abortPrompt = null;
+
     protected function isInteractiveInput(): bool
     {
         return true;
+    }
+
+    protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
+    {
+        if (self::$abortPrompt === $label) {
+            throw new PromptAborted;
+        }
+
+        return parent::promptText($label, $required, $validate);
+    }
+
+    protected function promptConfirm(string $label, bool $default = true): bool
+    {
+        if (self::$abortPrompt === 'confirm') {
+            throw new PromptAborted;
+        }
+
+        return parent::promptConfirm($label, $default);
     }
 }
 
@@ -60,6 +81,25 @@ function setupNodeRevokeGatewayCallerInteractive(): void
         'is_local' => true,
     ]));
 }
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{int, string}
+ */
+function runTestableNodeRevokeInteractive(array $arguments): array
+{
+    $command = new TestableNodeRevokeCommand;
+    $command->setLaravel(app());
+
+    $output = new BufferedOutput;
+    $exitCode = $command->run(new ArrayInput($arguments), $output);
+
+    return [$exitCode, $output->fetch()];
+}
+
+beforeEach(function (): void {
+    TestableNodeRevokeCommand::$abortPrompt = null;
+});
 
 describe('node:revoke interactive input mode contract', function (): void {
     it('forces non-interactive mode when --json is present', function (): void {
@@ -248,7 +288,7 @@ describe('node:revoke interactive input mode contract', function (): void {
         expect($isInteractive)->toBeTrue();
     });
 
-    it('prompts for missing consuming_node in interactive mode instead of validation_failed', function (): void {
+    it('cancels before revoking when the consuming node prompt is aborted', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
@@ -256,52 +296,24 @@ describe('node:revoke interactive input mode contract', function (): void {
             'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
 
-        $command = new TestableNodeRevokeCommand;
-        $command->setLaravel(app());
+        TestableNodeRevokeCommand::$abortPrompt = 'Consuming node';
 
-        $input = new ArrayInput([
+        [$exitCode, $output] = runTestableNodeRevokeInteractive([
             'serving_node' => 'app-1',
             '--force' => true,
         ]);
-        $output = new BufferedOutput;
 
-        $merge = new ReflectionMethod($command, 'mergeApplicationDefinition');
-        $merge->setAccessible(true);
-        $merge->invoke($command);
-
-        $definition = $command->getDefinition();
-        $input->bind($definition);
-        $input->validate();
-
-        $init = new ReflectionMethod($command, 'initialize');
-        $init->setAccessible(true);
-        $init->invoke($command, $input, $output);
-
-        $inputProp = (new ReflectionClass(Command::class))->getProperty('input');
-        $inputProp->setAccessible(true);
-        $inputProp->setValue($command, $input);
-
-        $outputProp = (new ReflectionClass(Command::class))->getProperty('output');
-        $outputProp->setAccessible(true);
-        $outputProp->setValue($command, $output);
-
-        // In interactive mode, missing consuming_node triggers a prompt
-        // instead of immediately returning validation_failed.
-        // Since prompts cannot receive input in tests, the command will
-        // fail at the prompt stage, but NOT with the validation_failed message.
-        try {
-            $command->run($input, $output);
-            $outputStr = $output->fetch();
-        } catch (Throwable $e) {
-            $outputStr = $e->getMessage();
-        }
-
-        expect($outputStr)->not->toContain('Consuming node is required.');
-        expect($outputStr)->not->toContain('validation_failed');
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Operation cancelled.')
+            ->and(DB::table('node_access')->count())->toBe(1);
     });
 
-    it('prompts for missing serving_node in interactive mode instead of validation_failed', function (): void {
+    it('cancels before revoking when the serving node prompt is aborted', function (): void {
         setupNodeRevokeGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRevokeInteractiveRow([
             'name' => 'control-1',
@@ -309,44 +321,45 @@ describe('node:revoke interactive input mode contract', function (): void {
             'environment' => null,
         ]));
         DB::table('nodes')->insert(nodeRevokeInteractiveRow());
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
 
-        $command = new TestableNodeRevokeCommand;
-        $command->setLaravel(app());
+        TestableNodeRevokeCommand::$abortPrompt = 'Serving node';
 
-        $input = new ArrayInput([
+        [$exitCode, $output] = runTestableNodeRevokeInteractive([
             'consuming_node' => 'control-1',
             '--force' => true,
         ]);
-        $output = new BufferedOutput;
 
-        $merge = new ReflectionMethod($command, 'mergeApplicationDefinition');
-        $merge->setAccessible(true);
-        $merge->invoke($command);
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Operation cancelled.')
+            ->and(DB::table('node_access')->count())->toBe(1);
+    });
 
-        $definition = $command->getDefinition();
-        $input->bind($definition);
-        $input->validate();
+    it('cancels before revoking when the confirmation prompt is aborted', function (): void {
+        setupNodeRevokeGatewayCallerInteractive();
+        DB::table('nodes')->insert(nodeRevokeInteractiveRow([
+            'name' => 'control-1',
+            'role' => 'control',
+            'environment' => null,
+        ]));
+        DB::table('nodes')->insert(nodeRevokeInteractiveRow());
+        DB::table('node_access')->insert([
+            'consumer_node_id' => 2,
+            'serving_node_id' => 3,
+        ]);
 
-        $init = new ReflectionMethod($command, 'initialize');
-        $init->setAccessible(true);
-        $init->invoke($command, $input, $output);
+        TestableNodeRevokeCommand::$abortPrompt = 'confirm';
 
-        $inputProp = (new ReflectionClass(Command::class))->getProperty('input');
-        $inputProp->setAccessible(true);
-        $inputProp->setValue($command, $input);
+        [$exitCode, $output] = runTestableNodeRevokeInteractive([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ]);
 
-        $outputProp = (new ReflectionClass(Command::class))->getProperty('output');
-        $outputProp->setAccessible(true);
-        $outputProp->setValue($command, $output);
-
-        try {
-            $command->run($input, $output);
-            $outputStr = $output->fetch();
-        } catch (Throwable $e) {
-            $outputStr = $e->getMessage();
-        }
-
-        expect($outputStr)->not->toContain('Serving node is required.');
-        expect($outputStr)->not->toContain('validation_failed');
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Operation cancelled.')
+            ->and(DB::table('node_access')->count())->toBe(1);
     });
 });

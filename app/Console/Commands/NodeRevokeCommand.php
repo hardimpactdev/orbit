@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\RevokeNodeRequest;
@@ -15,9 +17,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\text;
-
 #[Signature('node:revoke
     {consuming_node? : Name of the node whose access is being revoked}
     {serving_node? : Name of the node providing access}
@@ -26,6 +25,8 @@ use function Laravel\Prompts\text;
 #[Description('Revoke one node\'s access to another')]
 class NodeRevokeCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(): int
     {
         $callerRole = $this->callerRole();
@@ -62,7 +63,11 @@ class NodeRevokeCommand extends Command
         $consumerName = $this->argument('consuming_node');
         if ($consumerName === null) {
             if ($this->isInteractiveInput()) {
-                $consumerName = text(label: 'Consuming node', required: true);
+                try {
+                    $consumerName = $this->promptText('Consuming node', required: true);
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
+                }
             } else {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -75,7 +80,11 @@ class NodeRevokeCommand extends Command
         $servingName = $this->argument('serving_node');
         if ($servingName === null) {
             if ($this->isInteractiveInput()) {
-                $servingName = text(label: 'Serving node', required: true);
+                try {
+                    $servingName = $this->promptText('Serving node', required: true);
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
+                }
             } else {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -96,7 +105,13 @@ class NodeRevokeCommand extends Command
 
             $confirmMessage = $this->confirmationMessage($consumerName, $servingName, false);
 
-            if (! confirm($confirmMessage, default: false)) {
+            try {
+                $confirmed = $this->promptConfirm($confirmMessage, default: false);
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
+
+            if (! $confirmed) {
                 return $this->failCommand(
                     code: 'validation_failed',
                     message: 'Operation cancelled.',
@@ -159,7 +174,11 @@ class NodeRevokeCommand extends Command
         $consumerName = $this->argument('consuming_node');
         if ($consumerName === null) {
             if ($this->isInteractiveInput()) {
-                $consumerName = text(label: 'Consuming node', required: true);
+                try {
+                    $consumerName = $this->promptText('Consuming node', required: true);
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
+                }
             } else {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -172,7 +191,11 @@ class NodeRevokeCommand extends Command
         $servingName = $this->argument('serving_node');
         if ($servingName === null) {
             if ($this->isInteractiveInput()) {
-                $servingName = text(label: 'Serving node', required: true);
+                try {
+                    $servingName = $this->promptText('Serving node', required: true);
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
+                }
             } else {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -209,7 +232,13 @@ class NodeRevokeCommand extends Command
 
             $confirmMessage = $this->confirmationMessage($consumerName, $servingName, $isSelfLockout);
 
-            if (! confirm($confirmMessage, default: false)) {
+            try {
+                $confirmed = $this->promptConfirm($confirmMessage, default: false);
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
+
+            if (! $confirmed) {
                 return $this->failCommand(
                     code: 'validation_failed',
                     message: 'Operation cancelled.',
@@ -285,6 +314,15 @@ class NodeRevokeCommand extends Command
         }
 
         return "Revoke access from '{$consumerName}' to '{$servingName}'? This cannot be undone.";
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     private function renderProgressTree(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): void

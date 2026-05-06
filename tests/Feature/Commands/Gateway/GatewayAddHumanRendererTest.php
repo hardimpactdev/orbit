@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\WireGuard\WireGuardGatewayAddressResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +70,17 @@ afterEach(function (): void {
     }
 });
 
+function disableGatewayAddHumanIpDerivation(): void
+{
+    app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
+    {
+        public function resolve(): ?string
+        {
+            return null;
+        }
+    });
+}
+
 it('shows human renderer by default', function (): void {
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
@@ -83,7 +95,7 @@ it('shows human renderer by default', function (): void {
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('┌ Join Gateway')
+        ->expectsOutputToContain('┌ Joining Gateway')
         ->expectsOutputToContain('○ Resolve gateway')
         ->expectsOutputToContain('○ Fetch trust material')
         ->expectsOutputToContain('○ Trust gateway CA')
@@ -112,6 +124,8 @@ it('shows converged progress tree', function (): void {
     }
     File::put($pemPath, $pem);
 
+    $this->fakeInstaller->isTrusted = true;
+
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
@@ -122,7 +136,7 @@ it('shows converged progress tree', function (): void {
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('┌ Join Gateway')
+        ->expectsOutputToContain('┌ Joining Gateway')
         ->expectsOutputToContain('○ Resolve gateway')
         ->expectsOutputToContain('○ Verify gateway API')
         ->expectsOutputToContain('○ Verify identity')
@@ -131,6 +145,8 @@ it('shows converged progress tree', function (): void {
 });
 
 it('shows missing gateway_ip prose', function (): void {
+    disableGatewayAddHumanIpDerivation();
+
     $this->artisan('gateway:add', ['--json' => true])
         ->expectsOutputToContain('Gateway IP is required when it cannot be derived from an active WireGuard network.')
         ->assertFailed();

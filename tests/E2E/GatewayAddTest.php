@@ -17,7 +17,7 @@ use App\E2E\Support\SshKeyPair;
 
 pest()->group('e2e-provision');
 
-it('joins a provisioned gateway from a provisioned control VM', function (): void {
+it('derives the gateway IP and joins a provisioned gateway from a provisioned control VM', function (): void {
     $config = E2EConfig::fromEnvironment();
     $provider = new IncusProvider($config);
     $selection = (new ProviderPool([$provider]))->select(E2EImage::Base);
@@ -60,7 +60,7 @@ it('joins a provisioned gateway from a provisioned control VM', function (): voi
             $control,
             $config->controlUser,
             $key,
-            "cd /home/{$config->controlUser}/orbit && orbit gateway:add 10.6.0.2 --json",
+            "cd /home/{$config->controlUser}/orbit && orbit gateway:add --json",
             timeoutSeconds: 600,
         );
 
@@ -98,6 +98,33 @@ it('joins a provisioned gateway from a provisioned control VM', function (): voi
         );
 
         expect(trim($localNodeMirrorCount->output()))->toBe('0');
+
+        $rerun = E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            "cd /home/{$config->controlUser}/orbit && orbit gateway:add --json",
+            timeoutSeconds: 600,
+        );
+
+        $rerunPayload = json_decode(trim($rerun->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $rerunSettings = gatewayAddE2EControlSettings($control, $config->controlUser, $key);
+        $rerunLocalNodeMirrorCount = E2ECommand::ssh(
+            $control,
+            $config->controlUser,
+            $key,
+            "cd /home/{$config->controlUser}/orbit && php artisan tinker --execute='echo \\App\\Models\\Node::query()->count();'",
+        );
+
+        expect($rerunPayload['success']['data']['result']['action'])->toBe('converged')
+            ->and($rerunPayload['success']['data']['gateway']['addresses']['wireguard'])->toBe('10.6.0.2')
+            ->and($rerunPayload['success']['data']['local_node']['addresses']['wireguard'])->toBe('10.6.0.3')
+            ->and($rerunPayload['success']['data']['local_onboarding']['gateway_trust'])->toBe('already_trusted')
+            ->and($rerunPayload['success']['data']['local_onboarding']['gateway_config'])->toBe('already_stored')
+            ->and($rerunPayload['success']['data']['local_onboarding']['gateway_api'])->toBe('verified')
+            ->and($rerunSettings)->toBe($settings)
+            ->and(trim($rerunLocalNodeMirrorCount->output()))->toBe('0');
+
         $passed = true;
     } finally {
         e2eProvisionCleanup($passed, run: $run);

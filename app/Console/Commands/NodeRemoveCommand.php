@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\RemoveNodeRequest;
@@ -17,9 +19,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\text;
-
 #[Signature('node:remove
     {name? : Name of the node to remove}
     {--force : Confirm destructive operation without prompting}
@@ -27,6 +26,8 @@ use function Laravel\Prompts\text;
 #[Description('Remove a node from the registry')]
 class NodeRemoveCommand extends Command
 {
+    use HandlesPromptCancellation;
+
     public function handle(): int
     {
         $callerRole = $this->callerRole();
@@ -54,7 +55,11 @@ class NodeRemoveCommand extends Command
         $name = $this->argument('name');
         if ($name === null) {
             if ($this->isInteractiveInput()) {
-                $name = text(label: 'Node name', required: true);
+                try {
+                    $name = $this->promptText('Node name', required: true);
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
+                }
             } else {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -84,7 +89,13 @@ class NodeRemoveCommand extends Command
 
             $confirmMessage = $this->confirmationMessage($name, $isSelfRemoval);
 
-            if (! confirm($confirmMessage, default: false)) {
+            try {
+                $confirmed = $this->promptConfirm($confirmMessage, default: false);
+            } catch (PromptAborted) {
+                return $this->promptAborted();
+            }
+
+            if (! $confirmed) {
                 return $this->failCommand(
                     code: 'validation_failed',
                     message: 'Operation cancelled.',
@@ -286,6 +297,15 @@ class NodeRemoveCommand extends Command
         }
 
         return "Remove node '{$name}'? This cannot be undone.";
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     /**

@@ -204,10 +204,13 @@ Input mode behavior is split out of the canonical command contract:
 ### Adoption And Drift Boundaries
 
 - `node:new` is an explicit node-membership adoption and convergence path. It may
-  adopt a compatible already-provisioned gateway or app host into gateway intent
-  as part of adding that node. Broader drift adoption, disaster recovery, and
+  adopt compatible app hosts into gateway intent as part of adding that node and
+  may converge an already-known gateway. Missing gateway-row materialization is
+  outside `node:new` because gateway caller authority is derived from an active
+  local gateway node row. Broader drift adoption, disaster recovery, and
   adoption of observed node reality outside this explicit membership flow remain
-  owned by `doctor --family=node --adopt`.
+  owned by a future explicit recovery path or `doctor --family=node --adopt`
+  where the doctor contract already allows it.
 - Apply only role bootstrap requirements. Other state families own their own
   artifacts, except node-owned bootstrap artifacts such as minimum app-node
   runtime readiness, node identity readiness, and development TLD mapping.

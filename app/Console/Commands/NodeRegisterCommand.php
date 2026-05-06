@@ -10,7 +10,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-#[Signature('node:register
+#[Signature('orbit:internal:node-register
     {name : Registry name for the node}
     {--role=control : Node role: gateway, control, or app}
     {--host= : SSH host or alias}
@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 #[Description('Register or update a node in the gateway registry')]
 class NodeRegisterCommand extends Command
 {
+    protected $hidden = true;
+
     public function handle(): int
     {
         $role = (string) $this->option('role');

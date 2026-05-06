@@ -71,6 +71,28 @@ afterEach(function (): void {
     }
 });
 
+function seedGatewayTrustCommandAlreadyTrustedSettings(string $pem): string
+{
+    $pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+    $dir = dirname($pemPath);
+
+    if (! File::isDirectory($dir)) {
+        File::makeDirectory($dir, 0755, true);
+    }
+
+    File::put($pemPath, $pem);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_sha256' => hash('sha256', $pem),
+        'ca_pem_path' => $pemPath,
+        'trusted_at' => now(),
+    ])->save();
+
+    return $pemPath;
+}
+
 it('trusts gateway ca when configured via local gateway settings', function (): void {
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.2',
@@ -92,6 +114,7 @@ it('trusts gateway ca when configured via local gateway settings', function (): 
         ->assertSuccessful();
 
     expect($this->fakeInstaller->trustCalls)->toHaveCount(1);
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/api/me'));
 
     $settings = LocalGatewaySettings::current();
     expect($settings->gateway_url)->toBe('https://10.6.0.2')
@@ -129,7 +152,7 @@ it('logs gateway trust activity', function (): void {
     expect($entry->properties->get('status'))->toBe('trusted');
 });
 
-it('falls back to active gateway node when local settings are empty', function (): void {
+it('does not fall back to active gateway node when local settings are empty', function (): void {
     Node::query()->create([
         'name' => 'gateway',
         'role' => 'gateway',
@@ -141,19 +164,14 @@ it('falls back to active gateway node when local settings are empty', function (
         'is_local' => false,
     ]);
 
-    Http::fake([
-        'http://10.6.0.2/api/ca/root' => Http::response([
-            'data' => [
-                'root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----",
-            ],
-        ]),
-    ]);
+    Http::fake();
 
     $this->artisan('gateway:trust')
-        ->expectsOutputToContain('Gateway CA trusted for https://10.6.0.2')
-        ->assertSuccessful();
+        ->expectsOutputToContain('No gateway is configured. Run orbit gateway:add first.')
+        ->assertFailed();
 
-    expect($this->fakeInstaller->trustCalls)->toHaveCount(1);
+    expect($this->fakeInstaller->trustCalls)->toHaveCount(0);
+    Http::assertNothingSent();
 });
 
 it('fails when no gateway is configured', function (): void {
@@ -162,7 +180,7 @@ it('fails when no gateway is configured', function (): void {
         ->assertFailed();
 });
 
-it('fails when multiple gateways exist without local settings', function (): void {
+it('ignores registry gateway candidates when local settings are empty', function (): void {
     Node::query()->create([
         'name' => 'gw1',
         'role' => 'gateway',
@@ -183,7 +201,7 @@ it('fails when multiple gateways exist without local settings', function (): voi
     ]);
 
     $this->artisan('gateway:trust')
-        ->expectsOutputToContain('Could not read local gateway settings.')
+        ->expectsOutputToContain('No gateway is configured. Run orbit gateway:add first.')
         ->assertFailed();
 });
 
@@ -191,11 +209,7 @@ it('is idempotent when ca is already trusted and sha256 matches', function (): v
     $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----";
     $sha256 = hash('sha256', $pem);
 
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.2',
-        'gateway_wg_ip' => '10.6.0.2',
-        'ca_sha256' => $sha256,
-    ])->save();
+    seedGatewayTrustCommandAlreadyTrustedSettings($pem);
 
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([

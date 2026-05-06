@@ -67,6 +67,14 @@ it('selects non-interactive mode with --json flag', function (): void {
 });
 
 it('fails when gateway_ip is missing in non-interactive mode', function (): void {
+    app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
+    {
+        public function resolve(): ?string
+        {
+            return null;
+        }
+    });
+
     $this->artisan('gateway:add', ['--json' => true])
         ->assertFailed();
 });

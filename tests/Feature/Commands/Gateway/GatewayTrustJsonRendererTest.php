@@ -70,6 +70,26 @@ afterEach(function (): void {
     }
 });
 
+function seedGatewayTrustJsonAlreadyTrustedSettings(string $pem): void
+{
+    $pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+    $dir = dirname($pemPath);
+
+    if (! File::isDirectory($dir)) {
+        File::makeDirectory($dir, 0755, true);
+    }
+
+    File::put($pemPath, $pem);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_sha256' => hash('sha256', $pem),
+        'ca_pem_path' => $pemPath,
+        'trusted_at' => now(),
+    ])->save();
+}
+
 function runJson(string $command = 'gateway:trust', array $args = []): array
 {
     $args['--json'] = true;
@@ -122,13 +142,8 @@ it('emits success envelope with trusted status', function (): void {
 
 it('emits already_trusted status when idempotent', function (): void {
     $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----";
-    $sha256 = hash('sha256', $pem);
 
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.2',
-        'gateway_wg_ip' => '10.6.0.2',
-        'ca_sha256' => $sha256,
-    ])->save();
+    seedGatewayTrustJsonAlreadyTrustedSettings($pem);
 
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
@@ -152,7 +167,7 @@ it('emits validation_failed for missing gateway', function (): void {
         ->and($output['error']['meta']['reason'])->toBe('missing');
 });
 
-it('emits local_context_invalid for ambiguous gateways', function (): void {
+it('emits validation_failed when registry gateways exist without configured settings', function (): void {
     Node::query()->create([
         'name' => 'gw1',
         'role' => 'gateway',
@@ -174,9 +189,9 @@ it('emits local_context_invalid for ambiguous gateways', function (): void {
 
     $output = runJson();
 
-    expect($output['error']['code'])->toBe('local_context_invalid')
+    expect($output['error']['code'])->toBe('validation_failed')
         ->and($output['error']['meta']['field'])->toBe('gateway')
-        ->and($output['error']['meta']['reason'])->toBe('settings_unreadable');
+        ->and($output['error']['meta']['reason'])->toBe('missing');
 });
 
 it('emits gateway_unavailable for unreachable endpoint', function (): void {

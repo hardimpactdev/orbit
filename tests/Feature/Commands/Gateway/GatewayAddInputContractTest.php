@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\WireGuard\WireGuardGatewayAddressResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -118,6 +119,14 @@ it('fails for invalid gateway_ip', function (): void {
 });
 
 it('fails for missing gateway_ip in non-interactive mode', function (): void {
+    app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
+    {
+        public function resolve(): ?string
+        {
+            return null;
+        }
+    });
+
     $this->artisan('gateway:add', ['--json' => true])
         ->assertFailed();
 });
@@ -198,6 +207,8 @@ it('is idempotent when gateway is already configured', function (): void {
         File::makeDirectory($dir, 0755, true);
     }
     File::put($pemPath, $pem);
+
+    $this->fakeInstaller->isTrusted = true;
 
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([

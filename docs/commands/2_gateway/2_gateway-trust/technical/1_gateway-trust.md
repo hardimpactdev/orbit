@@ -97,9 +97,10 @@ creation, upload, renewal, cleanup, and backend TLS drift repair.
 - Use a stable Orbit trust label so repeated runs update or converge the same
   local trust entry.
 - Write local trust metadata after trust-store installation succeeds:
-  `gateway_url`, `ca_sha256`, and `trusted_at`.
+  `gateway_url`, `gateway_wg_ip`, `ca_sha256`, `ca_pem_path`, and
+  `trusted_at`.
 - Return success when the selected gateway CA is already trusted and the stored
-  metadata matches the installed certificate.
+  metadata points to the same CA file, hash, and trust timestamp.
 - Return failure when the trust store cannot be updated or local trust metadata
   cannot be written.
 
@@ -176,4 +177,4 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway intent writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
 | `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
-| `tests/E2E/Ephemeral/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform. |
+| `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform, including local metadata persistence and idempotent convergence. |

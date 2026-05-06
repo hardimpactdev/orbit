@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
+use App\Services\WireGuard\WireGuardGatewayAddressResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -77,6 +78,17 @@ function runGatewayAddJson(array $args = []): array
     Artisan::call('gateway:add', $args, $output);
 
     return json_decode($output->fetch(), true);
+}
+
+function disableGatewayAddJsonIpDerivation(): void
+{
+    app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
+    {
+        public function resolve(): ?string
+        {
+            return null;
+        }
+    });
 }
 
 it('selects json renderer with --json flag', function (): void {
@@ -166,6 +178,8 @@ it('emits converged success envelope', function (): void {
     }
     File::put($pemPath, $pem);
 
+    $this->fakeInstaller->isTrusted = true;
+
     Http::fake([
         'https://10.6.0.2/api/me' => Http::response([
             'data' => [
@@ -183,6 +197,8 @@ it('emits converged success envelope', function (): void {
 });
 
 it('emits validation_failed for missing gateway_ip', function (): void {
+    disableGatewayAddJsonIpDerivation();
+
     $output = runGatewayAddJson();
 
     expect($output['error']['code'])->toBe('validation_failed')
@@ -279,7 +295,7 @@ it('emits gateway_unavailable for non-success api response', function (): void {
 
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
 
-    expect($output['error']['code'])->toBe('node.gateway_api_error')
+    expect($output['error']['code'])->toBe('gateway_unavailable')
         ->and($output['error']['meta']['gateway_ip'])->toBe('10.6.0.2')
         ->and($output['error']['meta']['status'])->toBe(500);
 });

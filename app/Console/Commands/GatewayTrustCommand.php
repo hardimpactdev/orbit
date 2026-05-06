@@ -7,7 +7,6 @@ namespace App\Console\Commands;
 use App\Concerns\LogsCommandActivity;
 use App\Contracts\Loggable;
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
 use App\Services\Gateway\RootCaFetchResult;
 use App\Services\Trust\TrustStoreInstaller;
@@ -245,39 +244,11 @@ class GatewayTrustCommand extends Command implements Loggable
             return $this->normalizeEndpoint((string) $settings->gateway_url, (string) ($settings->gateway_wg_ip ?? $settings->gateway_url));
         }
 
-        $gatewayNodes = Node::query()
-            ->where('role', 'gateway')
-            ->where('status', 'active')
-            ->get();
-
-        if ($gatewayNodes->isEmpty()) {
-            return [
-                'code' => 'validation_failed',
-                'message' => 'No gateway is configured. Run orbit gateway:add first.',
-                'meta' => ['field' => 'gateway', 'reason' => 'missing'],
-            ];
-        }
-
-        if ($gatewayNodes->count() > 1) {
-            return [
-                'code' => 'local_context_invalid',
-                'message' => 'Could not read local gateway settings.',
-                'meta' => ['field' => 'gateway', 'reason' => 'settings_unreadable'],
-            ];
-        }
-
-        $node = $gatewayNodes->first();
-        $host = $node->host !== null && $node->host !== '' ? $node->host : $node->wireguard_address;
-
-        if ($host === null || $host === '') {
-            return [
-                'code' => 'validation_failed',
-                'message' => 'Configured gateway endpoint is invalid.',
-                'meta' => ['field' => 'gateway', 'reason' => 'invalid'],
-            ];
-        }
-
-        return $this->normalizeEndpoint($host, $node->wireguard_address ?? $host);
+        return [
+            'code' => 'validation_failed',
+            'message' => 'No gateway is configured. Run orbit gateway:add first.',
+            'meta' => ['field' => 'gateway', 'reason' => 'missing'],
+        ];
     }
 
     /**
@@ -337,7 +308,9 @@ class GatewayTrustCommand extends Command implements Loggable
         $settings = LocalGatewaySettings::current();
 
         return $installer->isCaTrusted($pemPath, self::LABEL)
-            && $settings->ca_sha256 === $sha256;
+            && $settings->ca_sha256 === $sha256
+            && $settings->ca_pem_path === $pemPath
+            && $settings->trusted_at !== null;
     }
 
     private function trustedAt(): Carbon

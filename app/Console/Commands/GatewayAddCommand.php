@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\LogsCommandActivity;
 use App\Contracts\Loggable;
+use App\Exceptions\PromptAborted;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
@@ -28,6 +30,7 @@ use RuntimeException;
 #[Description('Trust the gateway CA and register the local node connection')]
 class GatewayAddCommand extends Command implements Loggable
 {
+    use HandlesPromptCancellation;
     use LogsCommandActivity;
 
     private const string LABEL = 'orbit';
@@ -117,17 +120,14 @@ class GatewayAddCommand extends Command implements Loggable
             $isInteractive = ! $hasJson && $this->input->isInteractive();
 
             if ($isInteractive) {
-                $gatewayIp = \Laravel\Prompts\text(
-                    label: 'Gateway IP',
-                    required: true,
-                );
-
-                if ($gatewayIp === '') {
-                    return $this->failCommand(
-                        code: 'validation_failed',
-                        message: 'Gateway IP is required.',
-                        meta: ['field' => 'gateway_ip', 'reason' => 'missing'],
-                    );
+                try {
+                    $gatewayIp = trim($this->promptText(
+                        label: 'Gateway IP',
+                        required: true,
+                        validate: fn (string $value): ?string => $this->validateGatewayIpPrompt($value),
+                    ));
+                } catch (PromptAborted) {
+                    return $this->promptAborted();
                 }
             } else {
                 return $this->failCommand(
@@ -149,12 +149,17 @@ class GatewayAddCommand extends Command implements Loggable
             );
         }
 
+        $installer = $this->resolveTrustStoreInstaller();
+        if (is_int($installer)) {
+            return $installer;
+        }
+
         // 4. Check convergence
-        $isConverged = $this->isConverged($gatewayIp);
+        $isConverged = $this->isConverged($gatewayIp, $installer);
 
         // 5. If converged, verify /api/me still works and return
         if ($isConverged) {
-            $pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+            $pemPath = (string) LocalGatewaySettings::current()->ca_pem_path;
 
             if (! File::exists($pemPath)) {
                 // CA file missing despite converged state; re-run full flow
@@ -187,9 +192,14 @@ class GatewayAddCommand extends Command implements Loggable
 
         // 6. Fetch gateway root CA
         if (! $this->wantsJson()) {
-            $this->line('┌ Join Gateway');
+            $this->line('┌ Joining Gateway');
             $this->line('○ Resolve gateway');
             $this->line('○ Fetch trust material');
+            $this->line('○ Trust gateway CA');
+            $this->line('○ Verify gateway API');
+            $this->line('○ Verify identity');
+            $this->line('○ Store local config');
+            $this->line('└ Working...');
         }
 
         try {
@@ -206,31 +216,6 @@ class GatewayAddCommand extends Command implements Loggable
                 code: 'node.local_config_write_failed',
                 message: 'Failed to store local gateway configuration.',
                 meta: ['gateway_ip' => $gatewayIp],
-            );
-        }
-
-        // 8. Install or refresh local CA trust
-        if (! $this->wantsJson()) {
-            $this->line('○ Trust gateway CA');
-        }
-
-        try {
-            $installer = app(TrustStoreInstaller::class);
-        } catch (TrustStoreInstallException $e) {
-            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
-                return $this->failCommand(
-                    code: 'node.unsupported_platform',
-                    message: 'This platform does not support automatic gateway CA trust installation.',
-                    meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
-                );
-            }
-
-            throw $e;
-        } catch (RuntimeException $e) {
-            return $this->failCommand(
-                code: 'node.unsupported_platform',
-                message: 'This platform does not support automatic gateway CA trust installation.',
-                meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
             );
         }
 
@@ -252,12 +237,6 @@ class GatewayAddCommand extends Command implements Loggable
             );
         }
 
-        // 9. Verify HTTPS /api/me using the trusted CA
-        if (! $this->wantsJson()) {
-            $this->line('○ Verify gateway API');
-            $this->line('○ Verify identity');
-        }
-
         $verifyResult = $this->verifyGatewayApi($gatewayIp, $pemPath);
 
         if (array_key_exists('code', $verifyResult)) {
@@ -266,11 +245,6 @@ class GatewayAddCommand extends Command implements Loggable
                 message: $verifyResult['message'],
                 meta: $verifyResult['meta'],
             );
-        }
-
-        // 10. Persist gateway settings
-        if (! $this->wantsJson()) {
-            $this->line('○ Store local config');
         }
 
         try {
@@ -358,7 +332,20 @@ class GatewayAddCommand extends Command implements Loggable
         return str_starts_with($ip, '10.6.');
     }
 
-    private function isConverged(string $gatewayIp): bool
+    private function validateGatewayIpPrompt(string $value): ?string
+    {
+        $gatewayIp = trim($value);
+
+        if ($gatewayIp === '') {
+            return 'Gateway IP is required.';
+        }
+
+        return $this->isValidWireGuardIp($gatewayIp)
+            ? null
+            : 'Gateway IP must be a valid Orbit WireGuard address.';
+    }
+
+    private function isConverged(string $gatewayIp, TrustStoreInstaller $installer): bool
     {
         $settings = LocalGatewaySettings::current();
 
@@ -374,9 +361,23 @@ class GatewayAddCommand extends Command implements Loggable
             return false;
         }
 
-        $pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+        $pemPath = $settings->ca_pem_path;
 
-        if (! File::exists($pemPath) || File::get($pemPath) === '') {
+        if (! File::exists($pemPath)) {
+            return false;
+        }
+
+        $pem = File::get($pemPath);
+
+        if ($pem === '') {
+            return false;
+        }
+
+        if (hash('sha256', $pem) !== $settings->ca_sha256) {
+            return false;
+        }
+
+        if (! $installer->isCaTrusted($pemPath, self::LABEL)) {
             return false;
         }
 
@@ -412,7 +413,7 @@ class GatewayAddCommand extends Command implements Loggable
 
         if (! $response->successful()) {
             return [
-                'code' => 'node.gateway_api_error',
+                'code' => 'gateway_unavailable',
                 'message' => "Gateway at {$gatewayIp} returned HTTP {$response->status()} for /api/me.",
                 'meta' => ['gateway_ip' => $gatewayIp, 'status' => $response->status()],
             ];
@@ -506,7 +507,7 @@ class GatewayAddCommand extends Command implements Loggable
 
     private function renderConvergedTree(string $gatewayIp): void
     {
-        $this->line('┌ Join Gateway');
+        $this->line('┌ Joining Gateway');
         $this->line('○ Resolve gateway');
         $this->line('○ Verify gateway API');
         $this->line('○ Verify identity');
@@ -564,6 +565,39 @@ class GatewayAddCommand extends Command implements Loggable
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function resolveTrustStoreInstaller(): TrustStoreInstaller|int
+    {
+        try {
+            return app(TrustStoreInstaller::class);
+        } catch (TrustStoreInstallException $e) {
+            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
+                return $this->unsupportedTrustStore();
+            }
+
+            throw $e;
+        } catch (RuntimeException) {
+            return $this->unsupportedTrustStore();
+        }
+    }
+
+    private function unsupportedTrustStore(): int
+    {
+        return $this->failCommand(
+            code: 'node.unsupported_platform',
+            message: 'This platform does not support automatic gateway CA trust installation.',
+            meta: ['platform' => PHP_OS_FAMILY, 'reason' => 'unsupported_trust_store'],
+        );
+    }
+
+    private function promptAborted(): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: 'Operation cancelled.',
+            meta: [],
+        );
     }
 
     private function mapFetchExceptionToError(\Throwable $e, string $gatewayIp): int

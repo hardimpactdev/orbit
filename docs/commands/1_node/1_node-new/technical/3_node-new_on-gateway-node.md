@@ -42,7 +42,7 @@ gateway-owned side effects begin.
 
 | Requested role | Behavior |
 | --- | --- |
-| `gateway` | Converge the existing gateway node record or adopt compatible gateway intent. |
+| `gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. |
 | `app` | Provision or adopt an app node over SSH. No enrollment-only path. |
 | `control` | Enroll a control node by minting a WireGuard peer and active node record. |
 
@@ -60,35 +60,28 @@ For `--role=gateway`:
 
 1. Resolve `node_new.name` and `node_new.role`.
 2. Resolve `node_new.host`. Gateway requests always require a host.
-3. Resolve `node_new.ssh_user` when the target host must be reached over SSH
-   for adoption.
-4. If the requested gateway is already provisioned, active, and compatible, do
+3. If the requested gateway is already provisioned, active, and compatible, do
    not reprovision. Report already-provisioned convergence through the selected
    output renderer.
-5. If the target host is already provisioned and compatible but not yet
-   registered in gateway intent, adopt it.
-6. If the gateway is compatible but drifted or incomplete after it is known to
+4. If the gateway is compatible but drifted or incomplete after it is known to
    gateway intent, report node-family drift and point to
    `doctor --family=node --fix`.
-7. Do not reset or destructively reprovision an existing gateway from
+5. Do not reset or destructively reprovision an existing gateway from
    `node:new`.
 
-Gateway-role adoption may materialize a missing gateway node row only for the
-gateway identity that is already running this command. The target must prove the
-requested node name, `gateway` role, local role setting, active status,
-supported platform, WireGuard address, and live interface public key through the
-bounded node identity artifact read. The supplied `node_new.host` is recorded as
-the gateway endpoint only after that proof is complete. `node:new` must not
-adopt a different remote gateway host into the current fleet; multi-gateway
-replacement, disaster recovery, and reset flows require a separate explicit
-contract.
+Gateway-role missing-row materialization is intentionally not supported by the
+clean rebuild. A gateway caller is recognized only from an active local gateway
+node row, so a gateway without that identity cannot safely prove authority to
+create itself through this command. First-gateway bootstrap is the supported
+path for creating gateway intent. Multi-gateway replacement, disaster recovery,
+and reset flows require a separate explicit contract.
 
 ## Gateway Path Matrix
 
 | Gateway state | `node_new.host` | SSH used? | Behavior |
 | --- | --- | --- | --- |
 | Existing active compatible gateway | Required | No by default | Converge idempotently and report already-provisioned convergence. The supplied host must be compatible with the existing gateway identity. |
-| Compatible provisioned host not yet in gateway intent | Required | Yes | Adopt the target host into gateway intent. |
+| Compatible provisioned host not yet in gateway intent | Required | No | Fail before side effects. First-gateway bootstrap or a future explicit recovery command must create missing gateway intent. |
 | Existing compatible but incomplete gateway | Required | No by default | Report node-family drift or incomplete provisioning and point to `doctor --family=node --fix`. |
 | Existing incompatible gateway | Required | No | Fail before destructive changes. |
 
@@ -216,6 +209,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewOnGatewayNodeContractTest.php` | Primary owner for gateway-caller behavior: explicit `general.local_node_role=gateway` requirement, gateway post-input path eligibility, gateway path matrix behavior, gateway `node_new.host` required for every gateway request, already-provisioned gateway convergence without reprovisioning, compatible gateway adoption, compatible drift/incomplete-gateway handoff to `doctor --family=node --fix`, reset/destructive reprovisioning being outside `node:new`, control-node enrollment without SSH prompts or SSH side effects, canonical forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development app-node TLD persistence, app host local role setting written as `app` only after node identity and readiness are established, gateway TLD mapping creation, compatible app-node adoption, and incompatible node-record failures before side effects. Renderer tests own exact human prose and JSON envelope shape for these outcomes. |
-| `tests/E2E/Ephemeral/NodeNewAppProvisioningTest.php` | Real-node smoke coverage for gateway-owned app-node provisioning, development TLD mapping, and compatible adoption over SSH. |
-| `tests/E2E/Ephemeral/NodeNewControlEnrollmentTest.php` | Real-node smoke coverage for gateway-owned control-node enrollment, returned WireGuard config installation, and follow-up `gateway:add`. |
+| `tests/Feature/Commands/NodeNewCommandTest.php` | Primary owner for gateway-caller behavior: active local gateway identity requirement, gateway post-input path eligibility, gateway path matrix behavior, gateway `node_new.host` required for every gateway request, already-provisioned gateway convergence without reprovisioning, missing gateway-row materialization being outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --fix`, reset/destructive reprovisioning being outside `node:new`, control-node enrollment without SSH prompts or SSH side effects, canonical forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development app-node TLD persistence, app host local role setting written as `app` only after node identity and readiness are established, gateway TLD mapping creation, compatible app-node adoption, and incompatible node-record failures before side effects. Renderer tests own exact human prose and JSON envelope shape for these outcomes. |
+| `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-node provisioning and development TLD mapping. |
+| `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-node provisioning without development TLD mapping. |

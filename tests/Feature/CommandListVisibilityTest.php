@@ -11,9 +11,10 @@ it('shows orbit commands and hides framework commands from the command list', fu
     $output = $process->getOutput();
 
     expect($output)->toContain('node:list')
-        ->and($output)->toContain('node:register')
         ->and($output)->toContain('node:show')
         ->and($output)->toContain('update:all')
+        ->and($output)->not->toContain('node:register')
+        ->and($output)->not->toContain('orbit:internal:node-register')
         ->and($output)->not->toContain('migrate ')
         ->and($output)->not->toContain('boost:install')
         ->and($output)->not->toContain('make:model');

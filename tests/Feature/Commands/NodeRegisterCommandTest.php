@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-it('registers a node in the gateway registry', function (): void {
-    $this->artisan('node:register', [
+it('registers a node through the hidden internal bootstrap command', function (): void {
+    $this->artisan('orbit:internal:node-register', [
         'name' => 'gateway',
         '--role' => 'gateway',
         '--host' => 'gateway',

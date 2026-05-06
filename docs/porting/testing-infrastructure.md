@@ -43,6 +43,16 @@ the shared Docker pool by default. Composer scripts: `test`, `test:e2e`,
 `e2e:prepare-base-image`, `e2e:prepare-topology`,
 `e2e:prepare-docker-runtime`, `e2e:prepare-docker-topology`.
 
+Recent command-port lanes:
+
+- [x] First-gateway provisioning: `composer test:e2e:provision -- --filter='NodeNewGateway'`.
+- [x] First-gateway API verification: `composer test:e2e:provision -- --filter='NodeNewGatewayApiVerify'`.
+- [x] First-gateway CA verification: `composer test:e2e:provision -- --filter='NodeNewGatewayCaVerify'`.
+- [x] Gateway-owned development app provisioning: `composer test:e2e:provision -- --filter='NodeNewDevelopmentApp'`.
+- [x] Gateway-owned production app provisioning: `composer test:e2e:provision -- --filter='NodeNewProductionApp'`.
+- [x] Control-node gateway onboarding: `composer test:e2e:provision -- --filter='GatewayAdd'`.
+- [x] Gateway trust repair: `composer test:e2e:provision -- --filter='GatewayTrust'`.
+
 The only outstanding item is non-blocking:
 
 - [ ] Add provisioning/destructive coverage to the `e2e-provision` lane as

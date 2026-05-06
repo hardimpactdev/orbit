@@ -298,9 +298,12 @@ After onboarding,
 repair only local gateway CA trust without re-running identity verification or
 changing gateway settings.
 
-When a gateway or app host is already provisioned and already known to the
-gateway registry, `node:new` adopts or converges that gateway-owned identity
-instead of minting a duplicate node.
+When an app host is already provisioned and can prove compatible node identity,
+`node:new` may adopt that app identity into gateway intent. When a gateway is
+already known to the gateway registry, `node:new --role=gateway` converges that
+gateway-owned identity instead of minting a duplicate node. Missing gateway-row
+materialization belongs to first-gateway bootstrap or a future explicit recovery
+contract, not gateway-local `node:new`.
 
 ## Commands
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeRemoveCommand;
+use App\Exceptions\PromptAborted;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -19,9 +20,29 @@ use Symfony\Component\Console\Output\BufferedOutput;
 #[Description('Remove a node from the registry')]
 class TestableNodeRemoveCommand extends NodeRemoveCommand
 {
+    public static ?string $abortPrompt = null;
+
     protected function isInteractiveInput(): bool
     {
         return true;
+    }
+
+    protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
+    {
+        if (self::$abortPrompt === $label) {
+            throw new PromptAborted;
+        }
+
+        return parent::promptText($label, $required, $validate);
+    }
+
+    protected function promptConfirm(string $label, bool $default = true): bool
+    {
+        if (self::$abortPrompt === 'confirm') {
+            throw new PromptAborted;
+        }
+
+        return parent::promptConfirm($label, $default);
     }
 }
 
@@ -59,6 +80,25 @@ function setupNodeRemoveGatewayCallerInteractive(): void
         'is_local' => true,
     ]));
 }
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{int, string}
+ */
+function runTestableNodeRemoveInteractive(array $arguments): array
+{
+    $command = new TestableNodeRemoveCommand;
+    $command->setLaravel(app());
+
+    $output = new BufferedOutput;
+    $exitCode = $command->run(new ArrayInput($arguments), $output);
+
+    return [$exitCode, $output->fetch()];
+}
+
+beforeEach(function (): void {
+    TestableNodeRemoveCommand::$abortPrompt = null;
+});
 
 describe('node:remove interactive input mode contract', function (): void {
     it('forces non-interactive mode when --json is present', function (): void {
@@ -192,50 +232,33 @@ describe('node:remove interactive input mode contract', function (): void {
         expect($isInteractive)->toBeTrue();
     });
 
-    it('prompts for missing name in interactive mode instead of validation_failed', function (): void {
+    it('cancels before removing when the name prompt is aborted', function (): void {
         setupNodeRemoveGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRemoveInteractiveRow());
 
-        $command = new TestableNodeRemoveCommand;
-        $command->setLaravel(app());
+        TestableNodeRemoveCommand::$abortPrompt = 'Node name';
 
-        $input = new ArrayInput([
+        [$exitCode, $output] = runTestableNodeRemoveInteractive([
             '--force' => true,
         ]);
-        $output = new BufferedOutput;
 
-        $merge = new ReflectionMethod($command, 'mergeApplicationDefinition');
-        $merge->setAccessible(true);
-        $merge->invoke($command);
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Operation cancelled.')
+            ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
+    });
 
-        $definition = $command->getDefinition();
-        $input->bind($definition);
-        $input->validate();
+    it('cancels before removing when the confirmation prompt is aborted', function (): void {
+        setupNodeRemoveGatewayCallerInteractive();
+        DB::table('nodes')->insert(nodeRemoveInteractiveRow());
 
-        $init = new ReflectionMethod($command, 'initialize');
-        $init->setAccessible(true);
-        $init->invoke($command, $input, $output);
+        TestableNodeRemoveCommand::$abortPrompt = 'confirm';
 
-        $inputProp = (new ReflectionClass(Command::class))->getProperty('input');
-        $inputProp->setAccessible(true);
-        $inputProp->setValue($command, $input);
+        [$exitCode, $output] = runTestableNodeRemoveInteractive([
+            'name' => 'app-1',
+        ]);
 
-        $outputProp = (new ReflectionClass(Command::class))->getProperty('output');
-        $outputProp->setAccessible(true);
-        $outputProp->setValue($command, $output);
-
-        // In interactive mode, missing name triggers a prompt
-        // instead of immediately returning validation_failed.
-        // Since prompts cannot receive input in tests, the command will
-        // fail at the prompt stage, but NOT with the validation_failed message.
-        try {
-            $command->run($input, $output);
-            $outputStr = $output->fetch();
-        } catch (Throwable $e) {
-            $outputStr = $e->getMessage();
-        }
-
-        expect($outputStr)->not->toContain('Node name is required.');
-        expect($outputStr)->not->toContain('validation_failed');
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Operation cancelled.')
+            ->and(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
     });
 });

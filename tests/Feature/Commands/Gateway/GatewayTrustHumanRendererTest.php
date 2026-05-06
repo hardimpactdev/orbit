@@ -70,6 +70,26 @@ afterEach(function (): void {
     }
 });
 
+function seedGatewayTrustHumanAlreadyTrustedSettings(string $pem): void
+{
+    $pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+    $dir = dirname($pemPath);
+
+    if (! File::isDirectory($dir)) {
+        File::makeDirectory($dir, 0755, true);
+    }
+
+    File::put($pemPath, $pem);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_sha256' => hash('sha256', $pem),
+        'ca_pem_path' => $pemPath,
+        'trusted_at' => now(),
+    ])->save();
+}
+
 it('shows human renderer by default', function (): void {
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.2',
@@ -95,13 +115,8 @@ it('shows human renderer by default', function (): void {
 
 it('shows already-trusted progress tree', function (): void {
     $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----";
-    $sha256 = hash('sha256', $pem);
 
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.2',
-        'gateway_wg_ip' => '10.6.0.2',
-        'ca_sha256' => $sha256,
-    ])->save();
+    seedGatewayTrustHumanAlreadyTrustedSettings($pem);
 
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
@@ -126,7 +141,7 @@ it('shows missing gateway prose', function (): void {
         ->assertFailed();
 });
 
-it('shows invalid gateway prose for ambiguous gateways', function (): void {
+it('shows missing gateway prose when registry gateways exist without configured settings', function (): void {
     Node::query()->create([
         'name' => 'gw1',
         'role' => 'gateway',
@@ -147,7 +162,7 @@ it('shows invalid gateway prose for ambiguous gateways', function (): void {
     ]);
 
     $this->artisan('gateway:trust')
-        ->expectsOutputToContain('Could not read local gateway settings.')
+        ->expectsOutputToContain('No gateway is configured. Run orbit gateway:add first.')
         ->assertFailed();
 });
 
