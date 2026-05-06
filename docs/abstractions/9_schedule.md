@@ -53,8 +53,14 @@ durable observations reported through gateway-owned authenticated endpoints.
   availability before scheduler presence, liveness, or hook checks.
 - The scheduler daemon runs as an Artisan command and reports heartbeat and run
   history through typed scheduler gateway requests.
-- Schedule run-history hook material must be derived from gateway intent and
-  compared by deterministic content or hash, not by ad hoc string fragments.
+- Schedule run-history hook material is rendered by
+  `App\Services\Schedules\ScheduleRunHistoryHookRenderer`.
+- Hook files live at `/opt/orbit/schedules/hooks/{sha256(schedule_key)}.sh`.
+  The hash-based filename keeps app, node, and Orbit scopes in one scheduler
+  hook directory without leaking shell-sensitive schedule names into paths.
+- Hook content is derived from gateway schedule intent: schedule key, app cwd
+  when the schedule targets an app, and the stored execution value. Doctor
+  compares the file by SHA-256 content hash, not by ad hoc string fragments.
 
 ## Command Pattern
 
@@ -80,6 +86,9 @@ durable observations reported through gateway-owned authenticated endpoints.
   `scheduler_states`.
 - Lock health and run-history hook material are schedule-family drift because
   they affect whether schedule execution can be observed and safely repeated.
+- `schedule.run_history_hook_missing` and
+  `schedule.run_history_hook_mismatch` are safe `--fix` cases: they install the
+  gateway-intended hook material and do not change schedule intent.
 - Schedule doctor has no adoption path by default.
 
 ## Evidence Pointers

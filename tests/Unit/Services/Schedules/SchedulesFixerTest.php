@@ -91,6 +91,29 @@ describe('SchedulesFixer', function (): void {
         ])->and(ScheduleLock::query()->where('schedule_key', $schedule->schedule_key)->exists())->toBeFalse()
             ->and($shell->scripts)->toBe([]);
     });
+
+    it('installs run history hook material', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        $shell = new SchedulesFixerRemoteShell;
+
+        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.run_history_hook_missing',
+            kind: DriftKind::Missing,
+            summary: 'Run-history hook material is missing.',
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'schedule',
+            'node' => 'app-1',
+            'key' => 'schedule.run_history_hook_missing',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain('/opt/orbit/schedules/hooks')
+            ->and($shell->scripts[0])->toContain('sudo chmod 0755');
+    });
 });
 
 final class SchedulesFixerRemoteShell implements RemoteShell

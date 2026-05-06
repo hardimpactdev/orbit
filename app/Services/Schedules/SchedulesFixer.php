@@ -15,6 +15,7 @@ final readonly class SchedulesFixer
     public function __construct(
         private RemoteShell $remoteShell,
         private OrbitSchedulerProgramRenderer $renderer = new OrbitSchedulerProgramRenderer,
+        private ScheduleRunHistoryHookRenderer $hookRenderer = new ScheduleRunHistoryHookRenderer,
     ) {}
 
     /**
@@ -40,6 +41,7 @@ final readonly class SchedulesFixer
         $script = match ($entry->key) {
             'schedule.scheduler_missing' => $this->renderer->installScript($node),
             'schedule.scheduler_stopped' => "sudo supervisorctl start 'orbit_scheduler'",
+            'schedule.run_history_hook_missing', 'schedule.run_history_hook_mismatch' => $this->hookRenderer->installScript($schedule),
             default => null,
         };
 

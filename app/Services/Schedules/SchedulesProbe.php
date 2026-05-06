@@ -20,6 +20,7 @@ final readonly class SchedulesProbe
 
     public function __construct(
         private RuntimeBackendProbe $runtimeBackendProbe,
+        private ScheduleRunHistoryHookRenderer $hookRenderer = new ScheduleRunHistoryHookRenderer,
     ) {}
 
     public function key(): string
@@ -44,6 +45,8 @@ final readonly class SchedulesProbe
         $schedulerState = SchedulerState::query()->where('node_id', $node->id)->first();
 
         $schedulerStatus = null;
+        $hookExists = null;
+        $hookHash = null;
 
         if ($runtime->available) {
             $result = $this->runtimeBackendProbe->remoteShell()->run(
@@ -52,6 +55,27 @@ final readonly class SchedulesProbe
                 ['timeout' => 15, 'throw' => false],
             );
             $schedulerStatus = $this->normalizeSchedulerStatus(trim($result->stdout));
+
+            if ($schedulerStatus === 'running') {
+                $hookResult = $this->runtimeBackendProbe->remoteShell()->run(
+                    $node,
+                    'if [ -f "$ORBIT_SCHEDULE_HOOK_PATH" ]; then printf "1\t%s\n" "$(sha256sum "$ORBIT_SCHEDULE_HOOK_PATH" | awk \'{print $1}\')"; else printf "0\t\n"; fi',
+                    [
+                        'timeout' => 15,
+                        'throw' => false,
+                        'env' => [
+                            'ORBIT_SCHEDULE_HOOK_PATH' => $this->hookRenderer->path($schedule),
+                        ],
+                    ],
+                );
+                $parts = explode("\t", trim($hookResult->stdout), 2);
+                $hookExists = match ($parts[0] ?? '') {
+                    '1' => true,
+                    '0' => false,
+                    default => null,
+                };
+                $hookHash = ($parts[1] ?? '') !== '' ? $parts[1] : null;
+            }
         }
 
         return new ProbeSnapshot([
@@ -60,6 +84,10 @@ final readonly class SchedulesProbe
                 'scheduler_status' => $schedulerStatus,
                 'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
                 'registry_synced_at' => $schedulerState?->registry_synced_at?->toISOString(),
+                'run_history_hook_path' => $this->hookRenderer->path($schedule),
+                'run_history_hook_hash' => $hookHash,
+                'run_history_hook_expected_hash' => $this->hookRenderer->hash($schedule),
+                'run_history_hook_exists' => $hookExists,
             ],
         ]);
     }
@@ -75,6 +103,7 @@ final readonly class SchedulesProbe
             ...$this->checkRuntimeAndScheduler($schedule, $snapshot),
             ...$this->checkFreshness($schedule, $snapshot),
             ...$this->checkLockHealth($schedule, $snapshot),
+            ...$this->checkRunHistoryHook($schedule, $snapshot),
         ];
     }
 
@@ -297,6 +326,60 @@ final readonly class SchedulesProbe
                 ],
             ),
         ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRunHistoryHook(Schedule $schedule, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($schedule->schedule_key);
+
+        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+            return [];
+        }
+
+        $path = is_string($observed['run_history_hook_path'] ?? null) ? $observed['run_history_hook_path'] : $this->hookRenderer->path($schedule);
+        $expectedHash = is_string($observed['run_history_hook_expected_hash'] ?? null) ? $observed['run_history_hook_expected_hash'] : $this->hookRenderer->hash($schedule);
+        $observedHash = is_string($observed['run_history_hook_hash'] ?? null) ? $observed['run_history_hook_hash'] : null;
+
+        if (($observed['run_history_hook_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'schedule.run_history_hook_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Schedule {$schedule->name} run-history hook is missing.",
+                    detail: [
+                        'schedule' => $schedule->name,
+                        'path' => $path,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['run_history_hook_exists'] ?? null) !== true || $observedHash === null) {
+            return [];
+        }
+
+        if ($observedHash !== $expectedHash) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'schedule.run_history_hook_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Schedule {$schedule->name} run-history hook differs from gateway intent.",
+                    detail: [
+                        'schedule' => $schedule->name,
+                        'path' => $path,
+                        'expected_hash' => $expectedHash,
+                        'observed_hash' => $observedHash,
+                    ],
+                ),
+            ];
+        }
+
+        return [];
     }
 
     private function targetNode(Schedule $schedule): ?Node

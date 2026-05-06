@@ -11,6 +11,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Schedules\ScheduleRunHistoryHookRenderer;
 use App\Services\Schedules\SchedulesProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -130,6 +131,68 @@ describe('SchedulesProbe', function (): void {
 
         expect(scheduleProbeIssue($drift, 'schedule.lock_stuck')?->kind)->toBe(DriftKind::Divergent);
     });
+
+    it('detects missing run history hook material', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $node->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "0\t\n", stderr: '', durationMs: 1),
+        ])));
+
+        $drift = $probe->diff($schedule, $probe->introspect($schedule));
+
+        expect(scheduleProbeIssue($drift, 'schedule.run_history_hook_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects divergent run history hook material', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $node->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "1\tdeadbeef\n", stderr: '', durationMs: 1),
+        ])));
+
+        $drift = $probe->diff($schedule, $probe->introspect($schedule));
+
+        expect(scheduleProbeIssue($drift, 'schedule.run_history_hook_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('accepts matching run history hook material', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $node->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        $renderer = new ScheduleRunHistoryHookRenderer;
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeQueuedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "running\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "1\t{$renderer->hash($schedule)}\n", stderr: '', durationMs: 1),
+        ])), $renderer);
+
+        $drift = $probe->diff($schedule, $probe->introspect($schedule));
+
+        expect(scheduleProbeIssue($drift, 'schedule.run_history_hook_missing'))->toBeNull()
+            ->and(scheduleProbeIssue($drift, 'schedule.run_history_hook_mismatch'))->toBeNull();
+    });
 });
 
 final readonly class SchedulesProbeRemoteShell implements RemoteShell
@@ -145,5 +208,23 @@ final readonly class SchedulesProbeRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class SchedulesProbeQueuedRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

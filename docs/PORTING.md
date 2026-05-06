@@ -1471,7 +1471,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     DTOs, and focused API / gateway-client coverage.
   - [x] Run-history intake was already present through the authenticated
     `POST /api/schedules/runs` endpoint and typed scheduler gateway request.
-- [~] Port schedule doctor probe and fix map.
+- [x] Port schedule doctor probe and fix map.
   - [x] Schedule abstraction seed exists at `docs/abstractions/9_schedule.md`.
   - [x] Global `doctor` command/family dispatcher and doctor API transport are
     now available through the State Families And Doctor Workstream.
@@ -1485,11 +1485,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     Supervisor control.
   - [x] Stale schedule lock drift and `--fix` cleanup are ported for
     `schedule.lock_stuck`.
-  - [!] Run-history hook drift remains outstanding. The clean rebuild does not
-    yet have a scheduler-side hook material/path contract to compare or repair.
-  - Next concrete action: define the run-history hook material/path contract for
-    scheduler-owned capture hooks, then add `schedule.run_history_hook_missing`
-    and `schedule.run_history_hook_mismatch` probe/fix handling.
+  - [x] Run-history hook drift is ported for
+    `schedule.run_history_hook_missing` and
+    `schedule.run_history_hook_mismatch`, using deterministic scheduler-side
+    hook paths under `/opt/orbit/schedules/hooks/` and hash-based content
+    comparison.
+  - Next concrete action: wire the resident `orbit-scheduler` tick to execute
+    due schedules through the rendered hook material.
 
 ## Runtime Backend And Scheduler Workstream
 
@@ -1846,21 +1848,22 @@ for the Saloon-based gateway transport pattern.
     - Next concrete action: define scoped adopt behavior for selected observed
       tool reality, or add capability/version fix support once catalog
       definitions declare safe install/update commands.
-- [~] Port schedule family.
+- [x] Port schedule family.
   - Schedule command-family behavior is ported through logs/run/CRUD, scheduler
     daemon rendering, heartbeat intake, and run-history intake.
   - [x] Schedule abstraction seed exists at `docs/abstractions/9_schedule.md`.
   - [x] Read-only schedule doctor probe foundation and verify-mode doctor
     dispatcher/API integration are ported.
-  - [~] Schedule doctor fix map is partially ported: `schedule.scheduler_missing`
+  - [x] Schedule doctor fix map is ported for documented safe fixes:
+    `schedule.scheduler_missing`
     re-renders and loads the Orbit Scheduler Supervisor program,
     `schedule.scheduler_stopped` starts the program, and `schedule.lock_stuck`
     releases stale locks.
-    - [!] Run-history hook repair remains outstanding because the clean rebuild
-      still lacks a scheduler-side hook material/path contract.
-    - Next concrete action: define the run-history hook material/path contract,
-      then add `schedule.run_history_hook_missing` /
-      `schedule.run_history_hook_mismatch` probe and fix coverage.
+    - [x] Run-history hook drift and repair are ported for
+      `schedule.run_history_hook_missing` and
+      `schedule.run_history_hook_mismatch`.
+    - Next concrete action: wire the resident `orbit-scheduler` tick to execute
+      due schedules through the rendered hook material.
 - [x] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
   - Current pattern: family probes emit `DriftEntry`, `DoctorReportRunner`
