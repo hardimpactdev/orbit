@@ -97,6 +97,25 @@ describe('ToolsProbe', function (): void {
                 'observed_version' => '6.0.16',
             ]);
     });
+
+    it('detects lifecycle state drift for running tools', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t7.2.0\tstopped\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.lifecycle_state_mismatch')?->detail)->toMatchArray([
+                'expected_state' => 'running',
+                'observed_state' => 'stopped',
+            ]);
+    });
 });
 
 final readonly class ToolsProbeRemoteShell implements RemoteShell

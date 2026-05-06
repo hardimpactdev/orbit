@@ -1801,11 +1801,13 @@ for the Saloon-based gateway transport pattern.
       eligibility, catalog definition checks, and live capability presence.
     - [x] Version drift checks exist for catalogued tools with version probe
       metadata.
-    - [!] Configuration, credential, lifecycle drift, fix/adopt action handlers,
-      and future write/enactment commands remain outstanding.
+    - [x] Lifecycle drift checks exist for catalogued tools with service-state
+      probe metadata.
+    - [!] Configuration drift, credential drift, fix/adopt action handlers, and
+      future write/enactment commands remain outstanding.
     - Next concrete action: expand tool definitions with backend probe metadata
-      for config/lifecycle checks, then add safe `--fix` action handlers for
-      definitions that declare repair commands.
+      for config checks, then add safe `--fix` action handlers for definitions
+      that declare repair commands.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through
