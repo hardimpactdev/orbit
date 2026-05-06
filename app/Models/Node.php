@@ -97,4 +97,12 @@ class Node extends Model
     {
         return $this->hasMany(ScheduleLock::class);
     }
+
+    /**
+     * @return HasMany<ScheduleRun, $this>
+     */
+    public function scheduleRuns(): HasMany
+    {
+        return $this->hasMany(ScheduleRun::class);
+    }
 }

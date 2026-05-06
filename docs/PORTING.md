@@ -1364,7 +1364,11 @@ across the process and schedule families.
     source WireGuard address mapped to an active node, while
     `GatewayConnector::forScheduler()` only labels the client as `scheduler`
     for activity/diagnostic context and is not trusted as identity.
-- [ ] Add the gateway run-history intake endpoint and typed request.
+- [x] Add the gateway run-history intake endpoint and typed request.
+  - Added gateway-owned `schedule_runs` history storage, authenticated
+    `POST /api/schedules/runs` intake keyed to the caller's WireGuard node
+    identity, and typed `StoreScheduleRunRequest` / `ScheduleRunResponse`
+    client DTOs for scheduler-to-gateway reporting.
 - [ ] Docker E2E base image runs `supervisord -n` as PID 1 (under `tini`)
   and ships pre-installed Supervisor and `orbit_scheduler` program files.
 - [ ] Add Docker E2E coverage for runtime backend behavior and scheduler

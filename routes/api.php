@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
@@ -43,6 +44,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/me', MeController::class);
         Route::get('/profile', ProfileController::class);
+        Route::post('/schedules/runs', ScheduleRunStoreController::class);
         Route::get('/workspaces', WorkspaceListController::class);
         Route::get('/workspaces/history/resolve-by-path', [WorkspaceHistoryController::class, 'fromPath']);
         Route::get('/workspaces/runs/{run}/log', WorkspaceLogController::class);
