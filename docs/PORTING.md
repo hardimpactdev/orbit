@@ -1375,8 +1375,11 @@ across the process and schedule families.
     `tini` into `supervisord -n`, and preinstall Supervisor programs for `sshd`
     plus `orbit_scheduler` so Docker feature E2E can exercise the runtime
     backend and scheduler without relying on host init.
-- [ ] Add Docker E2E coverage for runtime backend behavior and scheduler
+- [x] Add Docker E2E coverage for runtime backend behavior and scheduler
   liveness.
+  - `tests/E2E/RuntimeBackendSchedulerTest.php` verifies the prepared Docker
+    control-gateway topology exposes a live Supervisor backend with `sshd` and
+    `orbit_scheduler` registered and running.
 - [ ] Add Incus E2E coverage where host init or VM-only behavior is part of
   the assertion.
 
