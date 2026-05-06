@@ -1354,8 +1354,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     workspace-owned proxy intent plus workspace intent, and best-effort
     node-side cleanup warnings for inherited processes, teardown steps, FPM, and
     worktree removal.
-  - Next concrete action: add the `workspace:remove` gateway API endpoint and
-    typed control-caller forwarding, then add the paired Docker feature E2E gate.
+  - [x] `workspace:remove` gateway API and configured control-caller forwarding:
+    typed Saloon request/response, gateway authorization by app-node access,
+    structured error preservation, and no local workspace mutation or direct
+    app-node SSH from control callers.
+  - Next concrete action: add the paired Docker feature E2E gate for
+    `workspace:remove` control-caller forwarding.
 - [x] Port workspace setup and teardown step commands.
   - [x] `workspace-setup-step:list` and `workspace-teardown-step:list`
     gateway-local registry reads, typed gateway API forwarding, app/path

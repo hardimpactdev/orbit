@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\RemoveWorkspace;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
+use App\Http\Gateway\Responses\Workspaces\WorkspaceRemoveResponse;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
@@ -12,6 +16,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Throwable;
 
 #[Signature('workspace:remove
     {name? : Workspace name}
@@ -34,15 +39,7 @@ class WorkspaceRemoveCommand extends Command
             );
         }
 
-        if ($callerRole !== 'gateway') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to remove a workspace.',
-                meta: [],
-            );
-        }
-
-        $name = $this->stringArgument('name') ?? $this->resolveNameFromCwd();
+        $name = $this->stringArgument('name') ?? $this->resolveNameFromCwd($callerRole);
         $app = $this->stringOption('app');
 
         if ($name === null) {
@@ -59,6 +56,10 @@ class WorkspaceRemoveCommand extends Command
                 message: 'Use --force to remove this workspace.',
                 meta: ['field' => 'force'],
             );
+        }
+
+        if ($callerRole === 'control') {
+            return $this->forwardRemove($name, $app);
         }
 
         $matches = $this->matchingLocalWorkspaces($name, $app);
@@ -106,8 +107,46 @@ class WorkspaceRemoveCommand extends Command
             ->get();
     }
 
-    private function resolveNameFromCwd(): ?string
+    private function forwardRemove(string $name, ?string $app): int
     {
+        try {
+            /** @var WorkspaceRemoveResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new RemoveWorkspaceRequest(
+                    name: $name,
+                    app: $app,
+                    keepFiles: $this->option('keep-files') === true,
+                ))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to remove a workspace.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to remove a workspace.',
+                meta: [],
+            );
+        }
+
+        return $this->successCommand([
+            ...$dto->data,
+            'kept_files' => (bool) ($dto->meta['kept_files'] ?? false),
+            'warnings' => is_array($dto->meta['warnings'] ?? null) ? array_values($dto->meta['warnings']) : [],
+        ]);
+    }
+
+    private function resolveNameFromCwd(string $callerRole): ?string
+    {
+        if ($callerRole !== 'gateway') {
+            return null;
+        }
+
         $cwd = realpath((string) getcwd()) ?: (string) getcwd();
 
         return Workspace::query()

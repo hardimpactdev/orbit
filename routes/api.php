@@ -53,6 +53,7 @@ use App\Http\Controllers\Api\ToolShowController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
+use App\Http\Controllers\Api\WorkspaceRemoveController;
 use App\Http\Controllers\Api\WorkspaceShowController;
 use App\Http\Controllers\Api\WorkspaceStepDeleteController;
 use App\Http\Controllers\Api\WorkspaceStepListController;
@@ -103,6 +104,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/workspaces/steps/{phase}/{step}', WorkspaceStepDeleteController::class);
         Route::get('/workspaces/resolve-by-path', [WorkspaceShowController::class, 'fromPath']);
         Route::get('/workspaces/{name}/history', WorkspaceHistoryController::class);
+        Route::delete('/workspaces/{name}', WorkspaceRemoveController::class);
         Route::get('/workspaces/{name}', WorkspaceShowController::class);
         Route::get('/apps', AppListController::class);
         Route::post('/apps/register', AppRegisterController::class);

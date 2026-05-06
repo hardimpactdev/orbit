@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecyclePhase;
+use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -13,8 +15,14 @@ use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 it('removes workspace intent and owned artifacts from a gateway caller', function (): void {
     Node::factory()->create([
@@ -245,6 +253,66 @@ it('reports cleanup drift as success warnings after intent removal', function ()
         ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('process.runtime_unit_extra')
         ->and($payload['success']['meta']['warnings'][1]['code'])->toBe('workspace.artifact_extra')
         ->and($payload['success']['meta']['warnings'][2]['code'])->toBe('workspace.artifact_extra');
+});
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $workspace = Workspace::factory()->create([
+        'name' => 'feature-api',
+    ]);
+    $remoteShell = new WorkspaceRemoveSequencedRemoteShell([]);
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        RemoveWorkspaceRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'name' => 'feature-api',
+                    'app' => 'docs',
+                    'action' => 'removed',
+                    'proxy_routes_removed' => 1,
+                    'processes_removed' => 1,
+                    'fpm_config_removed' => true,
+                    'worktree_removed' => false,
+                    'teardown_steps_run' => 0,
+                ],
+                'meta' => [
+                    'kept_files' => true,
+                ],
+            ],
+        ]),
+    ]);
+
+    $exitCode = Artisan::call('workspace:remove', [
+        'name' => 'feature-api',
+        '--app' => 'docs',
+        '--keep-files' => true,
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeTrue()
+        ->and($remoteShell->scripts)->toBe([])
+        ->and($payload['success']['data'])->toMatchArray([
+            'name' => 'feature-api',
+            'app' => 'docs',
+            'action' => 'removed',
+            'worktree_removed' => false,
+        ])
+        ->and($payload['success']['meta']['kept_files'])->toBeTrue();
 });
 
 final class WorkspaceRemoveSequencedRemoteShell implements RemoteShell
