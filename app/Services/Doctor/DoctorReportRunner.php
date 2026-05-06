@@ -14,6 +14,7 @@ use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 
 final readonly class DoctorReportRunner
@@ -27,6 +28,7 @@ final readonly class DoctorReportRunner
         private FirewallRuleFixer $firewallRuleFixer,
         private ProxyRouteFixer $proxyRouteFixer,
         private ToolsProbe $toolsProbe,
+        private ToolsFixer $toolsFixer,
     ) {}
 
     /**
@@ -111,13 +113,23 @@ final readonly class DoctorReportRunner
         if (in_array('tool', $selectedFamilies, true)) {
             foreach (NodeTool::query()->with('node')->get() as $tool) {
                 $snapshot = $this->toolsProbe->introspect($tool);
-                $issues = [
-                    ...$issues,
-                    ...array_map(
-                        fn (DriftEntry $entry): array => $this->toolIssuePayload($entry, $tool),
-                        $this->toolsProbe->diff($tool, $snapshot),
-                    ),
-                ];
+
+                foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
+                    $action = $this->handleToolAction($mode, $tool, $entry);
+
+                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                        $actions[] = $action;
+
+                        continue;
+                    }
+
+                    $issue = $this->toolIssuePayload($entry, $tool);
+                    $issues[] = $issue;
+
+                    if ($action !== null) {
+                        $actions[] = $action;
+                    }
+                }
             }
         }
 
@@ -253,6 +265,35 @@ final readonly class DoctorReportRunner
             return [
                 'family' => $entry->family,
                 'node' => $rule->node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleToolAction(string $mode, NodeTool $tool, DriftEntry $entry): ?array
+    {
+        if ($mode !== 'fix') {
+            return null;
+        }
+
+        try {
+            return $this->toolsFixer->fix($tool, $entry);
+        } catch (\Throwable $e) {
+            $tool->loadMissing('node');
+
+            return [
+                'family' => $entry->family,
+                'node' => $tool->node?->name,
                 'code' => $entry->key,
                 'key' => $entry->key,
                 'mode' => $mode,

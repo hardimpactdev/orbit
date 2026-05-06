@@ -126,6 +126,27 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.capability_missing');
     });
 
+    it('passes tool fix mode through to the doctor runner', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'fix',
+            'families' => ['tool'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.summary.fixed', 1)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
+    });
+
     it('denies app-node write mode requests', function (): void {
         createDoctorRunCallerNode(['role' => 'app']);
 

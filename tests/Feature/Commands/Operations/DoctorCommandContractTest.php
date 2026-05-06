@@ -251,6 +251,32 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported tool lifecycle actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'caddy',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.lifecycle_state_mismatch',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 
