@@ -1838,9 +1838,22 @@ for the Saloon-based gateway transport pattern.
   - [x] Schedule abstraction seed exists at `docs/abstractions/9_schedule.md`.
   - [x] Read-only schedule doctor probe foundation and verify-mode doctor
     dispatcher/API integration are ported.
-  - [!] Schedule doctor fix map remains outstanding.
-- [ ] Port enactor/probe/doctor integration pattern with focused tests before
+  - [~] Schedule doctor fix map is partially ported: `schedule.scheduler_missing`
+    re-renders and loads the Orbit Scheduler Supervisor program,
+    `schedule.scheduler_stopped` starts the program, and `schedule.lock_stuck`
+    releases stale locks.
+    - [!] Run-history hook repair remains outstanding because the clean rebuild
+      still lacks a scheduler-side hook material/path contract.
+    - Next concrete action: define the run-history hook material/path contract,
+      then add `schedule.run_history_hook_missing` /
+      `schedule.run_history_hook_mismatch` probe and fix coverage.
+- [x] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
+  - Current pattern: family probes emit `DriftEntry`, `DoctorReportRunner`
+    converts unresolved drift into issues, completed fix actions suppress
+    resolved issues, unsupported issue/mode pairs become skipped actions, and
+    failed actions keep drift visible.
+  - Current tests: `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php`.
 
 ## Testing Infrastructure
 

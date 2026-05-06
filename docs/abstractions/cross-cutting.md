@@ -219,6 +219,43 @@ duplicating the full testing contract.
 and current command invocations. This entry keeps the decision point in the
 worker's read-first context.
 
+## Doctor Probe And Action Integration
+
+**Problem:** Family probes and fix/adopt handlers can drift in how they convert
+intent/reality differences into report issues and action payloads.
+
+**Current pointers:**
+
+- `docs/commands/11_operation/3_doctor/technical/1_doctor.md`
+- `docs/commands/*/*-doctor.md`
+- `app/Services/Doctor/DoctorReportRunner.php`
+- `app/Data/Doctor/DriftEntry.php`
+- `app/Data/Doctor/ProbeSnapshot.php`
+- family probe/fixer services under `app/Services/<Family>/`
+- `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php`
+
+**Invariants:**
+
+- Family probes own product-family issue codes. They emit `DriftEntry` values;
+  the global doctor runner does not invent family-specific drift.
+- The runner converts unresolved drift entries into issue payloads and leaves
+  family-owned diagnostic details intact for the command/API renderers.
+- In `verify` mode, the runner compares only and must not attempt fixer/adopter
+  actions.
+- In `fix` and `adopt` modes, completed actions suppress the corresponding
+  issue because the selected mode resolved that drift.
+- Failed actions remain visible as issues and add a failed action payload; the
+  report must not become healthy after a failed repair or adoption attempt.
+- Unsupported issue/mode pairs remain visible as issues and receive a skipped
+  action with `details.reason=mode_not_supported`.
+- Family fixers must return stable action payloads with `family`, `node`,
+  `key`, `mode`, `status`, `summary`, and `details` when they attempt work.
+- Family fixers return `null` for issue codes they do not own; the runner
+  handles the skipped-action fallback.
+- `adopt` is routed through the same action vocabulary, but remains unsupported
+  for a family until that family has an explicit adopt map and scoped input
+  contract.
+
 ## Internal Bootstrap Commands
 
 **Problem:** Bootstrap and E2E setup need stable internal command shapes without
