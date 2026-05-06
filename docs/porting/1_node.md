@@ -7,7 +7,7 @@ Detail file for the node command family. Top-level command status lives in
 
 - [x] Convert node command docs into current format.
 - [x] Build minimal node registry read commands (`node:list`, `node:show`).
-- [~] Complete `node:list` contract gaps:
+- [x] Complete `node:list` contract gaps:
   - [x] JSON renderer contract.
   - [x] Human renderer contract.
   - [x] `--role` and `--environment` filters.
@@ -74,7 +74,7 @@ Detail file for the node command family. Top-level command status lives in
     while keeping default storage local.
   - No command-forwarding todo is currently valid for `node:default` without a
     product-doc change.
-- [~] Port `node:grant`.
+- [x] Port `node:grant`.
   - Current implementation: `app/Console/Commands/NodeGrantCommand.php`
   - Current docs: `docs/commands/1_node/5_node-grant`
   - Current tests:
