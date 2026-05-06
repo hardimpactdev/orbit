@@ -19,7 +19,7 @@ Detail file for the operation command family. Top-level status lives in
   cwd inference + Toolbar human renderer. Pest under
   `tests/Feature/Commands/Operations/`; Docker feature E2E
   `tests/E2E/ProfileTest.php`.
-  - [ ] Workspace cwd inference (blocked on workspace schema/models).
+  - [ ] Workspace cwd inference using the current workspace schema/models.
 - [~] `doctor` — verify-mode dispatcher + family probes. Currently
   `DoctorReportRunner::SUPPORTED_FAMILIES` dispatches `node`, `app`,
   `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`.
@@ -32,6 +32,6 @@ Detail file for the operation command family. Top-level status lives in
     `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`,
     `tests/Feature/Http/Api/DoctorRunControllerTest.php`, and
     `tests/Unit/Services/{Apps,Workspaces,Processes}/*ProbeTest.php`.
-  - [!] Streaming progress and family-owned `--fix` / `--adopt` handlers
-    remain blocked per family; see
+  - [~] Streaming progress and family-owned `--fix` / `--adopt` handlers
+    remain implementation work per family; see
     [`state-families-doctor.md`](state-families-doctor.md).

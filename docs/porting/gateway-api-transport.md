@@ -44,9 +44,9 @@ the Saloon-based gateway transport pattern.
 - [x] Activity — list, show.
 - [x] Profile — `ShowProfileRequest` (gateway-origin profile execution).
 - [~] Doctor — `RunDoctorRequest` for verify-mode runs covers `node`,
-  `proxy`, `firewall_rule`, `tool`, `schedule`. `app`/`workspace`/`process`
-  not yet wired into the dispatcher. Streaming progress and family-owned
-  fix/adopt handlers remain blocked per family.
+  `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, and
+  `schedule`. Streaming progress and family-owned fix/adopt handlers remain
+  per-family implementation work.
 
 ## Cross-cutting
 

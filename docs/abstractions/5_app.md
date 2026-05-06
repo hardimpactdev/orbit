@@ -25,8 +25,9 @@ product docs.
   documents a narrow exception. The current app command surface does not grant a
   broad app-node write exception.
 - `app:new`, `app:register`, `app:root`, `app:remove`, `app:prune`, and
-  `app:agent-ide` must stay blocked until `app:list` and `app:show` read
-  commands and their paired gates are implemented and verified.
+  `app:agent-ide` build on the verified `app:list` and `app:show` read
+  foundation and must keep the same gateway visibility and authorization
+  boundaries.
 - App commands own app registry, runtime policy, deployment policy, and app
   health intent. Proxy route registry, workspace policy, process intent,
   schedule definitions, tool registration, firewall policy, and node

@@ -106,9 +106,11 @@ drift, managed config rows (path/hash/content), and managed credential rows.
   Paired E2E fix coverage exists in
   `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` via
   `composer test:e2e:docker -- --filter='repairs managed tool configuration drift'`.
-- [!] Capability fix handlers and adopt action handlers are outstanding. Next:
-  define scoped adopt behavior for selected observed tool reality, or add
-  capability fix once catalog definitions declare safe install/restore commands.
+- [~] Capability fix handlers and adopt action handlers are outstanding
+  implementation work. Use catalog-declared safe install/restore/update
+  commands for fixes, and keep adoption scoped to explicitly selected observed
+  tool reality. No external blocker remains; add Pest plus paired E2E before
+  marking these actions complete.
 
 ## Foundations
 

@@ -5,13 +5,9 @@ Detail file for the deploy command family. Top-level command status lives in
 
 ## Status
 
-Not started. The family port is blocked until the supporting prerequisites are
-in place:
-
-- `docs/abstractions/10_deploy.md` does not yet exist; the abstraction seed
-  must be authored before any implementation todo is promoted.
-- The activity-logging contract allowlist cannot include `deploy:*` until the
-  command surface is implemented.
+Not started. The abstraction seed exists, so this family is ready for the first
+bounded implementation slice. Activity logging should be added command-by-command
+as each deploy surface is ported.
 
 ## Commands
 

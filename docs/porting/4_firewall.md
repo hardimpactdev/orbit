@@ -19,9 +19,10 @@ policy boundary, and backend UFW reality. Verify-mode dispatcher integration
 via `--family=firewall_rule`. Fix map handles `rule_missing` and
 `rule_mismatch` through UFW reconciliation.
 
-- [!] Adopt handlers for selected compatible backend rules remain
-  outstanding. The global doctor input contract has no explicit selected
-  observed-backend-rule scope yet; adoption needs that scope decision first.
+- [~] Adopt handlers for selected compatible backend rules remain outstanding
+  implementation work. Keep adoption scoped to explicitly selected observed
+  backend rules and prove the behavior with Pest plus paired E2E before
+  marking the action complete.
 
 ## Activity backfill
 

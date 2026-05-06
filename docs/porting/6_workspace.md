@@ -4,9 +4,7 @@ Detail file for the workspace command family. Top-level status lives in
 [`PORTING.md`](PORTING.md). Doc authority: `docs/commands/6_workspace/`.
 
 Read, step-policy, history/log, and `workspace:remove` surfaces are ported.
-Workspace creation/setup remain blocked on workspace runtime prerequisites
-(proxy route convergence, PHP-FPM artifact rendering, inherited Supervisor
-runtime-unit rendering, runtime backend gates).
+Workspace creation/setup are the remaining lifecycle implementation slices.
 
 ## Commands
 
@@ -26,8 +24,8 @@ runtime-unit rendering, runtime backend gates).
   `workspace-teardown-step:add|list|remove` — gateway-owned policy
   CRUD + Saloon forwarding + destructive consent + order compaction.
   E2E `tests/E2E/WorkspaceStep{Add,List,Remove}Test.php`.
-- [!] `workspace:new` — blocked on lifecycle prerequisites.
-- [!] `workspace:setup` — blocked on lifecycle prerequisites.
+- [ ] `workspace:new` — ready for lifecycle implementation.
+- [ ] `workspace:setup` — ready for lifecycle implementation.
 
 ## Family doctor
 
@@ -35,12 +33,12 @@ runtime-unit rendering, runtime backend gates).
 effective PHP inheritance, source/parent-app path policy, PHP runtime,
 PHP-FPM config). Outstanding:
 
-- [!] External workspace runtime artifact checks: runtime configuration,
-  stale artifacts, adoption hints. Blocked on the workspace lifecycle/enactor
-  slice that defines runtime config, managed ownership, stale artifact
-  inventory, and adoption scan inputs. Either port that slice, or narrow
-  `workspace-doctor` to source + PHP + FPM reality until lifecycle commands
-  are unblocked.
+- [~] External workspace runtime artifact checks: runtime configuration,
+  stale artifacts, adoption hints. Implement alongside the workspace
+  lifecycle/enactor slice that defines runtime config, managed ownership,
+  stale artifact inventory, and adoption scan inputs, or deliberately narrow
+  `workspace-doctor` to source + PHP + FPM reality with documented rationale
+  and paired tests.
 
 ## Foundations
 

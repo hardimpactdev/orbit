@@ -20,9 +20,10 @@ Verify-mode dispatcher integration via `--family=proxy`. Fix map handles
 `route_missing`, `route_mismatch`, `tls_missing`, and `tls_mismatch` via
 Caddy site reconciliation and Orbit-managed TLS material repair.
 
-- [!] Safe `route_extra` cleanup and custom-route adoption handlers are
-  outstanding. Next: define selected-route adoption scope for `route_extra`
-  / compatible `route_mismatch`, then add the adoption action handler.
+- [~] Safe `route_extra` cleanup and custom-route adoption handlers are
+  outstanding implementation work. Keep adoption scoped to explicitly selected
+  observed routes that can be represented as custom proxy intent, then prove
+  the behavior with Pest plus paired E2E.
 
 ## Activity backfill
 

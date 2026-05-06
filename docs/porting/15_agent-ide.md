@@ -20,11 +20,9 @@ Abstraction seed: `docs/abstractions/15_agent-ide.md`.
     app/workspace targets via stored `agent_ide_workspace_id`, uses managed
     `opencode-server` endpoint and credentials, and posts to the async
     prompt endpoint. Covered by HTTP-faked command tests.
-  - [!] Polyscope transport unported. The clean rebuild has no Polyscope
-    SDK dependency, typed HTTP transport contract, or credential schema
-    beyond legacy evidence. Next: decide whether to add a first-party
-    Polyscope HTTP adapter, an SDK dependency, or defer until the
-    tool-family Polyscope credential/config workstream is ported.
+  - [~] Polyscope transport unported. Decide in the implementation slice
+    whether to add a first-party Polyscope HTTP adapter, add an SDK
+    dependency, or intentionally defer Polyscope with documented rationale.
   - [ ] E2E coverage. Lane TBD: Docker feature for adapter HTTP fakes;
     `lane=none` may be defensible if all adapter wiring is exercised at the
     Pest layer with HTTP fakes.

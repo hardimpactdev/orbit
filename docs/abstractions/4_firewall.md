@@ -115,8 +115,9 @@ shown directly to users.
   policy, WireGuard policy, or public-ingress policy owned by other domains.
 - `--adopt` can create or update gateway firewall-rule intent only for a
   specific selected backend rule on an eligible node.
-- Family-owned fix/adopt handlers remain blocked until the generic doctor
-  action-map runner accepts write modes before family dispatch.
+- Family-owned fix/adopt handlers use the generic doctor action-map runner and
+  must keep rule selection explicit before mutating gateway intent or backend
+  rules.
 
 ## Evidence Pointers
 

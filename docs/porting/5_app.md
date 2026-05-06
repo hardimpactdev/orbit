@@ -22,8 +22,8 @@ Detail file for the app command family. Top-level status lives in
 - [~] `app:agent-ide` — gateway-local + Saloon forwarding + interactive.
   E2E `tests/E2E/AppAgentIdeTest.php`.
   - [ ] Workspace cleanup planning (waits for workspace schema/removal).
-- [!] `app:prune` — blocked on workspace registry/removal semantics.
-  Discovers stale workspace intent and delegates to `workspace:remove`.
+- [ ] `app:prune` — ready for implementation. Discovers stale workspace
+  intent and delegates to `workspace:remove`.
 
 ## Family doctor
 
@@ -31,10 +31,11 @@ Detail file for the app command family. Top-level status lives in
 agent-IDE default, source/document-root reality, PHP runtime, PHP-FPM
 config). Outstanding:
 
-- [!] External app runtime artifact checks: runtime configuration,
-  production policy, deployment health, stale app artifacts. Blocked on
-  clean-rebuild deploy/runtime intent schema. Either port that schema, or
-  narrow `app-doctor` to the currently implemented checks.
+- [~] External app runtime artifact checks: runtime configuration,
+  production policy, deployment health, stale app artifacts. No external
+  blocker remains; either port the needed deploy/runtime intent as part of the
+  app-doctor slice, or deliberately narrow `app-doctor` to the currently
+  implemented checks with documented rationale and paired tests.
 
 ## Open decisions
 

@@ -48,9 +48,9 @@ exception in the command's `## Activity Logging` section with a reason.
 | `7_process` | [x] |
 | `8_proxy` | [ ] commands ported; tech-contract sections + allowlist entries pending |
 | `9_schedule` | [x] commands and API Loggable controllers |
-| `10_deploy` | [!] blocked on family port (commands not started) |
-| `11_operation` | [~] `update`, `update:all`, `profile`, verify-mode `doctor` declared. `doctor --fix`/`--adopt` blocked per family action map. |
-| `12_cf` / `13_vpn` / `14_php` | [!] blocked on family port (commands not started) |
+| `10_deploy` | [ ] commands not started; add per-command activity contracts while porting |
+| `11_operation` | [~] `update`, `update:all`, `profile`, verify-mode `doctor` declared. `doctor --fix`/`--adopt` pending per family action map. |
+| `12_cf` / `13_vpn` / `14_php` | [ ] commands not started; add per-command activity contracts while porting |
 | `15_agent-ide` | [x] `agent-ide:message` enforced |
 | `16_dns` | [x] |
 | `17_activity` | [x] (allowlist origin) |
