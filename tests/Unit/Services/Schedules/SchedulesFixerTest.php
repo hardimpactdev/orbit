@@ -9,6 +9,7 @@ use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Models\ScheduleLock;
 use App\Services\Schedules\SchedulesFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -60,6 +61,35 @@ describe('SchedulesFixer', function (): void {
             'mode' => 'fix',
             'status' => 'completed',
         ])->and($shell->scripts)->toBe(["sudo supervisorctl start 'orbit_scheduler'"]);
+    });
+
+    it('releases stale schedule locks', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        ScheduleLock::factory()->create([
+            'node_id' => $node->id,
+            'schedule_key' => $schedule->schedule_key,
+            'locked_at' => now()->subMinutes(30),
+            'expires_at' => now()->subMinutes(20),
+        ]);
+        $shell = new SchedulesFixerRemoteShell;
+
+        $action = (new SchedulesFixer($shell))->fix($schedule, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.lock_stuck',
+            kind: DriftKind::Divergent,
+            summary: 'Schedule has a stale execution lock.',
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'schedule',
+            'node' => 'app-1',
+            'key' => 'schedule.lock_stuck',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and(ScheduleLock::query()->where('schedule_key', $schedule->schedule_key)->exists())->toBeFalse()
+            ->and($shell->scripts)->toBe([]);
     });
 });
 

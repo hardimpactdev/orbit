@@ -8,6 +8,7 @@ use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Schedules\SchedulesProbe;
@@ -106,6 +107,28 @@ describe('SchedulesProbe', function (): void {
 
         expect(scheduleProbeIssue($drift, 'schedule.heartbeat_stale')?->kind)->toBe(DriftKind::Divergent)
             ->and(scheduleProbeIssue($drift, 'schedule.registry_sync_stale')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects stuck schedule locks', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $schedule = Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $node->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        ScheduleLock::factory()->create([
+            'node_id' => $node->id,
+            'schedule_key' => $schedule->schedule_key,
+            'locked_at' => now()->subMinutes(30),
+            'expires_at' => now()->subMinutes(20),
+        ]);
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(stdout: "running\n")));
+
+        $drift = $probe->diff($schedule, $probe->introspect($schedule));
+
+        expect(scheduleProbeIssue($drift, 'schedule.lock_stuck')?->kind)->toBe(DriftKind::Divergent);
     });
 });
 

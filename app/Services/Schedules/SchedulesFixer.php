@@ -8,6 +8,7 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Models\ScheduleLock;
 
 final readonly class SchedulesFixer
 {
@@ -27,6 +28,15 @@ final readonly class SchedulesFixer
             return null;
         }
 
+        if ($entry->key === 'schedule.lock_stuck') {
+            ScheduleLock::query()
+                ->where('node_id', $node->id)
+                ->where('schedule_key', $schedule->schedule_key)
+                ->delete();
+
+            return $this->action($schedule, $node, $entry);
+        }
+
         $script = match ($entry->key) {
             'schedule.scheduler_missing' => $this->renderer->installScript($node),
             'schedule.scheduler_stopped' => "sudo supervisorctl start 'orbit_scheduler'",
@@ -39,6 +49,14 @@ final readonly class SchedulesFixer
 
         $this->remoteShell->run($node, $script, ['throw' => true]);
 
+        return $this->action($schedule, $node, $entry);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function action(Schedule $schedule, Node $node, DriftEntry $entry): array
+    {
         return [
             'family' => 'schedule',
             'node' => $node->name,

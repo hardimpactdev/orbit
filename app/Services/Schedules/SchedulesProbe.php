@@ -9,6 +9,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
@@ -73,6 +74,7 @@ final readonly class SchedulesProbe
             ...$this->checkTargetEligibility($schedule),
             ...$this->checkRuntimeAndScheduler($schedule, $snapshot),
             ...$this->checkFreshness($schedule, $snapshot),
+            ...$this->checkLockHealth($schedule, $snapshot),
         ];
     }
 
@@ -248,6 +250,53 @@ final readonly class SchedulesProbe
         }
 
         return $issues;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkLockHealth(Schedule $schedule, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($schedule->schedule_key);
+
+        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+            return [];
+        }
+
+        $node = $this->targetNode($schedule);
+
+        if (! $node instanceof Node) {
+            return [];
+        }
+
+        $lock = ScheduleLock::query()
+            ->where('node_id', $node->id)
+            ->where('schedule_key', $schedule->schedule_key)
+            ->where(function ($query): void {
+                $query
+                    ->where('expires_at', '<', now())
+                    ->orWhere('locked_at', '<', now()->subMinutes(self::FreshnessMinutes));
+            })
+            ->first();
+
+        if (! $lock instanceof ScheduleLock) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'schedule.lock_stuck',
+                kind: DriftKind::Divergent,
+                summary: "Schedule {$schedule->name} has a stale execution lock.",
+                detail: [
+                    'schedule' => $schedule->name,
+                    'schedule_key' => $schedule->schedule_key,
+                    'locked_at' => $lock->locked_at->toISOString(),
+                    'expires_at' => $lock->expires_at?->toISOString(),
+                ],
+            ),
+        ];
     }
 
     private function targetNode(Schedule $schedule): ?Node

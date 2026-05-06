@@ -1475,10 +1475,13 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] Fix map handles `schedule.scheduler_missing` and
     `schedule.scheduler_stopped` through `OrbitSchedulerProgramRenderer` and
     Supervisor control.
-  - [!] Fix map remains outstanding for `schedule.lock_stuck` and
-    `schedule.run_history_hook_*`.
-  - Next concrete action: model stale lock and run-history hook drift, then add
-    safe `--fix` handling for those codes.
+  - [x] Stale schedule lock drift and `--fix` cleanup are ported for
+    `schedule.lock_stuck`.
+  - [!] Run-history hook drift remains outstanding. The clean rebuild does not
+    yet have a scheduler-side hook material/path contract to compare or repair.
+  - Next concrete action: define the run-history hook material/path contract for
+    scheduler-owned capture hooks, then add `schedule.run_history_hook_missing`
+    and `schedule.run_history_hook_mismatch` probe/fix handling.
 
 ## Runtime Backend And Scheduler Workstream
 
