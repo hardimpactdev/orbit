@@ -720,6 +720,7 @@ exist. Those families wait for the node/gateway/app foundations.
     - `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` (command contract)
     - `tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php` (human renderer contract)
     - `tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php` (JSON renderer contract)
+    - `tests/Feature/Commands/Nodes/NodeUpdateInteractiveInputModeTest.php` (interactive input mode contract)
     - `tests/E2E/NodeUpdateTest.php` (Docker feature E2E for control-caller gateway forwarding)
   - Bootstrap slice implemented: gateway-local update with progress tree, field validation, role-incompatibility checks, and split contract tests.
   - Gateway forwarding slice implemented: configured control callers forward
@@ -729,8 +730,11 @@ exist. Those families wait for the node/gateway/app foundations.
   - E2E gate implemented: Docker feature coverage verifies a configured control
     caller updates gateway-owned app-node metadata through the Gateway API and
     reads the persisted intent back through forwarded `node:show`.
+  - Interactive input mode implemented: gateway/control callers prompt for a
+    missing node name, prompt for role-filtered field selection when no field
+    flags are supplied, and prompt for the selected field value; app callers
+    and unconfigured control callers fail before prompts.
   - Contract gaps:
-    - interactive input mode (prompting for name and field selection).
     - artifact re-enactment after intent update.
 - [x] Port `node:default`.
   - Current implementation: `app/Console/Commands/NodeDefaultCommand.php`

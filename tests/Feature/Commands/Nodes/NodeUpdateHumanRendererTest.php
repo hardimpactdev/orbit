@@ -115,6 +115,7 @@ describe('node:update human renderer contract', function (): void {
 
         $this->artisan('node:update', [
             'name' => 'app-1',
+            '--no-interaction' => true,
         ])
             ->expectsOutputToContain('At least one field must be provided to update a node.')
             ->assertFailed();

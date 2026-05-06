@@ -8,12 +8,16 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeUpdateResponse;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Input\ArgvInput;
 use Throwable;
+
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 #[Signature('node:update
     {name? : Node name to update}
@@ -49,15 +53,15 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        $name = $this->stringArgument('name');
-
-        if ($name === null) {
+        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
             return $this->failCommand(
-                code: 'validation_failed',
-                message: 'Node name is required.',
-                meta: ['field' => 'name'],
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update a node.',
+                meta: [],
             );
         }
+
+        $name = $this->resolveName($callerRole);
 
         $duplicateField = $this->detectDuplicateFieldFlag();
 
@@ -69,14 +73,51 @@ class NodeUpdateCommand extends Command
             );
         }
 
+        if ($name === null) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Node name is required.',
+                meta: ['field' => 'name'],
+            );
+        }
+
+        $node = null;
+
+        if ($callerRole === 'gateway') {
+            $node = Node::query()
+                ->where('name', $name)
+                ->where('status', 'active')
+                ->first();
+
+            if (! $node instanceof Node) {
+                return $this->failCommand(
+                    code: 'node.not_found',
+                    message: "Node '{$name}' not found.",
+                    meta: ['name' => $name],
+                );
+            }
+        }
+
         $providedFields = $this->getProvidedFields();
 
         if ($providedFields === []) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'At least one field must be provided to update a node.',
-                meta: ['field' => 'fields'],
-            );
+            if ($this->isInteractiveInput()) {
+                $providedFields = $this->promptForFieldUpdate($node);
+
+                if ($providedFields === []) {
+                    return $this->failCommand(
+                        code: 'validation_failed',
+                        message: 'At least one field must be provided to update a node.',
+                        meta: ['field' => 'fields'],
+                    );
+                }
+            } else {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'At least one field must be provided to update a node.',
+                    meta: ['field' => 'fields'],
+                );
+            }
         }
 
         $fieldValidationError = $this->validateFieldValues($providedFields);
@@ -93,18 +134,7 @@ class NodeUpdateCommand extends Command
             return $this->forwardUpdate($name, $providedFields);
         }
 
-        $node = Node::query()
-            ->where('name', $name)
-            ->where('status', 'active')
-            ->first();
-
-        if (! $node instanceof Node) {
-            return $this->failCommand(
-                code: 'node.not_found',
-                message: "Node '{$name}' not found.",
-                meta: ['name' => $name],
-            );
-        }
+        assert($node instanceof Node);
 
         $roleIncompatible = $this->detectRoleIncompatibleField($node, $providedFields);
 
@@ -133,6 +163,104 @@ class NodeUpdateCommand extends Command
         $changedKeys = array_keys($changes);
 
         return $this->respondSuccess($name, $changedKeys);
+    }
+
+    private function resolveName(string $callerRole): ?string
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if ($this->isInteractiveInput()) {
+            return trim(text(
+                label: 'Node name',
+                required: true,
+                validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
+            ));
+        }
+
+        return null;
+    }
+
+    private function validatePromptNodeName(string $value, string $callerRole): ?string
+    {
+        $name = trim($value);
+
+        if ($name === '') {
+            return 'Node name is required.';
+        }
+
+        if ($callerRole !== 'gateway') {
+            return null;
+        }
+
+        $exists = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->exists();
+
+        return $exists ? null : "Node '{$name}' not found.";
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function promptForFieldUpdate(?Node $node): array
+    {
+        $choices = $this->interactiveFieldChoices($node);
+
+        if ($choices === []) {
+            return [];
+        }
+
+        $field = select(
+            label: 'Which field would you like to update?',
+            options: $choices,
+            required: true,
+        );
+
+        return [
+            $field => $this->promptForFieldValue($field),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function interactiveFieldChoices(?Node $node): array
+    {
+        if (! $node instanceof Node) {
+            return ['host', 'environment', 'public_ipv4', 'public_ipv6'];
+        }
+
+        return match ($node->role) {
+            'app' => ['host', 'environment', 'public_ipv4', 'public_ipv6'],
+            'gateway' => ['host', 'public_ipv4', 'public_ipv6'],
+            default => [],
+        };
+    }
+
+    private function promptForFieldValue(string $field): string
+    {
+        if ($field === 'environment') {
+            return select(
+                label: 'Environment',
+                options: ['development', 'production'],
+                required: true,
+            );
+        }
+
+        return trim(text(
+            label: match ($field) {
+                'host' => 'Host',
+                'public_ipv4' => 'Public IPv4',
+                'public_ipv6' => 'Public IPv6',
+                default => $field,
+            },
+            required: true,
+        ));
     }
 
     /**
@@ -197,6 +325,19 @@ class NodeUpdateCommand extends Command
         $value = $this->argument($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function hasConfiguredGateway(): bool
+    {
+        return LocalGatewaySettings::query()
+            ->whereNotNull('gateway_url')
+            ->where('gateway_url', '!=', '')
+            ->exists();
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     private function detectDuplicateFieldFlag(): ?string
