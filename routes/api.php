@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\ProcessDestroyController;
 use App\Http\Controllers\Api\ProcessListController;
+use App\Http\Controllers\Api\ProcessLogController;
 use App\Http\Controllers\Api\ProcessRestartController;
 use App\Http\Controllers\Api\ProcessStartController;
 use App\Http\Controllers\Api\ProcessStopController;
@@ -55,6 +56,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/processes/restart', ProcessRestartController::class);
         Route::post('/processes/start', ProcessStartController::class);
         Route::post('/processes/stop', ProcessStopController::class);
+        Route::get('/processes/{name}/log', ProcessLogController::class);
         Route::delete('/processes/{name}', ProcessDestroyController::class);
         Route::patch('/processes/{name}', ProcessUpdateController::class);
         Route::get('/profile', ProfileController::class);
