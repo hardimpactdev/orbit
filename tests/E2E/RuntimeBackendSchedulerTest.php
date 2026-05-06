@@ -8,7 +8,7 @@ it('verifies Docker runtime backend and scheduler liveness', function (): void {
     $topology = e2eTopology(E2ETopologyKind::ControlGateway);
 
     try {
-        $result = $topology->ssh('gateway', 'supervisorctl status', timeoutSeconds: 60);
+        $result = $topology->ssh('gateway', 'sudo supervisorctl status', timeoutSeconds: 60);
 
         expect($result->successful())->toBeTrue();
 

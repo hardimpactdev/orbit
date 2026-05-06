@@ -69,7 +69,7 @@ RUN printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -e' \
         'mkdir -p /run/sshd /var/log/supervisor /home/orbit/.config/orbit/logs' \
-        'chown -R orbit:orbit /home/orbit/.config/orbit' \
+        'chown -R orbit:orbit /home/orbit/.config' \
         'exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf' \
         > /usr/local/bin/orbit-e2e-container \
     && chmod 755 /usr/local/bin/orbit-e2e-container
