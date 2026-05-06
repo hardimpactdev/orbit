@@ -56,8 +56,13 @@ Detail file for the tool command family. Top-level status lives in
   `tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php`. E2E lane:
   Incus VM-feature because the command reads host-init managed tool credentials.
   Passed gate: `composer quality-check`.
-- [ ] `tool:install`, `tool:update`, `tool:reconfigure` — write/enactment
-  commands not started.
+- [x] `tool:install` — gateway-local + Saloon forwarding implementation,
+  registry intent creation, remote script enactment for Docker-based tools,
+  and focused Pest coverage in
+  `tests/Feature/Commands/Tools/ToolInstallCommandTest.php`. E2E lane:
+  Incus VM-feature because the command exercises host-init managed service
+  installation. Passed gate: `composer quality-check`.
+- [ ] `tool:update`, `tool:reconfigure` — write/enactment commands not started.
 
 ## Family doctor
 
