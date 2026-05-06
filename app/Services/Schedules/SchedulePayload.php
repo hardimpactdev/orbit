@@ -54,6 +54,19 @@ class SchedulePayload
      */
     public function show(string $name, ?string $app, ?string $node, ?Node $caller = null): array
     {
+        $schedule = $this->find($name, $app, $node, $caller);
+
+        return [
+            'schedule' => $this->serialize($schedule),
+            'meta' => [
+                'app' => $app,
+                'node' => $node,
+            ],
+        ];
+    }
+
+    public function find(string $name, ?string $app, ?string $node, ?Node $caller = null): Schedule
+    {
         $this->ensureExclusiveFilters($app, $node);
 
         $visibleNodeIds = $this->visibleNodeIds($caller);
@@ -80,13 +93,7 @@ class SchedulePayload
             ]);
         }
 
-        return [
-            'schedule' => $this->serialize($schedule),
-            'meta' => [
-                'app' => $app,
-                'node' => $node,
-            ],
-        ];
+        return $schedule;
     }
 
     private function ensureExclusiveFilters(?string $app, ?string $node): void
@@ -133,9 +140,6 @@ class SchedulePayload
             ->all();
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     /**
      * @return array<string, mixed>
      */

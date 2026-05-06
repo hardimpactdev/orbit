@@ -7,6 +7,7 @@ namespace Tests\Unit\Http\Gateway\Requests\Schedules;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
+use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
 use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
@@ -59,6 +60,14 @@ it('resolves schedule read endpoints and query filters', function (): void {
     expect($show->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
     expect($show->getMethod())->toBe(Method::GET);
     expect($show->query()->all())->toBe(['app' => 'docs']);
+});
+
+it('resolves schedule remove endpoint and query filters', function (): void {
+    $request = new RemoveScheduleRequest(name: 'laravel-scheduler', app: 'docs');
+
+    expect($request->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
+    expect($request->getMethod())->toBe(Method::DELETE);
+    expect($request->query()->all())->toBe(['app' => 'docs']);
 });
 
 it('returns schedule list and show response DTOs with meta', function (): void {

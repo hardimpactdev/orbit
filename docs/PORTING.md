@@ -1355,7 +1355,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
   - [x] `schedule:add` gateway-owned intent write, execution-source validation,
     scheduler reachability warning/error handling, human/JSON renderers, and
     focused Pest coverage.
-  - [ ] `schedule:remove` gateway-owned destructive intent removal,
+  - [x] `schedule:remove` gateway-owned destructive intent removal,
     destructive consent, human/JSON renderers, and focused Pest coverage.
 - [ ] Port schedule run command (manual fire / on-demand tick).
 - [ ] Port schedule logs command against scheduler-captured stdout/stderr.
