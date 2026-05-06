@@ -1031,8 +1031,8 @@ that produced the controller's Loggable wiring.
   `node:agent-ide`).
 - [x] `2_gateway`.
 - [ ] `3_tool`.
-  - [!] Activity backfill is blocked until `docs/abstractions/3_tool.md` exists
-    and a clean `tool:*` command surface is implemented.
+  - [!] Activity backfill is blocked until a clean `tool:*` command surface is
+    implemented.
 - [ ] `4_firewall`.
   - [!] Activity backfill is blocked until
     `docs/abstractions/4_firewall.md` exists and a clean `firewall:*` command
@@ -1655,6 +1655,7 @@ for the Saloon-based gateway transport pattern.
     gateway-client coverage lives alongside the process command slices.
 - [ ] Port tool/service API controllers and typed client requests after tool
   docs are converted.
+  - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
 - [ ] Port doctor API controllers and typed client requests after doctor docs
   are converted.
 - [ ] Port long-running SSE progress primitives.
@@ -1685,6 +1686,7 @@ for the Saloon-based gateway transport pattern.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
 - [ ] Port tool family.
+  - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through
