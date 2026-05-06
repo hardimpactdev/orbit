@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
+use App\Contracts\ToolLogGatewayStream;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
@@ -146,6 +148,25 @@ describe('tool:logs command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['logs']['lines'][0]['message'])->toBe('forwarded line');
     });
+
+    it('streams followed logs for non-gateway callers through the gateway', function (): void {
+        createToolLogsLocalNode('control');
+        $stream = new ToolLogsRecordingGatewayStream;
+        app()->instance(ToolLogGatewayStream::class, $stream);
+
+        $this->artisan('tool:logs supervisor --node=app-1 --lines=1 --follow')
+            ->expectsOutputToContain('forwarded followed line')
+            ->assertSuccessful();
+
+        expect($stream->calls)->toBe([
+            [
+                'tool' => 'supervisor',
+                'node' => 'app-1',
+                'app' => null,
+                'lines' => 1,
+            ],
+        ]);
+    });
 });
 
 final class ToolLogsRecordingShell implements RemoteShell
@@ -185,6 +206,31 @@ final class ToolLogsRecordingStream implements RemoteShellStream
     {
         $this->scripts[] = $script;
         $onOutput("followed line\n");
+
+        return 0;
+    }
+}
+
+final class ToolLogsRecordingGatewayStream implements ToolLogGatewayStream
+{
+    /**
+     * @var list<array{tool: string, node: string|null, app: string|null, lines: int}>
+     */
+    public array $calls = [];
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    public function follow(string $tool, ?string $node, ?string $app, int $lines, callable $onOutput): int|GatewayApiException
+    {
+        $this->calls[] = [
+            'tool' => $tool,
+            'node' => $node,
+            'app' => $app,
+            'lines' => $lines,
+        ];
+
+        $onOutput("forwarded followed line\n");
 
         return 0;
     }

@@ -33,13 +33,18 @@ Detail file for the tool command family. Top-level status lives in
   Passed gate:
   `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='reloads a managed system service tool'`.
 - [~] `tool:logs` — finite log snapshot gateway-local + Saloon forwarding,
-  plus gateway-local human `--follow`, with focused Pest coverage in
-  `tests/Feature/Commands/Tools/ToolLogsCommandTest.php`. E2E lane:
+  gateway-local human `--follow`, and gateway-forwarded streaming `--follow`
+  for non-gateway callers, with focused Pest coverage in
+  `tests/Feature/Commands/Tools/ToolLogsCommandTest.php` and
+  `tests/Feature/Http/Api/ToolLogsStreamControllerTest.php`. E2E lane:
   Incus VM-feature because the command reads host-init managed service logs.
   Passed gate:
   `set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=incus ORBIT_E2E_GATEWAY_API=1 ORBIT_E2E_TOPOLOGY_CACHE=process ORBIT_E2E_CHECKOUT_CACHE=process ORBIT_E2E_TOPOLOGY_STRATEGY=minimal php artisan test --testsuite=E2E --group=e2e-feature --filter='reads finite managed system service tool logs'`.
-  Remaining before `[x]`: gateway-forwarded streaming `--follow` contract for
-  non-gateway callers.
+  Fixed: `stream_orbit_command` in the E2E gateway TLS shim was missing
+  `VIEW_COMPILED_PATH`, causing the Laravel runtime to fail with
+  "Please provide a valid cache path." before the stream reached the control
+  caller. The shim now matches `run_orbit_command` by exporting that variable.
+  Verification pending Incus environment; `composer quality-check` passes.
 - [ ] `tool:install`, `tool:remove`, `tool:update`,
   `tool:credentials`, `tool:reconfigure` — write/enactment commands not
   started.

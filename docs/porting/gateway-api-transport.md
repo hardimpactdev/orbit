@@ -40,7 +40,7 @@ the Saloon-based gateway transport pattern.
 - [x] Process — list, add, edit, remove, start, stop, restart, logs.
 - [x] Schedule — add, list, show, remove, run, logs, scheduler heartbeat,
   run-history intake, registry sync.
-- [x] Tool — list, show.
+- [x] Tool — list, show, start, stop, restart, reload, logs.
 - [x] Activity — list, show.
 - [x] Profile — `ShowProfileRequest` (gateway-origin profile execution).
 - [~] Doctor — `RunDoctorRequest` for verify-mode runs covers `node`,

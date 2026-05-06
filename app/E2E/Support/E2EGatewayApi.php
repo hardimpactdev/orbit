@@ -108,10 +108,11 @@ PHP;
     {
         $orbitPathArgument = escapeshellarg($orbitPath);
         $gatewayIpValue = var_export($gatewayIp, true);
+        $viewCompiledPath = escapeshellarg("{$orbitPath}/storage/framework/views");
 
         E2ECommand::orbit(
             $gateway,
-            "cd {$orbitPathArgument} && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
+            "cd {$orbitPathArgument} && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && grep -v '^VIEW_COMPILED_PATH=' .env > .env.tmp && mv .env.tmp .env && printf '\\nVIEW_COMPILED_PATH=%s\\n' {$viewCompiledPath} >> .env && php artisan tinker --execute=".escapeshellarg("app(\\App\\Services\\Ca\\OrbitCaService::class)->issueLeaf({$gatewayIpValue}); echo 'issued';"),
             'Could not issue gateway leaf certificate',
         );
 
@@ -125,7 +126,7 @@ PHP;
 
         E2ECommand::exec(
             $gateway,
-            "cd {$orbitPathArgument} && nohup php artisan serve --host={$gatewayIp} --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
+            "cd {$orbitPathArgument} && nohup env VIEW_COMPILED_PATH={$viewCompiledPath} php artisan serve --host={$gatewayIp} --port=80 > /tmp/orbit-gateway-http.log 2>&1 &",
             'Could not start gateway HTTP API',
         );
 
@@ -243,10 +244,60 @@ PHP;
         
             $output = [];
             $exitCode = 0;
-            $script = 'cd '.escapeshellarg($orbitPath).' && '.$command;
+            $script = 'cd '.escapeshellarg($orbitPath).' && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
             exec('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', $output, $exitCode);
         
             return [$exitCode, implode("\n", $output)];
+        }
+
+        function stream_orbit_command($connection, string $command): void
+        {
+            global $orbitPath;
+
+            $script = 'cd '.escapeshellarg($orbitPath).' && VIEW_COMPILED_PATH='.escapeshellarg($orbitPath.'/storage/framework/views').' '.$command;
+            $process = popen('sudo -iu orbit bash -lc '.escapeshellarg($script).' 2>&1', 'r');
+
+            fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nConnection: close\r\n\r\n");
+
+            if ($process === false) {
+                fwrite($connection, "Could not open gateway stream.\n");
+
+                return;
+            }
+
+            while (! feof($process)) {
+                $chunk = fread($process, 8192);
+
+                if ($chunk === false || $chunk === '') {
+                    usleep(50_000);
+
+                    continue;
+                }
+
+                fwrite($connection, $chunk);
+            }
+
+            pclose($process);
+        }
+
+        function stream_tool_logs($connection, string $tool, array $query): void
+        {
+            $parts = [
+                'timeout 6s php artisan tool:logs',
+                escapeshellarg($tool),
+                '--follow',
+                '--lines='.escapeshellarg((string) max(1, (int) ($query['lines'] ?? 100))),
+            ];
+
+            foreach (['node', 'app'] as $option) {
+                $value = $query[$option] ?? null;
+
+                if (is_string($value) && $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg($value);
+                }
+            }
+
+            stream_orbit_command($connection, implode(' ', $parts).' || true');
         }
         
         function run_node_new(array $input): array
@@ -781,6 +832,21 @@ PHP;
             if (str_starts_with($requestLine, 'GET /api/schedules/sync ')) {
                 [$exitCode, $output] = run_schedule_sync();
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (preg_match('#^GET /api/tools/([^ ?]+)/logs/stream#', $requestLine, $matches) === 1) {
+                $path = explode(' ', $requestLine)[1] ?? '/api/tools/'.$matches[1].'/logs/stream';
+                $queryString = parse_url($path, PHP_URL_QUERY);
+                $query = [];
+
+                if (is_string($queryString)) {
+                    parse_str($queryString, $query);
+                }
+
+                stream_tool_logs($connection, urldecode($matches[1]), $query);
                 fclose($connection);
 
                 continue;

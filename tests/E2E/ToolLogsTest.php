@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyCapabilities;
 use App\E2E\Support\E2ETopologyFactory;
 use App\E2E\Support\E2ETopologyHarness;
@@ -18,9 +20,26 @@ it('reads finite managed system service tool logs from an app node through the g
     }
 
     $topology = new E2ETopologyHarness($lease)
-        ->withCurrentCheckout(roles: ['gateway']);
+        ->withCurrentCheckout(roles: ['control', 'gateway']);
 
     try {
+        $config = E2EConfig::fromEnvironment();
+        $gatewayApiIp = $topology->lease()->gatewayApiIp();
+
+        E2EGatewayApi::restart(
+            $topology->instance('gateway'),
+            'tool-logs',
+            $topology->checkout('gateway'),
+            gatewayIp: $gatewayApiIp,
+        );
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('control'),
+            $config->controlUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
+        toolLogsUseGatewayApiUrl($topology, $gatewayApiIp);
+
         toolLogsSeedGatewayIntent($topology);
 
         $topology->ssh('dev', 'sudo systemctl restart supervisor', timeoutSeconds: 60);
@@ -60,18 +79,80 @@ BASH),
 
         expect($follow->successful())->toBeTrue()
             ->and(trim($follow->output()))->not->toBe('');
+
+        $forwardedFollow = $topology->ssh(
+            'control',
+            sprintf(
+                'cd %s && timeout 20s bash -lc %s',
+                escapeshellarg($topology->checkout('control')),
+                escapeshellarg(<<<'BASH'
+rm -f /tmp/orbit-tool-follow-forwarded.log
+timeout 8s php artisan tool:logs supervisor --node=app-dev-1 --lines=1 --follow > /tmp/orbit-tool-follow-forwarded.log 2>&1 || true
+test -s /tmp/orbit-tool-follow-forwarded.log
+grep -m 1 supervisor /tmp/orbit-tool-follow-forwarded.log || { cat /tmp/orbit-tool-follow-forwarded.log >&2; exit 1; }
+BASH),
+            ),
+            timeoutSeconds: 30,
+        );
+
+        expect($forwardedFollow->successful())->toBeTrue()
+            ->and(trim($forwardedFollow->output()))->not->toBe('');
     } finally {
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-control-gateway-dev');
 
+function toolLogsUseGatewayApiUrl(E2ETopologyHarness $topology, string $gatewayApiIp): void
+{
+    $caPath = $topology->checkout('control').'/storage/app/orbit/gateway-ca/orbit.crt';
+    $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
+    $gatewayIpValue = var_export($gatewayApiIp, true);
+    $caPathValue = var_export($caPath, true);
+
+    $php = <<<PHP
+\$settings = \App\Models\LocalGatewaySettings::current();
+\$settings->gateway_url = {$gatewayUrlValue};
+\$settings->gateway_wg_ip = {$gatewayIpValue};
+\$settings->ca_pem_path = {$caPathValue};
+\$settings->save();
+
+echo 'updated';
+PHP;
+
+    $topology->ssh(
+        'control',
+        sprintf(
+            'cd %s && php artisan tinker --execute=%s',
+            escapeshellarg($topology->checkout('control')),
+            escapeshellarg($php),
+        ),
+        timeoutSeconds: 120,
+    );
+}
+
 function toolLogsSeedGatewayIntent(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+$nodes = \App\Models\Node::query()
+    ->whereIn('name', ['control-1', 'app-dev-1'])
+    ->pluck('id', 'name');
+
+foreach (['control-1', 'app-dev-1'] as $name) {
+    if (! $nodes->has($name)) {
+        throw new \RuntimeException("Missing prepared node [{$name}].");
+    }
+}
+
+\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+    'consumer_node_id' => $nodes->get('control-1'),
+    'serving_node_id' => $nodes->get('app-dev-1'),
+], [
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
 
 \App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'supervisor'],
+    ['node_id' => $nodes->get('app-dev-1'), 'name' => 'supervisor'],
     [
         'expected_state' => 'running',
         'expected_version' => null,

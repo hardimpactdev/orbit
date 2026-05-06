@@ -82,5 +82,5 @@ it('runs gateway api shim commands as the orbit runtime user', function (): void
 
     expect($script)
         ->toContain('sudo -iu orbit bash -lc')
-        ->toContain('$script = \'cd \'.escapeshellarg($orbitPath).\' && \'.$command;');
+        ->toContain('$script = \'cd \'.escapeshellarg($orbitPath).\' && VIEW_COMPILED_PATH=\'.escapeshellarg($orbitPath.\'/storage/framework/views\').\' \'.$command;');
 });

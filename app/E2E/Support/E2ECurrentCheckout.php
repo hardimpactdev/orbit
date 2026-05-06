@@ -151,8 +151,10 @@ final class E2ECurrentCheckout
 
     private static function prepareRuntimeStateCommand(?string $seedFrom): string
     {
+        $runtimeDirectories = 'mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs';
+
         if ($seedFrom === null) {
-            return 'cp .env.example .env && mkdir -p database && touch database/database.sqlite && php artisan key:generate --ansi';
+            return "cp .env.example .env && mkdir -p database && touch database/database.sqlite && {$runtimeDirectories} && php artisan key:generate --ansi";
         }
 
         $seedEnv = escapeshellarg("{$seedFrom}/.env");
@@ -164,6 +166,7 @@ final class E2ECurrentCheckout
             'mkdir -p database',
             "if [ -f {$seedDatabase} ]; then cp {$seedDatabase} database/database.sqlite; else touch database/database.sqlite; fi",
             "if [ -d {$seedStorageApp} ]; then mkdir -p storage && rm -rf storage/app && cp -a {$seedStorageApp} storage/app; fi",
+            $runtimeDirectories,
             "grep -q '^APP_KEY=base64:' .env || php artisan key:generate --ansi",
         ]);
     }

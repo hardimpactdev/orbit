@@ -20,6 +20,34 @@ final readonly class ToolLogFollower
      */
     public function follow(string $tool, ?string $node, ?string $app, int $lines, callable $onOutput): int|ToolRegistryFailure
     {
+        $target = $this->streamTarget($tool, $node, $app, $lines);
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $target;
+        }
+
+        return $this->followTarget($tool, $target['node'], $target['command'], $onOutput);
+    }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    public function followTarget(string $tool, Node $node, string $command, callable $onOutput): int|ToolRegistryFailure
+    {
+        $exitCode = $this->stream->stream($node, $command, $onOutput);
+
+        if ($exitCode !== 0) {
+            return ToolRegistryFailure::remoteActionFailed($tool, $node->name, 'logs', $exitCode, '');
+        }
+
+        return 0;
+    }
+
+    /**
+     * @return array{node: Node, command: string}|ToolRegistryFailure
+     */
+    public function streamTarget(string $tool, ?string $node, ?string $app, int $lines): array|ToolRegistryFailure
+    {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'logs');
         }
@@ -42,12 +70,9 @@ final readonly class ToolLogFollower
             return ToolRegistryFailure::remoteActionFailed($tool, '', 'logs', 1, 'Target node is missing.');
         }
 
-        $exitCode = $this->stream->stream($model->node, $command, $onOutput);
-
-        if ($exitCode !== 0) {
-            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'logs', $exitCode, '');
-        }
-
-        return 0;
+        return [
+            'node' => $model->node,
+            'command' => $command,
+        ];
     }
 }

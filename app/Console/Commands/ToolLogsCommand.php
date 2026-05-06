@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Contracts\ToolLogGatewayStream;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ToolLogsRequest;
@@ -27,7 +28,7 @@ use Throwable;
 #[Description('Read managed tool logs')]
 class ToolLogsCommand extends Command
 {
-    public function handle(ToolLogReader $logs, ToolLogFollower $follower): int
+    public function handle(ToolLogReader $logs, ToolLogFollower $follower, ToolLogGatewayStream $gatewayStream): int
     {
         $input = $this->validatedInput();
 
@@ -37,20 +38,36 @@ class ToolLogsCommand extends Command
 
         $isGatewayCaller = $this->isGatewayCaller();
 
-        if ($input['follow'] && ! $isGatewayCaller) {
-            return $this->failValidation('follow', 'Log following through gateway forwarding is not ported yet.');
-        }
-
         if ($input['follow']) {
-            $result = $follower->follow(
-                tool: $input['tool'],
-                node: $input['node'],
-                app: $input['app'],
-                lines: $input['lines'],
-                onOutput: function (string $output): void {
-                    $this->output->write($output);
-                },
-            );
+            $result = $isGatewayCaller
+                ? $follower->follow(
+                    tool: $input['tool'],
+                    node: $input['node'],
+                    app: $input['app'],
+                    lines: $input['lines'],
+                    onOutput: function (string $output): void {
+                        $this->output->write($output);
+                    },
+                )
+                : $gatewayStream->follow(
+                    tool: $input['tool'],
+                    node: $input['node'],
+                    app: $input['app'],
+                    lines: $input['lines'],
+                    onOutput: function (string $output): void {
+                        $this->output->write($output);
+                    },
+                );
+
+            if ($result instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $result->errorCode() ?? 'gateway_unavailable',
+                    message: $result->getMessage() !== ''
+                        ? $result->getMessage()
+                        : 'Gateway connection is required to read tool logs.',
+                    meta: $result->errorMeta(),
+                );
+            }
 
             if ($result instanceof ToolRegistryFailure) {
                 return $this->failCommand(
