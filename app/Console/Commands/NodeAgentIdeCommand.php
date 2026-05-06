@@ -8,12 +8,16 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\SetNodeAgentIdeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeAgentIdeResponse;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
+
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 #[Signature('node:agent-ide
     {name? : Node name}
@@ -46,7 +50,15 @@ class NodeAgentIdeCommand extends Command
             );
         }
 
-        $name = $this->stringArgument('name');
+        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update node configuration.',
+                meta: [],
+            );
+        }
+
+        $name = $this->resolveName($callerRole);
 
         if ($name === null) {
             return $this->failCommand(
@@ -56,7 +68,7 @@ class NodeAgentIdeCommand extends Command
             );
         }
 
-        $agentIde = $this->stringArgument('agent_ide');
+        $agentIde = $this->resolveAgentIde();
 
         if ($agentIde === null) {
             return $this->failCommand(
@@ -92,6 +104,64 @@ class NodeAgentIdeCommand extends Command
         }
 
         return $this->respondSuccess($defaults->set($node, $agentIde));
+    }
+
+    private function resolveName(string $callerRole): ?string
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if ($this->isInteractiveInput()) {
+            return trim(text(
+                label: 'Node name',
+                required: true,
+                validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
+            ));
+        }
+
+        return null;
+    }
+
+    private function validatePromptNodeName(string $value, string $callerRole): ?string
+    {
+        $name = trim($value);
+
+        if ($name === '') {
+            return 'Node name is required.';
+        }
+
+        if ($callerRole !== 'gateway') {
+            return null;
+        }
+
+        $exists = Node::query()
+            ->where('name', $name)
+            ->where('status', 'active')
+            ->exists();
+
+        return $exists ? null : "Node '{$name}' not found.";
+    }
+
+    private function resolveAgentIde(): ?string
+    {
+        $agentIde = $this->stringArgument('agent_ide');
+
+        if ($agentIde !== null) {
+            return $agentIde;
+        }
+
+        if ($this->isInteractiveInput()) {
+            return select(
+                label: 'Agent IDE adapter',
+                options: ['none', ...NodeAgentIdeDefaults::SUPPORTED_ADAPTERS],
+                required: true,
+            );
+        }
+
+        return null;
     }
 
     private function forwardSet(string $name, string $agentIde): int
@@ -147,6 +217,19 @@ class NodeAgentIdeCommand extends Command
         $value = $this->argument($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function hasConfiguredGateway(): bool
+    {
+        return LocalGatewaySettings::query()
+            ->whereNotNull('gateway_url')
+            ->where('gateway_url', '!=', '')
+            ->exists();
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
     /**

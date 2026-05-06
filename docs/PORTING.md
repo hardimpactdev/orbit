@@ -820,6 +820,7 @@ exist. Those families wait for the node/gateway/app foundations.
   - Current docs: `docs/commands/1_node/10_node-agent-ide`
   - Current tests:
     - `tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` (command contract)
+    - `tests/Feature/Commands/Nodes/NodeAgentIdeInteractiveInputModeTest.php` (interactive input mode contract)
     - `tests/Feature/Http/Api/NodeAgentIdeControllerTest.php` (gateway API and activity)
     - `tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php` (node-show agent IDE metadata)
     - `tests/Feature/Http/Api/NodeShowControllerTest.php` (gateway API show metadata)
@@ -830,7 +831,6 @@ exist. Those families wait for the node/gateway/app foundations.
     logging. Docker feature E2E verifies the configured control-caller
     forwarding path and node-show metadata convergence.
   - Contract gaps:
-    - interactive input prompting.
     - extension-registered adapter registry beyond the core adapters
       (`opencode`, `polyscope`) and reserved `none` token.
 - [~] Port `node:new`.
