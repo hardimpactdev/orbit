@@ -1045,11 +1045,11 @@ that produced the controller's Loggable wiring.
 - [ ] `10_deploy`.
   - [!] Activity backfill is blocked until `docs/abstractions/10_deploy.md`
     exists and a clean `deploy:*` command surface is implemented.
-- [ ] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
-  - [~] `update`, `update:all`, and `profile` activity contracts/emission are
-    implemented by `ACTIVITY-OPERATION-IMPLEMENTED-1`.
-  - [!] `doctor` activity backfill is blocked until the clean `doctor` command
-    is implemented.
+- [~] `11_operation` (`update`, `update:all`, `doctor`, `profile`).
+  - [x] `update`, `update:all`, `profile`, and verify-mode `doctor` activity
+    contracts/emission are implemented.
+  - [!] `doctor --fix` / `doctor --adopt` activity effects remain blocked until
+    family action maps are ported.
 - [ ] `12_cf`.
   - [!] Activity backfill is blocked until `docs/abstractions/12_cf.md` exists
     and a clean `cf:*` command surface is implemented.
@@ -1148,7 +1148,11 @@ that produced the controller's Loggable wiring.
     `ActivityLoggingContractRule`.
   - [x] The implemented operation commands emit best-effort CLI activity entries;
     update commands emit `effect=write`, and `profile` emits `effect=read`.
-  - [!] `doctor` remains blocked until the clean `doctor` command exists.
+  - [x] Verify-mode `doctor` now declares its `## Activity Logging` tech
+    contract, emits `effect=read`, and is enforced by
+    `ActivityLoggingContractRule`.
+  - [!] `doctor --fix` / `doctor --adopt` remain blocked until the clean
+    family action maps are implemented.
 - [x] `ACTIVITY-DNS-FAMILY-1` — add activity logging contracts and local CLI
   activity emission to the DNS family surface.
   - [x] `dns:list` and `dns:resolve-tld` now declare their
@@ -1660,8 +1664,13 @@ for the Saloon-based gateway transport pattern.
   - [x] `tool:list` and `tool:show` commands are wired through the typed
     gateway requests for non-gateway callers and local registry reads on the
     gateway.
-- [ ] Port doctor API controllers and typed client requests after doctor docs
+- [~] Port doctor API controllers and typed client requests after doctor docs
   are converted.
+  - [x] Verify-mode doctor bootstrap exists with `doctor --family=node --json`,
+    `POST /api/doctor/run`, typed Saloon request/DTO, and in-memory node-family
+    probe orchestration.
+  - [!] `--fix`, `--adopt`, streaming progress, and non-node family dispatch
+    remain blocked until family action maps/probes are ported.
 - [ ] Port long-running SSE progress primitives.
 
 ## State Families And Doctor Workstream

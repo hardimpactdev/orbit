@@ -224,3 +224,17 @@ Required split contract tests:
 
 Family-specific doctor test mapping lives in family doctor contracts, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).
+
+## Activity Logging
+
+The local CLI command emits a best-effort activity entry for successful and
+failed doctor verification runs. The gateway API endpoint emits an activity
+entry for remote doctor orchestration requests.
+
+| Field | Value |
+| --- | --- |
+| Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API transport |
+| Effect | `read` for verify-mode runs; future fix/adopt slices must update this contract before enabling write-mode actions |
+| Subject | `none` |
+| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. API transport context is added by middleware. |
+| Description | `Doctor verification run` for local CLI; derived for gateway API |

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\AppRootController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\CaRootController;
+use App\Http\Controllers\Api\DoctorRunController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeDefaultController;
@@ -60,6 +61,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
+        Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/me', MeController::class);
         Route::post('/events/process', ProcessEventIngestController::class);
         Route::get('/processes', ProcessListController::class);

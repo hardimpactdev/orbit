@@ -31,6 +31,7 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'gateway-trust',
         'update',
         'update-all',
+        'doctor',
         'profile',
         'dns-list',
         'dns-resolve-tld',
