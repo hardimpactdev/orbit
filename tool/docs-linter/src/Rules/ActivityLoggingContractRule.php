@@ -46,6 +46,14 @@ final class ActivityLoggingContractRule implements CommandDocsLintRule
         'workspace-teardown-step-add',
         'workspace-teardown-step-list',
         'workspace-teardown-step-remove',
+        'process-add',
+        'process-edit',
+        'process-remove',
+        'process-list',
+        'process-start',
+        'process-stop',
+        'process-restart',
+        'process-logs',
     ];
 
     /**

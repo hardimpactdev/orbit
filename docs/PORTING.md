@@ -1034,7 +1034,7 @@ that produced the controller's Loggable wiring.
 - [ ] `4_firewall`.
 - [x] `5_app`.
 - [x] `6_workspace`.
-- [ ] `7_process`.
+- [x] `7_process`.
 - [ ] `8_proxy`.
 - [ ] `9_schedule`.
 - [ ] `10_deploy`.
@@ -1098,6 +1098,13 @@ that produced the controller's Loggable wiring.
     enforced by `ActivityLoggingContractRule`.
   - [x] Step removal activity now emits `effect=destructive`, matching the
     command contracts for destructive policy deletion.
+- [x] `ACTIVITY-PROCESS-FAMILY-1` — add activity logging contracts to the
+  implemented process family surface while process commands use typed gateway
+  APIs.
+  - [x] `process:add`, `process:edit`, `process:remove`, `process:list`,
+    `process:start`, `process:stop`, `process:restart`, and `process:logs`
+    now declare their `## Activity Logging` tech contracts and are enforced by
+    `ActivityLoggingContractRule`.
 - [x] `ACTIVITY-READ-AUDIT-1` — resolved by doctrine. Read commands
   (`*:list`, `*:show`) emit with `effect=read`. A specific read may
   declare `does not emit` only when noise dominates audit value; the

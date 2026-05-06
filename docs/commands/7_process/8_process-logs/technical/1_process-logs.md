@@ -91,6 +91,19 @@ lifecycle events.
 owns verification and repair of the runtime-unit artifacts and event notifier
 material that help produce process observability.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+process log reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /processes/{name}/log` |
+| Effect | `read` |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Properties | `app` (string or null) and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

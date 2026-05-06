@@ -94,6 +94,19 @@ process fails; the failure renderer reports partial runtime results.
 owns verification and repair of the runtime-unit artifacts that make the stop
 action possible.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+process stop attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /processes/stop` |
+| Effect | `write` |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Properties | `app` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

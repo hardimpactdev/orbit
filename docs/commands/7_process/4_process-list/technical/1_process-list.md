@@ -88,6 +88,19 @@ cause this command to fail.
 [`process-doctor.md`](../../process-doctor.md) owns live runtime-unit artifact
 verification and repair.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+process registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /processes` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

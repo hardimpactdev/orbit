@@ -100,6 +100,19 @@ units. [`process-doctor.md`](../../process-doctor.md) owns later detection and
 repair of missing or divergent runtime units and lifecycle event notifier
 material.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+process-intent edit attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:PATCH /processes/{name}` |
+| Effect | `write` |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Properties | `app` (string or null). No raw process command text, environment data, runtime output, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

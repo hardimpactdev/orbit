@@ -99,6 +99,19 @@ state transition completed.
 [`process-doctor.md`](../../process-doctor.md) reports leftover Orbit-owned
 runtime units as `process.runtime_unit_extra`.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+process-intent removal attempts.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /processes/{name}` |
+| Effect | `destructive` |
+| Subject | `App` when the parent app is resolved and visible; `none` for validation, app-resolution, caller-role, or authorization failures before the app can be logged. |
+| Properties | `app` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:
