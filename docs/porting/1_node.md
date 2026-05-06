@@ -221,11 +221,15 @@ Detail file for the node command family. Top-level command status lives in
       `node:new` now uses those node-family adoption results for gateway-local
       compatible app-node adoption, including selected active app-node records
       that are missing only their gateway peer row. Unknown-host and
-      gateway-role adoption remain unavailable because the clean registry still
-      needs a safe command path to select or materialize a node record before
-      proof comparison. Next concrete action: design the unknown-host/gateway-role adoption
-      materialization path, then wire it through gateway-local `node:new` and
-      forwarding.
+      gateway-role adoption remain unavailable until the materialization path is
+      implemented. The command docs now define the app unknown-host
+      materialization contract and restrict gateway-role materialization to the
+      gateway identity already running the command, rather than an arbitrary
+      remote gateway host. Next concrete action: implement app unknown-host
+      materialization in gateway-local `node:new`, then expose the same behavior
+      through forwarding; gateway-role materialization remains blocked until the
+      command can prove the target host is the executing gateway identity before
+      writing a missing gateway row.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

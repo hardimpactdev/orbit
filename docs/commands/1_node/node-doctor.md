@@ -175,10 +175,10 @@ Active app-node missing-peer adoption requires non-secret node identity artifact
 proof from the target host. That proof must bind the selected node name, role,
 local role setting, supported platform, live interface public key, and
 WireGuard address to gateway intent and live WireGuard reality. Unknown-host
-adoption remains unavailable until a command path can safely select or
-materialize a node record before proof comparison. An operator-supplied host, a
-live WireGuard peer, or a registry row alone must leave the adoption result as
-`conflict` or `skipped`.
+materialization belongs to explicit node-membership flows such as `node:new`,
+because doctor must not invent node names or roles from unselected live reality.
+An operator-supplied host, a live WireGuard peer, or a registry row alone must
+leave the adoption result as `conflict` or `skipped`.
 
 ## Test Mapping
 

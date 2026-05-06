@@ -70,6 +70,16 @@ For `--role=gateway`:
 7. Do not reset or destructively reprovision an existing gateway from
    `node:new`.
 
+Gateway-role adoption may materialize a missing gateway node row only for the
+gateway identity that is already running this command. The target must prove the
+requested node name, `gateway` role, local role setting, active status,
+supported platform, WireGuard address, and live interface public key through the
+bounded node identity artifact read. The supplied `node_new.host` is recorded as
+the gateway endpoint only after that proof is complete. `node:new` must not
+adopt a different remote gateway host into the current fleet; multi-gateway
+replacement, disaster recovery, and reset flows require a separate explicit
+contract.
+
 ## Gateway Path Matrix
 
 | Gateway state | `node_new.host` | SSH used? | Behavior |
@@ -129,6 +139,44 @@ Unknown-host adoption still requires a separate materialization path before
 `node:new` can safely attach unowned live reality to gateway intent. Without
 that proof, `node:new` reports incomplete provisioning or node drift and points
 to `doctor --family=node --fix` or `doctor --family=node --adopt`.
+
+### App Unknown-Host Adoption Materialization
+
+When `node:new --role=app` is invoked on the gateway and no gateway node record
+exists for `node_new.name`, the command may adopt an already-provisioned app
+host instead of provisioning it from scratch only when all of these rules pass
+before any durable write:
+
+1. Build an in-memory candidate from the explicit request:
+   `node_new.name`, role `app`, `node_new.environment`, `node_new.tld`,
+   `node_new.host`, `node_new.ssh_user`, default runtime user `orbit`, and
+   default Orbit path `/home/orbit/orbit`.
+2. Read the bounded node identity artifact from the candidate host. This read
+   may use `node_new.ssh_user` as the transport credential but must not persist
+   a node row before proof succeeds.
+3. Require the artifact to report the requested node name, role `app`,
+   local role `app`, active status, a supported platform, a non-empty
+   WireGuard address, and a non-empty live interface public key.
+4. Require live gateway WireGuard reality to contain that interface public key
+   with exactly one allowed address, and that address must equal the artifact
+   WireGuard address.
+5. Validate app-specific gateway intent before materialization:
+   development TLDs must be valid and unassigned, production app nodes must not
+   carry a TLD, and the requested host/environment/TLD must not collide with an
+   incompatible active node record.
+6. Materialize the gateway row and peer together: create the active app-node row
+   from the request plus artifact platform and WireGuard address, then attach a
+   gateway `wireguard_peers` row using the proven public key and allowed IPs.
+   The private key remains empty because adoption never reads private key
+   material from nodes.
+7. Run the same node-family adoption/readiness checks used for selected
+   app-node adoption. If runtime readiness or other node-owned bootstrap facts
+   cannot be verified, fail with `node.provisioning_incomplete` and include the
+   adoption results.
+
+If any proof is absent, ambiguous, or incompatible, `node:new` must fall back to
+normal provisioning only when it has not observed a compatible existing Orbit
+identity. It must not overwrite a proven but incompatible host.
 
 ## Failure Semantics
 

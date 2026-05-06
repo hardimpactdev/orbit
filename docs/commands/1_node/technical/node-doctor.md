@@ -226,9 +226,11 @@ The minimum proof set is:
 The probe must not read private keys, infer identity from public IP metadata, or
 adopt a live WireGuard peer that cannot be tied to a selected node identity.
 When this proof is unavailable, adoption remains a conflict or a
-`doctor --family=node --fix` handoff. Unknown-host adoption remains unavailable
-until the clean registry has a command path that can select or materialize a
-node record before proof comparison.
+`doctor --family=node --fix` handoff. Unknown-host materialization belongs to
+explicit node-membership flows such as `node:new`, because those flows provide
+the requested node name, role, host, and app-specific intent needed to create a
+record before normal node-family adoption can run. Node doctor does not invent
+node names or roles from unselected live reality.
 
 ## Reconciliation (Fix)
 
