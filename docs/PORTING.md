@@ -1352,7 +1352,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     typed gateway API forwarding, app/node filter validation, latest durable
     run summary projection, human/JSON renderers, read-only boundary tests, and
     focused Pest coverage.
-  - [ ] `schedule:add` gateway-owned intent write, execution-source validation,
+  - [x] `schedule:add` gateway-owned intent write, execution-source validation,
     scheduler reachability warning/error handling, human/JSON renderers, and
     focused Pest coverage.
   - [ ] `schedule:remove` gateway-owned destructive intent removal,

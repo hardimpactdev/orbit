@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ScheduleListController;
 use App\Http\Controllers\Api\ScheduleRunStoreController;
 use App\Http\Controllers\Api\ScheduleShowController;
+use App\Http\Controllers\Api\ScheduleStoreController;
 use App\Http\Controllers\Api\WorkspaceHistoryController;
 use App\Http\Controllers\Api\WorkspaceListController;
 use App\Http\Controllers\Api\WorkspaceLogController;
@@ -65,6 +66,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::patch('/processes/{name}', ProcessUpdateController::class);
         Route::get('/profile', ProfileController::class);
         Route::get('/schedules', ScheduleListController::class);
+        Route::post('/schedules', ScheduleStoreController::class);
         Route::post('/schedules/runs', ScheduleRunStoreController::class);
         Route::get('/schedules/{name}', ScheduleShowController::class);
         Route::get('/workspaces', WorkspaceListController::class);

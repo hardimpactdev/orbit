@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Http\Gateway\Requests\Schedules;
 
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
@@ -24,6 +25,28 @@ beforeEach(function (): void {
     $settings->gateway_url = 'https://10.6.0.2';
     $settings->ca_pem_path = '/path/to/ca.pem';
     $settings->save();
+});
+
+it('posts schedule add payloads to the gateway', function (): void {
+    $request = new AddScheduleRequest(
+        name: 'laravel-scheduler',
+        app: 'docs',
+        node: null,
+        interval: 'every minute',
+        timezone: 'UTC',
+        command: 'php artisan schedule:run',
+        script: null,
+    );
+
+    expect($request->resolveEndpoint())->toBe('/api/schedules');
+    expect($request->getMethod())->toBe(Method::POST);
+    expect($request->body()->all())->toBe([
+        'name' => 'laravel-scheduler',
+        'app' => 'docs',
+        'interval' => 'every minute',
+        'timezone' => 'UTC',
+        'command' => 'php artisan schedule:run',
+    ]);
 });
 
 it('resolves schedule read endpoints and query filters', function (): void {

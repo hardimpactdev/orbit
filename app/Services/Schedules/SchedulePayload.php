@@ -136,6 +136,19 @@ class SchedulePayload
     /**
      * @return array<string, mixed>
      */
+    /**
+     * @return array<string, mixed>
+     */
+    public function forSchedule(Schedule $schedule): array
+    {
+        $schedule->loadMissing(['app.node.schedulerState', 'node.schedulerState', 'latestRun']);
+
+        return $this->serialize($schedule);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function serialize(Schedule $schedule): array
     {
         $targetNode = $schedule->scope === 'app'
