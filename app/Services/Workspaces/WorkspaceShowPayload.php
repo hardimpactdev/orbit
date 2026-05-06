@@ -14,6 +14,7 @@ class WorkspaceShowPayload
 {
     public function __construct(
         private readonly AppAgentIdeDefaults $appAgentIdeDefaults,
+        private readonly WorkspaceFpmPoolRenderer $workspaceFpmPoolRenderer,
     ) {}
 
     /**
@@ -117,8 +118,6 @@ class WorkspaceShowPayload
 
     private function fpmPool(Workspace $workspace): string
     {
-        $workspace->loadMissing('app');
-
-        return 'orbit-'.str($workspace->app->name)->slug()->toString().'-'.str($workspace->name)->slug()->toString();
+        return $this->workspaceFpmPoolRenderer->poolName($workspace);
     }
 }

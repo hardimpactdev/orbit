@@ -48,7 +48,7 @@ describe('source path reality', function (): void {
                 'name' => 'feature',
                 'path' => "{$app->path}/workspaces/feature",
             ]);
-        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\n");
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\n");
 
         $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
 
@@ -56,6 +56,8 @@ describe('source path reality', function (): void {
             'path_exists' => true,
             'path_usable' => true,
             'php_fpm_available' => true,
+            'fpm_config_exists' => true,
+            'fpm_config_matches' => true,
         ]);
         expect($shell->scripts[0])->toContain('ORBIT_WORKSPACE_SPEC');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
@@ -148,6 +150,56 @@ describe('PHP runtime reality', function (): void {
     });
 });
 
+describe('PHP-FPM configuration reality', function (): void {
+    it('detects missing workspace PHP-FPM pool configuration', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.fpm_config_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'workspace.fpm_config_mismatch'))->toBeNull();
+    });
+
+    it('detects workspace PHP-FPM pool configuration mismatches', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot(['fpm_config_matches' => false]),
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.fpm_config_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('does not report workspace PHP-FPM pool drift before PHP-FPM is available', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $snapshot = new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'php_fpm_available' => false,
+                'fpm_config_exists' => false,
+                'fpm_config_matches' => false,
+            ]),
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+
+        expect(issue($drift, 'workspace.fpm_config_missing'))->toBeNull();
+        expect(issue($drift, 'workspace.fpm_config_mismatch'))->toBeNull();
+    });
+});
+
 describe('registry intent', function (): void {
     it('passes complete workspace records with eligible parent apps', function (): void {
         $app = workspaceableApp();
@@ -221,6 +273,18 @@ describe('parent app eligibility', function (): void {
 function issue(array $drift, string $key): ?DriftEntry
 {
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
+}
+
+function convergedRuntimeSnapshot(array $overrides = []): array
+{
+    return [
+        'path_exists' => true,
+        'path_usable' => true,
+        'php_fpm_available' => true,
+        'fpm_config_exists' => true,
+        'fpm_config_matches' => true,
+        ...$overrides,
+    ];
 }
 
 function workspaceableApp(array $overrides = []): App

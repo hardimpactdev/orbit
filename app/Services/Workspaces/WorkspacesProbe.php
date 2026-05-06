@@ -16,6 +16,7 @@ final readonly class WorkspacesProbe
 {
     public function __construct(
         private ?RemoteShell $remoteShell = null,
+        private ?WorkspaceFpmPoolRenderer $fpmPoolRenderer = null,
     ) {}
 
     public function key(): string
@@ -40,6 +41,8 @@ final readonly class WorkspacesProbe
             'name' => $workspace->name,
             'path' => $workspace->path,
             'php_version' => $workspace->effectivePhpVersion(),
+            'fpm_pool_path' => $this->fpmPoolRenderer()->path($workspace),
+            'fpm_pool_hash' => hash('sha256', $this->fpmPoolRenderer()->content($workspace)),
         ];
 
         $script = <<<'BASH'
@@ -50,6 +53,8 @@ $spec = json_decode(base64_decode((string) getenv('ORBIT_WORKSPACE_SPEC')), true
 $name = (string) ($spec['name'] ?? '');
 $path = (string) ($spec['path'] ?? '');
 $phpVersion = (string) ($spec['php_version'] ?? '');
+$fpmPoolPath = (string) ($spec['fpm_pool_path'] ?? '');
+$fpmPoolHash = (string) ($spec['fpm_pool_hash'] ?? '');
 
 $pathExists = is_dir($path) ? '1' : '0';
 $pathUsable = is_dir($path) && is_readable($path) && is_executable($path) ? '1' : '0';
@@ -61,8 +66,10 @@ $phpFpmAvailable = (
 )
         ? '1'
         : '0';
+$fpmConfigExists = is_file($fpmPoolPath) ? '1' : '0';
+$fpmConfigMatches = $fpmConfigExists === '1' && hash_file('sha256', $fpmPoolPath) === $fpmPoolHash ? '1' : '0';
 
-printf("%s\t%s\t%s\t%s\n", $name, $pathExists, $pathUsable, $phpFpmAvailable);
+printf("%s\t%s\t%s\t%s\t%s\t%s\n", $name, $pathExists, $pathUsable, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches);
 
 function command_exists(string $command): bool
 {
@@ -87,18 +94,20 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 4);
+            $parts = explode("\t", $line, 6);
 
-            if (count($parts) !== 4) {
+            if (count($parts) !== 6) {
                 continue;
             }
 
-            [$name, $pathExists, $pathUsable, $phpFpmAvailable] = $parts;
+            [$name, $pathExists, $pathUsable, $phpFpmAvailable, $fpmConfigExists, $fpmConfigMatches] = $parts;
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
                 'path_usable' => $pathUsable === '1',
                 'php_fpm_available' => $phpFpmAvailable === '1',
+                'fpm_config_exists' => $fpmConfigExists === '1',
+                'fpm_config_matches' => $fpmConfigMatches === '1',
             ];
         }
 
@@ -116,6 +125,7 @@ BASH;
         $drift = array_merge($drift, $this->checkParentApp($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
+        $drift = array_merge($drift, $this->checkFpmConfig($workspace, $snapshot));
 
         return $drift;
     }
@@ -142,6 +152,52 @@ BASH;
                     key: 'workspace.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Workspace record for {$workspace->name} is missing required fields.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkFpmConfig(Workspace $workspace, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($workspace->name);
+
+        if (
+            $observed === null
+            || ($observed['path_exists'] ?? null) === false
+            || ($observed['php_fpm_available'] ?? null) === false
+        ) {
+            return [];
+        }
+
+        if (($observed['fpm_config_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.fpm_config_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Workspace {$workspace->name} PHP-FPM configuration is missing.",
+                    detail: [
+                        'expected' => $this->fpmPoolRenderer()->path($workspace),
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['fpm_config_matches'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.fpm_config_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} PHP-FPM configuration differs from gateway workspace intent.",
+                    detail: [
+                        'expected' => $this->fpmPoolRenderer()->path($workspace),
+                    ],
                 ),
             ];
         }
@@ -307,5 +363,10 @@ BASH;
         }
 
         return '/'.implode('/', $segments);
+    }
+
+    private function fpmPoolRenderer(): WorkspaceFpmPoolRenderer
+    {
+        return $this->fpmPoolRenderer ?? app(WorkspaceFpmPoolRenderer::class);
     }
 }

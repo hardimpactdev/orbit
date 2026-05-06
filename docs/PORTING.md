@@ -1724,8 +1724,9 @@ for the Saloon-based gateway transport pattern.
     completeness, parent-app eligibility, and effective PHP inheritance checks.
   - [x] Source path and parent-app path policy checks.
   - [x] PHP runtime availability checks.
-  - [ ] External workspace runtime artifact checks: PHP-FPM configuration,
-    runtime configuration, stale artifacts, and adoption hints.
+  - [x] PHP-FPM configuration presence and content checks.
+  - [ ] External workspace runtime artifact checks: runtime configuration, stale
+    artifacts, and adoption hints.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
