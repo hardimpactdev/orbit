@@ -465,12 +465,7 @@ final readonly class NodesProbe
         }
 
         try {
-            $runtimeBackendProbe = $this->runtimeBackendProbe
-                ?? ($this->remoteShell instanceof RemoteShell
-                    ? new RuntimeBackendProbe($this->remoteShell)
-                    : app(RuntimeBackendProbe::class));
-
-            $result = $runtimeBackendProbe->check($node);
+            $result = $this->runtimeBackendProbe()->check($node);
         } catch (Throwable $e) {
             return [
                 new DriftEntry(
@@ -502,6 +497,14 @@ final readonly class NodesProbe
         }
 
         return [];
+    }
+
+    private function runtimeBackendProbe(): RuntimeBackendProbe
+    {
+        return $this->runtimeBackendProbe
+            ?? ($this->remoteShell instanceof RemoteShell
+                ? new RuntimeBackendProbe($this->remoteShell)
+                : app(RuntimeBackendProbe::class));
     }
 
     /**
@@ -640,6 +643,24 @@ final readonly class NodesProbe
             }
         }
 
+        if ($node->role === 'app' && $node->status === 'active') {
+            try {
+                $runtimeBackend = $this->runtimeBackendProbe()->check($node);
+
+                $items['node.app_runtime_missing'] = [
+                    'available' => $runtimeBackend->available,
+                    'exit_code' => $runtimeBackend->exitCode,
+                    'output' => $runtimeBackend->output,
+                ];
+            } catch (Throwable $e) {
+                $items['node.app_runtime_missing'] = [
+                    'available' => false,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+
         if ($node->is_local) {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
@@ -707,6 +728,33 @@ final readonly class NodesProbe
                     detail: $wireGuardAddressMismatch,
                 );
             }
+        }
+
+        $appRuntimeMissing = $snapshot->get('node.app_runtime_missing');
+
+        if ($appRuntimeMissing === null) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.app_runtime_missing',
+                action: AdoptAction::Skipped,
+                summary: 'App runtime readiness adoption skipped.',
+            );
+        } elseif (($appRuntimeMissing['available'] ?? null) === true) {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.app_runtime_missing',
+                action: AdoptAction::Updated,
+                summary: "Verified app runtime readiness for {$node->name}.",
+                detail: $appRuntimeMissing,
+            );
+        } else {
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: 'node.app_runtime_missing',
+                action: AdoptAction::Conflict,
+                summary: "App runtime readiness for {$node->name} cannot be adopted because the runtime is unavailable.",
+                detail: $appRuntimeMissing,
+            );
         }
 
         $platformRecordMismatch = $snapshot->get('node.platform_record_mismatch');

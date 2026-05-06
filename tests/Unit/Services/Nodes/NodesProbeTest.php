@@ -1118,15 +1118,14 @@ describe('reconciliation', function (): void {
 });
 
 describe('adoption', function (): void {
-    it('returns empty adopt snapshot for non-local nodes', function (): void {
+    it('returns empty adopt snapshot when no adoptable node reality is detected', function (): void {
         $node = Node::create([
             'name' => 'test',
-            'role' => 'app',
+            'role' => 'control',
             'host' => '10.0.0.1',
             'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
-            'environment' => 'development',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.5',
         ]);
@@ -1215,6 +1214,62 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.wireguard_address_mismatch'))->toBeNull();
     });
 
+    it('snapshots available app runtime readiness for adopt', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $snapshot = $probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.app_runtime_missing'))->toBe([
+            'available' => true,
+            'exit_code' => 0,
+            'output' => 'supervisor OK',
+        ]);
+        expect($remoteShell->scripts)->toBe([
+            'command -v supervisorctl >/dev/null 2>&1 && supervisorctl status >/dev/null 2>&1',
+        ]);
+    });
+
+    it('snapshots unavailable app runtime readiness for adopt', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $snapshot = $probe->snapshotForAdopt($node);
+
+        expect($snapshot->get('node.app_runtime_missing'))->toBe([
+            'available' => false,
+            'exit_code' => 127,
+            'output' => 'missing supervisorctl',
+        ]);
+    });
+
     it('returns skipped results for adoptable keys', function (): void {
         $node = Node::create([
             'name' => 'test',
@@ -1230,11 +1285,12 @@ describe('adoption', function (): void {
 
         $results = $this->probe->adopt($node, new ProbeSnapshot([]));
 
-        expect($results)->toHaveCount(3);
+        expect($results)->toHaveCount(4);
 
         $keys = array_map(fn ($r) => $r->key, $results);
         expect($keys)->toContain('node.wireguard_peer_extra');
         expect($keys)->toContain('node.wireguard_address_mismatch');
+        expect($keys)->toContain('node.app_runtime_missing');
         expect($keys)->toContain('node.platform_record_mismatch');
 
         foreach ($results as $result) {
@@ -1304,6 +1360,64 @@ describe('adoption', function (): void {
             'allowed_ips' => '10.6.0.8/32',
         ]);
         expect($node->refresh()->wireguard_address)->toBe('10.6.0.8');
+    });
+
+    it('adopts available app runtime readiness', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
+        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.app_runtime_missing'));
+
+        expect($runtime)->toHaveCount(1);
+        expect($runtime[0]->action)->toBe(AdoptAction::Updated);
+        expect($runtime[0]->detail)->toBe([
+            'available' => true,
+            'exit_code' => 0,
+            'output' => 'supervisor OK',
+        ]);
+    });
+
+    it('conflicts unavailable app runtime readiness during adopt', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
+        ]));
+
+        $node = Node::create([
+            'name' => 'test',
+            'role' => 'app',
+            'host' => '10.0.0.1',
+            'ssh_user' => 'user',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'environment' => 'development',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
+        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.app_runtime_missing'));
+
+        expect($runtime)->toHaveCount(1);
+        expect($runtime[0]->action)->toBe(AdoptAction::Conflict);
+        expect($runtime[0]->detail)->toBe([
+            'available' => false,
+            'exit_code' => 127,
+            'output' => 'missing supervisorctl',
+        ]);
     });
 });
 

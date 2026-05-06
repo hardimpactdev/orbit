@@ -204,12 +204,12 @@ Detail file for the node command family. Top-level command status lives in
     - [x] Gateway convergence path.
     - [!] Gateway adoption path is blocked on node-family adoption probes.
       Local platform record adoption and unambiguous WireGuard address adoption
-      are implemented, but `node:new` still needs compatible gateway/app host
-      adoption probes for missing/extra WireGuard identity and runtime readiness
-      before it can safely adopt already-provisioned hosts. Next concrete
-      action: implement runtime-readiness adoption snapshots/results, decide
+      are implemented, and app runtime readiness now produces adoption
+      verification/conflict results. `node:new` still needs a compatible
+      gateway/app host boundary for missing/extra WireGuard identity before it
+      can safely adopt already-provisioned hosts. Next concrete action: decide
       the missing/extra peer adoption boundary, then wire `node:new` adoption
-      through that verified result.
+      through the verified node-family adoption result.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:
