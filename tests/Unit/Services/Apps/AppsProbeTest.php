@@ -47,7 +47,7 @@ describe('source path and document root reality', function (): void {
                 'path' => '/home/orbit/apps/docs',
                 'document_root' => 'public',
             ]);
-        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\n");
+        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\n");
 
         $snapshot = (new AppsProbe($shell))->introspect($app);
 
@@ -55,6 +55,7 @@ describe('source path and document root reality', function (): void {
             'path_exists' => true,
             'root_exists' => true,
             'root_inside_path' => true,
+            'php_fpm_available' => true,
         ]);
         expect($shell->scripts[0])->toContain('ORBIT_APP_SPEC');
         expect($shell->nodes[0]->is($node))->toBeTrue();
@@ -108,6 +109,49 @@ describe('source path and document root reality', function (): void {
         $drift = (new AppsProbe)->diff($app, new ProbeSnapshot([]));
 
         expect(issue($drift, 'app.root_outside_path')?->kind)->toBe(DriftKind::Divergent);
+    });
+});
+
+describe('PHP runtime reality', function (): void {
+    it('detects unavailable PHP-FPM runtimes', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'php_version' => '8.5',
+            ]);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => [
+                'path_exists' => true,
+                'root_exists' => true,
+                'root_inside_path' => true,
+                'php_fpm_available' => false,
+            ],
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.php_version_unavailable')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('does not report PHP runtime drift when the source path is missing', function (): void {
+        $node = appNode();
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+
+        $snapshot = new ProbeSnapshot([
+            'docs' => [
+                'path_exists' => false,
+                'root_exists' => false,
+                'root_inside_path' => true,
+                'php_fpm_available' => false,
+            ],
+        ]);
+
+        $drift = (new AppsProbe)->diff($app, $snapshot);
+
+        expect(issue($drift, 'app.php_version_unavailable'))->toBeNull();
     });
 });
 

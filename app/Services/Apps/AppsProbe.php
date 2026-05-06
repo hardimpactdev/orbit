@@ -41,6 +41,7 @@ final readonly class AppsProbe
             'name' => $app->name,
             'path' => $app->path,
             'document_root' => $app->document_root,
+            'php_version' => $app->php_version,
         ];
 
         $script = <<<'BASH'
@@ -58,8 +59,17 @@ $rootPath = $root === '' ? $path : $path.'/'.$root;
 
 $rootExists = is_dir($rootPath) ? '1' : '0';
 $rootInsidePath = str_starts_with(normalize_path($rootPath), normalize_path($path).'/') || normalize_path($rootPath) === normalize_path($path) ? '1' : '0';
+$phpVersion = (string) ($spec['php_version'] ?? '');
+$phpFpmAvailable = (
+    is_executable("/usr/sbin/php-fpm{$phpVersion}")
+    || command_exists("php-fpm{$phpVersion}")
+    || command_exists("php{$phpVersion}-fpm")
+    || command_exists('php-fpm')
+)
+        ? '1'
+        : '0';
 
-printf("%s\t%s\t%s\t%s\n", $name, $pathExists, $rootExists, $rootInsidePath);
+printf("%s\t%s\t%s\t%s\t%s\n", $name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable);
 
 function normalize_path(string $path): string
 {
@@ -81,6 +91,15 @@ function normalize_path(string $path): string
 
     return '/'.implode('/', $segments);
 }
+
+function command_exists(string $command): bool
+{
+    $escapedCommand = escapeshellarg($command);
+
+    exec("command -v {$escapedCommand} >/dev/null 2>&1", $output, $exitCode);
+
+    return $exitCode === 0;
+}
 PHP
 BASH;
 
@@ -96,18 +115,19 @@ BASH;
                 continue;
             }
 
-            $parts = explode("\t", $line, 4);
+            $parts = explode("\t", $line, 5);
 
-            if (count($parts) !== 4) {
+            if (count($parts) !== 5) {
                 continue;
             }
 
-            [$name, $pathExists, $rootExists, $rootInsidePath] = $parts;
+            [$name, $pathExists, $rootExists, $rootInsidePath, $phpFpmAvailable] = $parts;
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
                 'root_exists' => $rootExists === '1',
                 'root_inside_path' => $rootInsidePath === '1',
+                'php_fpm_available' => $phpFpmAvailable === '1',
             ];
         }
 
@@ -125,6 +145,7 @@ BASH;
         $drift = array_merge($drift, $this->checkOwnerNode($app));
         $drift = array_merge($drift, $this->checkSourcePath($app, $snapshot));
         $drift = array_merge($drift, $this->checkDocumentRoot($app, $snapshot));
+        $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($app));
 
         return $drift;
@@ -155,6 +176,34 @@ BASH;
                     key: 'app.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "App record for {$app->name} is missing required fields.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkPhpRuntime(App $app, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($app->name);
+
+        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
+            return [];
+        }
+
+        if (($observed['php_fpm_available'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'app.php_version_unavailable',
+                    kind: DriftKind::Missing,
+                    summary: "PHP {$app->php_version} FPM is not available for app {$app->name} on the owning app node.",
+                    detail: [
+                        'php_version' => $app->php_version,
+                    ],
                 ),
             ];
         }
