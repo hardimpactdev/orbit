@@ -89,6 +89,30 @@ abstract class GatewayRequest extends SaloonRequest
     }
 
     /**
+     * Strip the gateway success envelope and return the raw meta array.
+     *
+     * @return array<string, mixed>
+     */
+    protected function unwrapMeta(Response $response): array
+    {
+        $body = $this->decodeBodyOrNull($response);
+
+        if (! is_array($body) || ! array_key_exists('success', $body)) {
+            return [];
+        }
+
+        $success = $body['success'];
+
+        if (! is_array($success)) {
+            return [];
+        }
+
+        $meta = $success['meta'] ?? [];
+
+        return is_array($meta) ? $meta : [];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function decodeBodyOrNull(Response $response): ?array

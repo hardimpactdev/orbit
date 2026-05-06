@@ -1348,6 +1348,15 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     gateway-client coverage were already present from the scheduler foundation
     slices.
 - [ ] Port schedule add/list/show/remove commands.
+  - [x] `schedule:list` and `schedule:show` gateway-local registry reads,
+    typed gateway API forwarding, app/node filter validation, latest durable
+    run summary projection, human/JSON renderers, read-only boundary tests, and
+    focused Pest coverage.
+  - [ ] `schedule:add` gateway-owned intent write, execution-source validation,
+    scheduler reachability warning/error handling, human/JSON renderers, and
+    focused Pest coverage.
+  - [ ] `schedule:remove` gateway-owned destructive intent removal,
+    destructive consent, human/JSON renderers, and focused Pest coverage.
 - [ ] Port schedule run command (manual fire / on-demand tick).
 - [ ] Port schedule logs command against scheduler-captured stdout/stderr.
 - [ ] Port `orbit-scheduler` Artisan-command daemon and Supervisor program

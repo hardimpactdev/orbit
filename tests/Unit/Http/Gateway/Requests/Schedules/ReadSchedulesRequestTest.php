@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Http\Gateway\Requests\Schedules;
+
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
+use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
+use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
+use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
+use App\Models\LocalGatewaySettings;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Saloon\Enums\Method;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
+use Tests\TestCase;
+
+uses(TestCase::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $settings = LocalGatewaySettings::current();
+    $settings->gateway_url = 'https://10.6.0.2';
+    $settings->ca_pem_path = '/path/to/ca.pem';
+    $settings->save();
+});
+
+it('resolves schedule read endpoints and query filters', function (): void {
+    $list = new ListSchedulesRequest(app: 'docs', node: null);
+    $show = new ShowScheduleRequest(name: 'laravel-scheduler', app: 'docs', node: null);
+
+    expect($list->resolveEndpoint())->toBe('/api/schedules');
+    expect($list->getMethod())->toBe(Method::GET);
+    expect($list->query()->all())->toBe(['app' => 'docs']);
+    expect($show->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
+    expect($show->getMethod())->toBe(Method::GET);
+    expect($show->query()->all())->toBe(['app' => 'docs']);
+});
+
+it('returns schedule list and show response DTOs with meta', function (): void {
+    $mock = new MockClient([
+        ListSchedulesRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'schedules' => [
+                        ['name' => 'laravel-scheduler'],
+                    ],
+                ],
+                'meta' => ['app' => 'docs', 'node' => null, 'count' => 1],
+            ],
+        ], 200),
+        ShowScheduleRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'schedule' => ['name' => 'laravel-scheduler'],
+                ],
+                'meta' => ['app' => 'docs', 'node' => null],
+            ],
+        ], 200),
+    ]);
+
+    $connector = app(GatewayConnector::class);
+    $connector->withMockClient($mock);
+
+    $listDto = $connector->send(new ListSchedulesRequest(app: 'docs'))->dto();
+    $showDto = $connector->send(new ShowScheduleRequest(name: 'laravel-scheduler', app: 'docs'))->dto();
+
+    expect($listDto)->toBeInstanceOf(ScheduleListResponse::class);
+    expect($listDto->schedules)->toBe([['name' => 'laravel-scheduler']]);
+    expect($listDto->meta)->toBe(['app' => 'docs', 'node' => null, 'count' => 1]);
+    expect($showDto)->toBeInstanceOf(ScheduleShowResponse::class);
+    expect($showDto->schedule)->toBe(['name' => 'laravel-scheduler']);
+    expect($showDto->meta)->toBe(['app' => 'docs', 'node' => null]);
+});
