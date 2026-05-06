@@ -1704,7 +1704,12 @@ for the Saloon-based gateway transport pattern.
       - [x] missing development app-node TLD intent.
       - [ ] local TLD reality / DNS mapping reality.
     - [ ] PHP default verification.
-- [ ] Port app doctor contracts and checks.
+- [~] Port app doctor contracts and checks.
+  - [x] Registry-only `AppsProbe` foundation: app record completeness,
+    owning-node eligibility, and app agent IDE default checks.
+  - [ ] External app reality checks: source path, document root, PHP runtime,
+    PHP-FPM configuration, runtime configuration, production policy,
+    deployment health, and stale app artifacts.
 - [ ] Port workspace doctor contracts and checks.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
