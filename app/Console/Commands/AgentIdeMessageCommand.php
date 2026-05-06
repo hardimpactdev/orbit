@@ -41,13 +41,24 @@ class AgentIdeMessageCommand extends Command
             );
         }
 
-        $message = $this->resolveMessage();
+        try {
+            $message = $this->resolveMessage();
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'validation_failed',
+                message: $e->getMessage(),
+                meta: $e->errorMeta(),
+            );
+        }
 
         if ($message === null) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: 'Message is required.',
-                meta: ['field' => 'message'],
+                meta: [
+                    'field' => 'message',
+                    'reason' => 'missing_required_input',
+                ],
             );
         }
 
@@ -153,7 +164,33 @@ class AgentIdeMessageCommand extends Command
     private function resolveMessage(): ?string
     {
         if ($this->option('stdin') === true) {
-            return null;
+            $message = $this->argument('message');
+
+            if (is_string($message) && trim($message) !== '') {
+                throw new GatewayApiException(
+                    message: 'Pass either [message] or --stdin, not both.',
+                    errorCode: 'validation_failed',
+                    errorMeta: [
+                        'field' => 'message',
+                        'reason' => 'conflicting_message_inputs',
+                    ],
+                );
+            }
+
+            $stream = method_exists($this->input, 'getStream') ? $this->input->getStream() : null;
+            $body = is_resource($stream) ? stream_get_contents($stream) : stream_get_contents(STDIN);
+
+            if (! is_string($body)) {
+                return null;
+            }
+
+            $body = preg_replace("/\r?\n\z/", '', $body);
+
+            if (! is_string($body) || trim($body) === '') {
+                return null;
+            }
+
+            return $body;
         }
 
         $message = $this->argument('message');

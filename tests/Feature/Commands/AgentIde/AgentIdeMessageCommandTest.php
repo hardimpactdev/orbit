@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\AgentIdeMessageCommand;
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Models\App;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 uses(RefreshDatabase::class);
 
@@ -107,6 +109,80 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
             'app' => 'docs',
             'workspace' => null,
             'node' => 'app-1',
+        ]);
+});
+
+it('delivers a stdin message to an explicit app target', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'status' => 'active',
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $command = app(AgentIdeMessageCommand::class);
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+    $tester->setInputs(["Ship the docs\nwith context"]);
+
+    $exitCode = $tester->execute([
+        '--stdin' => true,
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode($tester->getDisplay(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['delivery']['message_bytes'])->toBe(26)
+        ->and($adapter->deliveries[0]['message'])->toBe("Ship the docs\nwith context");
+});
+
+it('fails when stdin is combined with a positional message', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $command = app(AgentIdeMessageCommand::class);
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+    $tester->setInputs(['from stdin']);
+
+    $exitCode = $tester->execute([
+        'message' => 'from argument',
+        '--stdin' => true,
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode($tester->getDisplay(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($payload)->toMatchArray([
+            'error' => [
+                'code' => 'validation_failed',
+                'message' => 'Pass either [message] or --stdin, not both.',
+                'meta' => [
+                    'field' => 'message',
+                    'reason' => 'conflicting_message_inputs',
+                ],
+            ],
         ]);
 });
 
