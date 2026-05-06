@@ -1875,8 +1875,14 @@ for the Saloon-based gateway transport pattern.
     - [x] Run-history hook drift and repair are ported for
       `schedule.run_history_hook_missing` and
       `schedule.run_history_hook_mismatch`.
-    - Next concrete action: wire the resident `orbit-scheduler` tick to execute
-      due schedules through the rendered hook material.
+    - [x] Resident `orbit-scheduler` tick execution: local scheduler ticks
+      record heartbeat/registry sync state, evaluate due local schedules from
+      gateway intent, claim local overlap locks, execute the rendered
+      run-history hook material through the local `RemoteShell` edge, and
+      write/report durable run history.
+    - Next concrete action: add gateway-to-node schedule registry sync for
+      non-gateway scheduler daemons so app-node schedulers can refresh intent
+      directly from the gateway before each tick.
 - [x] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
   - Current pattern: family probes emit `DriftEntry`, `DoctorReportRunner`
