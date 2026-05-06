@@ -95,6 +95,30 @@ describe('tool:reload command contract', function (): void {
             ]);
     });
 
+    it('prompts for a reload-capable tool when omitted in interactive mode', function (): void {
+        createToolReloadLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'supervisor',
+            'expected_state' => 'running',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'gh',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolReloadRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $this->artisan('tool:reload --node=app-1')
+            ->expectsQuestion('Which tool should be reloaded?', 'supervisor on app-1')
+            ->expectsOutput('Reloaded supervisor on app-1.')
+            ->assertExitCode(0);
+
+        expect($shell->scripts)->toBe(['sudo supervisorctl reread']);
+    });
+
     it('forwards non-gateway callers through the typed gateway request', function (): void {
         createToolReloadLocalNode('control');
 

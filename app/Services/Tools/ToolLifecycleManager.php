@@ -193,12 +193,6 @@ final readonly class ToolLifecycleManager
 
     private function repairCommand(NodeTool $tool, string $key): ?string
     {
-        $metadata = $this->catalog->probeMetadata($tool->name);
-        $commands = is_array($metadata) && is_array($metadata['repair_commands'] ?? null)
-            ? $metadata['repair_commands']
-            : [];
-        $command = $commands[$key] ?? null;
-
-        return is_string($command) && $command !== '' ? $command : null;
+        return $this->catalog->repairCommand($tool->name, $key);
     }
 }

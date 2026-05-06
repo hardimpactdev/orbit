@@ -38,6 +38,22 @@ final readonly class ToolCatalog
         return in_array($tool, self::SUPPORTED, true);
     }
 
+    public function hasRepairCommand(string $tool, string $key): bool
+    {
+        return $this->repairCommand($tool, $key) !== null;
+    }
+
+    public function repairCommand(string $tool, string $key): ?string
+    {
+        $metadata = $this->probeMetadata($tool);
+        $commands = is_array($metadata) && is_array($metadata['repair_commands'] ?? null)
+            ? $metadata['repair_commands']
+            : [];
+        $command = $commands[$key] ?? null;
+
+        return is_string($command) && $command !== '' ? $command : null;
+    }
+
     /**
      * @return array{
      *     binary: string,

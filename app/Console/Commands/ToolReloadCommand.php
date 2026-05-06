@@ -9,7 +9,10 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ReloadToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
 use App\Models\Node;
+use App\Models\NodeTool;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
+use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,20 +27,30 @@ use Throwable;
 #[Description('Reload a managed tool')]
 class ToolReloadCommand extends Command
 {
-    public function handle(ToolLifecycleManager $lifecycle): int
+    public function handle(ToolLifecycleManager $lifecycle, ToolRegistry $registry, ToolCatalog $catalog): int
     {
         $tool = $this->stringArgument('tool');
-
-        if ($tool === null) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'A tool is required in non-interactive mode.',
-                meta: ['field' => 'tool'],
-            );
-        }
-
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
+
+        if ($tool === null) {
+            if (! $this->isInteractiveInput()) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'A tool is required in non-interactive mode.',
+                    meta: ['field' => 'tool'],
+                );
+            }
+
+            $selection = $this->promptForReloadableTool($registry, $catalog, node: $node, app: $app);
+
+            if (is_int($selection)) {
+                return $selection;
+            }
+
+            $tool = $selection['tool'];
+            $node = $selection['node'];
+        }
 
         $result = $this->isGatewayCaller()
             ? $lifecycle->reload($tool, node: $node, app: $app)
@@ -68,6 +81,57 @@ class ToolReloadCommand extends Command
         $this->line("Reloaded {$result['name']} on {$result['node']}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{tool: string, node: string}|int
+     */
+    private function promptForReloadableTool(ToolRegistry $registry, ToolCatalog $catalog, ?string $node, ?string $app): array|int
+    {
+        $validation = $registry->validateFilters(node: $node, app: $app);
+
+        if ($validation instanceof ToolRegistryFailure) {
+            return $this->failCommand(
+                code: $validation->code,
+                message: $validation->message,
+                meta: $validation->meta,
+            );
+        }
+
+        $choices = [];
+
+        foreach ($registry->list(node: $node, app: $app) as $tool) {
+            if (! $tool instanceof NodeTool || ! $catalog->hasRepairCommand($tool->name, 'lifecycle_reloaded')) {
+                continue;
+            }
+
+            $tool->loadMissing('node');
+
+            if (! $tool->node instanceof Node) {
+                continue;
+            }
+
+            $choices["{$tool->name} on {$tool->node->name}"] = [
+                'tool' => $tool->name,
+                'node' => $tool->node->name,
+            ];
+        }
+
+        if ($choices === []) {
+            return $this->failCommand(
+                code: 'tool.unsupported_action',
+                message: 'No reload-capable tools are visible for the selected target.',
+                meta: ['action' => 'reload'],
+            );
+        }
+
+        $answer = (string) $this->choice('Which tool should be reloaded?', array_keys($choices));
+
+        return $choices[$answer] ?? $this->failCommand(
+            code: 'validation_failed',
+            message: 'Selected tool is invalid.',
+            meta: ['field' => 'tool'],
+        );
     }
 
     /**
@@ -170,5 +234,10 @@ class ToolReloadCommand extends Command
     private function wantsJson(): bool
     {
         return (bool) $this->option('json');
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
     }
 }
