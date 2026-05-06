@@ -13,12 +13,14 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use InvalidArgumentException;
 
 final readonly class ProcessesProbe
 {
     public function __construct(
         private ?SupervisorProgramRenderer $supervisorProgramRenderer = null,
+        private ?RuntimeBackendProbe $runtimeBackendProbe = null,
     ) {}
 
     public function key(): string
@@ -33,7 +35,21 @@ final readonly class ProcessesProbe
 
     public function introspect(Process $process): ProbeSnapshot
     {
-        return new ProbeSnapshot([]);
+        $process->loadMissing('app.node');
+
+        if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        $probe = $this->runtimeBackendProbe()->check($process->app->node);
+
+        return new ProbeSnapshot([
+            $process->name => [
+                'runtime_backend_available' => $probe->available,
+                'runtime_backend_exit_code' => $probe->exitCode,
+                'runtime_backend_output' => $probe->output,
+            ],
+        ]);
     }
 
     /**
@@ -46,6 +62,7 @@ final readonly class ProcessesProbe
         $drift = array_merge($drift, $this->checkRecordCompleteness($process));
         $drift = array_merge($drift, $this->checkOwnerApp($process));
         $drift = array_merge($drift, $this->checkRuntimeContexts($process));
+        $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
 
         return $drift;
     }
@@ -122,6 +139,42 @@ final readonly class ProcessesProbe
     /**
      * @return list<DriftEntry>
      */
+    private function checkRuntimeBackend(Process $process, ProbeSnapshot $snapshot): array
+    {
+        $process->loadMissing('app.node');
+
+        if (! $process->app instanceof App || ! $process->app->node instanceof Node) {
+            return [];
+        }
+
+        $observed = $snapshot->get($process->name);
+
+        if ($observed === null) {
+            return [];
+        }
+
+        if (($observed['runtime_backend_available'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'process.runtime_backend_unavailable',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Supervisor runtime backend is unavailable for process {$process->name} on app node {$process->app->node->name}.",
+                    detail: [
+                        'node' => $process->app->node->name,
+                        'exit_code' => $observed['runtime_backend_exit_code'] ?? null,
+                        'output' => $observed['runtime_backend_output'] ?? '',
+                    ],
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkRuntimeContexts(Process $process): array
     {
         $process->loadMissing('app.node', 'app.workspaces');
@@ -180,5 +233,10 @@ final readonly class ProcessesProbe
     private function supervisorProgramRenderer(): SupervisorProgramRenderer
     {
         return $this->supervisorProgramRenderer ?? app(SupervisorProgramRenderer::class);
+    }
+
+    private function runtimeBackendProbe(): RuntimeBackendProbe
+    {
+        return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
     }
 }
