@@ -22,8 +22,9 @@ class SendAgentIdeMessageApiRequest extends FormRequest
     {
         return [
             'message' => ['required', 'string', 'filled'],
-            'app' => ['required_without:workspace', 'string', 'filled', 'prohibits:workspace'],
-            'workspace' => ['required_without:app', 'string', 'filled'],
+            'app' => ['required_without_all:workspace,path', 'string', 'filled', 'prohibits:workspace,path'],
+            'workspace' => ['required_without_all:app,path', 'string', 'filled', 'prohibits:path'],
+            'path' => ['required_without_all:app,workspace', 'string', 'filled'],
         ];
     }
 
@@ -48,6 +49,13 @@ class SendAgentIdeMessageApiRequest extends FormRequest
         $workspace = $this->validated('workspace');
 
         return is_string($workspace) ? trim($workspace) : null;
+    }
+
+    public function pathSelector(): ?string
+    {
+        $path = $this->validated('path');
+
+        return is_string($path) ? trim($path) : null;
     }
 
     #[\Override]

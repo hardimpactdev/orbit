@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -203,6 +204,116 @@ it('fails when the target workspace has no effective adapter', function (): void
             ],
         ])
         ->and($adapter->deliveries)->toBeEmpty();
+});
+
+it('infers a workspace target from the current directory on gateway callers', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $workspacePath = sys_get_temp_dir().'/orbit-agent-ide-workspace-cwd-'.bin2hex(random_bytes(4));
+    $childPath = "{$workspacePath}/nested";
+    File::ensureDirectoryExists($childPath);
+
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'path' => $workspacePath,
+        'agent_ide' => 'polyscope',
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $previousCwd = getcwd();
+    chdir($childPath);
+
+    try {
+        $exitCode = Artisan::call('agent-ide:message', [
+            'message' => 'Ship the docs',
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($previousCwd)) {
+            chdir($previousCwd);
+        }
+
+        File::deleteDirectory($workspacePath);
+    }
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['source'])->toBe('workspace')
+        ->and($payload['success']['data']['agent_ide']['target'])->toMatchArray([
+            'app' => 'docs',
+            'workspace' => 'feature-docs',
+        ])
+        ->and($adapter->deliveries)->toHaveCount(1);
+});
+
+it('infers an app target from the current directory on gateway callers', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+    ]);
+
+    $appPath = sys_get_temp_dir().'/orbit-agent-ide-app-cwd-'.bin2hex(random_bytes(4));
+    $childPath = "{$appPath}/current";
+    File::ensureDirectoryExists($childPath);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => $appPath,
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $previousCwd = getcwd();
+    chdir($childPath);
+
+    try {
+        $exitCode = Artisan::call('agent-ide:message', [
+            'message' => 'Ship the docs',
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($previousCwd)) {
+            chdir($previousCwd);
+        }
+
+        File::deleteDirectory($appPath);
+    }
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['target'])->toMatchArray([
+            'app' => 'docs',
+            'workspace' => null,
+        ])
+        ->and($adapter->deliveries)->toHaveCount(1);
 });
 
 it('fails when the target app has no effective adapter', function (): void {
@@ -521,4 +632,71 @@ it('forwards configured workspace targets through the typed gateway request', fu
 
     $mockClient->assertSent(fn (SendAgentIdeMessageRequest $request): bool => $request->workspace === 'feature-docs'
         && $request->app === null);
+});
+
+it('forwards current working directory context through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $directory = sys_get_temp_dir().'/orbit-agent-ide-forward-cwd-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($directory);
+    $expectedPath = realpath($directory) ?: $directory;
+
+    $mockClient = MockClient::global([
+        SendAgentIdeMessageRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'agent_ide' => [
+                        'adapter' => 'opencode',
+                        'source' => 'workspace',
+                        'target' => [
+                            'app' => 'docs',
+                            'workspace' => 'feature-docs',
+                            'node' => 'app-1',
+                        ],
+                        'session' => [
+                            'id' => 'sess_cwd',
+                            'status' => 'active',
+                        ],
+                        'delivery' => [
+                            'status' => 'sent',
+                            'message_bytes' => 13,
+                            'input' => 'argument',
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $previousCwd = getcwd();
+    chdir($directory);
+
+    try {
+        $exitCode = Artisan::call('agent-ide:message', [
+            'message' => 'Ship the docs',
+            '--json' => true,
+        ]);
+    } finally {
+        if (is_string($previousCwd)) {
+            chdir($previousCwd);
+        }
+
+        File::deleteDirectory($directory);
+    }
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['target']['workspace'])->toBe('feature-docs');
+
+    $mockClient->assertSent(fn (SendAgentIdeMessageRequest $request): bool => $request->path === $expectedPath);
 });

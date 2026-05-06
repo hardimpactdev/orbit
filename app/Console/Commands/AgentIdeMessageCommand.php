@@ -53,6 +53,7 @@ class AgentIdeMessageCommand extends Command
 
         $appSelector = $this->stringOption('app');
         $workspaceSelector = $this->stringOption('workspace');
+        $pathSelector = null;
 
         if ($appSelector !== null && $workspaceSelector !== null) {
             return $this->failCommand(
@@ -63,21 +64,21 @@ class AgentIdeMessageCommand extends Command
         }
 
         if ($appSelector === null && $workspaceSelector === null) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
-                meta: ['field' => 'target'],
-            );
+            $pathSelector = realpath((string) getcwd()) ?: (string) getcwd();
         }
 
         if ($callerRole !== 'gateway') {
-            return $this->forwardMessage($message, $appSelector, $workspaceSelector);
+            return $this->forwardMessage($message, $appSelector, $workspaceSelector, $pathSelector);
         }
 
         try {
-            $data = $workspaceSelector !== null
-                ? $delivery->deliverToWorkspace($workspaceSelector, $message)
-                : $delivery->deliverToApp((string) $appSelector, $message);
+            if ($pathSelector !== null) {
+                $data = $delivery->deliverToPath($pathSelector, $message);
+            } elseif ($workspaceSelector !== null) {
+                $data = $delivery->deliverToWorkspace($workspaceSelector, $message);
+            } else {
+                $data = $delivery->deliverToApp((string) $appSelector, $message);
+            }
 
             return $this->successCommand($data);
         } catch (GatewayApiException $e) {
@@ -89,7 +90,7 @@ class AgentIdeMessageCommand extends Command
         }
     }
 
-    private function forwardMessage(string $message, ?string $app, ?string $workspace): int
+    private function forwardMessage(string $message, ?string $app, ?string $workspace, ?string $path): int
     {
         if (! $this->hasConfiguredGateway()) {
             return $this->failCommand(
@@ -102,7 +103,7 @@ class AgentIdeMessageCommand extends Command
         try {
             /** @var AgentIdeMessageResponse $dto */
             $dto = app(GatewayConnector::class)
-                ->send(new SendAgentIdeMessageRequest($message, $app, $workspace))
+                ->send(new SendAgentIdeMessageRequest($message, $app, $workspace, $path))
                 ->dto();
         } catch (GatewayApiException $e) {
             return $this->failCommand(

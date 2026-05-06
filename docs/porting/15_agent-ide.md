@@ -39,8 +39,11 @@ transports remain open.
     forwarding, API authorization, workspace-level adapter overrides including
     `none`, and app/node inherited target metadata are covered for
     `--workspace=<workspace>`.
-  - [!] Current-directory target inference, stdin input, human progress-tree
-    rendering, adapter delivery diagnostics under `error.data`, activity
-    logging for the API endpoint, and real core adapter transports remain
-    unported. Next concrete action: add current-directory app/workspace target
-    inference for gateway and forwarded callers with focused Pest coverage.
+  - [x] Current-directory target inference resolves workspace paths before app
+    paths on gateway callers and forwards normalized cwd paths from configured
+    non-gateway callers to the gateway API for authorization and delivery.
+  - [!] Stdin input, human progress-tree rendering, adapter delivery
+    diagnostics under `error.data`, activity logging for the API endpoint, and
+    real core adapter transports remain unported. Next concrete action: add
+    `--stdin` input support with documented conflict validation and focused
+    Pest coverage.

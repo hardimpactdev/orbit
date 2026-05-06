@@ -21,6 +21,7 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
         public readonly string $message,
         public readonly ?string $app = null,
         public readonly ?string $workspace = null,
+        public readonly ?string $path = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -37,6 +38,7 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
             'message' => $this->message,
             'app' => $this->app,
             'workspace' => $this->workspace,
+            'path' => $this->path,
         ], fn (?string $value): bool => $value !== null && $value !== '');
     }
 

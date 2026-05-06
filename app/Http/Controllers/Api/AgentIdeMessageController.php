@@ -40,6 +40,12 @@ final readonly class AgentIdeMessageController
             return $this->sendWorkspaceMessage($request, $caller, $workspaceSelector);
         }
 
+        $pathSelector = $request->pathSelector();
+
+        if ($pathSelector !== null) {
+            return $this->sendPathMessage($request, $caller, $pathSelector);
+        }
+
         $app = $this->resolveApp($request->appSelector());
 
         if (! $app instanceof App) {
@@ -51,6 +57,33 @@ final readonly class AgentIdeMessageController
             );
         }
 
+        return $this->sendAppMessage($request, $caller, $app);
+    }
+
+    private function sendPathMessage(SendAgentIdeMessageApiRequest $request, Node $caller, string $path): JsonResponse
+    {
+        $workspace = $this->resolveWorkspaceFromPath($path);
+
+        if ($workspace instanceof Workspace) {
+            return $this->sendWorkspaceMessage($request, $caller, $workspace->name);
+        }
+
+        $app = $this->resolveAppFromPath($path);
+
+        if ($app instanceof App) {
+            return $this->sendAppMessage($request, $caller, $app);
+        }
+
+        return $this->error(
+            code: 'validation_failed',
+            message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
+            meta: ['field' => 'target'],
+            status: 422,
+        );
+    }
+
+    private function sendAppMessage(SendAgentIdeMessageApiRequest $request, Node $caller, App $app): JsonResponse
+    {
         $app->loadMissing('node');
 
         if (! $app->node instanceof Node || ! $this->callerCanMessageApp($caller, $app)) {
@@ -147,6 +180,34 @@ final readonly class AgentIdeMessageController
             ->get();
 
         return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    private function resolveWorkspaceFromPath(string $path): ?Workspace
+    {
+        $normalizedPath = rtrim(realpath($path) ?: $path, '/');
+
+        return Workspace::query()
+            ->with('app.node')
+            ->get()
+            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
+                $workspacePath = rtrim(realpath($workspace->path) ?: $workspace->path, '/');
+
+                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
+            });
+    }
+
+    private function resolveAppFromPath(string $path): ?App
+    {
+        $normalizedPath = rtrim(realpath($path) ?: $path, '/');
+
+        return App::query()
+            ->with('node')
+            ->get()
+            ->first(function (App $app) use ($normalizedPath): bool {
+                $appPath = rtrim(realpath($app->path) ?: $app->path, '/');
+
+                return $normalizedPath === $appPath || str_starts_with($normalizedPath, "{$appPath}/");
+            });
     }
 
     private function callerCanMessageApp(Node $caller, App $app): bool

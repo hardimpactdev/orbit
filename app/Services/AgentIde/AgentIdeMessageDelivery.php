@@ -162,6 +162,30 @@ final readonly class AgentIdeMessageDelivery
         ];
     }
 
+    /**
+     * @return array{agent_ide: array<string, mixed>}
+     */
+    public function deliverToPath(string $path, string $message): array
+    {
+        $workspace = $this->resolveWorkspaceFromPath($path);
+
+        if ($workspace instanceof Workspace) {
+            return $this->deliverToWorkspace($workspace->name, $message);
+        }
+
+        $app = $this->resolveAppFromPath($path);
+
+        if ($app instanceof App) {
+            return $this->deliverToApp($app->name, $message);
+        }
+
+        throw new GatewayApiException(
+            message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
+            errorCode: 'validation_failed',
+            errorMeta: ['field' => 'target'],
+        );
+    }
+
     private function resolveApp(string $selector): ?App
     {
         return App::query()
@@ -180,6 +204,34 @@ final readonly class AgentIdeMessageDelivery
             ->get();
 
         return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    private function resolveWorkspaceFromPath(string $path): ?Workspace
+    {
+        $normalizedPath = rtrim(realpath($path) ?: $path, '/');
+
+        return Workspace::query()
+            ->with('app.node')
+            ->get()
+            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
+                $workspacePath = rtrim(realpath($workspace->path) ?: $workspace->path, '/');
+
+                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
+            });
+    }
+
+    private function resolveAppFromPath(string $path): ?App
+    {
+        $normalizedPath = rtrim(realpath($path) ?: $path, '/');
+
+        return App::query()
+            ->with('node')
+            ->get()
+            ->first(function (App $app) use ($normalizedPath): bool {
+                $appPath = rtrim(realpath($app->path) ?: $app->path, '/');
+
+                return $normalizedPath === $appPath || str_starts_with($normalizedPath, "{$appPath}/");
+            });
     }
 
     /**
