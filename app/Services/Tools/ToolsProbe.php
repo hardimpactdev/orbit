@@ -38,17 +38,30 @@ final readonly class ToolsProbe
             return new ProbeSnapshot([]);
         }
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, 'command -v "$ORBIT_TOOL_NAME"', [
+        $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+        $binary = $metadata['binary'] ?? $tool->name;
+        $versionCommand = $metadata['version_command'] ?? null;
+        $script = 'path=$(command -v "$ORBIT_TOOL_BINARY" 2>/dev/null || true); if [ -z "$path" ]; then exit 1; fi; version="";';
+
+        if (is_string($versionCommand) && $versionCommand !== '') {
+            $script .= ' version=$('.$versionCommand.' 2>/dev/null | head -n 1 || true);';
+        }
+
+        $script .= ' printf "%s\t%s\n" "$path" "$version"';
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
             'env' => [
-                'ORBIT_TOOL_NAME' => $tool->name,
+                'ORBIT_TOOL_BINARY' => $binary,
             ],
         ]);
+        $parts = explode("\t", trim($result->stdout), 2);
 
         return new ProbeSnapshot([
             $tool->name => [
                 'installed' => $result->successful(),
-                'path' => trim($result->stdout) !== '' ? trim($result->stdout) : null,
+                'path' => ($parts[0] ?? '') !== '' ? $parts[0] : null,
+                'version' => ($parts[1] ?? '') !== '' ? $parts[1] : null,
             ],
         ]);
     }
@@ -63,6 +76,7 @@ final readonly class ToolsProbe
             ...$this->checkNodeEligibility($tool),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
+            ...$this->checkVersionState($tool, $snapshot),
         ];
     }
 
@@ -170,6 +184,42 @@ final readonly class ToolsProbe
                 summary: "Tool {$tool->name} is missing on the target node.",
                 detail: [
                     'tool' => $tool->name,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkVersionState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        if ($tool->expected_version === null || $tool->expected_version === '') {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        $version = is_string($observed['version'] ?? null) ? $observed['version'] : null;
+
+        if ($version === null || str_starts_with($version, (string) $tool->expected_version)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.version_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool {$tool->name} version differs from gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'expected_version' => $tool->expected_version,
+                    'observed_version' => $version,
                 ],
             ),
         ];

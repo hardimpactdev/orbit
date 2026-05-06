@@ -78,6 +78,25 @@ describe('ToolsProbe', function (): void {
 
         expect($probe->diff($tool, $snapshot))->toBe([]);
     });
+
+    it('detects version drift when the catalog tracks versions', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_version' => '7.2',
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/redis-server\t6.0.16\n"));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.version_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.version_mismatch')?->detail)->toMatchArray([
+                'expected_version' => '7.2',
+                'observed_version' => '6.0.16',
+            ]);
+    });
 });
 
 final readonly class ToolsProbeRemoteShell implements RemoteShell
