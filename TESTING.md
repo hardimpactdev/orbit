@@ -377,12 +377,28 @@ machine setup.
 
 ### Docker Feature Topologies
 
-Docker is the default provider for `composer test:e2e`:
+Docker is the default provider for `composer test:e2e`. Once `.env.e2e` points
+at the standing Docker host pool and the runtime/topology images are prepared on
+those hosts, the ordinary feature-lane command is just:
+
+```bash
+composer test:e2e
+```
+
+`composer test:e2e` does not rebuild Docker images. On a fresh host pool, after
+Dockerfile or system dependency changes, or when remote images look stale, first
+refresh every configured Docker host:
+
+```bash
+ORBIT_E2E_DOCKER_HOST_SLOTS=sidecar1:2,sidecar2:2,beast:3 \
+composer e2e:prepare-docker-hosts -- --force control-gateway-dev-prod
+```
+
+For single-host local debugging, the lower-level equivalents are:
 
 ```bash
 composer e2e:prepare-docker-runtime -- --force
 composer e2e:prepare-docker-topology -- --force control-gateway-dev-prod
-composer test:e2e
 ```
 
 On this Mac, OrbStack provides the local Docker CLI and daemon. The active
