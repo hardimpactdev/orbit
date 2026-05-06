@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -20,6 +21,7 @@ final readonly class DoctorReportRunner
         private NodesProbe $nodesProbe,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
+        private FirewallRuleFixer $firewallRuleFixer,
     ) {}
 
     /**
@@ -38,6 +40,7 @@ final readonly class DoctorReportRunner
     {
         $selectedFamilies = $families === [] ? self::SUPPORTED_FAMILIES : $families;
         $issues = [];
+        $actions = [];
 
         foreach ($selectedFamilies as $family) {
             if ($family !== 'node') {
@@ -70,17 +73,31 @@ final readonly class DoctorReportRunner
         if (in_array('firewall_rule', $selectedFamilies, true)) {
             foreach (FirewallRule::query()->with('node')->get() as $rule) {
                 $snapshot = $this->firewallRuleProbe->introspect($rule);
-                $issues = [
-                    ...$issues,
-                    ...array_map(
-                        fn (DriftEntry $entry): array => $this->firewallIssuePayload($entry, $rule),
-                        $this->firewallRuleProbe->diff($rule, $snapshot),
-                    ),
-                ];
+
+                foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
+                    $action = $this->handleFirewallAction($mode, $rule, $entry);
+
+                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                        $actions[] = $action;
+
+                        continue;
+                    }
+
+                    $issue = $this->firewallIssuePayload($entry, $rule);
+                    $issues[] = $issue;
+
+                    if ($action !== null) {
+                        $actions[] = $action;
+                    }
+                }
             }
         }
 
-        $actions = $this->actionsForUnsupportedMode($mode, $issues);
+        $actions = [
+            ...$actions,
+            ...$this->actionsForUnsupportedMode($mode, $issues, $actions),
+        ];
+        $summary = $this->summary($issues, $actions);
 
         return [
             'healthy' => $issues === [],
@@ -92,14 +109,7 @@ final readonly class DoctorReportRunner
                 'app' => null,
                 'workspace' => null,
             ],
-            'summary' => [
-                'issues' => count($issues),
-                'fixed' => 0,
-                'adopted' => 0,
-                'skipped' => count($actions),
-                'conflicts' => 0,
-                'failed' => 0,
-            ],
+            'summary' => $summary,
             'issues' => $issues,
             'actions' => $actions,
         ];
@@ -153,29 +163,93 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    private function handleFirewallAction(string $mode, FirewallRule $rule, DriftEntry $entry): ?array
+    {
+        if ($mode !== 'fix') {
+            return null;
+        }
+
+        try {
+            return $this->firewallRuleFixer->fix($rule, $entry);
+        } catch (\Throwable $e) {
+            $rule->loadMissing('node');
+
+            return [
+                'family' => $entry->family,
+                'node' => $rule->node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $issues
+     * @param  list<array<string, mixed>>  $existingActions
      * @return list<array<string, mixed>>
      */
-    private function actionsForUnsupportedMode(string $mode, array $issues): array
+    private function actionsForUnsupportedMode(string $mode, array $issues, array $existingActions): array
     {
         if ($mode === 'verify') {
             return [];
         }
 
-        return array_map(
-            fn (array $issue): array => [
-                'family' => $issue['family'] ?? null,
-                'node' => $issue['node'] ?? null,
-                'code' => $issue['key'] ?? null,
-                'key' => $issue['key'] ?? null,
-                'mode' => $mode,
-                'status' => 'skipped',
-                'summary' => "No {$mode} action is registered for ".(string) ($issue['key'] ?? 'this issue').'.',
-                'detail' => [
-                    'reason' => 'mode_not_supported',
-                ],
+        $actionKeys = array_filter(array_map(
+            fn (array $action): ?string => is_string($action['key'] ?? null) ? $action['key'] : null,
+            $existingActions,
+        ));
+
+        return array_values(array_map(
+            fn (array $issue): array => $this->unsupportedAction($mode, $issue),
+            array_filter(
+                $issues,
+                fn (array $issue): bool => ! in_array($issue['key'] ?? null, $actionKeys, true),
+            ),
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>
+     */
+    private function unsupportedAction(string $mode, array $issue): array
+    {
+        return [
+            'family' => $issue['family'] ?? null,
+            'node' => $issue['node'] ?? null,
+            'code' => $issue['key'] ?? null,
+            'key' => $issue['key'] ?? null,
+            'mode' => $mode,
+            'status' => 'skipped',
+            'summary' => "No {$mode} action is registered for ".(string) ($issue['key'] ?? 'this issue').'.',
+            'details' => [
+                'reason' => 'mode_not_supported',
             ],
-            $issues,
-        );
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @param  list<array<string, mixed>>  $actions
+     * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int}
+     */
+    private function summary(array $issues, array $actions): array
+    {
+        return [
+            'issues' => count($issues),
+            'fixed' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'fix' && ($action['status'] ?? null) === 'completed')),
+            'adopted' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'adopt' && ($action['status'] ?? null) === 'completed')),
+            'skipped' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'skipped')),
+            'conflicts' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'conflict')),
+            'failed' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'failed')),
+        ];
     }
 }

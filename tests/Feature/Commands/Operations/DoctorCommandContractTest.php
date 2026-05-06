@@ -212,7 +212,7 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode reach family dispatch and records unsupported actions as skipped', function (): void {
+    it('lets fix mode complete supported firewall actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create([
@@ -226,16 +226,16 @@ describe('doctor command contract', function (): void {
         $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('drift_detected')
-            ->and($payload['error']['data']['doctor']['mode'])->toBe('fix')
-            ->and($payload['error']['data']['doctor']['summary']['skipped'])->toBe(1)
-            ->and($payload['error']['data']['doctor']['actions'][0])->toMatchArray([
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'firewall_rule',
                 'node' => 'app-1',
                 'key' => 'firewall_rule.rule_missing',
                 'mode' => 'fix',
-                'status' => 'skipped',
+                'status' => 'completed',
             ]);
     });
 });

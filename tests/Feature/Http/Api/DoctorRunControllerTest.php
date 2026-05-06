@@ -81,8 +81,8 @@ describe('DoctorRunController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.mode', 'fix')
-            ->assertJsonPath('success.data.doctor.summary.skipped', 1)
-            ->assertJsonPath('success.data.doctor.actions.0.status', 'skipped');
+            ->assertJsonPath('success.data.doctor.summary.fixed', 1)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
 
     it('denies app-node write mode requests', function (): void {

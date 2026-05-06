@@ -1768,13 +1768,20 @@ for the Saloon-based gateway transport pattern.
   - [~] Firewall doctor probes, fix/adopt map, and live backend inspection.
     - [x] Registry intent, node eligibility, and baseline policy boundary probe foundation.
     - [x] Backend UFW rule reality inspection.
-    - [!] Fix/adopt map and doctor dispatcher/API integration.
-      - Verify-mode doctor dispatcher/API integration is ported for
+    - [~] Fix/adopt map and doctor dispatcher/API integration.
+      - [x] Verify-mode doctor dispatcher/API integration is ported for
         `--family=firewall_rule`.
-      - Generic `--fix` / `--adopt` orchestration now reaches family dispatch
+      - [x] Generic `--fix` / `--adopt` orchestration now reaches family dispatch
         and records unsupported actions as skipped.
-      - Next concrete action: add firewall rule reconcile and selected-rule
-        adoption action handlers.
+      - [x] Fix map handles `firewall_rule.rule_missing` and
+        `firewall_rule.rule_mismatch` through UFW reconciliation.
+      - [!] Adopt map for selected compatible backend rules remains outstanding.
+        The current global doctor input contract has no explicit selected
+        observed-backend-rule scope, so adoption needs a scoped input decision
+        before implementation.
+      - Next concrete action: define selected-rule adoption scope for
+        `firewall_rule.rule_extra` / compatible `firewall_rule.rule_mismatch`,
+        then add the adoption action handler.
 - [~] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
   - [x] Read foundation exists for registry-backed `tool:list` / `tool:show`
