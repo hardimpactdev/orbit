@@ -1366,6 +1366,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Reshape process docs around runtime backend (Supervisor) and runtime
   unit vocabulary. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
+- [x] Create process implementation abstraction seed.
 - [x] Port process schema and models.
 - [x] Port process add/edit/remove/list commands.
   - [x] `process:list` gateway-local registry read, typed gateway API
