@@ -195,19 +195,23 @@ Detail file for the node command family. Top-level command status lives in
   - [~] Gateway-connected forwarding from configured control nodes.
     - [x] App-node creation forwarding.
     - [x] Compatible app-node adoption forwarding.
+    - [x] App unknown-host materialization forwarding.
     - [x] Control-node enrollment forwarding.
     - [x] Gateway convergence forwarding.
     - [!] Remaining gateway adoption forwarding is blocked until gateway-local
-      gateway-role and unknown-host adoption consume compatible host identity
-      proof.
+      gateway-role adoption can prove the target host is the executing gateway
+      identity before writing a missing gateway row.
   - [~] Gateway-local app and control enrollment paths.
     - [x] App-node provisioning path.
     - [x] Compatible app-node adoption for existing non-active gateway intent
       when registry peer material is proven against live WireGuard reality.
+    - [x] App unknown-host materialization after identity artifact and live
+      WireGuard proof.
     - [x] Control-node enrollment path with WireGuard config return.
     - [x] Gateway convergence path.
-    - [!] Remaining gateway adoption paths are blocked on consuming stronger
-      identity proof.
+    - [!] Remaining gateway-role materialization path is blocked on proving the
+      target host is the executing gateway identity before writing a missing
+      gateway row.
       Local platform record adoption, unambiguous WireGuard address adoption,
       app runtime readiness verification/conflict results, and proven live
       WireGuard peer-extra adoption are implemented in node-family adoption.
