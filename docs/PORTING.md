@@ -831,8 +831,13 @@ exist. Those families wait for the node/gateway/app foundations.
     logging. Docker feature E2E verifies the configured control-caller
     forwarding path and node-show metadata convergence.
   - Contract gaps:
-    - extension-registered adapter registry beyond the core adapters
-      (`opencode`, `polyscope`) and reserved `none` token.
+    - [!] Extension-registered adapter registry beyond the core adapters
+      (`opencode`, `polyscope`) and reserved `none` token is blocked until the
+      clean repo has a gateway-owned extension registration surface to persist
+      and list agent IDE adapters. Next concrete action: design the shared
+      adapter registry used by both `node:agent-ide` and `app:agent-ide`, then
+      expose a typed gateway request for configured control callers to fetch
+      prompt choices from the gateway.
 - [~] Port `node:new`.
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
     fresh gateway host.
