@@ -277,6 +277,37 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode complete supported tool config actions through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $content = "port 6379\n";
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'redis',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/redis/redis.conf',
+                    'hash' => hash('sha256', $content),
+                    'content' => $content,
+                ],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/redis-server\t7.2.0\trunning\t0\t\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.config_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the firewall rule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
 

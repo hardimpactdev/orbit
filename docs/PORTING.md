@@ -1807,12 +1807,14 @@ for the Saloon-based gateway transport pattern.
       config path/hash intent.
     - [x] Safe `--fix` action handlers exist for catalog-declared lifecycle
       repair commands.
-    - [!] Capability, version, configuration, and credential fix handlers;
-      credential drift; adopt action handlers; and future write/enactment
-      commands remain outstanding.
-    - Next concrete action: add safe config repair for tool rows that include
-      managed config content intent, then model credential drift for tools that
-      own generated secret material.
+    - [x] Safe `--fix` action handlers exist for managed config rows that
+      include path, hash, and content intent.
+    - [!] Capability, version, and credential fix handlers; credential drift;
+      adopt action handlers; and future write/enactment commands remain
+      outstanding.
+    - Next concrete action: model credential drift for tools that own generated
+      secret material, then add safe credential repair for complete credential
+      intent rows.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through

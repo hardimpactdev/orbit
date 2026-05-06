@@ -65,6 +65,69 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
+
+    it('rewrites managed config when the row contains complete content intent', function (): void {
+        $content = "port 6379\n";
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/redis/redis.conf',
+                    'hash' => hash('sha256', $content),
+                    'content' => $content,
+                ],
+            ],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.config_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Tool redis managed configuration differs from gateway intent.',
+            detail: [
+                'tool' => 'redis',
+                'path' => '/etc/redis/redis.conf',
+            ],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => 'tool.config_mismatch',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0755 '/etc/redis'")
+            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/etc/redis/redis.conf' >/dev/null");
+    });
+
+    it('does not repair managed config when content does not match declared hash', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/redis/redis.conf',
+                    'hash' => str_repeat('a', 64),
+                    'content' => "port 6379\n",
+                ],
+            ],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.config_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool redis managed configuration is missing.',
+            detail: ['tool' => 'redis'],
+        ));
+
+        expect($action)->toBeNull()
+            ->and($shell->scripts)->toBe([]);
+    });
 });
 
 final class ToolsFixerRemoteShell implements RemoteShell

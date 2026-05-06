@@ -20,7 +20,9 @@ final readonly class ToolsFixer
      */
     public function fix(NodeTool $tool, DriftEntry $entry): ?array
     {
-        $command = $this->repairCommand($tool, $entry);
+        $command = $entry->key === 'tool.config_missing' || $entry->key === 'tool.config_mismatch'
+            ? $this->configRepairCommand($tool)
+            : $this->repairCommand($tool, $entry);
 
         if ($command === null) {
             return null;
@@ -71,5 +73,36 @@ final readonly class ToolsFixer
         $command = $commands[$key] ?? null;
 
         return is_string($command) && $command !== '' ? $command : null;
+    }
+
+    private function configRepairCommand(NodeTool $tool): ?string
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+        $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
+        $path = $managedConfig['path'] ?? null;
+        $hash = $managedConfig['hash'] ?? null;
+        $content = $managedConfig['content'] ?? null;
+
+        if (! is_string($path) || $path === '' || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+            return null;
+        }
+
+        if (! hash_equals($hash, hash('sha256', $content))) {
+            return null;
+        }
+
+        $directory = dirname($path);
+
+        return sprintf(
+            <<<'SH'
+sudo install -d -m 0755 %s
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
+sudo chmod 0644 %s
+SH,
+            escapeshellarg($directory),
+            escapeshellarg(base64_encode($content)),
+            escapeshellarg($path),
+            escapeshellarg($path),
+        );
     }
 }
