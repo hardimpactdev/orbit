@@ -1325,7 +1325,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     forwarding for control/app callers, app/workspace context resolution,
     bounded JSON reads, human follow-mode log reads, validation for `--lines`
     and `--json --follow`, human/JSON renderers, and focused Pest coverage.
-- [ ] Port process exit hook support if still part of the product contract.
+- [x] Port process exit hook support if still part of the product contract.
+  - [x] Product contract still requires crash-event intake from app-node runtime
+    hooks. Added authenticated app-node `crashed` event ingestion, event-id
+    idempotency, runtime-unit intent resolution for main/workspace units,
+    unmatched-unit history preservation, and focused Pest coverage. Runtime hook
+    material convergence remains owned by `doctor --family=process`.
 
 ## Schedule Workstream
 

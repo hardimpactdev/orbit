@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\ProcessDestroyController;
+use App\Http\Controllers\Api\ProcessEventIngestController;
 use App\Http\Controllers\Api\ProcessListController;
 use App\Http\Controllers\Api\ProcessLogController;
 use App\Http\Controllers\Api\ProcessRestartController;
@@ -51,6 +52,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/me', MeController::class);
+        Route::post('/events/process', ProcessEventIngestController::class);
         Route::get('/processes', ProcessListController::class);
         Route::post('/processes', ProcessStoreController::class);
         Route::post('/processes/restart', ProcessRestartController::class);
