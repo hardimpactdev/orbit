@@ -227,11 +227,12 @@ Detail file for the node command family. Top-level command status lives in
       gateway identity already running the command, rather than an arbitrary
       remote gateway host. Gateway-local `node:new` now materializes compatible
       unknown app hosts only after bounded identity artifact proof and live
-      WireGuard reality agree. Next concrete action: expose the same app
-      unknown-host materialization behavior through forwarding; gateway-role
-      materialization remains blocked until the command can prove the target
-      host is the executing gateway identity before writing a missing gateway
-      row.
+      WireGuard reality agree. Gateway API forwarding exposes the same behavior
+      through `POST /api/nodes`, with controller coverage proving authenticated
+      control callers receive the adopted response and gateway-owned row/peer
+      materialization. Gateway-role materialization remains blocked until the
+      command can prove the target host is the executing gateway identity before
+      writing a missing gateway row.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

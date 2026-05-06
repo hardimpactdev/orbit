@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use App\Models\WireGuardPeer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -212,4 +215,103 @@ describe('NodeStoreController', function (): void {
         Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
         Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
     });
+
+    it('materializes a compatible unknown app host for an authenticated control caller', function (): void {
+        DB::table('nodes')->insert([
+            apiStoreNodeRow(),
+            apiStoreNodeRow([
+                'name' => 'control-1',
+                'role' => 'control',
+                'host' => '10.6.0.3',
+                'wireguard_address' => '10.6.0.3',
+                'gateway_endpoint' => '10.6.0.2',
+                'ssh_user' => 'tester',
+                'user' => 'tester',
+                'orbit_path' => '/home/tester/orbit',
+                'is_local' => false,
+            ]),
+        ]);
+
+        app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
+            ->postJson('/api/nodes', [
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'host' => '192.0.2.33',
+                'environment' => 'development',
+                'tld' => 'test',
+                'ssh_user' => 'provisioner',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.result.action', 'adopted')
+            ->assertJsonPath('success.data.provisioning.status', 'adopted')
+            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.8')
+            ->assertJsonPath('success.data.node.platform', 'ubuntu_24-04');
+
+        $node = DB::table('nodes')->where('name', 'app-unknown-1')->first();
+        $peer = $node === null ? null : DB::table('wireguard_peers')->where('node_id', $node->id)->first();
+
+        expect($node)->not->toBeNull()
+            ->and($node->host)->toBe('192.0.2.33')
+            ->and($node->status)->toBe('active')
+            ->and($peer)->not->toBeNull()
+            ->and($peer->public_key)->toBe('app-public-key')
+            ->and($peer->private_key)->toBe('')
+            ->and($peer->allowed_ips)->toBe('10.6.0.8/32');
+
+        $entry = Activity::query()
+            ->where('event', 'node.created')
+            ->first();
+
+        expect($entry)->not->toBeNull();
+        expect($entry->subject?->name)->toBe('app-unknown-1');
+
+        Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
 });
+
+final class NodeStoreSequencedRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
