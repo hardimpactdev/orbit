@@ -56,6 +56,7 @@ final readonly class ProcessesProbe
                 'runtime_backend_exit_code' => $probe->exitCode,
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
+                'runtime_unit_extras' => [],
                 'event_notifier' => null,
             ],
         ];
@@ -70,9 +71,11 @@ php <<'PHP'
 <?php
 $units = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_UNITS')), true);
 $notifier = json_decode(base64_decode((string) getenv('ORBIT_PROCESS_EVENT_NOTIFIER')), true);
+$expectedNames = [];
 
 foreach ($units as $unit) {
     $name = (string) ($unit['name'] ?? '');
+    $expectedNames[$name] = true;
     $path = (string) ($unit['config_path'] ?? '');
     $hash = (string) ($unit['config_hash'] ?? '');
     $restartPolicy = (string) ($unit['restart_policy'] ?? '');
@@ -96,6 +99,14 @@ $endpointExists = is_file($endpointPath) ? '1' : '0';
 $endpointMatches = $expectedEndpoint !== '' && $endpointExists === '1' && rtrim(trim((string) file_get_contents($endpointPath)), '/') === $expectedEndpoint ? '1' : '0';
 
 printf("__notifier\t%s\t%s\t%s\t%s\t%s\n", $notifierExists, $notifierExecutable, $notifierMatches, $endpointExists, $endpointMatches);
+
+foreach (glob('/etc/supervisor/conf.d/orbit_*.conf') ?: [] as $path) {
+    $name = basename($path, '.conf');
+
+    if (! isset($expectedNames[$name])) {
+        printf("__extra\t%s\n", $name);
+    }
+}
 PHP
 BASH;
 
@@ -135,6 +146,16 @@ BASH;
                 continue;
             }
 
+            if ($name === '__extra') {
+                if (count($parts) !== 2) {
+                    continue;
+                }
+
+                $items[$process->name]['runtime_unit_extras'][] = $parts[1];
+
+                continue;
+            }
+
             if (count($parts) !== 5) {
                 continue;
             }
@@ -167,6 +188,7 @@ BASH;
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
         $drift = array_merge($drift, $this->checkEventNotifier($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRuntimeUnitExtras($process, $snapshot));
 
         return $drift;
     }
@@ -238,6 +260,37 @@ BASH;
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUnitExtras(Process $process, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($process->name);
+
+        if (
+            $observed === null
+            || ($observed['runtime_backend_available'] ?? null) === false
+            || ! is_array($observed['runtime_unit_extras'] ?? null)
+        ) {
+            return [];
+        }
+
+        return collect($observed['runtime_unit_extras'])
+            ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
+            ->map(fn (string $runtimeUnit): DriftEntry => new DriftEntry(
+                family: $this->key(),
+                key: 'process.runtime_unit_extra',
+                kind: DriftKind::Extra,
+                summary: "Process runtime unit {$runtimeUnit} has no matching active gateway process intent.",
+                detail: [
+                    'runtime_unit' => $runtimeUnit,
+                    'expected_path' => "/etc/supervisor/conf.d/{$runtimeUnit}.conf",
+                ],
+            ))
+            ->values()
+            ->all();
     }
 
     /**

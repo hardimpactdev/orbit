@@ -1745,7 +1745,7 @@ for the Saloon-based gateway transport pattern.
   - [x] Supervisor program presence and content checks.
   - [x] Restart policy and runtime environment checks.
   - [x] Lifecycle event notifier material checks.
-  - [ ] Stale runtime unit checks.
+  - [x] Stale runtime unit checks.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
 - [~] Port tool family.

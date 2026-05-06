@@ -50,7 +50,7 @@ describe('runtime backend availability', function (): void {
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n", stderr: '', durationMs: 1),
         ]);
 
         $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
@@ -70,6 +70,7 @@ describe('runtime backend availability', function (): void {
             'restart_policy_matches' => true,
             'environment_matches' => true,
         ]);
+        expect($snapshot->get('vite')['runtime_unit_extras'])->toBe(['orbit_docs_old_queue']);
     });
 
     it('detects unavailable supervisor runtime backends and leaves downstream checks to later layers', function (): void {
@@ -203,6 +204,44 @@ describe('lifecycle event notifier reality', function (): void {
 
         expect(issue($drift, 'process.event_notifier_missing'))->toBeNull();
         expect(issue($drift, 'process.event_notifier_mismatch'))->toBeNull();
+    });
+});
+
+describe('stale supervisor program reality', function (): void {
+    it('detects stale Orbit-owned supervisor programs without active gateway process intent', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_extras' => ['orbit_docs_old_queue'],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_extra')?->kind)->toBe(DriftKind::Extra);
+        expect(issue($drift, 'process.runtime_unit_extra')?->detail)->toMatchArray([
+            'runtime_unit' => 'orbit_docs_old_queue',
+            'expected_path' => '/etc/supervisor/conf.d/orbit_docs_old_queue.conf',
+        ]);
+    });
+
+    it('skips stale supervisor program checks while runtime backend is unavailable', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, ['name' => 'vite']);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => false,
+                'runtime_unit_extras' => ['orbit_docs_old_queue'],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
     });
 });
 
