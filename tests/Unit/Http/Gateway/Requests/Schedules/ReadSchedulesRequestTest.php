@@ -11,8 +11,10 @@ use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleLogsRequest;
 use App\Http\Gateway\Requests\Schedules\ShowScheduleRequest;
+use App\Http\Gateway\Requests\Schedules\SyncSchedulesRequest;
 use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
 use App\Http\Gateway\Responses\Schedules\ScheduleShowResponse;
+use App\Http\Gateway\Responses\Schedules\ScheduleSyncResponse;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Saloon\Enums\Method;
@@ -55,6 +57,7 @@ it('posts schedule add payloads to the gateway', function (): void {
 it('resolves schedule read endpoints and query filters', function (): void {
     $list = new ListSchedulesRequest(app: 'docs', node: null);
     $show = new ShowScheduleRequest(name: 'laravel-scheduler', app: 'docs', node: null);
+    $sync = new SyncSchedulesRequest;
 
     expect($list->resolveEndpoint())->toBe('/api/schedules');
     expect($list->getMethod())->toBe(Method::GET);
@@ -62,6 +65,8 @@ it('resolves schedule read endpoints and query filters', function (): void {
     expect($show->resolveEndpoint())->toBe('/api/schedules/laravel-scheduler');
     expect($show->getMethod())->toBe(Method::GET);
     expect($show->query()->all())->toBe(['app' => 'docs']);
+    expect($sync->resolveEndpoint())->toBe('/api/schedules/sync');
+    expect($sync->getMethod())->toBe(Method::GET);
 });
 
 it('resolves schedule remove endpoint and query filters', function (): void {
@@ -108,6 +113,16 @@ it('returns schedule list and show response DTOs with meta', function (): void {
                 'meta' => ['app' => 'docs', 'node' => null],
             ],
         ], 200),
+        SyncSchedulesRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'schedules' => [
+                        ['schedule_key' => 'app:docs:laravel-scheduler'],
+                    ],
+                ],
+                'meta' => ['node' => 'app-1', 'count' => 1],
+            ],
+        ], 200),
     ]);
 
     $connector = app(GatewayConnector::class);
@@ -115,6 +130,7 @@ it('returns schedule list and show response DTOs with meta', function (): void {
 
     $listDto = $connector->send(new ListSchedulesRequest(app: 'docs'))->dto();
     $showDto = $connector->send(new ShowScheduleRequest(name: 'laravel-scheduler', app: 'docs'))->dto();
+    $syncDto = $connector->send(new SyncSchedulesRequest)->dto();
 
     expect($listDto)->toBeInstanceOf(ScheduleListResponse::class);
     expect($listDto->schedules)->toBe([['name' => 'laravel-scheduler']]);
@@ -122,4 +138,7 @@ it('returns schedule list and show response DTOs with meta', function (): void {
     expect($showDto)->toBeInstanceOf(ScheduleShowResponse::class);
     expect($showDto->schedule)->toBe(['name' => 'laravel-scheduler']);
     expect($showDto->meta)->toBe(['app' => 'docs', 'node' => null]);
+    expect($syncDto)->toBeInstanceOf(ScheduleSyncResponse::class);
+    expect($syncDto->schedules)->toBe([['schedule_key' => 'app:docs:laravel-scheduler']]);
+    expect($syncDto->meta)->toBe(['node' => 'app-1', 'count' => 1]);
 });

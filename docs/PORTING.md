@@ -1880,9 +1880,14 @@ for the Saloon-based gateway transport pattern.
       gateway intent, claim local overlap locks, execute the rendered
       run-history hook material through the local `RemoteShell` edge, and
       write/report durable run history.
-    - Next concrete action: add gateway-to-node schedule registry sync for
-      non-gateway scheduler daemons so app-node schedulers can refresh intent
-      directly from the gateway before each tick.
+    - [x] Gateway-to-node schedule registry sync: scheduler-authenticated nodes
+      can fetch the enabled schedule intent targeting their node through a
+      typed sync request, app-node scheduler ticks upsert that local intent
+      before due evaluation, stale local schedule intent is pruned, and
+      heartbeat sync timestamps are reported after refresh.
+    - Next concrete action: add an E2E scheduler tick gate that verifies a
+      Docker app-node scheduler syncs gateway schedule intent and reports run
+      history through the gateway intake.
 - [x] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
   - Current pattern: family probes emit `DriftEntry`, `DoctorReportRunner`

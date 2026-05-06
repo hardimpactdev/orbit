@@ -9,6 +9,9 @@ use App\Data\Schedules\SchedulerTickResult;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\StoreSchedulerHeartbeatRequest;
 use App\Http\Gateway\Requests\Schedules\StoreScheduleRunRequest;
+use App\Http\Gateway\Requests\Schedules\SyncSchedulesRequest;
+use App\Http\Gateway\Responses\Schedules\ScheduleSyncResponse;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
@@ -40,7 +43,7 @@ final readonly class OrbitScheduler
             );
         }
 
-        $this->recordHeartbeat($localNode, $startedAt);
+        $this->recordHeartbeatAndSync($localNode, $startedAt);
 
         $dueSchedules = $this->dueSchedules($localNode, $startedAt);
         $executedSchedules = 0;
@@ -178,7 +181,7 @@ final readonly class OrbitScheduler
             ));
     }
 
-    private function recordHeartbeat(Node $localNode, CarbonImmutable $heartbeatAt): void
+    private function recordHeartbeatAndSync(Node $localNode, CarbonImmutable $heartbeatAt): void
     {
         if ($localNode->role === 'gateway') {
             SchedulerState::query()->updateOrCreate(
@@ -192,15 +195,102 @@ final readonly class OrbitScheduler
             return;
         }
 
-        GatewayConnector::forScheduler()
-            ->send(new StoreSchedulerHeartbeatRequest(
-                heartbeatAt: $heartbeatAt->toIso8601String(),
-                registrySyncedAt: $heartbeatAt->toIso8601String(),
-            ));
+        $connector = GatewayConnector::forScheduler();
+        /** @var ScheduleSyncResponse $syncResponse */
+        $syncResponse = $connector->send(new SyncSchedulesRequest)->dto();
+        $this->syncSchedules($localNode, $syncResponse->schedules);
+
+        $connector->send(new StoreSchedulerHeartbeatRequest(
+            heartbeatAt: $heartbeatAt->toIso8601String(),
+            registrySyncedAt: $heartbeatAt->toIso8601String(),
+        ));
     }
 
     private function ownerToken(Schedule $schedule, CarbonImmutable $now): string
     {
         return hash('sha256', $schedule->schedule_key.'|'.$now->toIso8601String());
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $schedules
+     */
+    private function syncSchedules(Node $localNode, array $schedules): void
+    {
+        $seenKeys = [];
+
+        foreach ($schedules as $schedule) {
+            $scheduleKey = $this->stringValue($schedule, 'schedule_key');
+            $scope = $this->stringValue($schedule, 'scope');
+            $target = is_array($schedule['target'] ?? null) ? $schedule['target'] : [];
+            $execution = is_array($schedule['execution'] ?? null) ? $schedule['execution'] : [];
+
+            if ($scheduleKey === null || $scope === null) {
+                continue;
+            }
+
+            $seenKeys[] = $scheduleKey;
+
+            $appId = null;
+            $nodeId = null;
+            $targetName = $this->stringValue($target, 'name') ?? $localNode->name;
+
+            if ($scope === 'app') {
+                $app = App::query()->firstOrNew(['name' => $targetName]);
+                $app->node_id = $localNode->id;
+
+                if (! $app->exists) {
+                    $app->path = '/home/orbit/apps/'.$targetName;
+                }
+
+                $app->save();
+                $appId = $app->id;
+            }
+
+            if ($scope === 'node') {
+                $nodeId = $localNode->id;
+            }
+
+            Schedule::query()->updateOrCreate(
+                ['schedule_key' => $scheduleKey],
+                [
+                    'name' => $this->stringValue($schedule, 'name') ?? $scheduleKey,
+                    'scope' => $scope,
+                    'app_id' => $appId,
+                    'node_id' => $nodeId,
+                    'target_name' => $targetName,
+                    'interval' => $this->stringValue($schedule, 'interval') ?? 'every minute',
+                    'timezone' => $this->stringValue($schedule, 'timezone') ?? 'UTC',
+                    'execution_type' => $this->stringValue($execution, 'type') ?? 'command',
+                    'execution_value' => $this->stringValue($execution, 'value') ?? '',
+                    'enabled' => (bool) ($schedule['enabled'] ?? true),
+                    'status' => $this->stringValue($schedule, 'status') ?? 'expected',
+                ],
+            );
+        }
+
+        $this->pruneSyncedSchedules($localNode, $seenKeys);
+    }
+
+    /**
+     * @param  list<string>  $seenKeys
+     */
+    private function pruneSyncedSchedules(Node $localNode, array $seenKeys): void
+    {
+        Schedule::query()
+            ->with(['app.node', 'node'])
+            ->get()
+            ->filter(fn (Schedule $schedule): bool => $this->targetsLocalNode($schedule, $localNode))
+            ->reject(fn (Schedule $schedule): bool => in_array($schedule->schedule_key, $seenKeys, true))
+            ->each(fn (Schedule $schedule): ?bool => $schedule->delete());
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     */
+    private function stringValue(array $values, string $key): ?string
+    {
+        $value = $values[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }

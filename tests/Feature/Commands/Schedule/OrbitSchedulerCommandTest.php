@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Schedules\StoreSchedulerHeartbeatRequest;
 use App\Http\Gateway\Requests\Schedules\StoreScheduleRunRequest;
+use App\Http\Gateway\Requests\Schedules\SyncSchedulesRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
@@ -90,17 +91,29 @@ it('skips schedules that are not due or do not target the local node', function 
 
 it('reports app-node scheduler heartbeat and run history to the gateway', function (): void {
     $localNode = createOrbitSchedulerLocalNode('app');
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $localNode->id]);
-    Schedule::factory()->forApp($app)->create([
-        'name' => 'laravel-scheduler',
-        'schedule_key' => 'app:docs:laravel-scheduler',
-        'interval' => 'every minute',
-    ]);
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.1',
         'ca_pem_path' => '/dev/null',
     ])->save();
     MockClient::global([
+        SyncSchedulesRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'schedules' => [[
+                        'schedule_key' => 'app:docs:laravel-scheduler',
+                        'name' => 'laravel-scheduler',
+                        'scope' => 'app',
+                        'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'local-app'],
+                        'interval' => 'every minute',
+                        'timezone' => 'UTC',
+                        'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
+                        'enabled' => true,
+                        'status' => 'expected',
+                    ]],
+                ],
+                'meta' => ['node' => 'local-app', 'count' => 1],
+            ],
+        ], 200),
         StoreSchedulerHeartbeatRequest::class => MockResponse::make(['success' => ['data' => ['state' => []]]], 201),
         StoreScheduleRunRequest::class => MockResponse::make(['success' => ['data' => ['run' => ['id' => 9]]]], 201),
     ]);
@@ -112,8 +125,36 @@ it('reports app-node scheduler heartbeat and run history to the gateway', functi
 
     expect($result->dueSchedules)->toBe(1)
         ->and($result->executedSchedules)->toBe(1)
+        ->and(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeTrue()
         ->and(SchedulerState::query()->count())->toBe(0)
         ->and(ScheduleRun::query()->count())->toBe(0);
+});
+
+it('exposes scheduler sync intent for schedules targeting the authenticated node', function (): void {
+    $caller = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'wireguard_address' => '10.6.0.41',
+    ]);
+    $otherNode = Node::factory()->create(['name' => 'app-2', 'role' => 'app']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+    $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+    ]);
+    Schedule::factory()->forApp($otherApp)->create([
+        'name' => 'other-scheduler',
+        'schedule_key' => 'app:other:other-scheduler',
+    ]);
+
+    $response = $this->call('GET', '/api/schedules/sync', [], [], [], ['REMOTE_ADDR' => '10.6.0.41']);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('success.meta.node', 'app-1')
+        ->assertJsonPath('success.meta.count', 1)
+        ->assertJsonPath('success.data.schedules.0.schedule_key', 'app:docs:laravel-scheduler')
+        ->assertJsonPath('success.data.schedules.0.name', 'laravel-scheduler');
 });
 
 it('evaluates portable schedule interval expressions', function (): void {
