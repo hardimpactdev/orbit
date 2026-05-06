@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -280,6 +281,105 @@ it('forwards configured control callers through the typed gateway request', func
         ->and($payload['success']['data']['app']['name'])->toBe('docs')
         ->and($payload['success']['data']['agent_ide']['effective_adapter'])->toBe('opencode')
         ->and($payload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
+});
+
+it('queries gateway adapter choices before prompting configured control callers', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $mockClient = MockClient::global([
+        ListAgentIdeAdaptersRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'scope' => 'app',
+                    'reserved_tokens' => ['inherit', 'none'],
+                    'adapters' => [
+                        [
+                            'name' => 'custom-agent',
+                            'label' => 'Custom Agent',
+                            'source' => 'extension',
+                            'capabilities' => ['message_delivery'],
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+        SetAppAgentIdeRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'agent_ide' => [
+                        'adapter' => 'custom-agent',
+                        'source' => 'app',
+                        'effective_adapter' => 'custom-agent',
+                    ],
+                    'cleanup' => [
+                        'workspaces_removed' => [],
+                    ],
+                    'action' => 'set',
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->artisan('app:agent-ide')
+        ->expectsQuestion('App name or hostname', 'docs')
+        ->expectsChoice('Select agent IDE adapter', 'custom-agent', [
+            'inherit' => 'Inherit node default',
+            'none' => 'None',
+            'custom-agent' => 'custom-agent',
+        ])
+        ->expectsOutputToContain('└ App `docs` agent IDE set to `custom-agent` (effective: `custom-agent`)')
+        ->assertExitCode(0);
+
+    $mockClient->assertSent(ListAgentIdeAdaptersRequest::class);
+    $mockClient->assertSent(SetAppAgentIdeRequest::class);
+});
+
+it('fails before adapter prompt when configured control callers cannot fetch adapter choices', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        ListAgentIdeAdaptersRequest::class => MockResponse::make([
+            'error' => [
+                'code' => 'gateway_unavailable',
+                'message' => 'Gateway connection is required to read agent IDE adapters.',
+                'meta' => [],
+            ],
+        ], 503),
+    ]);
+
+    $this->artisan('app:agent-ide')
+        ->expectsQuestion('App name or hostname', 'docs')
+        ->expectsOutputToContain('Gateway connection is required to read agent IDE adapters.')
+        ->assertExitCode(1);
 });
 
 it('prompts for missing human input and renders the progress tree', function (): void {

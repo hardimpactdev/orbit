@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Nodes\SetNodeAgentIdeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -280,6 +281,69 @@ describe('node:agent-ide command', function (): void {
             ->and($payload['success']['data']['agent_ide']['adapter'])->toBe('polyscope');
 
         $mockClient->assertSent(SetNodeAgentIdeRequest::class);
+    });
+
+    it('queries gateway adapter choices before prompting configured control callers', function (): void {
+        setupNodeAgentIdeControlCaller();
+
+        $mockClient = MockClient::global([
+            ListAgentIdeAdaptersRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'scope' => 'node',
+                        'reserved_tokens' => ['none'],
+                        'adapters' => [
+                            [
+                                'name' => 'custom-agent',
+                                'label' => 'Custom Agent',
+                                'source' => 'extension',
+                                'capabilities' => ['message_delivery'],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+            SetNodeAgentIdeRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'name' => 'app-1',
+                        'agent_ide' => [
+                            'adapter' => 'custom-agent',
+                            'source' => 'node',
+                        ],
+                        'action' => 'set',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('node:agent-ide')
+            ->expectsQuestion('Node name', 'app-1')
+            ->expectsChoice('Agent IDE adapter', 'custom-agent', ['none', 'custom-agent'])
+            ->expectsOutputToContain("Node 'app-1' agent IDE set to 'custom-agent'")
+            ->assertExitCode(0);
+
+        $mockClient->assertSent(ListAgentIdeAdaptersRequest::class);
+        $mockClient->assertSent(SetNodeAgentIdeRequest::class);
+    });
+
+    it('fails before prompting when configured control callers cannot fetch adapter choices', function (): void {
+        setupNodeAgentIdeControlCaller();
+
+        MockClient::global([
+            ListAgentIdeAdaptersRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to read agent IDE adapters.',
+                    'meta' => [],
+                ],
+            ], 503),
+        ]);
+
+        $this->artisan('node:agent-ide')
+            ->expectsQuestion('Node name', 'app-1')
+            ->expectsOutputToContain('Gateway connection is required to read agent IDE adapters.')
+            ->assertExitCode(1);
     });
 
     it('surfaces gateway authorization failures for control callers', function (): void {

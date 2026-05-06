@@ -153,15 +153,18 @@ Detail file for the node command family. Top-level command status lives in
     node-not-found errors, app-caller denial, node-show metadata, and activity
     logging. Docker feature E2E verifies the configured control-caller
     forwarding path and node-show metadata convergence.
+  - Shared adapter registry slice implemented: core descriptors now live behind
+    `AgentIdeAdapterRegistry`, gateway-local `node:agent-ide` and
+    `app:agent-ide` validation use the registry instead of hard-coded adapter
+    constants, and configured control callers query the typed gateway adapter
+    choices request before interactive prompt rendering.
   - Contract gaps:
     - [!] Extension-registered adapter registry beyond the core adapters
-      (`opencode`, `polyscope`) and reserved `none` token is blocked until the
-      clean repo implements the shared gateway-owned adapter registry and typed
-      choices request defined by the agent-IDE docs. Next concrete action:
-      implement `AgentIdeAdapterRegistry` with core descriptors, expose the
-      gateway adapter choices endpoint/request for configured control callers,
-      and update `node:agent-ide`/`app:agent-ide` prompt choices and validation
-      to use it.
+      (`opencode`, `polyscope`) and reserved tokens is blocked until the clean
+      repo implements the gateway-side extension registration surface. Next
+      concrete action: design and port the extension registration surface that
+      can contribute adapter descriptors to `AgentIdeAdapterRegistry` without
+      exposing credentials or local control-machine manifests.
 - [~] Port `node:new`.
   - Current implementation: `app/Console/Commands/NodeNewCommand.php`
   - Current tests:

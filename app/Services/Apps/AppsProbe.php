@@ -13,11 +13,10 @@ use App\Models\Node;
 
 final readonly class AppsProbe
 {
-    private const array SUPPORTED_AGENT_IDE_ADAPTERS = ['none', ...AppAgentIdeDefaults::SUPPORTED_ADAPTERS];
-
     public function __construct(
         private ?RemoteShell $remoteShell = null,
         private ?AppFpmPoolRenderer $fpmPoolRenderer = null,
+        private ?AppAgentIdeDefaults $agentIdeDefaults = null,
     ) {}
 
     public function key(): string
@@ -436,7 +435,7 @@ BASH;
             return [];
         }
 
-        if (! is_string($adapter) || ! in_array($adapter, self::SUPPORTED_AGENT_IDE_ADAPTERS, true)) {
+        if (! is_string($adapter) || ! in_array($adapter, $this->agentIdeDefaults()->supportedAdapters(), true)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -458,5 +457,10 @@ BASH;
     private function fpmPoolRenderer(): AppFpmPoolRenderer
     {
         return $this->fpmPoolRenderer ?? app(AppFpmPoolRenderer::class);
+    }
+
+    private function agentIdeDefaults(): AppAgentIdeDefaults
+    {
+        return $this->agentIdeDefaults ?? app(AppAgentIdeDefaults::class);
     }
 }

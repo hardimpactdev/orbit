@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
+use App\Http\Controllers\Api\AgentIdeAdapterChoicesController;
 use App\Http\Controllers\Api\AppAgentIdeController;
 use App\Http\Controllers\Api\AppListController;
 use App\Http\Controllers\Api\AppRegisterController;
@@ -69,6 +70,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::middleware([WireGuardIdentity::class, LogActivity::class])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
+        Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/me', MeController::class);
         Route::post('/events/process', ProcessEventIngestController::class);

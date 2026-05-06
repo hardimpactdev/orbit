@@ -6,7 +6,9 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Nodes\SetNodeAgentIdeRequest;
+use App\Http\Gateway\Responses\AgentIde\AgentIdeAdapterChoicesResponse;
 use App\Http\Gateway\Responses\Nodes\NodeAgentIdeResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
@@ -68,7 +70,23 @@ class NodeAgentIdeCommand extends Command
             );
         }
 
-        $agentIde = $this->resolveAgentIde();
+        try {
+            $agentIde = $this->resolveAgentIde($callerRole, $defaults);
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to read agent IDE adapters.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to read agent IDE adapters.',
+                meta: [],
+            );
+        }
 
         if ($agentIde === null) {
             return $this->failCommand(
@@ -145,7 +163,7 @@ class NodeAgentIdeCommand extends Command
         return $exists ? null : "Node '{$name}' not found.";
     }
 
-    private function resolveAgentIde(): ?string
+    private function resolveAgentIde(string $callerRole, NodeAgentIdeDefaults $defaults): ?string
     {
         $agentIde = $this->stringArgument('agent_ide');
 
@@ -156,12 +174,29 @@ class NodeAgentIdeCommand extends Command
         if ($this->isInteractiveInput()) {
             return select(
                 label: 'Agent IDE adapter',
-                options: ['none', ...NodeAgentIdeDefaults::SUPPORTED_ADAPTERS],
+                options: $this->agentIdeChoices($callerRole, $defaults),
                 required: true,
             );
         }
 
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function agentIdeChoices(string $callerRole, NodeAgentIdeDefaults $defaults): array
+    {
+        if ($callerRole !== 'control') {
+            return $defaults->supportedAdapters();
+        }
+
+        /** @var AgentIdeAdapterChoicesResponse $dto */
+        $dto = app(GatewayConnector::class)
+            ->send(new ListAgentIdeAdaptersRequest('node'))
+            ->dto();
+
+        return $dto->supportedInputs();
     }
 
     private function forwardSet(string $name, string $agentIde): int

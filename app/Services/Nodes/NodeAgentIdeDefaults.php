@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Models\Node;
+use App\Services\AgentIde\AgentIdeAdapterRegistry;
 
 final readonly class NodeAgentIdeDefaults
 {
-    /**
-     * @var list<string>
-     */
-    public const array SUPPORTED_ADAPTERS = ['opencode', 'polyscope'];
+    public function __construct(
+        private AgentIdeAdapterRegistry $registry,
+    ) {}
 
     /**
      * @return array{
@@ -42,7 +42,15 @@ final readonly class NodeAgentIdeDefaults
 
     public function isSupported(string $adapter): bool
     {
-        return $adapter === 'none' || in_array($adapter, self::SUPPORTED_ADAPTERS, true);
+        return in_array($adapter, $this->supportedAdapters(), true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function supportedAdapters(): array
+    {
+        return $this->registry->supportedInputsForScope('node');
     }
 
     /**

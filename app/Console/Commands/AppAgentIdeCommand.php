@@ -6,7 +6,9 @@ namespace App\Console\Commands;
 
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
+use App\Http\Gateway\Responses\AgentIde\AgentIdeAdapterChoicesResponse;
 use App\Http\Gateway\Responses\Apps\AppAgentIdeResponse;
 use App\Models\App;
 use App\Models\Node;
@@ -51,7 +53,23 @@ class AppAgentIdeCommand extends Command
         $agentIde = $this->stringArgument('agent_ide');
 
         if ($agentIde === null && $this->isInteractiveInput()) {
-            $agentIde = $this->promptForAgentIde($defaults);
+            try {
+                $agentIde = $this->promptForAgentIde($callerRole, $defaults);
+            } catch (GatewayApiException $e) {
+                return $this->failCommand(
+                    code: $e->errorCode() ?? 'gateway_unavailable',
+                    message: $e->getMessage() !== ''
+                        ? $e->getMessage()
+                        : 'Gateway connection is required to read agent IDE adapters.',
+                    meta: $e->errorMeta(),
+                );
+            } catch (Throwable) {
+                return $this->failCommand(
+                    code: 'gateway_unavailable',
+                    message: 'Gateway connection is required to read agent IDE adapters.',
+                    meta: [],
+                );
+            }
         }
 
         if ($agentIde === null) {
@@ -86,9 +104,9 @@ class AppAgentIdeCommand extends Command
         return $this->successCommand($defaults->set($app, $agentIde));
     }
 
-    private function promptForAgentIde(AppAgentIdeDefaults $defaults): string
+    private function promptForAgentIde(string $callerRole, AppAgentIdeDefaults $defaults): string
     {
-        $options = collect($defaults->supportedAdapters())
+        $options = collect($this->agentIdeChoices($callerRole, $defaults))
             ->mapWithKeys(fn (string $adapter): array => [$adapter => $this->agentIdeChoiceLabel($adapter)])
             ->all();
 
@@ -100,6 +118,23 @@ class AppAgentIdeCommand extends Command
         );
 
         return $selected;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function agentIdeChoices(string $callerRole, AppAgentIdeDefaults $defaults): array
+    {
+        if ($callerRole !== 'control') {
+            return $defaults->supportedAdapters();
+        }
+
+        /** @var AgentIdeAdapterChoicesResponse $dto */
+        $dto = app(GatewayConnector::class)
+            ->send(new ListAgentIdeAdaptersRequest('app'))
+            ->dto();
+
+        return $dto->supportedInputs();
     }
 
     private function agentIdeChoiceLabel(string $adapter): string

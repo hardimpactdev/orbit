@@ -25,8 +25,6 @@ final readonly class NodesProbe
 {
     private const array SUPPORTED_ROLES = ['control', 'gateway', 'app'];
 
-    private const array SUPPORTED_AGENT_IDE_ADAPTERS = ['none', 'opencode', 'polyscope'];
-
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
         private ?RemoteShell $remoteShell = null,
@@ -34,6 +32,7 @@ final readonly class NodesProbe
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?DevelopmentDnsMappingProbe $developmentDnsMappingProbe = null,
+        private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
     ) {}
 
     public function key(): string
@@ -227,7 +226,7 @@ final readonly class NodesProbe
 
         foreach ($config as $key => $value) {
             if ($key === 'adapter') {
-                if (! in_array($value, self::SUPPORTED_AGENT_IDE_ADAPTERS, true)) {
+                if (! in_array($value, $this->agentIdeDefaults()->supportedAdapters(), true)) {
                     return [
                         new DriftEntry(
                             family: $this->key(),
@@ -237,7 +236,7 @@ final readonly class NodesProbe
                         ),
                     ];
                 }
-            } elseif (! in_array($key, self::SUPPORTED_AGENT_IDE_ADAPTERS, true)) {
+            } elseif (! in_array($key, $this->agentIdeDefaults()->supportedAdapters(), true)) {
                 return [
                     new DriftEntry(
                         family: $this->key(),
@@ -589,6 +588,11 @@ final readonly class NodesProbe
     private function developmentDnsMappingProbe(): DevelopmentDnsMappingProbe
     {
         return $this->developmentDnsMappingProbe ?? app(DevelopmentDnsMappingProbe::class);
+    }
+
+    private function agentIdeDefaults(): NodeAgentIdeDefaults
+    {
+        return $this->agentIdeDefaults ?? app(NodeAgentIdeDefaults::class);
     }
 
     /**
