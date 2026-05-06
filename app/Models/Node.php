@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -29,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $status
  * @property bool $is_local
  * @property-read SchedulerState|null $schedulerState
+ * @property-read Collection<int, Schedule> $schedules
  */
 class Node extends Model
 {
@@ -88,6 +90,14 @@ class Node extends Model
     public function schedulerState(): HasOne
     {
         return $this->hasOne(SchedulerState::class);
+    }
+
+    /**
+     * @return HasMany<Schedule, $this>
+     */
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class)->orderBy('name');
     }
 
     /**

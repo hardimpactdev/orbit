@@ -1337,7 +1337,16 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
 - [x] Convert schedule command docs into current format.
 - [x] Reshape schedule docs around the Orbit Scheduler resident daemon. See
   [`2026-05-05-supervisor-runtime-backend-plan.md`](2026-05-05-supervisor-runtime-backend-plan.md).
-- [ ] Port schedule schema, models, and run-history table.
+- [x] Port schedule schema, models, and run-history table.
+  - [x] Added gateway-owned `schedules` intent storage for app, node, and
+    Orbit scoped schedules, including stable schedule keys, execution source,
+    interval, timezone, enabled/status fields, model relationships, factory
+    states, and focused model coverage.
+  - [x] Reconciled with existing scheduler local state and run-history work:
+    `scheduler_states`, `schedule_locks`, `schedule_runs`, authenticated
+    run-history intake, typed gateway request/response DTOs, and focused API /
+    gateway-client coverage were already present from the scheduler foundation
+    slices.
 - [ ] Port schedule add/list/show/remove commands.
 - [ ] Port schedule run command (manual fire / on-demand tick).
 - [ ] Port schedule logs command against scheduler-captured stdout/stderr.

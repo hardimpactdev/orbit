@@ -24,6 +24,7 @@ use Illuminate\Support\Str;
  * @property array<string, mixed>|null $agent_ide_config
  * @property-read Node|null $node
  * @property-read Collection<int, Process> $processes
+ * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Workspace> $workspaces
  */
 class App extends Model
@@ -66,6 +67,14 @@ class App extends Model
     public function processes(): HasMany
     {
         return $this->hasMany(Process::class)->orderBy('sort_order');
+    }
+
+    /**
+     * @return HasMany<Schedule, $this>
+     */
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class)->orderBy('name');
     }
 
     /**
