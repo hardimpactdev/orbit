@@ -70,6 +70,19 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 `tool-show` reads gateway tool intent and may request live node inspection only when `--live` is present. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+The gateway API endpoint emits an activity entry for successful and failed
+tool registry reads.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /tools/{tool}` |
+| Effect | `read` |
+| Subject | `NodeTool` when the selected tool row is visible and resolved; `none` for not-found or hidden tool responses. |
+| Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

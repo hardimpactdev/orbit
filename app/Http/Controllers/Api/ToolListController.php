@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Tools\ToolPayloadMapper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -99,25 +100,9 @@ final readonly class ToolListController implements Loggable
      */
     private function toolPayloads(Collection $tools): array
     {
-        return $tools->map(fn (NodeTool $tool): array => [
-            'name' => $tool->name,
-            'node' => $tool->node?->name,
-            'expected_state' => $tool->expected_state,
-            'observed_state' => null,
-            'version' => $tool->expected_version,
-            'managed' => true,
-            'endpoints' => $this->endpoints($tool),
-        ])->all();
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function endpoints(NodeTool $tool): array
-    {
-        $endpoints = $tool->config['endpoints'] ?? [];
-
-        return is_array($endpoints) ? array_values($endpoints) : [];
+        return $tools
+            ->map(fn (NodeTool $tool): array => app(ToolPayloadMapper::class)->toArray($tool))
+            ->all();
     }
 
     private function authorizationFailed(string $message): JsonResponse

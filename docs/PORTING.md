@@ -1030,9 +1030,7 @@ that produced the controller's Loggable wiring.
   `node:default`, `node:grant`, `node:revoke`, `node:remove`,
   `node:agent-ide`).
 - [x] `2_gateway`.
-- [ ] `3_tool`.
-  - [!] Activity backfill is blocked until a clean `tool:*` command surface is
-    implemented.
+- [x] `3_tool` (`tool:list`, `tool:show` — read command surface).
 - [ ] `4_firewall`.
   - [!] Activity backfill is blocked until
     `docs/abstractions/4_firewall.md` exists and a clean `firewall:*` command
@@ -1653,12 +1651,15 @@ for the Saloon-based gateway transport pattern.
     for list, add, edit, remove, start, stop, restart, and logs endpoints.
     Command forwarding paths use typed gateway requests; command, API, and
     gateway-client coverage lives alongside the process command slices.
-- [ ] Port tool/service API controllers and typed client requests after tool
+- [x] Port tool/service API controllers and typed client requests after tool
   docs are converted.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
   - [x] Tool read API foundation exists for gateway-owned registry reads:
     `node_tools` schema/model/factory, `GET /api/tools`,
     `GET /api/tools/{tool}`, and typed Saloon list/show requests.
+  - [x] `tool:list` and `tool:show` commands are wired through the typed
+    gateway requests for non-gateway callers and local registry reads on the
+    gateway.
 - [ ] Port doctor API controllers and typed client requests after doctor docs
   are converted.
 - [ ] Port long-running SSE progress primitives.
@@ -1688,11 +1689,13 @@ for the Saloon-based gateway transport pattern.
 - [ ] Port process doctor contracts and checks.
 - [ ] Port proxy route family.
 - [ ] Port firewall rule family.
-- [ ] Port tool family.
+- [~] Port tool family.
   - [x] Tool abstraction seed exists at `docs/abstractions/3_tool.md`.
-  - [~] Read foundation exists for registry-backed `tool:list` / `tool:show`
+  - [x] Read foundation exists for registry-backed `tool:list` / `tool:show`
     command wiring: node tool intent schema/model, gateway API list/show
     controllers, and typed gateway client requests.
+  - [!] Tool-family live inspection, doctor probes, fix/adopt map, and any
+    future write/enactment commands remain outstanding.
 - [!] Port schedule family.
   - Blocked by missing global `doctor` command/family dispatcher and doctor API
     transport; schedule command-family behavior is otherwise ported through

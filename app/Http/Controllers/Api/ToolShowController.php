@@ -9,6 +9,8 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Tools\ToolCatalog;
+use App\Services\Tools\ToolPayloadMapper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -17,25 +19,6 @@ use Illuminate\Http\Request;
 final class ToolShowController implements Loggable
 {
     use ResolvesVisibleToolNodes;
-
-    private const array SUPPORTED_TOOLS = [
-        'caddy',
-        'supervisor',
-        'docker',
-        'viteplus',
-        'php-cli',
-        'gh',
-        'composer',
-        'dns',
-        'php',
-        'postgres',
-        'mysql',
-        'redis',
-        'mailpit',
-        'reverb',
-        'polyscope-server',
-        'opencode-server',
-    ];
 
     private ?NodeTool $activitySubject = null;
 
@@ -48,14 +31,16 @@ final class ToolShowController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        if (! in_array($tool, self::SUPPORTED_TOOLS, true)) {
+        $catalog = app(ToolCatalog::class);
+
+        if (! $catalog->supports($tool)) {
             return response()->json([
                 'error' => [
                     'code' => 'tool.unsupported_action',
                     'message' => "Tool '{$tool}' is not in the supported tool catalog.",
                     'meta' => [
                         'tool' => $tool,
-                        'supported' => self::SUPPORTED_TOOLS,
+                        'supported' => $catalog->names(),
                     ],
                 ],
             ], 400);
@@ -157,25 +142,7 @@ final class ToolShowController implements Loggable
      */
     private function toolPayload(NodeTool $tool): array
     {
-        return [
-            'name' => $tool->name,
-            'node' => $tool->node?->name,
-            'expected_state' => $tool->expected_state,
-            'observed_state' => null,
-            'version' => $tool->expected_version,
-            'managed' => true,
-            'endpoints' => $this->endpoints($tool),
-        ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function endpoints(NodeTool $tool): array
-    {
-        $endpoints = $tool->config['endpoints'] ?? [];
-
-        return is_array($endpoints) ? array_values($endpoints) : [];
+        return app(ToolPayloadMapper::class)->toArray($tool);
     }
 
     private function authorizationFailed(string $message): JsonResponse
