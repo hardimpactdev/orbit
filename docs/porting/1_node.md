@@ -158,6 +158,14 @@ Detail file for the node command family. Top-level command status lives in
       expose a typed gateway request for configured control callers to fetch
       prompt choices from the gateway.
 - [~] Port `node:new`.
+  - Current implementation: `app/Console/Commands/NodeNewCommand.php`
+  - Current tests:
+    - `tests/Feature/Commands/NodeNewCommandTest.php` (base first-gateway,
+      installer, convergence, trust, platform, and forwarding contract)
+    - `tests/Feature/Commands/Nodes/NodeNewCallerRoleTest.php` (caller-role
+      resolution)
+    - `tests/Feature/Commands/Nodes/NodeNewInteractiveInputModeTest.php`
+      (interactive input mode contract)
   - [x] Bootstrap host installer exists and is used before Orbit runs on a
     fresh gateway host.
   - [x] First-gateway command path validates required non-interactive input.
@@ -179,7 +187,7 @@ Detail file for the node command family. Top-level command status lives in
     the initiating control node.
   - [x] First-gateway bootstrap captures gateway root CA from remote command
     output and stores it locally for control-node trust.
-  - [ ] Interactive input mode.
+  - [x] Interactive input mode.
   - [ ] Gateway-connected forwarding from configured control nodes.
   - [ ] Gateway-local app and control enrollment paths.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).

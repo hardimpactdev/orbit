@@ -29,6 +29,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 #[Signature('node:new
     {name? : Registry name for the node}
     {--role= : Node role: gateway, control, or app}
@@ -62,8 +65,8 @@ class NodeNewCommand extends Command
             );
         }
 
-        $name = $this->stringArgument('name');
-        $role = $this->stringOption('role');
+        $name = $this->resolveName();
+        $role = $this->resolveRole();
 
         if ($name === null) {
             return $this->validationFailed('name', 'Node name is required.');
@@ -142,13 +145,13 @@ class NodeNewCommand extends Command
 
     private function convergeFirstGateway(string $name): int
     {
-        $host = $this->stringOption('host');
+        $host = $this->resolveHost('gateway');
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
         }
 
-        $controlName = $this->stringOption('control-name') ?? $this->defaultControlName();
+        $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
             return $this->validationFailed('control_name', 'Control node name must be a valid node name.');
@@ -496,13 +499,13 @@ class NodeNewCommand extends Command
         WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
         string $name,
     ): int {
-        $host = $this->stringOption('host');
+        $host = $this->resolveHost('gateway');
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
         }
 
-        $controlName = $this->stringOption('control-name') ?? $this->defaultControlName();
+        $controlName = $this->resolveControlName($name);
 
         if ($controlName === null || ! $this->isValidNodeName($controlName)) {
             return $this->validationFailed('control_name', 'Control node name must be a valid node name.');
@@ -512,7 +515,7 @@ class NodeNewCommand extends Command
             return $this->validationFailed('control_name', 'Control node name must be different from gateway node name.');
         }
 
-        $sshUser = $this->stringOption('ssh-user') ?? 'root';
+        $sshUser = $this->resolveSshUser();
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $gatewayAddress = '10.6.0.2';
         $controlAddress = $this->nextWireguardAddress(excluding: [$gatewayAddress]);
@@ -1087,18 +1090,148 @@ class NodeNewCommand extends Command
         return is_string($value) && $value !== '' ? $value : null;
     }
 
+    private function resolveName(): ?string
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return null;
+        }
+
+        return trim(text(
+            label: 'Node name',
+            required: true,
+            validate: fn (string $value): ?string => $this->validatePromptNodeName($value),
+        ));
+    }
+
+    private function resolveRole(): ?string
+    {
+        $role = $this->stringOption('role');
+
+        if ($role !== null) {
+            return $role;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return null;
+        }
+
+        return select(
+            label: 'Node role',
+            options: ['gateway', 'app', 'control'],
+            required: true,
+        );
+    }
+
+    private function resolveHost(string $role): ?string
+    {
+        $host = $this->stringOption('host');
+
+        if ($host !== null) {
+            return $host;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return null;
+        }
+
+        if (! in_array($role, ['app', 'gateway'], true)) {
+            return null;
+        }
+
+        return trim(text(label: 'SSH/bootstrap endpoint', required: true));
+    }
+
+    private function resolveControlName(string $gatewayName): ?string
+    {
+        $controlName = $this->stringOption('control-name');
+
+        if ($controlName !== null) {
+            return $controlName;
+        }
+
+        $default = $this->defaultControlName();
+
+        if (! $this->isInteractiveInput()) {
+            return $default;
+        }
+
+        return trim(text(
+            label: 'Control node name',
+            default: $default ?? '',
+            required: true,
+            validate: fn (string $value): ?string => $this->validatePromptControlName($value, $gatewayName),
+        ));
+    }
+
+    private function resolveSshUser(): string
+    {
+        $sshUser = $this->stringOption('ssh-user') ?? 'root';
+
+        if (! $this->isInteractiveInput() || $this->sshUserOptionWasSupplied()) {
+            return $sshUser;
+        }
+
+        return trim(text(label: 'SSH user', default: $sshUser, required: true));
+    }
+
+    private function sshUserOptionWasSupplied(): bool
+    {
+        return $this->input->hasParameterOption('--ssh-user', true);
+    }
+
+    private function isInteractiveInput(): bool
+    {
+        return ! $this->wantsJson() && $this->input->isInteractive();
+    }
+
+    private function validatePromptNodeName(string $value): ?string
+    {
+        $name = trim($value);
+
+        if ($name === '') {
+            return 'Node name is required.';
+        }
+
+        return $this->isValidNodeName($name) ? null : 'Node name must be a valid node name.';
+    }
+
+    private function validatePromptControlName(string $value, string $gatewayName): ?string
+    {
+        $controlName = trim($value);
+
+        if ($controlName === '') {
+            return 'Control node name is required.';
+        }
+
+        if (! $this->isValidNodeName($controlName)) {
+            return 'Control node name must be a valid node name.';
+        }
+
+        return $controlName === $gatewayName
+            ? 'Control node name must be different from gateway node name.'
+            : null;
+    }
+
     /**
      * @return array{host: string, environment: string, tld: ?string, sshUser: string}|int
      */
     private function resolveAppInputs(): array|int
     {
-        $host = $this->stringOption('host');
-
-        if ($host === null) {
-            return $this->validationFailed('host', 'Host is required for app nodes.');
-        }
-
         $environment = $this->stringOption('environment');
+
+        if ($environment === null && $this->isInteractiveInput()) {
+            $environment = select(
+                label: 'App node environment',
+                options: ['development', 'production'],
+                required: true,
+            );
+        }
 
         if ($environment === null) {
             return $this->validationFailed('environment', 'Environment is required for app nodes.');
@@ -1108,9 +1241,25 @@ class NodeNewCommand extends Command
             return $this->validationFailed('environment', 'Environment must be one of development or production.');
         }
 
+        $host = $this->resolveHost('app');
+
+        if ($host === null) {
+            return $this->validationFailed('host', 'Host is required for app nodes.');
+        }
+
         $tld = $this->stringOption('tld');
 
         if ($environment === 'development') {
+            if ($tld === null && $this->isInteractiveInput()) {
+                $tld = trim(text(
+                    label: 'Development TLD',
+                    required: true,
+                    validate: fn (string $value): ?string => $this->isValidTld(trim($value))
+                        ? null
+                        : 'TLD must be a lowercase DNS label without a leading dot.',
+                ));
+            }
+
             if ($tld === null) {
                 return $this->validationFailed('tld', 'Development app nodes require a TLD.');
             }
@@ -1128,7 +1277,7 @@ class NodeNewCommand extends Command
             'host' => $host,
             'environment' => $environment,
             'tld' => $tld,
-            'sshUser' => $this->stringOption('ssh-user') ?? 'root',
+            'sshUser' => $this->resolveSshUser(),
         ];
     }
 
