@@ -3,12 +3,20 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 final class FakeAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 {
@@ -212,7 +220,7 @@ it('does not mutate app node or process state while messaging', function (): voi
         ->and(DB::table('workspaces')->count())->toBe(0);
 });
 
-it('fails for non-gateway callers until gateway forwarding is implemented', function (): void {
+it('fails for non-gateway callers without configured gateway settings', function (): void {
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
@@ -244,4 +252,61 @@ it('fails for non-gateway callers until gateway forwarding is implemented', func
             ],
         ])
         ->and($adapter->deliveries)->toBeEmpty();
+});
+
+it('forwards configured control callers through the typed gateway request', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $adapter = new FakeAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    $mockClient = MockClient::global([
+        SendAgentIdeMessageRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'agent_ide' => [
+                        'adapter' => 'opencode',
+                        'source' => 'app',
+                        'target' => [
+                            'app' => 'docs',
+                            'workspace' => null,
+                            'node' => 'app-1',
+                        ],
+                        'session' => [
+                            'id' => 'sess_123',
+                            'status' => 'active',
+                        ],
+                        'delivery' => [
+                            'status' => 'sent',
+                            'message_bytes' => 13,
+                            'input' => 'argument',
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $exitCode = Artisan::call('agent-ide:message', [
+        'message' => 'Ship the docs',
+        '--app' => 'docs',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['agent_ide']['target']['app'])->toBe('docs')
+        ->and($adapter->deliveries)->toBeEmpty();
+
+    $mockClient->assertSent(SendAgentIdeMessageRequest::class);
 });

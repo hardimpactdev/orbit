@@ -163,7 +163,7 @@ ported, with the activity backfill in place.
 - [ ] [`12_cf`](12_cf.md)
 - [ ] [`13_vpn`](13_vpn.md)
 - [ ] [`14_php`](14_php.md)
-- [ ] [`15_agent-ide`](15_agent-ide.md)
+- [~] [`15_agent-ide`](15_agent-ide.md)
 - [x] [`16_dns`](16_dns.md)
 - [x] [`17_activity`](17_activity.md)
 

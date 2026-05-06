@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Contracts\AgentIdeMessageAdapter;
-use App\Models\App;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
+use App\Http\Gateway\Responses\AgentIde\AgentIdeMessageResponse;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
-use App\Services\AgentIde\AgentIdeAdapterRegistry;
-use App\Services\AgentIde\NullAgentIdeMessageAdapter;
-use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\AgentIde\AgentIdeMessageDelivery;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -24,8 +25,7 @@ use Illuminate\Console\Command;
 class AgentIdeMessageCommand extends Command
 {
     public function handle(
-        AppAgentIdeDefaults $appAgentIdeDefaults,
-        AgentIdeAdapterRegistry $registry,
+        AgentIdeMessageDelivery $delivery,
     ): int {
         $callerRole = $this->callerRole();
 
@@ -38,14 +38,6 @@ class AgentIdeMessageCommand extends Command
                     'reason' => 'unsupported_value',
                     'caller_role' => 'unknown',
                 ],
-            );
-        }
-
-        if ($callerRole !== 'gateway') {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to send Agent IDE messages.',
-                meta: [],
             );
         }
 
@@ -86,66 +78,61 @@ class AgentIdeMessageCommand extends Command
             );
         }
 
-        $app = $this->resolveApp($appSelector);
+        if ($callerRole !== 'gateway') {
+            return $this->forwardAppMessage($appSelector, $message);
+        }
 
-        if (! $app instanceof App) {
+        try {
+            return $this->successCommand($delivery->deliverToApp($appSelector, $message));
+        } catch (GatewayApiException $e) {
             return $this->failCommand(
-                code: 'target_not_found',
-                message: "App '{$appSelector}' not found or not visible.",
-                meta: ['app' => $appSelector],
+                code: $e->errorCode() ?? 'adapter_delivery_failed',
+                message: $e->getMessage(),
+                meta: $e->errorMeta(),
+            );
+        }
+    }
+
+    private function forwardAppMessage(string $app, string $message): int
+    {
+        if (! $this->hasConfiguredGateway()) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to send Agent IDE messages.',
+                meta: [],
             );
         }
 
-        $adapter = $appAgentIdeDefaults->payloadFor($app);
-        $adapterName = $adapter['effective_adapter'];
-
-        if ($adapterName === null) {
+        try {
+            /** @var AgentIdeMessageResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new SendAgentIdeMessageRequest($message, $app))
+                ->dto();
+        } catch (GatewayApiException $e) {
             return $this->failCommand(
-                code: 'no_effective_adapter',
-                message: "No Agent IDE adapter is configured for {$app->name}.",
-                meta: ['app' => $app->name, 'workspace' => null],
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to send Agent IDE messages.',
+                meta: $e->errorMeta(),
+            );
+        } catch (\Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to send Agent IDE messages.',
+                meta: [],
             );
         }
 
-        if (! $registry->isRegisteredAdapter($adapterName)) {
-            return $this->failCommand(
-                code: 'no_effective_adapter',
-                message: "Agent IDE adapter {$adapterName} is not registered.",
-                meta: ['app' => $app->name, 'workspace' => null, 'adapter' => $adapterName],
-            );
-        }
+        return $this->successCommand($dto->data);
+    }
 
-        $target = [
-            'app' => $app->name,
-            'workspace' => null,
-            'node' => (string) $app->node?->name,
-        ];
-        $messageAdapter = $this->messageAdapter();
-        $session = $messageAdapter->activeSession($target, $adapterName);
-
-        if ($session === null) {
-            return $this->failCommand(
-                code: 'no_active_session',
-                message: "No active Agent IDE session found for {$app->name}.",
-                meta: ['app' => $app->name, 'workspace' => null, 'adapter' => $adapterName],
-            );
-        }
-
-        $messageAdapter->deliver($target, $adapterName, $session, $message);
-
-        return $this->successCommand([
-            'agent_ide' => [
-                'adapter' => $adapterName,
-                'source' => $adapter['source'],
-                'target' => $target,
-                'session' => $session,
-                'delivery' => [
-                    'status' => 'sent',
-                    'message_bytes' => strlen($message),
-                    'input' => 'argument',
-                ],
-            ],
-        ]);
+    private function hasConfiguredGateway(): bool
+    {
+        return LocalGatewaySettings::query()
+            ->whereNotNull('gateway_url')
+            ->where('gateway_url', '!=', '')
+            ->exists();
     }
 
     private function callerRole(): string
@@ -179,23 +166,6 @@ class AgentIdeMessageCommand extends Command
         }
 
         return trim($message);
-    }
-
-    private function resolveApp(string $selector): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->first(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}");
-    }
-
-    private function messageAdapter(): AgentIdeMessageAdapter
-    {
-        return app()->bound(AgentIdeMessageAdapter::class)
-            ? app(AgentIdeMessageAdapter::class)
-            : new NullAgentIdeMessageAdapter;
     }
 
     /**
