@@ -9,17 +9,19 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 
 final readonly class DoctorReportRunner
 {
-    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule', 'tool'];
+    private const array SUPPORTED_FAMILIES = ['node', 'proxy', 'firewall_rule', 'tool', 'schedule'];
 
     public function __construct(
         private NodesProbe $nodesProbe,
@@ -29,6 +31,7 @@ final readonly class DoctorReportRunner
         private ProxyRouteFixer $proxyRouteFixer,
         private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
+        private SchedulesProbe $schedulesProbe,
     ) {}
 
     /**
@@ -130,6 +133,19 @@ final readonly class DoctorReportRunner
                         $actions[] = $action;
                     }
                 }
+            }
+        }
+
+        if (in_array('schedule', $selectedFamilies, true)) {
+            foreach (Schedule::query()->with(['app.node', 'node'])->get() as $schedule) {
+                $snapshot = $this->schedulesProbe->introspect($schedule);
+                $issues = [
+                    ...$issues,
+                    ...array_map(
+                        fn (DriftEntry $entry): array => $this->scheduleIssuePayload($entry, $schedule),
+                        $this->schedulesProbe->diff($schedule, $snapshot),
+                    ),
+                ];
             }
         }
 
@@ -249,6 +265,21 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function scheduleIssuePayload(DriftEntry $entry, Schedule $schedule): array
+    {
+        return [
+            'family' => $entry->family,
+            'node' => $this->scheduleNodeName($schedule),
+            'key' => $entry->key,
+            'kind' => $entry->kind->value,
+            'summary' => $entry->summary,
+            'detail' => $entry->detail,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function handleFirewallAction(string $mode, FirewallRule $rule, DriftEntry $entry): ?array
@@ -304,6 +335,30 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
+    }
+
+    private function scheduleNodeName(Schedule $schedule): ?string
+    {
+        $schedule->loadMissing(['app.node', 'node']);
+
+        if ($schedule->scope === 'app') {
+            return $schedule->app?->node?->name;
+        }
+
+        if ($schedule->scope === 'node') {
+            return $schedule->node?->name;
+        }
+
+        if ($schedule->scope === 'orbit') {
+            $node = Node::query()
+                ->where('role', 'gateway')
+                ->where('status', 'active')
+                ->first();
+
+            return $node instanceof Node ? $node->name : null;
+        }
+
+        return null;
     }
 
     /**

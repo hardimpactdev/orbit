@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
+use App\Models\SchedulerState;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -145,6 +148,28 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.mode', 'fix')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
+    });
+
+    it('accepts the schedule family scope and returns schedule health', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
+        Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $appNode->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("running\n"));
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+            'families' => ['schedule'],
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', true)
+            ->assertJsonPath('success.data.doctor.scope.families', ['schedule']);
     });
 
     it('denies app-node write mode requests', function (): void {

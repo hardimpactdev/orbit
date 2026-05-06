@@ -1463,11 +1463,21 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     DTOs, and focused API / gateway-client coverage.
   - [x] Run-history intake was already present through the authenticated
     `POST /api/schedules/runs` endpoint and typed scheduler gateway request.
-- [!] Port schedule doctor probe and fix map.
-  - Blocked by missing global `doctor` command/family dispatcher and doctor API
-    transport. Next action: implement the global doctor orchestration slice in
-    the State Families And Doctor Workstream, then wire the schedule-family
-    probe/fix map into that dispatcher.
+- [~] Port schedule doctor probe and fix map.
+  - [x] Schedule abstraction seed exists at `docs/abstractions/9_schedule.md`.
+  - [x] Global `doctor` command/family dispatcher and doctor API transport are
+    now available through the State Families And Doctor Workstream.
+  - [x] Read-only schedule doctor probe foundation covers registry intent,
+    target eligibility, runtime-backend short-circuiting, scheduler program
+    presence/liveness, heartbeat freshness, and registry-sync freshness.
+  - [x] Verify-mode doctor dispatcher/API integration is ported for
+    `--family=schedule`.
+  - [!] Fix map remains outstanding for `schedule.scheduler_missing`,
+    `schedule.scheduler_stopped`, `schedule.lock_stuck`, and
+    `schedule.run_history_hook_*`.
+  - Next concrete action: add safe `--fix` handling for scheduler program
+    missing/stopped using `OrbitSchedulerProgramRenderer`, then model stale lock
+    and run-history hook drift.
 
 ## Runtime Backend And Scheduler Workstream
 
@@ -1818,11 +1828,13 @@ for the Saloon-based gateway transport pattern.
     - Next concrete action: define scoped adopt behavior for selected observed
       tool reality, or add capability/version fix support once catalog
       definitions declare safe install/update commands.
-- [!] Port schedule family.
-  - Blocked by missing global `doctor` command/family dispatcher and doctor API
-    transport; schedule command-family behavior is otherwise ported through
-    logs/run/CRUD, scheduler daemon rendering, heartbeat intake, and run-history
-    intake.
+- [~] Port schedule family.
+  - Schedule command-family behavior is ported through logs/run/CRUD, scheduler
+    daemon rendering, heartbeat intake, and run-history intake.
+  - [x] Schedule abstraction seed exists at `docs/abstractions/9_schedule.md`.
+  - [x] Read-only schedule doctor probe foundation and verify-mode doctor
+    dispatcher/API integration are ported.
+  - [!] Schedule doctor fix map remains outstanding.
 - [ ] Port enactor/probe/doctor integration pattern with focused tests before
   broader command migration depends on it.
 

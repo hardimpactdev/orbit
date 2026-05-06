@@ -5,11 +5,14 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
+use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
+use App\Models\SchedulerState;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -336,6 +339,46 @@ describe('doctor command contract', function (): void {
                 'key' => 'tool.credentials_missing',
                 'mode' => 'fix',
                 'status' => 'completed',
+            ]);
+    });
+
+    it('runs the schedule family locally for gateway callers', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
+        Schedule::factory()->forApp($app)->create();
+        SchedulerState::factory()->create([
+            'node_id' => $appNode->id,
+            'heartbeat_at' => now(),
+            'registry_synced_at' => now(),
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("running\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['scope']['families'])->toBe(['schedule'])
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0);
+    });
+
+    it('reports schedule family drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
+        Schedule::factory()->forApp($app)->create();
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell('', 1));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'schedule',
+                'node' => 'app-1',
+                'key' => 'schedule.runtime_backend_unavailable',
+                'kind' => 'missing',
             ]);
     });
 
