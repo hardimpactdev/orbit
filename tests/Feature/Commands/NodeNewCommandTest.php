@@ -1057,6 +1057,93 @@ describe('node:new', function (): void {
             ->and($peer->allowed_ips)->toBe('10.6.0.8/32');
     });
 
+    it('materializes a compatible unknown app host from proven identity reality', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-unknown-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.33',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $node = DB::table('nodes')->where('name', 'app-unknown-1')->first();
+        $peer = $node === null ? null : DB::table('wireguard_peers')->where('node_id', $node->id)->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('adopted')
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'app-unknown-1',
+                'role' => 'app',
+                'environment' => 'development',
+                'tld' => 'test',
+                'platform' => 'ubuntu_24-04',
+                'addresses' => [
+                    'wireguard' => '10.6.0.8',
+                    'gateway_endpoint' => '10.6.0.2',
+                ],
+                'status' => 'active',
+            ])
+            ->and($node)->not->toBeNull()
+            ->and($node->host)->toBe('192.0.2.33')
+            ->and($node->status)->toBe('active')
+            ->and($peer)->not->toBeNull()
+            ->and($peer->public_key)->toBe('app-public-key')
+            ->and($peer->private_key)->toBe('')
+            ->and($peer->allowed_ips)->toBe('10.6.0.8/32');
+
+        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+    });
+
     it('requires a tld for development app nodes before side effects', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',

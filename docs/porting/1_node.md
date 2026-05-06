@@ -225,11 +225,13 @@ Detail file for the node command family. Top-level command status lives in
       implemented. The command docs now define the app unknown-host
       materialization contract and restrict gateway-role materialization to the
       gateway identity already running the command, rather than an arbitrary
-      remote gateway host. Next concrete action: implement app unknown-host
-      materialization in gateway-local `node:new`, then expose the same behavior
-      through forwarding; gateway-role materialization remains blocked until the
-      command can prove the target host is the executing gateway identity before
-      writing a missing gateway row.
+      remote gateway host. Gateway-local `node:new` now materializes compatible
+      unknown app hosts only after bounded identity artifact proof and live
+      WireGuard reality agree. Next concrete action: expose the same app
+      unknown-host materialization behavior through forwarding; gateway-role
+      materialization remains blocked until the command can prove the target
+      host is the executing gateway identity before writing a missing gateway
+      row.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).
   - [x] Full documented JSON success state after WireGuard/API work lands.
 - [~] Restore node provisioning support:

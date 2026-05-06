@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Data\Nodes\NodeIdentityArtifact;
 use App\Enums\AdoptAction;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -12,6 +13,7 @@ use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\NodeIdentityArtifactProbe;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\NodesProbe;
 use App\Services\OrbitHostInstaller;
@@ -21,6 +23,7 @@ use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use App\Services\WireGuard\WireGuardKeyGenerator;
+use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -30,6 +33,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
+use Throwable;
 
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
@@ -677,6 +681,12 @@ class NodeNewCommand extends Command
             );
         }
 
+        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $name, $inputs);
+
+        if (is_int($adoption)) {
+            return $adoption;
+        }
+
         $runtimeUser = self::DEFAULT_RUNTIME_USER;
         $installation = $installer->install($inputs['host'], $inputs['sshUser'], 'app', $runtimeUser);
 
@@ -758,6 +768,108 @@ class NodeNewCommand extends Command
         $this->line("Endpoint: {$inputs['host']}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array{host: string, environment: string, tld: ?string, sshUser: string}  $inputs
+     */
+    private function materializeUnknownAppNode(NodesProbe $nodesProbe, NodeRegistryWriter $registryWriter, string $name, array $inputs): ?int
+    {
+        $candidate = new Node([
+            'name' => $name,
+            'role' => 'app',
+            'environment' => $inputs['environment'],
+            'tld' => $inputs['tld'],
+            'platform' => 'unknown',
+            'host' => $inputs['host'],
+            'wireguard_address' => '',
+            'gateway_endpoint' => $this->gatewayEndpoint(),
+            'ssh_user' => $inputs['sshUser'],
+            'user' => null,
+            'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
+            'status' => 'active',
+            'is_local' => false,
+        ]);
+
+        try {
+            $artifact = app(NodeIdentityArtifactProbe::class)->read($candidate);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! $this->identityArtifactMatchesAppRequest($artifact, $name)) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Host '{$inputs['host']}' has an incompatible Orbit node identity.",
+                meta: [
+                    'name' => $name,
+                    'requested_role' => 'app',
+                    'observed_name' => $artifact->name,
+                    'observed_role' => $artifact->role,
+                    'observed_local_role' => $artifact->localRole,
+                    'observed_status' => $artifact->status,
+                    'observed_platform' => $artifact->platform,
+                ],
+            );
+        }
+
+        $publicKey = $artifact->interfacePublicKey;
+        $wireguardAddress = $artifact->wireguardAddress;
+
+        try {
+            $peerReality = is_string($publicKey) && $publicKey !== ''
+                ? app(WireGuardPeerRealityProbe::class)->peers()[$publicKey] ?? null
+                : null;
+        } catch (Throwable) {
+            $peerReality = null;
+        }
+
+        if (
+            ! is_string($publicKey)
+            || $publicKey === ''
+            || ! is_string($wireguardAddress)
+            || $wireguardAddress === ''
+            || $peerReality === null
+            || count($peerReality->allowedAddresses) !== 1
+            || $peerReality->allowedAddresses[0] !== $wireguardAddress
+        ) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: "App host '{$inputs['host']}' could not prove compatible WireGuard identity.",
+                meta: [
+                    'host' => $inputs['host'],
+                    'step' => 'node_identity_adoption',
+                    'error' => 'Identity artifact and live WireGuard peer reality did not match.',
+                ],
+            );
+        }
+
+        $node = $registryWriter->writeAppNode(
+            name: $name,
+            environment: $inputs['environment'],
+            tld: $inputs['tld'],
+            host: $inputs['host'],
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $this->gatewayEndpoint(),
+            sshUser: $inputs['sshUser'],
+            user: self::DEFAULT_RUNTIME_USER,
+        );
+
+        $node->update([
+            'platform' => $artifact->platform,
+        ]);
+
+        return $this->adoptExistingAppNode($nodesProbe, $node->refresh(), $inputs);
+    }
+
+    private function identityArtifactMatchesAppRequest(NodeIdentityArtifact $artifact, string $name): bool
+    {
+        return $artifact->name === $name
+            && $artifact->role === 'app'
+            && $artifact->localRole === 'app'
+            && $artifact->status === 'active'
+            && is_string($artifact->platform)
+            && str_starts_with($artifact->platform, 'ubuntu_');
     }
 
     /**
