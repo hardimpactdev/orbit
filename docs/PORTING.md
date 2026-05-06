@@ -1369,8 +1369,12 @@ across the process and schedule families.
     `POST /api/schedules/runs` intake keyed to the caller's WireGuard node
     identity, and typed `StoreScheduleRunRequest` / `ScheduleRunResponse`
     client DTOs for scheduler-to-gateway reporting.
-- [ ] Docker E2E base image runs `supervisord -n` as PID 1 (under `tini`)
+- [x] Docker E2E base image runs `supervisord -n` as PID 1 (under `tini`)
   and ships pre-installed Supervisor and `orbit_scheduler` program files.
+  - Docker topology runtime images install `supervisor` and `tini`, boot through
+    `tini` into `supervisord -n`, and preinstall Supervisor programs for `sshd`
+    plus `orbit_scheduler` so Docker feature E2E can exercise the runtime
+    backend and scheduler without relying on host init.
 - [ ] Add Docker E2E coverage for runtime backend behavior and scheduler
   liveness.
 - [ ] Add Incus E2E coverage where host init or VM-only behavior is part of

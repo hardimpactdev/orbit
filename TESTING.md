@@ -61,7 +61,8 @@ default). It builds two reusable images plus per-topology template snapshots:
 2. **Base image** (`orbit-base-ubuntu-26.04`). Built once via
    `composer e2e:prepare-base-image -- --force`. Ubuntu cloud + bootstrap
    user + the `orbit` user + the apt deps that `bin/install-orbit` would
-   otherwise install (PHP 8.5, composer, git, sqlite, WireGuard, openssh).
+   otherwise install (PHP 8.5, composer, git, sqlite, WireGuard, openssh,
+   Supervisor).
    No Orbit source is baked in. Rebuilt only when system deps change. In a
    multi-host pool, the image is built on
    `ORBIT_E2E_INCUS_IMAGE_BUILD_HOST` (default: `ORBIT_E2E_HOST`) and then
@@ -406,7 +407,9 @@ so the provider pool refuses Docker for them.
 
 Docker is a valid lane for `process:*`, `schedule:*`, and `workspace:*`
 runtime assertions because the runtime backend (Supervisor) and the Orbit
-Scheduler run identically inside Docker containers. Incus remains required
+Scheduler run inside Docker containers. Docker topology containers boot through
+`tini` into `supervisord -n`; Supervisor manages `sshd` and the
+`orbit_scheduler` program for runtime-backend feature tests. Incus remains required
 for tests that depend on real VM behavior: cloud-init, package
 installation, real SSH daemon behavior, sudo prompts, OS trust-store
 mutation, real WireGuard interfaces and peer routing, and host init

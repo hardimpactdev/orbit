@@ -14,8 +14,10 @@ RUN apt-get update \
         libzip-dev \
         openssh-client \
         openssh-server \
+        supervisor \
         sqlite3 \
         sudo \
+        tini \
         unzip \
     && docker-php-ext-install mbstring pdo_sqlite zip \
     && mkdir -p /run/sshd \
@@ -43,11 +45,32 @@ RUN printf '%s\n' \
     && chmod 755 /usr/local/bin/orbit
 
 RUN printf '%s\n' \
+        '[supervisord]' \
+        'nodaemon=true' \
+        'logfile=/var/log/supervisor/supervisord.log' \
+        'pidfile=/run/supervisord.pid' \
+        '' \
+        '[program:sshd]' \
+        'command=/usr/sbin/sshd -D' \
+        'autorestart=true' \
+        'stdout_logfile=/var/log/supervisor/sshd.log' \
+        'stderr_logfile=/var/log/supervisor/sshd.err.log' \
+        '' \
+        '[program:orbit_scheduler]' \
+        'directory=/home/orbit/orbit' \
+        'command=/bin/bash -lc "php artisan orbit-scheduler --sleep-seconds=60"' \
+        'user=orbit' \
+        'autostart=true' \
+        'autorestart=true' \
+        'stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log' \
+        'stderr_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.err.log' \
+        > /etc/supervisor/conf.d/orbit-e2e.conf \
+    && printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -e' \
-        'mkdir -p /run/sshd' \
-        '/usr/sbin/sshd' \
-        'exec sleep infinity' \
+        'mkdir -p /run/sshd /var/log/supervisor /home/orbit/.config/orbit/logs' \
+        'chown -R orbit:orbit /home/orbit/.config/orbit' \
+        'exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf' \
         > /usr/local/bin/orbit-e2e-container \
     && chmod 755 /usr/local/bin/orbit-e2e-container
 
@@ -63,4 +86,5 @@ RUN install -d -o control -g control /home/control/orbit \
     && sudo -iu control bash -lc 'cd /home/control/orbit && composer install --no-interaction --no-progress --no-dev' \
     && sudo -iu orbit bash -lc 'cd /home/orbit/orbit && composer install --no-interaction --no-progress --no-dev'
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/orbit-e2e-container"]
