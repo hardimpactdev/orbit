@@ -207,8 +207,8 @@ Detail file for the node command family. Top-level command status lives in
     - [x] Node enrollment hook and gateway interface configuration (todo 268).
   - [~] gateway registry writes
   - [~] local node role and identity persistence
-  - [ ] Orbit API vhost provisioning
-  - [ ] Orbit PHP-FPM pool provisioning
+  - [x] Orbit API vhost provisioning
+  - [x] Orbit PHP-FPM pool provisioning
   - [x] gateway-to-node SSH trust model
 - [x] Distribute SSH trust to the runtime user so control nodes can SSH as
   `orbit` after first-gateway provisioning.
