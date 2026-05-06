@@ -7,6 +7,7 @@ namespace App\Actions\Apps;
 use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Process;
+use App\Models\Workspace;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
@@ -24,7 +25,7 @@ final readonly class EnsureAppProcessRuntimeUnits
      */
     public function handle(App $app): array
     {
-        $app->loadMissing(['node', 'processes']);
+        $app->loadMissing(['node', 'processes', 'workspaces']);
 
         if ($app->node === null) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
@@ -52,24 +53,37 @@ final readonly class EnsureAppProcessRuntimeUnits
                 continue;
             }
 
-            $programName = $this->renderer->programName($app, $process);
-            $result = $this->remoteShell->run($app->node, $this->renderInstallScript($app, $process));
+            foreach ($this->runtimeContexts($app) as $workspace) {
+                $programName = $this->renderer->programName($app, $process, $workspace);
+                $result = $this->remoteShell->run($app->node, $this->renderInstallScript($app, $process, $workspace));
 
-            if (! $result->successful()) {
-                $warnings[] = [
-                    'code' => 'process.runtime_unit_missing',
-                    'family' => 'process',
-                    'message' => "Process runtime unit '{$programName}' was not enacted. Run doctor to converge process runtime units.",
-                    'next_command' => 'doctor --family=process --fix',
-                ];
+                if (! $result->successful()) {
+                    $warnings[] = [
+                        'code' => 'process.runtime_unit_missing',
+                        'family' => 'process',
+                        'message' => "Process runtime unit '{$programName}' was not enacted. Run doctor to converge process runtime units.",
+                        'next_command' => 'doctor --family=process --fix',
+                    ];
+                }
             }
         }
 
         return $warnings;
     }
 
-    private function renderInstallScript(App $app, Process $process): string
+    /**
+     * @return list<Workspace|null>
+     */
+    private function runtimeContexts(App $app): array
     {
-        return $this->renderer->installScript($app, $process);
+        return [
+            null,
+            ...$app->workspaces->all(),
+        ];
+    }
+
+    private function renderInstallScript(App $app, Process $process, ?Workspace $workspace): string
+    {
+        return $this->renderer->installScript($app, $process, $workspace);
     }
 }

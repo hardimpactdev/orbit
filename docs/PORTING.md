@@ -1292,7 +1292,12 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     classified as `lane=none` because the command is a fast gateway-intent read
     with no runtime behavior outside Pest. Latest durable lifecycle events are
     returned as `null` until the process lifecycle event schema lands.
-  - [ ] `process:add`, `process:edit`, and `process:remove`.
+  - [x] `process:add` gateway-local intent write, typed gateway API forwarding,
+    access-policy authorization, process-order append behavior, Supervisor
+    runtime-unit rendering for main app and existing workspaces, optional
+    `--start`, repairable warning output after post-intent runtime drift,
+    human/JSON renderers, and focused Pest coverage.
+  - [ ] `process:edit` and `process:remove`.
 - [ ] Port process start/stop/restart commands against Supervisor.
 - [ ] Port process log command against Supervisor stdout/stderr capture.
 - [ ] Port process exit hook support if still part of the product contract.

@@ -1,0 +1,261 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Actions\Processes\AddProcess;
+use App\Enums\ProcessCrashNotification;
+use App\Enums\ProcessRestartPolicy;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Processes\AddProcessRequest;
+use App\Http\Gateway\Responses\Processes\ProcessAddResponse;
+use App\Models\App;
+use App\Services\Nodes\CallerRoleResolver;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+use Throwable;
+
+#[Signature('process:add
+    {name? : Process name}
+    {processCommand? : Command to run}
+    {--app= : Parent app slug}
+    {--restart-policy=never : Restart policy (never|on_failure|always)}
+    {--crash-notification=none : Crash notification policy (none|agent_ide)}
+    {--start : Start rendered runtime units after creation}
+    {--json : Output JSON}')]
+#[Description('Add an app process definition')]
+class ProcessAddCommand extends Command
+{
+    private const string NAME_PATTERN = '/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/';
+
+    public function handle(AddProcess $addProcess, CallerRoleResolver $callerRoleResolver): int
+    {
+        $callerRole = $callerRoleResolver->resolve();
+
+        if ($callerRole === 'app' || $callerRole === 'unknown') {
+            return $this->failCommand(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => $callerRole],
+            );
+        }
+
+        $input = $this->validatedInput();
+
+        if (is_int($input)) {
+            return $input;
+        }
+
+        try {
+            if ($callerRole === 'control') {
+                return $this->forwardAdd($input);
+            }
+
+            $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+
+            if (! $app instanceof App) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: "App '{$input['app']}' not found.",
+                    meta: ['field' => 'app', 'value' => $input['app']],
+                );
+            }
+
+            $result = $addProcess->handle(
+                app: $app,
+                name: $input['name'],
+                command: $input['command'],
+                restartPolicy: $input['restart_policy'],
+                crashNotification: $input['crash_notification'],
+                start: $input['start'],
+            );
+        } catch (GatewayApiException $e) {
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to add processes.',
+                meta: $e->errorMeta(),
+            );
+        } catch (Throwable) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to add processes.',
+                meta: [],
+            );
+        }
+
+        return $this->successPayload($result['data'], $result['warnings']);
+    }
+
+    /**
+     * @param  array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}  $input
+     */
+    private function forwardAdd(array $input): int
+    {
+        /** @var ProcessAddResponse $dto */
+        $dto = app(GatewayConnector::class)
+            ->send(new AddProcessRequest(
+                app: $input['app'],
+                name: $input['name'],
+                command: $input['command'],
+                restartPolicy: $input['restart_policy']->value,
+                crashNotification: $input['crash_notification']->value,
+                start: $input['start'],
+            ))
+            ->dto();
+
+        return $this->successPayload($dto->data, $dto->warnings);
+    }
+
+    /**
+     * @return array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}|int
+     */
+    private function validatedInput(): array|int
+    {
+        $app = $this->stringOption('app');
+        $name = $this->stringArgument('name');
+        $command = $this->stringArgument('processCommand');
+        $restartPolicyInput = $this->stringOption('restart-policy') ?? ProcessRestartPolicy::Never->value;
+        $crashNotificationInput = $this->stringOption('crash-notification') ?? ProcessCrashNotification::None->value;
+
+        if ($app === null) {
+            return $this->failValidation('app', 'An app context is required.');
+        }
+
+        if ($name === null) {
+            return $this->failValidation('name', 'The process name is required.');
+        }
+
+        if (! preg_match(self::NAME_PATTERN, $name)) {
+            return $this->failValidation('name', 'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['value' => $name]);
+        }
+
+        if ($command === null) {
+            return $this->failValidation('command', 'The process command is required.');
+        }
+
+        $restartPolicy = ProcessRestartPolicy::tryFrom($restartPolicyInput);
+
+        if (! $restartPolicy instanceof ProcessRestartPolicy) {
+            return $this->failValidation('restart_policy', 'Invalid restart policy.', [
+                'value' => $restartPolicyInput,
+                'allowed' => array_column(ProcessRestartPolicy::cases(), 'value'),
+            ]);
+        }
+
+        $crashNotification = ProcessCrashNotification::tryFrom($crashNotificationInput);
+
+        if (! $crashNotification instanceof ProcessCrashNotification) {
+            return $this->failValidation('crash_notification', 'Invalid crash notification policy.', [
+                'value' => $crashNotificationInput,
+                'allowed' => array_column(ProcessCrashNotification::cases(), 'value'),
+            ]);
+        }
+
+        return [
+            'app' => $app,
+            'name' => $name,
+            'command' => $command,
+            'restart_policy' => $restartPolicy,
+            'crash_notification' => $crashNotification,
+            'start' => $this->option('start') === true,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $extraMeta
+     */
+    private function failValidation(string $field, string $message, array $extraMeta = []): int
+    {
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: $message,
+            meta: [
+                'field' => $field,
+                ...$extraMeta,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $warnings
+     */
+    private function successPayload(array $data, array $warnings): int
+    {
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [
+                        'warnings' => $warnings,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::SUCCESS;
+        }
+
+        $process = is_array($data['process'] ?? null) ? $data['process'] : [];
+        $this->line('┌ Adding Process');
+        $this->line('○ Validate process');
+        $this->line('○ Create process intent');
+        $this->line('○ Render runtime units');
+
+        if ($this->option('start') === true) {
+            $this->line('○ Start runtime units');
+        }
+
+        $this->line('└ Process added');
+        $this->line("Process '".(string) ($process['name'] ?? '')."' added for app '".(string) ($process['app'] ?? '')."'");
+
+        foreach ($warnings as $warning) {
+            $this->line('  Drift detected: '.(string) ($warning['code'] ?? 'warning'));
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function failCommand(string $code, string $message, array $meta): int
+    {
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'error' => [
+                    'code' => $code,
+                    'message' => $message,
+                    'meta' => empty($meta) ? (object) [] : $meta,
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::FAILURE;
+        }
+
+        $this->error($message);
+
+        return self::FAILURE;
+    }
+
+    private function stringArgument(string $key): ?string
+    {
+        $value = $this->argument($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function stringOption(string $key): ?string
+    {
+        $value = $this->option($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function wantsJson(): bool
+    {
+        return $this->option('json') === true;
+    }
+}
