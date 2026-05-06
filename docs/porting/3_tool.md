@@ -45,9 +45,14 @@ Detail file for the tool command family. Top-level status lives in
   "Please provide a valid cache path." before the stream reached the control
   caller. The shim now matches `run_orbit_command` by exporting that variable.
   Verification pending Incus environment; `composer quality-check` passes.
-- [ ] `tool:install`, `tool:remove`, `tool:update`,
-  `tool:credentials`, `tool:reconfigure` — write/enactment commands not
-  started.
+- [~] `tool:remove` — gateway-local + Saloon forwarding implementation,
+  destructive consent (`--force`), credential clearing before node-side cleanup,
+  and focused Pest coverage in
+  `tests/Feature/Commands/Tools/ToolRemoveCommandTest.php`. E2E lane: Incus
+  VM-feature because the command exercises host-init managed service removal.
+  E2E verification pending Incus environment; `composer quality-check` passes.
+- [ ] `tool:install`, `tool:update`, `tool:credentials`, `tool:reconfigure` —
+  write/enactment commands not started.
 
 ## Family doctor
 

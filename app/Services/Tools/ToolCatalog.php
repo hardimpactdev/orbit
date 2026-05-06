@@ -76,6 +76,68 @@ final readonly class ToolCatalog
     }
 
     /**
+     * @return list<string>
+     */
+    public function capabilities(string $tool): array
+    {
+        if (! $this->supports($tool)) {
+            return [];
+        }
+
+        return match ($tool) {
+            'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => [
+                'install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'safe-fix', 'safe-adopt',
+            ],
+            'php' => ['install', 'remove', 'update'],
+            'polyscope-server', 'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'safe-fix'],
+            default => [],
+        };
+    }
+
+    public function hasCapability(string $tool, string $capability): bool
+    {
+        return in_array($capability, $this->capabilities($tool), true);
+    }
+
+    public function installScript(string $tool, array $config = []): ?string
+    {
+        if (! $this->hasCapability($tool, 'install')) {
+            return null;
+        }
+
+        return match ($tool) {
+            'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => $this->dockerComposeInstallScript($tool, $config),
+            default => null,
+        };
+    }
+
+    public function removeScript(string $tool, array $config = []): ?string
+    {
+        if (! $this->hasCapability($tool, 'remove')) {
+            return null;
+        }
+
+        return match ($tool) {
+            'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => $this->dockerComposeRemoveScript($tool, $config),
+            default => null,
+        };
+    }
+
+    private function dockerComposeInstallScript(string $service, array $config): string
+    {
+        $composePath = $config['compose_path'] ?? '/opt/orbit/docker-compose.yml';
+
+        return "docker compose -f '{$composePath}' pull '{$service}' && docker compose -f '{$composePath}' up -d '{$service}'";
+    }
+
+    private function dockerComposeRemoveScript(string $service, array $config): string
+    {
+        $composePath = $config['compose_path'] ?? '/opt/orbit/docker-compose.yml';
+
+        return "docker compose -f '{$composePath}' stop '{$service}' && docker compose -f '{$composePath}' rm -f '{$service}'";
+    }
+
+    /**
      * @return array{
      *     binary: string,
      *     version_command?: string,
