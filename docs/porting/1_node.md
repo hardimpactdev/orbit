@@ -219,10 +219,11 @@ Detail file for the node command family. Top-level command status lives in
       proves the selected node name, role, local role, platform, live interface
       public key, and WireGuard address against live WireGuard reality.
       `node:new` now uses those node-family adoption results for gateway-local
-      compatible app-node adoption. Unknown-host and gateway-role adoption
-      remain unavailable because the clean registry still needs a safe command
-      path to select or materialize a node record before proof comparison. Next
-      concrete action: design the unknown-host/gateway-role adoption
+      compatible app-node adoption, including selected active app-node records
+      that are missing only their gateway peer row. Unknown-host and
+      gateway-role adoption remain unavailable because the clean registry still
+      needs a safe command path to select or materialize a node record before
+      proof comparison. Next concrete action: design the unknown-host/gateway-role adoption
       materialization path, then wire it through gateway-local `node:new` and
       forwarding.
   - [x] Real platform detection for first-gateway bootstrap (todo 274).

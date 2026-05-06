@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
+use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
@@ -966,6 +969,94 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
     });
 
+    it('adopts a compatible active app node from proven missing WireGuard peer reality', function (): void {
+        DB::table('nodes')->insert([
+            'name' => 'gateway-1',
+            'role' => 'gateway',
+            'environment' => null,
+            'tld' => null,
+            'platform' => 'unknown',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'gateway_endpoint' => null,
+            'ssh_user' => 'orbit',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $nodeId = DB::table('nodes')->insertGetId([
+            'name' => 'app-peer-missing-1',
+            'role' => 'app',
+            'environment' => 'development',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+            'host' => '192.0.2.32',
+            'wireguard_address' => '10.6.0.8',
+            'gateway_endpoint' => '10.6.0.2',
+            'ssh_user' => 'provisioner',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app()->instance(RemoteShell::class, new NodeNewSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'name' => 'app-peer-missing-1',
+                'role' => 'app',
+                'local_role' => 'app',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.8',
+                'registry_public_key' => null,
+                'interface_public_key' => 'app-public-key',
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+        ]));
+
+        Process::fake([
+            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
+        ]);
+        Process::preventStrayProcesses();
+
+        $exitCode = Artisan::call('node:new', [
+            'name' => 'app-peer-missing-1',
+            '--role' => 'app',
+            '--host' => '192.0.2.32',
+            '--environment' => 'development',
+            '--tld' => 'test',
+            '--ssh-user' => 'provisioner',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $peer = DB::table('wireguard_peers')->where('node_id', $nodeId)->first();
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['result']['action'])->toBe('adopted')
+            ->and($payload['success']['data']['node'])->toMatchArray([
+                'name' => 'app-peer-missing-1',
+                'role' => 'app',
+                'environment' => 'development',
+                'tld' => 'test',
+                'addresses' => [
+                    'wireguard' => '10.6.0.8',
+                    'gateway_endpoint' => '10.6.0.2',
+                ],
+                'status' => 'active',
+            ])
+            ->and($peer)->not->toBeNull()
+            ->and($peer->public_key)->toBe('app-public-key')
+            ->and($peer->private_key)->toBe('')
+            ->and($peer->allowed_ips)->toBe('10.6.0.8/32');
+    });
+
     it('requires a tld for development app nodes before side effects', function (): void {
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
@@ -1568,3 +1659,18 @@ describe('node:new', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 });
+
+final class NodeNewSequencedRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

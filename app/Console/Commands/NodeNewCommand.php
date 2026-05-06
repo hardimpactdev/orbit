@@ -645,6 +645,15 @@ class NodeNewCommand extends Command
     {
         $existing = Node::query()->where('name', $name)->first();
 
+        if (
+            $existing instanceof Node
+            && $existing->status === 'active'
+            && $existing->role === 'app'
+            && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
+        ) {
+            return $this->adoptExistingAppNode($nodesProbe, $existing, $inputs);
+        }
+
         if ($existing instanceof Node && $existing->status === 'active') {
             return $this->failCommand(
                 code: 'node.incompatible',
@@ -795,7 +804,10 @@ class NodeNewCommand extends Command
                 $hasConflict = true;
             }
 
-            if ($result->key === 'node.wireguard_peer_extra' && $result->action === AdoptAction::Updated) {
+            if (
+                in_array($result->key, ['node.wireguard_peer_missing', 'node.wireguard_peer_extra'], true)
+                && $result->action === AdoptAction::Updated
+            ) {
                 $activated = true;
             }
         }
