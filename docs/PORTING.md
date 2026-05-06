@@ -1347,7 +1347,7 @@ Unblocked for read-only slices. See `App Workstream Entry Point` in
     run-history intake, typed gateway request/response DTOs, and focused API /
     gateway-client coverage were already present from the scheduler foundation
     slices.
-- [ ] Port schedule add/list/show/remove commands.
+- [x] Port schedule add/list/show/remove commands.
   - [x] `schedule:list` and `schedule:show` gateway-local registry reads,
     typed gateway API forwarding, app/node filter validation, latest durable
     run summary projection, human/JSON renderers, read-only boundary tests, and
