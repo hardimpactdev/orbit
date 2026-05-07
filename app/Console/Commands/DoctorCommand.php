@@ -124,6 +124,12 @@ class DoctorCommand extends Command implements Loggable
 
         $this->recordActivityResult($result);
 
+        if (! $this->wantsJson()) {
+            $this->renderHuman($result);
+
+            return self::FAILURE;
+        }
+
         return $this->failCommand(
             code: 'drift_detected',
             message: 'Doctor detected drift.',
@@ -269,8 +275,346 @@ class DoctorCommand extends Command implements Loggable
      */
     private function renderHuman(array $doctor): void
     {
-        $issues = (int) ($doctor['summary']['issues'] ?? 0);
-        $this->line($issues === 0 ? 'Doctor: healthy.' : "Doctor: {$issues} issue(s) found.");
+        $this->line($this->doctorHeading($doctor));
+        $this->line('Mode: '.$this->doctorModeLabel($doctor));
+        $this->line('Scope: '.$this->doctorScopeLabel($doctor));
+        $this->newLine();
+
+        $summaryWidth = $this->renderDoctorSummary($doctor);
+        $resultWidth = max($summaryWidth, $this->doctorResultBodyWidth($doctor), 52);
+
+        $this->newLine();
+        $this->line($this->centeredDoctorDivider($resultWidth));
+        $this->newLine();
+
+        $issues = $this->doctorList($doctor, 'issues');
+        $actions = $this->doctorList($doctor, 'actions');
+
+        if ($issues === [] && $actions === []) {
+            $this->renderDoctorSuccessBox($resultWidth);
+
+            return;
+        }
+
+        if ($issues !== []) {
+            $this->renderDoctorIssues($issues, $doctor);
+        }
+
+        if ($actions !== []) {
+            if ($issues !== []) {
+                $this->newLine();
+            }
+
+            $this->renderDoctorActions($actions);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     */
+    private function doctorHeading(array $doctor): string
+    {
+        $healthy = ($doctor['healthy'] ?? false) === true;
+
+        return match ($this->doctorModeLabel($doctor)) {
+            'fix' => $healthy ? 'Doctor repaired drift.' : 'Doctor could not repair all drift.',
+            'adopt' => $healthy ? 'Doctor adopted compatible reality.' : 'Doctor could not adopt all drift.',
+            default => $healthy ? 'Doctor healthy.' : 'Doctor found drift.',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     */
+    private function doctorModeLabel(array $doctor): string
+    {
+        $mode = $doctor['mode'] ?? 'verify';
+
+        return is_string($mode) && in_array($mode, ['verify', 'fix', 'adopt'], true)
+            ? $mode
+            : 'verify';
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     */
+    private function doctorScopeLabel(array $doctor): string
+    {
+        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
+        $families = $scope['families'] ?? [];
+        $familyLabel = is_array($families) && $families !== []
+            ? implode(',', array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== '')))
+            : 'all';
+
+        return sprintf(
+            'families=%s node=%s app=%s workspace=%s self=%s',
+            $familyLabel,
+            $this->doctorHumanValue($scope['node'] ?? null),
+            $this->doctorHumanValue($scope['app'] ?? null),
+            $this->doctorHumanValue($scope['workspace'] ?? null),
+            ($scope['self'] ?? false) === true ? 'true' : 'false',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     */
+    private function renderDoctorSummary(array $doctor): int
+    {
+        $summary = is_array($doctor['summary'] ?? null) ? $doctor['summary'] : [];
+        $headers = ['ISSUES', 'FIXED', 'ADOPTED', 'SKIPPED', 'CONFLICTS', 'FAILED'];
+        $values = [
+            (string) (int) ($summary['issues'] ?? 0),
+            (string) (int) ($summary['fixed'] ?? 0),
+            (string) (int) ($summary['adopted'] ?? 0),
+            (string) (int) ($summary['skipped'] ?? 0),
+            (string) (int) ($summary['conflicts'] ?? 0),
+            (string) (int) ($summary['failed'] ?? 0),
+        ];
+
+        return $this->renderAlignedRows([$headers, $values]);
+    }
+
+    /**
+     * @param  list<list<string>>  $rows
+     */
+    private function renderAlignedRows(array $rows): int
+    {
+        $widths = [];
+
+        foreach ($rows as $row) {
+            foreach ($row as $index => $value) {
+                $widths[$index] = max($widths[$index] ?? 0, mb_strlen($value));
+            }
+        }
+
+        foreach ($rows as $row) {
+            $line = [];
+
+            foreach ($row as $index => $value) {
+                $line[] = str_pad($value, $widths[$index]);
+            }
+
+            $this->line(rtrim(implode('  ', $line)));
+        }
+
+        return array_sum($widths) + max(0, count($widths) - 1) * 2;
+    }
+
+    private function centeredDoctorDivider(int $width): string
+    {
+        $label = 'D O C T O R   R E S U L T';
+        $remaining = max(2, $width - mb_strlen($label) - 2);
+        $left = intdiv($remaining, 2);
+        $right = $remaining - $left;
+
+        return str_repeat('─', $left).' '.$label.' '.str_repeat('─', $right);
+    }
+
+    private function renderDoctorSuccessBox(int $width): void
+    {
+        $message = 'Everything is healthy!';
+        $innerWidth = max(mb_strlen($message) + 10, $width - 2);
+        $padding = $innerWidth - mb_strlen($message);
+        $left = intdiv($padding, 2);
+        $right = $padding - $left;
+
+        $this->line('┌'.str_repeat('─', $innerWidth).'┐');
+        $this->line('│'.str_repeat(' ', $innerWidth).'│');
+        $this->line('│'.str_repeat(' ', $left).$message.str_repeat(' ', $right).'│');
+        $this->line('│'.str_repeat(' ', $innerWidth).'│');
+        $this->line('└'.str_repeat('─', $innerWidth).'┘');
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     * @return list<array<string, mixed>>
+     */
+    private function doctorList(array $doctor, string $key): array
+    {
+        $items = $doctor[$key] ?? [];
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return array_values(array_filter($items, is_array(...)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $actions
+     */
+    private function renderDoctorActions(array $actions): void
+    {
+        $rows = [['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY']];
+
+        foreach ($actions as $action) {
+            $rows[] = [
+                $this->doctorString($action['family'] ?? null),
+                $this->doctorHumanValue($action['node'] ?? null),
+                $this->doctorString($action['mode'] ?? null),
+                $this->doctorString($action['status'] ?? null),
+                $this->doctorString($action['key'] ?? $action['code'] ?? null),
+                $this->doctorString($action['summary'] ?? null),
+            ];
+        }
+
+        $this->line('Actions');
+        $this->renderAlignedRows($rows);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @param  array<string, mixed>  $doctor
+     */
+    private function renderDoctorIssues(array $issues, array $doctor): void
+    {
+        foreach ($this->groupDoctorIssues($issues, $doctor) as $family => $kinds) {
+            $this->line((string) $family);
+
+            foreach ($kinds as $kind => $kindIssues) {
+                $this->line('  '.(string) $kind);
+
+                foreach ($kindIssues as $issue) {
+                    $this->line(sprintf(
+                        '    %s: %s',
+                        $this->doctorString($issue['key'] ?? $issue['code'] ?? null),
+                        $this->doctorString($issue['summary'] ?? null),
+                    ));
+
+                    $next = $this->doctorIssueNextStep($issue);
+
+                    if ($next !== null) {
+                        $this->line('      Next: '.$next);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @param  array<string, mixed>  $doctor
+     * @return array<string, array<string, list<array<string, mixed>>>>
+     */
+    private function groupDoctorIssues(array $issues, array $doctor): array
+    {
+        usort($issues, function (array $left, array $right) use ($doctor): int {
+            $familyCompare = $this->doctorFamilySortIndex($left, $doctor) <=> $this->doctorFamilySortIndex($right, $doctor);
+
+            if ($familyCompare !== 0) {
+                return $familyCompare;
+            }
+
+            return $this->doctorKindSortIndex($left) <=> $this->doctorKindSortIndex($right);
+        });
+
+        $groups = [];
+
+        foreach ($issues as $issue) {
+            $family = $this->doctorString($issue['family'] ?? null);
+            $kind = $this->doctorString($issue['kind'] ?? null);
+            $groups[$family][$kind][] = $issue;
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @param  array<string, mixed>  $doctor
+     */
+    private function doctorFamilySortIndex(array $issue, array $doctor): int
+    {
+        $family = $this->doctorString($issue['family'] ?? null);
+        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
+        $families = is_array($scope['families'] ?? null) ? array_values($scope['families']) : [];
+        $index = array_search($family, $families, true);
+
+        if ($index !== false) {
+            return (int) $index;
+        }
+
+        $fallback = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
+        $fallbackIndex = array_search($family, $fallback, true);
+
+        return $fallbackIndex === false ? 100 : (int) $fallbackIndex;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function doctorKindSortIndex(array $issue): int
+    {
+        $order = ['unverifiable', 'missing', 'divergent', 'extra'];
+        $index = array_search($this->doctorString($issue['kind'] ?? null), $order, true);
+
+        return $index === false ? 100 : (int) $index;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function doctorIssueNextStep(array $issue): ?string
+    {
+        $detail = $issue['detail'] ?? $issue['details'] ?? null;
+
+        if (! is_array($detail)) {
+            return null;
+        }
+
+        $next = $detail['next'] ?? $detail['next_step'] ?? null;
+
+        return is_string($next) && $next !== '' ? $next : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     */
+    private function doctorResultBodyWidth(array $doctor): int
+    {
+        $lines = [];
+
+        foreach ($this->doctorList($doctor, 'actions') as $action) {
+            $lines[] = implode(' ', [
+                $this->doctorString($action['family'] ?? null),
+                $this->doctorString($action['node'] ?? null),
+                $this->doctorString($action['mode'] ?? null),
+                $this->doctorString($action['status'] ?? null),
+                $this->doctorString($action['key'] ?? $action['code'] ?? null),
+                $this->doctorString($action['summary'] ?? null),
+            ]);
+        }
+
+        foreach ($this->doctorList($doctor, 'issues') as $issue) {
+            $lines[] = $this->doctorString($issue['key'] ?? $issue['code'] ?? null).': '.$this->doctorString($issue['summary'] ?? null);
+        }
+
+        return array_reduce(
+            $lines,
+            static fn (int $width, string $line): int => max($width, mb_strlen($line)),
+            0,
+        );
+    }
+
+    private function doctorHumanValue(mixed $value): string
+    {
+        $string = $this->doctorString($value);
+
+        return $string === '' ? '—' : $string;
+    }
+
+    private function doctorString(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value) || is_bool($value)) {
+            return (string) $value;
+        }
+
+        return '';
     }
 
     /**

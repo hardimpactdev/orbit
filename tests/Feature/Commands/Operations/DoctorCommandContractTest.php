@@ -77,6 +77,65 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['data']['doctor']['issues'][0]['family'])->toBe('node');
     });
 
+    it('renders the healthy human doctor report with the result divider and clean banner', function (): void {
+        createDoctorLocalNode('gateway');
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['node']]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Doctor healthy.')
+            ->and($output)->toContain('Mode: verify')
+            ->and($output)->toContain('Scope: families=node')
+            ->and($output)->toContain('ISSUES')
+            ->and($output)->toContain('D O C T O R   R E S U L T')
+            ->and($output)->toContain('Everything is healthy!');
+    });
+
+    it('renders remaining issues in the human doctor report', function (): void {
+        createDoctorLocalNode('gateway')->update(['platform' => null]);
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['node']]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Doctor found drift.')
+            ->and($output)->toContain('Mode: verify')
+            ->and($output)->toContain('Scope: families=node')
+            ->and($output)->toContain('D O C T O R   R E S U L T')
+            ->and($output)->toContain('node')
+            ->and($output)->toContain('missing')
+            ->and($output)->toContain('node.record_incomplete')
+            ->and($output)->toContain('Node record for local-gateway is missing required fields.');
+    });
+
+    it('renders completed repair actions in the human doctor report', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Doctor repaired drift.')
+            ->and($output)->toContain('Mode: fix')
+            ->and($output)->toContain('D O C T O R   R E S U L T')
+            ->and($output)->toContain('Actions')
+            ->and($output)->toContain('FAMILY')
+            ->and($output)->toContain('MODE')
+            ->and($output)->toContain('STATUS')
+            ->and($output)->toContain('proxy.route_missing')
+            ->and($output)->toContain('completed');
+    });
+
     it('rejects mutually exclusive fix and adopt modes before probes', function (): void {
         createDoctorLocalNode('gateway');
 

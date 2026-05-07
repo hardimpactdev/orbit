@@ -59,8 +59,16 @@ contract documents a narrow app-node exception.
 
 ## Output
 
-Human output shows the selected mode and scope, then groups results by family and
-issue kind. JSON output uses the shared command envelope.
+Human output shows the selected mode and resolved scope before the result, then
+prints a formatted diagnostic report. Healthy output must still say what was
+checked; an empty result is not enough because unselected families and nodes may
+not have been inspected. Drift output groups issues by family and kind, and
+`--fix` or `--adopt` output includes an action table for completed, skipped,
+failed, or conflicted actions.
+
+JSON output uses the shared command envelope. Healthy diagnostics are returned
+under `success.data.doctor`. Drift or probe/action failures return the same
+doctor diagnostic under `error.data.doctor`.
 
 When no drift or probe errors remain, `doctor` exits successfully. When drift
 remains, a probe fails, scope cannot be resolved, or the selected mode is not
@@ -73,9 +81,13 @@ The global `doctor` command owns generic orchestration. Family doctor contracts
 own concrete issue codes and action maps:
 
 - [`doctor --family=node`](../../1_node/node-doctor.md)
+- [`doctor --family=tool`](../../3_tool/tool-doctor.md)
+- [`doctor --family=firewall_rule`](../../4_firewall/firewall-doctor.md)
 - [`doctor --family=app`](../../5_app/app-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=process`](../../7_process/process-doctor.md)
+- [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
+- [`doctor --family=schedule`](../../9_schedule/schedule-doctor.md)
 
 ## Related Commands
 
