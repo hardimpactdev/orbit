@@ -9,9 +9,8 @@ Detail file for the firewall command family. Top-level status lives in
 - [x] `firewall:allow` / `firewall:deny` — intent writes + runtime warnings.
 - [x] `firewall:remove` — intent removal + runtime warnings.
 
-Pest under `tests/Feature/Commands/Firewall/`. E2E coverage via Incus VM-feature
-lane: `composer test:e2e:incus -- --filter='adopts observed UFW rules into the gateway registry'`
-(`tests/E2E/FirewallDoctorAdoptTest.php`).
+Pest under `tests/Feature/Commands/Firewall/`. No E2E coverage — the backend reality
+is exercised via the family doctor.
 
 ## Family doctor
 
@@ -25,8 +24,8 @@ via `--family=firewall_rule`. Fix map handles `rule_missing` and
   skips baseline SSH policy, handles name collisions. Pest coverage:
   `tests/Unit/Services/Firewall/FirewallRuleProbeTest.php`. Doctor adopt dispatch
   coverage: `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
-  Incus VM-feature E2E: `tests/E2E/FirewallDoctorAdoptTest.php` (re-enabled after
-  infrastructure fix for topology SSH connectivity in commit ea7d810).
+  E2E coverage deferred — doctor adopt requires gateway SSH introspection of app
+  nodes, which is not reliably available in prepared topologies.
 
 ## Activity backfill
 
