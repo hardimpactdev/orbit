@@ -29,9 +29,9 @@ final class UpdateAllProgress
 
     private const string TITLE = 'Updating Orbit nodes';
 
-    private SpinnerTreeRenderer $tree;
+    private readonly SpinnerTreeRenderer $tree;
 
-    private LifecycleSummaryRenderer $summary;
+    private readonly LifecycleSummaryRenderer $summary;
 
     /** @var list<string> Ordered target keys */
     private array $order = [];
