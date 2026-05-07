@@ -36,6 +36,7 @@ use OrbitDocsLinter\Rules\NonStateDomainHandoffRule;
 use OrbitDocsLinter\Rules\ProductCodeNamespaceRule;
 use OrbitDocsLinter\Rules\PublicJsonOptionContractRule;
 use OrbitDocsLinter\Rules\ReadCommandNoLiveProbeRule;
+use OrbitDocsLinter\Rules\RendererPrimitiveReferenceRule;
 use OrbitDocsLinter\Rules\RequirementSmellRule;
 use OrbitDocsLinter\Rules\RoleCompanionCoverageRule;
 use OrbitDocsLinter\Rules\SharedFailureVocabularyRule;
@@ -67,6 +68,10 @@ final class CommandDocsLintCli
             scanRoot: $scanRoot,
         );
 
+        if ($options['update_baseline']) {
+            return $this->updateBaseline($repositoryRoot, $context, $options['group']);
+        }
+
         $findings = $this->linter($repositoryRoot)->lint($context, $options['group']);
         $errors = array_values(array_filter(
             $findings,
@@ -84,6 +89,52 @@ final class CommandDocsLintCli
         $this->printTextResult($findings, $errors);
 
         return $exitCode;
+    }
+
+    private function updateBaseline(string $repositoryRoot, CommandDocsLintContext $context, ?string $group): int
+    {
+        $linter = new CommandDocsLinter(
+            rules: $this->rules(),
+            baseline: CommandDocsLintBaseline::empty(),
+        );
+
+        $findings = $linter->lint($context, $group);
+        $counts = [];
+
+        foreach ($findings as $finding) {
+            $key = "{$finding->path}\0{$finding->ruleId}\0{$finding->severity->value}";
+            $counts[$key] ??= [
+                'path' => $finding->path,
+                'rule_id' => $finding->ruleId,
+                'severity' => $finding->severity->value,
+                'count' => 0,
+            ];
+            $counts[$key]['count']++;
+        }
+
+        $entries = array_values($counts);
+
+        usort($entries, fn (array $first, array $second): int => [
+            $first['path'],
+            $first['rule_id'],
+            $first['severity'],
+        ] <=> [
+            $second['path'],
+            $second['rule_id'],
+            $second['severity'],
+        ]);
+
+        $payload = json_encode(
+            ['findings' => $entries],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+        );
+
+        $path = "{$repositoryRoot}/tool/docs-linter/baseline.json";
+        file_put_contents($path, $payload."\n");
+
+        fwrite(STDOUT, sprintf("Wrote %d baseline entries to %s\n", count($entries), $path));
+
+        return 0;
     }
 
     /**
@@ -187,54 +238,63 @@ final class CommandDocsLintCli
     private function linter(string $repositoryRoot): CommandDocsLinter
     {
         return new CommandDocsLinter(
-            rules: [
-                new ConvertedFamilyStructureRule,
-                new CommandDirectoryStructureRule,
-                new FamilyCommandPrefixRule,
-                new CompoundCommandPrefixRule,
-                new NoCommandAmbiguityFilesRule,
-                new TechnicalSlotSemanticsRule,
-                new MarkdownLinkIntegrityRule,
-                new ConceptIndexRule,
-                new NonStateDomainHandoffRule,
-                new CanonicalTechnicalContractRule,
-                new ActivityLoggingContractRule,
-                new BehaviorContractStructureRule,
-                new DestructiveConsentRule,
-                new SharedFailureVocabularyRule,
-                new ProductCodeNamespaceRule,
-                new DriftIssueSuffixRule,
-                new ExitStatusPolicyRule,
-                new AppPhpVersionContractRule,
-                new DoctorRelationshipReferenceRule,
-                new DoctorIssueCodePrefixRule,
-                new DoctorWarningCoherenceRule,
-                new ErrorCodeRegistryRule,
-                new RoleCompanionCoverageRule,
-                new AppNodeWriteDenialRule,
-                new InputModeContractRule,
-                new PublicJsonOptionContractRule,
-                new HumanRendererProgressTreeRule,
-                new ReadCommandNoLiveProbeRule,
-                new JsonRendererEnvelopeRule,
-                new JsonRendererExampleRule,
-                new JsonWarningShapeRule,
-                new NextActionContractRule,
-                new SignatureArgumentOrderRule,
-                new SignatureOptionConsistencyRule,
-                new TechnicalTestMappingRule,
-                new TestMappingFormatRule,
-                new CommandContractComplexityRule,
-                new DocumentComplexityRule,
-                new RequirementSmellRule,
-            ],
+            rules: $this->rules(),
             baseline: CommandDocsLintBaseline::fromFile("{$repositoryRoot}/tool/docs-linter/baseline.json"),
         );
     }
 
     /**
+     * @return list<CommandDocsLintRule>
+     */
+    private function rules(): array
+    {
+        return [
+            new ConvertedFamilyStructureRule,
+            new CommandDirectoryStructureRule,
+            new FamilyCommandPrefixRule,
+            new CompoundCommandPrefixRule,
+            new NoCommandAmbiguityFilesRule,
+            new TechnicalSlotSemanticsRule,
+            new MarkdownLinkIntegrityRule,
+            new ConceptIndexRule,
+            new NonStateDomainHandoffRule,
+            new CanonicalTechnicalContractRule,
+            new ActivityLoggingContractRule,
+            new BehaviorContractStructureRule,
+            new DestructiveConsentRule,
+            new SharedFailureVocabularyRule,
+            new ProductCodeNamespaceRule,
+            new DriftIssueSuffixRule,
+            new ExitStatusPolicyRule,
+            new AppPhpVersionContractRule,
+            new DoctorRelationshipReferenceRule,
+            new DoctorIssueCodePrefixRule,
+            new DoctorWarningCoherenceRule,
+            new ErrorCodeRegistryRule,
+            new RoleCompanionCoverageRule,
+            new AppNodeWriteDenialRule,
+            new InputModeContractRule,
+            new PublicJsonOptionContractRule,
+            new HumanRendererProgressTreeRule,
+            new RendererPrimitiveReferenceRule,
+            new ReadCommandNoLiveProbeRule,
+            new JsonRendererEnvelopeRule,
+            new JsonRendererExampleRule,
+            new JsonWarningShapeRule,
+            new NextActionContractRule,
+            new SignatureArgumentOrderRule,
+            new SignatureOptionConsistencyRule,
+            new TechnicalTestMappingRule,
+            new TestMappingFormatRule,
+            new CommandContractComplexityRule,
+            new DocumentComplexityRule,
+            new RequirementSmellRule,
+        ];
+    }
+
+    /**
      * @param  list<string>  $arguments
-     * @return array{path: string, group: ?string, help: bool, strict: bool, format: string}
+     * @return array{path: string, group: ?string, help: bool, strict: bool, format: string, update_baseline: bool}
      */
     private function parseArguments(array $arguments): array
     {
@@ -244,6 +304,7 @@ final class CommandDocsLintCli
             'help' => false,
             'strict' => false,
             'format' => 'text',
+            'update_baseline' => false,
         ];
 
         foreach (array_slice($arguments, 1) as $argument) {
@@ -255,6 +316,12 @@ final class CommandDocsLintCli
 
             if ($argument === '--strict') {
                 $options['strict'] = true;
+
+                continue;
+            }
+
+            if ($argument === '--update-baseline') {
+                $options['update_baseline'] = true;
 
                 continue;
             }
@@ -327,7 +394,7 @@ final class CommandDocsLintCli
     {
         fwrite($stream, <<<'HELP'
 Usage:
-  php tool/docs-linter/docs-linter.php [--path=docs/commands] [--group=structure|contracts|references|complexity|prose] [--format=text|agent] [--strict]
+  php tool/docs-linter/docs-linter.php [--path=docs/commands] [--group=structure|contracts|references|complexity|prose] [--format=text|agent] [--strict] [--update-baseline]
 
 Examples:
   composer docs-lint
@@ -336,6 +403,7 @@ Examples:
   composer docs-lint -- --path=docs/commands/1_node/1_node-new
   composer docs-lint -- --group=contracts
   composer docs-lint -- --strict
+  composer docs-lint -- --update-baseline
 
 HELP);
     }

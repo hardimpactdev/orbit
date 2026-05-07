@@ -1,0 +1,62 @@
+# Table
+
+Read-only tabular display for list commands.
+
+## Use When
+
+- Rendering multiple rows of structured data (`node:list`, `app:list`,
+  `tool:list`, `proxy:list`, `firewall:list`, `process:list`,
+  `schedule:list`, `workspace:list`, `activity:list`).
+- The command is a list/read command and does not select a row.
+
+## Avoid When
+
+- The user must pick a row to act on. Use
+  [`data-table-prompt`](data-table-prompt.md).
+- A single entity is being shown. Use a key-value tree via
+  `WithHumanOutput::renderForHumans()` instead.
+- Rendering progress for a long-running command. Use the
+  [progress tree](../progress/progress-tree.md).
+
+## Contract
+
+- Primitive name in renderer docs: `table`.
+- The `## Primitive` section of the renderer doc links to this page.
+- In `--json` mode the table is not rendered; the JSON envelope payload is
+  emitted instead.
+- Headers are uppercase short labels (`ROLE`, `NAME`). Empty cells render as
+  `—` (em dash) for human display; JSON keeps `null`.
+- Symfony's `$this->table(...)` is banned. It produces `+---+---+` borders
+  and ignores the Prompts theme.
+
+## Implementation
+
+`Laravel\Prompts\table($headers, $rows)` is invoked directly from the human
+renderer path of the command. No Orbit wrapper trait is required for the
+basic case.
+
+## Example
+
+```php
+use function Laravel\Prompts\table;
+
+table(
+    headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+    rows: [
+        ['app', 'app-1', 'development', 'ubuntu_24-04', 'active'],
+        ['app', 'app-2', 'production', 'ubuntu_24-04', 'active'],
+        ['gateway', 'gateway-1', '—', 'ubuntu_24-04', 'active'],
+        ['control', 'control-1', '—', 'macos_15-4', 'active'],
+    ],
+);
+```
+
+## Reference Implementation
+
+- `orbit node:list` — primary reference for the table primitive.
+
+## Cross References
+
+- [Laravel Prompts: tables](https://laravel.com/docs/13.x/prompts#tables)
+- [Skill: terminal output](../../../../.agents/skills/command-designer/references/terminal-output.md)
+- [`data-table-prompt`](data-table-prompt.md) for the interactive variant

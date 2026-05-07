@@ -86,10 +86,17 @@ then migrate docs until it passes.
 - Commands that accept an app-node target should resolve it in this order:
   explicit `--node`, app/workspace ownership, local `node:default`, then
   interactive input prompt or non-interactive input failure.
-- Command output and terminal UX conventions follow
-  `.agents/skills/command-designer/SKILL.md`.
+- Renderer and prompt primitive selection is governed by
+  [`docs/commands/ux/`](ux/README.md). Renderer docs and input-mode docs name
+  a primitive from that tree and link to the matching page. Implementation
+  mechanics live in `.agents/skills/command-designer/SKILL.md`.
 - Technical command contracts must use the prompt IDs and Laravel Prompts
-  primitive names defined in `.agents/skills/command-designer/SKILL.md`.
+  primitive names admitted by [`docs/commands/ux/inputs/`](ux/inputs/README.md).
+  Renderer contracts use primitives admitted by
+  [`docs/commands/ux/lists/`](ux/lists/README.md) and
+  [`docs/commands/ux/progress/`](ux/progress/README.md). Symfony Console
+  `$this->ask`, `$this->confirm`, `$this->choice`, `$this->secret`, and
+  `$this->table` are banned in renderer and input-mode docs.
 - Public command pages that have a command directory must link to their
   canonical technical contract. Canonical technical contracts must link back to
   the public command page.
@@ -134,6 +141,11 @@ Each numbered domain directory contains:
   individual commands. Match the family-specific command signature, such as
   `node-doctor.md` for `doctor --family=node`.
 - `internal/`: optional subdirectory for internal Orbit machinery commands.
+
+The shared [`ux/`](ux/README.md) tree under `docs/commands/` lists the admitted
+renderer and prompt primitives (lists, inputs, progress) and the rules for
+picking between them. Renderer and input-mode docs link into this tree
+instead of redescribing primitives inline.
 
 Command groups with hidden or internal machinery commands include an `Internal Commands` section in their `README.md` that links to the `internal/` subdirectory. Public command lists remain separate to maintain visibility distinctions.
 

@@ -23,7 +23,8 @@ Read only the reference files needed for the task:
 | Convert or review command docs, file structure, external decision tracking, doctor family docs, test mapping, effects, prerequisites | [`references/command-documentation.md`](references/command-documentation.md) |
 | Semantically audit command docs against the blueprint, mission, architecture, family contracts, and sibling command decisions | [`references/semantic-check.md`](references/semantic-check.md) |
 | Design input modes, prompt behavior, `--json`, JSON envelopes, failure metadata, destructive `--force` behavior | [`references/invocation-model.md`](references/invocation-model.md) |
-| Design human output, progress trees, spinners, info/list rendering, terminal UX, migrated output patterns | [`references/terminal-output.md`](references/terminal-output.md) |
+| Pick which renderer or prompt primitive a command should use (lists, inputs, progress) | [`docs/commands/ux/`](../../docs/commands/ux/README.md) |
+| Implement terminal output mechanics — ANSI codes, `WithStepTree`/`WithSpinner` traits, animation patterns, gateway-streamed SSE | [`references/terminal-output.md`](references/terminal-output.md) |
 | Implement commands, DTOs, platform handlers, command bases, app resolution, code-level conventions | [`references/implementation-patterns.md`](references/implementation-patterns.md) |
 
 ## Non-Negotiables
@@ -78,8 +79,12 @@ Read only the reference files needed for the task:
 - For a complaint about prompts, required arguments, TTY behavior, `--json`, or
   machine-readable errors, start with
   [`invocation-model.md`](references/invocation-model.md).
-- For a complaint about blank terminals, progress, spinners, tables, or exact
-  human output, start with [`terminal-output.md`](references/terminal-output.md).
+- For a question about which renderer or prompt primitive to use (table vs
+  datatable, text vs select vs search, progress tree vs spinner), start with
+  [`docs/commands/ux/`](../../docs/commands/ux/README.md).
+- For a complaint about blank terminals, progress mechanics, ANSI codes,
+  trait APIs, or animation patterns, start with
+  [`terminal-output.md`](references/terminal-output.md).
 - For PHP command implementation details, start with
   [`implementation-patterns.md`](references/implementation-patterns.md), then use
   the Laravel/PHP project skills required by the repository instructions.

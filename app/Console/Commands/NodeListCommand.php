@@ -16,6 +16,8 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('node:list
     {--role= : Filter by role (gateway|app|control)}
     {--environment= : Filter by environment (development|production)}
@@ -209,9 +211,9 @@ class NodeListCommand extends Command
             return;
         }
 
-        $this->table(
-            ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
-            array_map(fn (array $node): array => [
+        table(
+            headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+            rows: array_map(fn (array $node): array => [
                 $node['role'],
                 $node['name'],
                 $node['environment'] ?? '—',

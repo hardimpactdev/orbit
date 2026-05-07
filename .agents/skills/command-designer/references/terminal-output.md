@@ -1,7 +1,19 @@
 # Terminal Output
 
-Use this reference when designing human-rendered output, progress trees,
-spinners, info/detail views, list tables, or terminal UX.
+Use this reference for the implementation mechanics behind Orbit's terminal
+output: ANSI codes, animation patterns, traits, and the gateway-streamed SSE
+shape. Primitive selection (which renderer or prompt to use, and when) is
+product-authority and lives in
+[`docs/commands/ux/`](../../../../docs/commands/ux/README.md).
+
+For the visible behavior of:
+
+- read-only list output → see [`docs/commands/ux/lists/table.md`](../../../../docs/commands/ux/lists/table.md);
+- interactive row selection → see [`docs/commands/ux/lists/data-table-prompt.md`](../../../../docs/commands/ux/lists/data-table-prompt.md);
+- prompts (text, confirm, select, etc.) → see [`docs/commands/ux/inputs/`](../../../../docs/commands/ux/inputs/README.md);
+- multi-step progress and spinners → see [`docs/commands/ux/progress/`](../../../../docs/commands/ux/progress/README.md).
+
+This file owns implementation patterns only.
 
 ## Core Principle: Instant Output
 
@@ -23,69 +35,7 @@ before starting side effects.
 The tree is the loading state. Fast steps resolve instantly; slow steps keep
 pulsing until done.
 
-## Human Renderer Docs
-
-Every `6.1_command-name_output-render_human.md` file must include
-`## Progress Tree`.
-
-- If the command may take longer than one second, define the progress tree shape
-  and any degraded/warning paths.
-- If the command does not render a progress tree, explicitly state that
-  execution is expected to stay below one second and performs no slow external
-  work.
-
-Do not document progress as optional for long-running interactive commands. A
-human-rendered command either defines its progress tree or documents why the
-command is a fast local/read path that does not need one.
-
-## Output Anatomy
-
-Every human-rendered long-running command renders a tree block:
-
-```text
-  ┌  Title
-  │
-  ○  Step label
-  │
-  ◉  Step label
-  │
-  ●  Step label  Result text
-  │
-  ●  Step label  Error text
-  │
-  ●  Step label  Warning text
-  │
-  └  Footer summary
-```
-
-In sequential execution, only the currently active step shows the blinking
-`○`/`◉` animation. Pending steps stay as dim `○` until they become active.
-
-Progress tree labels are product-level user feedback, not storage or backend
-implementation logs. Do not expose labels such as `Write gateway intent`,
-`Write registry intent`, `Record gateway removal intent`, or
-`Enact runtime artifacts`.
-
-Use a tense lifecycle for sequential trees:
-
-- the title uses active present-participle phrasing:
-  `Updating PHP runtime to PHP 8.5`;
-- pending step labels use imperative phrasing:
-  `Resolve target`;
-- active step labels use active present-participle phrasing:
-  `Resolving target`;
-- completed step labels use past-tense phrasing:
-  `Resolved target`;
-- the footer says `Working...` until completion, then switches to a concrete
-  result such as `Successfully updated PHP runtime to PHP 8.5`.
-
-For command docs, define the initial tree plus any command-specific label
-lifecycle when labels change at runtime. Prefer a single operator-facing step
-such as `Apply and verify PHP change`, `Apply and verify firewall rule`, or
-`Apply and verify schedule` unless a remote operation is slow and meaningful
-enough to deserve a separate product-level step.
-
-### Status Icons
+## Status Icons
 
 | State | Icon | Color | ANSI |
 | --- | --- | --- | --- |
@@ -206,18 +156,15 @@ Prompting remains a caller-side input-mode concern.
 
 ## Info And List Commands
 
-Info/detail commands and list commands do not use progress trees unless they do
-slow external work. They still follow Orbit's tree/table visual language.
-
-- Info commands: single entity, key-value tree via
-  `WithHumanOutput::renderForHumans()`.
-- List commands: multiple rows, bordered table via
-  `RendersTable::renderBorderedTable()`.
-
-Read/detail commands such as `tool:show`, `tool:list`, and `tool:credentials`
-emit detail or list output directly. Multi-phase write commands such as
-`tool:install`, `tool:remove`, lifecycle commands, and `tool:update` may use
-step trees.
+Info/detail commands and list commands do not use progress trees unless they
+do slow external work. Primitive selection lives in
+[`docs/commands/ux/lists/`](../../../../docs/commands/ux/lists/README.md):
+read-only list output uses
+[`Laravel\Prompts\table`](../../../../docs/commands/ux/lists/table.md) and
+interactive row selection uses
+[`Laravel\Prompts\datatable`](../../../../docs/commands/ux/lists/data-table-prompt.md).
+Info/detail commands continue to use a key-value tree via
+`WithHumanOutput::renderForHumans()`.
 
 ### Display Conventions
 
@@ -258,16 +205,18 @@ $this->renderForHumans($displayData, $data['name'], treeRowSeparatorLines: 1);
 ### List Command Example
 
 ```php
-$displayData = array_map(fn (array $item) => [
-    'name' => $item['name'],
-    'address' => "{$item['user']}@{$item['host']}",
-    'tld' => $item['tld'] ? ".{$item['tld']}" : '-',
-    'role' => $item['role'],
-    'environment' => $item['environment'] ?? '-',
-    'status' => $item['status'],
-], $data);
+use function Laravel\Prompts\table;
 
-$this->renderBorderedTable($this->output, $displayData);
+table(
+    headers: ['ROLE', 'NAME', 'ENVIRONMENT', 'PLATFORM', 'STATUS'],
+    rows: array_map(fn (array $node): array => [
+        $node['role'],
+        $node['name'],
+        $node['environment'] ?? '—',
+        $node['platform'],
+        $node['status'],
+    ], $nodes),
+);
 ```
 
 ## Dual Output
@@ -337,7 +286,6 @@ rendering:
 | `WithSpinner` | Spinner frames and spinner runners. | Any command with async progress. |
 | `WithJsonOutput` | JSON helpers and `respondWithSuccess()`. | Every command with structured output. |
 | `WithHumanOutput` | Key-value tree blocks. | Info/detail commands. |
-| `RendersTable` | Bordered tabular output. | All list commands. |
 | `ResolvesApp` | `--app` and `--node` resolution. | Commands accepting app and node options. |
 
 ## Reference Implementations
@@ -374,7 +322,11 @@ When migrating:
 
 - Do not use `HasStepOutput`.
 - Do not use `intro()` from Laravel Prompts.
-- Do not use `$this->table()` for list data; use `RendersTable`.
+- Do not use `$this->table()` for list data; use `Laravel\Prompts\table` per
+  [`docs/commands/ux/lists/table.md`](../../../../docs/commands/ux/lists/table.md).
+- Do not use Symfony `$this->ask`, `$this->confirm`, `$this->choice`, or
+  `$this->secret` for prompts; use the matching primitive in
+  [`docs/commands/ux/inputs/`](../../../../docs/commands/ux/inputs/README.md).
 - Do not hardcode spinner frames.
 - Do not block without animation when a step can take more than one second.
 - Do not skip the JSON path.
