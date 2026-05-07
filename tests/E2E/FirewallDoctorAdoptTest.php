@@ -1,0 +1,94 @@
+<?php
+
+declare(strict_types=1);
+
+use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyFactory;
+use App\E2E\Support\E2ETopologyHarness;
+use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyUnavailable;
+
+it('adopts observed UFW rules into the gateway registry', function (): void {
+    try {
+        $lease = E2ETopologyFactory::fromEnvironment()
+            ->requireCapabilities(E2ETopologyCapabilities::vm())
+            ->require(E2ETopologyKind::ControlGatewayDev);
+    } catch (E2ETopologyUnavailable $exception) {
+        test()->markTestSkipped($exception->getMessage());
+    }
+
+    $topology = new E2ETopologyHarness($lease)
+        ->withCurrentCheckout(roles: ['gateway']);
+
+    $gatewayWireGuardIp = $lease->gatewayApiIp();
+    $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($gatewayWireGuardIp);
+
+    try {
+        $gatewayCheckout = $topology->checkout('gateway');
+
+        $topology->ssh(
+            'dev',
+            sprintf(
+                'sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw && sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow from %s to any port 22 proto tcp comment "orbit:e2e-gateway-ssh" && sudo ufw allow from %s to any port 5173 proto tcp comment "orbit:local-vite" && sudo ufw --force enable',
+                escapeshellarg("{$gatewayWireGuardIp}/32"),
+                escapeshellarg($wireGuardCidr),
+            ),
+            timeoutSeconds: 180,
+        );
+
+        $ufwStatus = $topology->ssh('dev', 'sudo ufw status numbered', timeoutSeconds: 60);
+        expect($ufwStatus->successful())->toBeTrue()
+            ->and(trim($ufwStatus->output()))->toContain('5173');
+
+        $topology->ssh(
+            'gateway',
+            sprintf(
+                'cd %s && php artisan tinker --execute=%s',
+                escapeshellarg($gatewayCheckout),
+                escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->first(); if ($node) { $node->update(["platform" => "ubuntu", "status" => "active"]); echo "updated"; } else { echo "not found"; }'),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        $result = $topology->ssh(
+            'gateway',
+            sprintf(
+                'cd %s && php artisan doctor --family=firewall_rule --adopt --json',
+                escapeshellarg($gatewayCheckout),
+            ),
+            timeoutSeconds: 180,
+        );
+
+        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result->successful())->toBeTrue()
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('adopt')
+            ->and($payload['success']['data']['doctor']['summary']['adopted'] ?? 0)->toBeGreaterThanOrEqual(1);
+
+        $verifyResult = $topology->ssh(
+            'gateway',
+            sprintf(
+                'cd %s && php artisan tinker --execute=%s',
+                escapeshellarg($gatewayCheckout),
+                escapeshellarg('echo \App\Models\FirewallRule::query()->where("name", "local-vite")->where("reason", "orbit:local-vite")->first() ? "found" : "missing";'),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        expect(trim($verifyResult->output()))->toContain('found');
+    } finally {
+        $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force reset && sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq ufw; fi', timeoutSeconds: 120);
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-control-gateway-dev');
+
+function firewallDoctorAdoptWireGuardCidr(string $gatewayWireGuardIp): string
+{
+    $parts = explode('.', $gatewayWireGuardIp);
+
+    if (count($parts) !== 4) {
+        throw new RuntimeException("Invalid gateway WireGuard IP [{$gatewayWireGuardIp}].");
+    }
+
+    return "{$parts[0]}.{$parts[1]}.0.0/24";
+}

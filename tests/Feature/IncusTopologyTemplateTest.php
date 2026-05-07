@@ -257,6 +257,18 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         ->and($script)->toContain("incus copy 'orbit-template-gateway/clean-control-gateway' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
 });
 
+it('does not use synthetic provider-interface routes for prepared gateway clones', function (): void {
+    $source = file_get_contents(app_path('E2E/Support/IncusTopologyProvider.php'));
+
+    expect($source)->not->toContain('ip addr add')
+        ->and($source)->not->toContain('ip route replace')
+        ->and($source)->not->toContain('DockerTopologyNetworkPlan')
+        ->and($source)->toContain("private const string GatewayWireGuardIp = '10.6.0.2'")
+        ->and($source)->toContain("private const string DevWireGuardIp = '10.6.0.4'")
+        ->and($source)->toContain('retargetRealWireGuard')
+        ->and($source)->toContain('E2EWgEasyGateway');
+});
+
 it('enables stateful migration before starting clones when stateful reset is requested', function (): void {
     $previous = getenv('ORBIT_E2E_TOPOLOGY_RESET');
     putenv('ORBIT_E2E_TOPOLOGY_RESET=stateful-restore');

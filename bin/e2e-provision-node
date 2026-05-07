@@ -13,16 +13,14 @@ LOG_FILE="${ORBIT_E2E_PROVISION_LOG:-}"
 
 usage() {
     cat <<'HELP'
-usage: bin/e2e-provision-node --role=control --source-archive=PATH [options]
+usage: bin/e2e-provision-node --role=control|gateway|app --source-archive=PATH [options]
 
-Provision a freshly-cloned Orbit blank VM as a control node by pushing a source
-archive into place via bin/install-orbit. Gateway and app topology roles are
-created later through node:new from that control node, matching the production
-provisioning path. Designed to run inside the VM after the bundle has been
+Provision a freshly-cloned Orbit blank VM by pushing a source archive into place
+via bin/install-orbit. Designed to run inside the VM after the bundle has been
 pushed.
 
 Required:
-  --role=control               Control node role being installed.
+  --role=control|gateway|app   Topology role being installed.
   --source-archive=PATH        Tarball of the Orbit checkout to install.
 
 Optional:
@@ -144,13 +142,13 @@ parse_args() {
 
 validate_args() {
     case "$ROLE" in
-        control)
+        control|gateway|app)
             ;;
         "")
             fail validation_failed "--role is required"
             ;;
         *)
-            fail validation_failed "--role must be: control"
+            fail validation_failed "--role must be: control, gateway, or app"
             ;;
     esac
 
@@ -167,7 +165,14 @@ validate_args() {
 }
 
 target_user_for_role() {
-    printf '%s' "$CONTROL_USER"
+    case "$ROLE" in
+        control)
+            printf '%s' "$CONTROL_USER"
+            ;;
+        gateway|app)
+            printf '%s' orbit
+            ;;
+    esac
 }
 
 ensure_target_user() {

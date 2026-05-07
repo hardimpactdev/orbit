@@ -135,7 +135,7 @@ it('ignores topology WireGuard addresses when resolving an Incus provider IPv4',
     $instance = new IncusInstance($host, 'orbit-template-control');
 
     expect($instance->waitForIpv4())->toBe('10.231.0.10')
-        ->and($commands[0])->toContain("grep -v '(wg-orbit)'");
+        ->and($commands[0])->toContain("grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0)'");
 });
 
 it('restarts journald after refreshing cloned instance network identity', function (): void {

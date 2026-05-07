@@ -4,7 +4,7 @@
 
 **Goal:** Make every prepared E2E topology containing a gateway use a real `wg-orbit` WireGuard interface instead of synthetic routes on the provider interface.
 
-**Architecture:** Gateway-capable prepared topologies become Incus-only. Incus gateway VMs run Docker plus `wg-easy`, each topology role installs a real `wg-orbit` config, and clone acquisition retargets endpoints to the current clone provider IP before returning the lease. Docker topology remains available only for non-gateway topology kinds.
+**Architecture:** Gateway-capable prepared topologies become Incus-only. Incus gateway VMs run Docker plus `wg-easy`; `wg-easy` is the only WireGuard server on UDP `51820`, and the gateway host installs `wg-orbit` as a peer/client with address `10.6.0.2`. Each non-gateway topology role also installs a real `wg-orbit` config, and clone acquisition retargets endpoints to the current clone provider IP before returning the lease. Docker topology remains available only for non-gateway topology kinds.
 
 **Tech Stack:** Laravel 13 console/test harness, Pest 4, Incus VMs, Docker inside Incus gateway VMs, `wg-easy`, `wireguard-tools`, `wg-quick`, UFW.
 
@@ -14,8 +14,8 @@
 
 - Modify `app/E2E/Support/E2ETopologyProviderPool.php` to reject Docker for gateway topology kinds before availability checks.
 - Modify `app/E2E/Support/E2ETopologyCapabilities.php` to expose a named real-WireGuard VM requirement if provider selection needs it later.
-- Create `app/E2E/Support/E2EWireGuardMesh.php` to render WireGuard configs, install configs on topology roles, restart interfaces, and verify peer reachability.
-- Create `app/E2E/Support/E2EWgEasyGateway.php` to install Docker when missing, start `wg-easy`, seed its SQLite state, and install the gateway host `wg-orbit` interface.
+- Create `app/E2E/Support/E2EWireGuardMesh.php` to render client/peer WireGuard configs, install configs on topology roles, restart interfaces, and verify peer reachability.
+- Create `app/E2E/Support/E2EWgEasyGateway.php` to install Docker when missing, start `wg-easy` as the only WireGuard server, seed its SQLite state/client peers, and install the gateway host `wg-orbit` interface as a peer.
 - Modify `app/E2E/Support/IncusTopologyBuilder.php` to install Docker on gateway templates and replace synthetic route setup with the real WireGuard mesh during template preparation.
 - Modify `app/E2E/Support/IncusTopologyProvider.php` to retarget and verify the real WireGuard mesh after cloning/resetting.
 - Modify `app/E2E/Support/E2ENetwork.php` only after all callers have moved off it; either delete it or leave it unused only for Docker non-gateway code if a caller remains.
@@ -138,11 +138,12 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EWireGuardMesh;
 
-it('renders a gateway host config with app and control peers', function (): void {
+it('renders a gateway host config as a peer of wg-easy', function (): void {
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',
-        gatewayPrivateKey: 'gateway-private',
-        gatewayPublicKey: 'gateway-public',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
         controlPrivateKey: 'control-private',
         controlPublicKey: 'control-public',
         devPrivateKey: 'dev-private',
@@ -152,18 +153,22 @@ it('renders a gateway host config with app and control peers', function (): void
     $config = $mesh->gatewayHostConfig();
 
     expect($config)->toContain('Address = 10.6.0.2/24')
-        ->and($config)->toContain('ListenPort = 51820')
-        ->and($config)->toContain('PublicKey = control-public')
-        ->and($config)->toContain('AllowedIPs = 10.6.0.3/32')
-        ->and($config)->toContain('PublicKey = dev-public')
-        ->and($config)->toContain('AllowedIPs = 10.6.0.4/32');
+        ->and($config)->toContain('PrivateKey = gateway-host-private')
+        ->and($config)->toContain('PublicKey = wg-easy-public')
+        ->and($config)->toContain('AllowedIPs = 10.6.0.0/24')
+        ->and($config)->toContain('Endpoint = 10.231.0.11:51820')
+        ->and($config)->toContain('PersistentKeepalive = 25')
+        ->and($config)->not->toContain('ListenPort = 51820')
+        ->and($config)->not->toContain('PublicKey = control-public')
+        ->and($config)->not->toContain('PublicKey = dev-public');
 });
 
 it('renders a peer config that points at the gateway provider endpoint', function (): void {
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',
-        gatewayPrivateKey: 'gateway-private',
-        gatewayPublicKey: 'gateway-public',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
         controlPrivateKey: 'control-private',
         controlPublicKey: 'control-public',
         devPrivateKey: 'dev-private',
@@ -173,10 +178,29 @@ it('renders a peer config that points at the gateway provider endpoint', functio
     $config = $mesh->peerConfig(role: 'dev');
 
     expect($config)->toContain('Address = 10.6.0.4/24')
-        ->and($config)->toContain('PublicKey = gateway-public')
+        ->and($config)->toContain('PublicKey = wg-easy-public')
         ->and($config)->toContain('AllowedIPs = 10.6.0.0/24')
         ->and($config)->toContain('Endpoint = 10.231.0.11:51820')
         ->and($config)->toContain('PersistentKeepalive = 25');
+});
+
+it('returns wg-easy client peer records for all topology roles', function (): void {
+    $mesh = E2EWireGuardMesh::standard(
+        gatewayProviderIp: '10.231.0.11',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
+        controlPrivateKey: 'control-private',
+        controlPublicKey: 'control-public',
+        devPrivateKey: 'dev-private',
+        devPublicKey: 'dev-public',
+    );
+
+    expect($mesh->wgEasyPeers())->toBe([
+        ['name' => 'gateway', 'public_key' => 'gateway-host-public', 'address' => '10.6.0.2'],
+        ['name' => 'control', 'public_key' => 'control-public', 'address' => '10.6.0.3'],
+        ['name' => 'dev', 'public_key' => 'dev-public', 'address' => '10.6.0.4'],
+    ]);
 });
 ```
 
@@ -206,17 +230,19 @@ use RuntimeException;
 final readonly class E2EWireGuardMesh
 {
     /**
-     * @param  array<string, array{address: string, private_key: string, public_key: string}>  $roles
+     * @param  array<string, array{address: string, private_key: string, public_key: string}>  $peers
      */
     public function __construct(
         private string $gatewayProviderIp,
-        private array $roles,
+        private string $wgEasyPublicKey,
+        private array $peers,
     ) {}
 
     public static function standard(
         string $gatewayProviderIp,
-        string $gatewayPrivateKey,
-        string $gatewayPublicKey,
+        string $wgEasyPublicKey,
+        string $gatewayHostPrivateKey,
+        string $gatewayHostPublicKey,
         string $controlPrivateKey,
         string $controlPublicKey,
         ?string $devPrivateKey = null,
@@ -224,65 +250,35 @@ final readonly class E2EWireGuardMesh
         ?string $prodPrivateKey = null,
         ?string $prodPublicKey = null,
     ): self {
-        $roles = [
-            'gateway' => ['address' => '10.6.0.2', 'private_key' => $gatewayPrivateKey, 'public_key' => $gatewayPublicKey],
+        $peers = [
+            'gateway' => ['address' => '10.6.0.2', 'private_key' => $gatewayHostPrivateKey, 'public_key' => $gatewayHostPublicKey],
             'control' => ['address' => '10.6.0.3', 'private_key' => $controlPrivateKey, 'public_key' => $controlPublicKey],
         ];
 
         if ($devPrivateKey !== null && $devPublicKey !== null) {
-            $roles['dev'] = ['address' => '10.6.0.4', 'private_key' => $devPrivateKey, 'public_key' => $devPublicKey];
+            $peers['dev'] = ['address' => '10.6.0.4', 'private_key' => $devPrivateKey, 'public_key' => $devPublicKey];
         }
 
         if ($prodPrivateKey !== null && $prodPublicKey !== null) {
-            $roles['prod'] = ['address' => '10.6.0.5', 'private_key' => $prodPrivateKey, 'public_key' => $prodPublicKey];
+            $peers['prod'] = ['address' => '10.6.0.5', 'private_key' => $prodPrivateKey, 'public_key' => $prodPublicKey];
         }
 
-        return new self($gatewayProviderIp, $roles);
+        return new self($gatewayProviderIp, $wgEasyPublicKey, $peers);
     }
 
     public function addressFor(string $role): string
     {
-        return $this->role($role)['address'];
+        return $this->peer($role)['address'];
     }
 
     public function gatewayHostConfig(): string
     {
-        $gateway = $this->role('gateway');
-        $lines = [
-            '[Interface]',
-            "PrivateKey = {$gateway['private_key']}",
-            "Address = {$gateway['address']}/24",
-            'ListenPort = 51820',
-            '',
-        ];
-
-        foreach (['control', 'dev', 'prod'] as $role) {
-            if (! isset($this->roles[$role])) {
-                continue;
-            }
-
-            $peer = $this->roles[$role];
-            $lines = [
-                ...$lines,
-                '[Peer]',
-                "PublicKey = {$peer['public_key']}",
-                "AllowedIPs = {$peer['address']}/32",
-                'PersistentKeepalive = 25',
-                '',
-            ];
-        }
-
-        return implode("\n", $lines);
+        return $this->peerConfig('gateway');
     }
 
     public function peerConfig(string $role): string
     {
-        if ($role === 'gateway') {
-            return $this->gatewayHostConfig();
-        }
-
-        $peer = $this->role($role);
-        $gateway = $this->role('gateway');
+        $peer = $this->peer($role);
 
         return implode("\n", [
             '[Interface]',
@@ -290,7 +286,7 @@ final readonly class E2EWireGuardMesh
             "Address = {$peer['address']}/24",
             '',
             '[Peer]',
-            "PublicKey = {$gateway['public_key']}",
+            "PublicKey = {$this->wgEasyPublicKey}",
             'AllowedIPs = 10.6.0.0/24',
             "Endpoint = {$this->gatewayProviderIp}:51820",
             'PersistentKeepalive = 25',
@@ -299,14 +295,34 @@ final readonly class E2EWireGuardMesh
     }
 
     /**
+     * @return list<array{name: string, public_key: string, address: string}>
+     */
+    public function wgEasyPeers(): array
+    {
+        $records = [];
+
+        foreach ($this->peers as $name => $peer) {
+            $records[] = [
+                'name' => $name,
+                'public_key' => $peer['public_key'],
+                'address' => $peer['address'],
+            ];
+        }
+
+        return $records;
+    }
+
+    /**
      * @return array{address: string, private_key: string, public_key: string}
      */
-    private function role(string $role): array
+    private function peer(string $role): array
     {
-        return $this->roles[$role] ?? throw new RuntimeException("WireGuard role [{$role}] is not present in this mesh.");
+        return $this->peers[$role] ?? throw new RuntimeException("WireGuard role [{$role}] is not present in this mesh.");
     }
 }
 ```
+
+Implementation note: the gateway host is deliberately a peer/client config. It must not include `ListenPort = 51820` or list control/app peers directly; those peers belong to the `wg-easy` server state.
 
 - [ ] **Step 4: Verify mesh tests pass**
 
@@ -340,8 +356,9 @@ it('installs and restarts wg-orbit on a role instance', function (): void {
     $instance = new RecordingE2EInstance('dev');
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',
-        gatewayPrivateKey: 'gateway-private',
-        gatewayPublicKey: 'gateway-public',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
         controlPrivateKey: 'control-private',
         controlPublicKey: 'control-public',
         devPrivateKey: 'dev-private',
@@ -361,8 +378,9 @@ it('verifies a role has a real wg-orbit interface and can reach peers', function
     $instance = new RecordingE2EInstance('gateway');
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: '10.231.0.11',
-        gatewayPrivateKey: 'gateway-private',
-        gatewayPublicKey: 'gateway-public',
+        wgEasyPublicKey: 'wg-easy-public',
+        gatewayHostPrivateKey: 'gateway-host-private',
+        gatewayHostPublicKey: 'gateway-host-public',
         controlPrivateKey: 'control-private',
         controlPublicKey: 'control-public',
         devPrivateKey: 'dev-private',
@@ -527,6 +545,23 @@ it('starts wg-easy with the gateway runtime container shape', function (): void 
         ->and($command)->toContain('-v /lib/modules:/lib/modules:ro')
         ->and($command)->toContain('ghcr.io/wg-easy/wg-easy:15');
 });
+
+it('registers topology peers on the wg-easy server interface', function (): void {
+    $instance = new RecordingE2EInstance('gateway');
+
+    (new E2EWgEasyGateway)->configurePeers($instance, [
+        ['name' => 'gateway', 'public_key' => 'gateway-host-public', 'address' => '10.6.0.2'],
+        ['name' => 'control', 'public_key' => 'control-public', 'address' => '10.6.0.3'],
+        ['name' => 'dev', 'public_key' => 'dev-public', 'address' => '10.6.0.4'],
+    ]);
+
+    $command = implode("\n", $instance->commands);
+
+    expect($command)->toContain("docker exec wg-easy wg set wg0 peer 'gateway-host-public' allowed-ips '10.6.0.2/32'")
+        ->and($command)->toContain("docker exec wg-easy wg set wg0 peer 'control-public' allowed-ips '10.6.0.3/32'")
+        ->and($command)->toContain("docker exec wg-easy wg set wg0 peer 'dev-public' allowed-ips '10.6.0.4/32'")
+        ->and($command)->not->toContain('ListenPort = 51820');
+});
 ```
 
 - [ ] **Step 2: Run the failing test**
@@ -563,10 +598,32 @@ final readonly class E2EWgEasyGateway
             "Could not start wg-easy on {$gateway->name()}",
         );
     }
+
+    /**
+     * @param  list<array{name: string, public_key: string, address: string}>  $peers
+     */
+    public function configurePeers(E2EInstance $gateway, array $peers): void
+    {
+        $commands = [];
+
+        foreach ($peers as $peer) {
+            $commands[] = sprintf(
+                'docker exec wg-easy wg set wg0 peer %s allowed-ips %s',
+                escapeshellarg($peer['public_key']),
+                escapeshellarg("{$peer['address']}/32"),
+            );
+        }
+
+        E2ECommand::exec(
+            $gateway,
+            implode('; ', $commands),
+            "Could not register wg-easy peers on {$gateway->name()}",
+        );
+    }
 }
 ```
 
-The SQL statement is intentionally best-effort because wg-easy may initialize the database after first boot. Live contract tests in Task 7 verify the runtime shape; production-facing peer config is installed through `E2EWireGuardMesh`.
+The SQL statement is intentionally best-effort because wg-easy may initialize the database after first boot. Live contract tests in Task 7 verify the runtime shape. The important production-parity rule is that peers are registered on container `wg0`; the gateway host remains one of those peers and never becomes a second server.
 
 - [ ] **Step 4: Verify gateway runtime tests pass**
 
@@ -628,15 +685,17 @@ Add a private mesh factory:
 private function meshFor(array $instances): E2EWireGuardMesh
 {
     $generator = app(WireGuardKeyGenerator::class);
-    $gateway = $generator->generateKeyPair();
+    $gatewayHost = $generator->generateKeyPair();
     $control = $generator->generateKeyPair();
     $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
     $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+    $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
 
     return E2EWireGuardMesh::standard(
         gatewayProviderIp: $instances['gateway']->waitForIpv4(),
-        gatewayPrivateKey: $gateway['private_key'],
-        gatewayPublicKey: $gateway['public_key'],
+        wgEasyPublicKey: $wgEasyPublicKey,
+        gatewayHostPrivateKey: $gatewayHost['private_key'],
+        gatewayHostPublicKey: $gatewayHost['public_key'],
         controlPrivateKey: $control['private_key'],
         controlPublicKey: $control['public_key'],
         devPrivateKey: $dev['private_key'] ?? null,
@@ -662,9 +721,11 @@ private function installRealWireGuard(array $instances): void
         return;
     }
 
+    (new E2EWgEasyGateway)->start($instances['gateway'], advertisedHost: $instances['gateway']->waitForIpv4());
+
     $mesh = $this->meshFor($instances);
 
-    (new E2EWgEasyGateway)->start($instances['gateway'], advertisedHost: $instances['gateway']->waitForIpv4());
+    (new E2EWgEasyGateway)->configurePeers($instances['gateway'], $mesh->wgEasyPeers());
 
     foreach (['gateway', 'control', 'dev', 'prod'] as $role) {
         if (! isset($instances[$role])) {
@@ -759,8 +820,9 @@ private function retargetRealWireGuard(array $instances, DockerTopologyNetworkPl
 
     $mesh = E2EWireGuardMesh::standard(
         gatewayProviderIp: $gatewayIp,
-        gatewayPrivateKey: trim($instances['gateway']->exec('sudo wg show wg-orbit private-key')->output()),
-        gatewayPublicKey: trim($instances['gateway']->exec('sudo wg show wg-orbit public-key')->output()),
+        wgEasyPublicKey: trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output()),
+        gatewayHostPrivateKey: trim($instances['gateway']->exec('sudo wg show wg-orbit private-key')->output()),
+        gatewayHostPublicKey: trim($instances['gateway']->exec('sudo wg show wg-orbit public-key')->output()),
         controlPrivateKey: trim($instances['control']->exec('sudo wg show wg-orbit private-key')->output()),
         controlPublicKey: trim($instances['control']->exec('sudo wg show wg-orbit public-key')->output()),
         devPrivateKey: isset($instances['dev']) ? trim($instances['dev']->exec('sudo wg show wg-orbit private-key')->output()) : null,
@@ -768,6 +830,8 @@ private function retargetRealWireGuard(array $instances, DockerTopologyNetworkPl
         prodPrivateKey: isset($instances['prod']) ? trim($instances['prod']->exec('sudo wg show wg-orbit private-key')->output()) : null,
         prodPublicKey: isset($instances['prod']) ? trim($instances['prod']->exec('sudo wg show wg-orbit public-key')->output()) : null,
     );
+
+    (new E2EWgEasyGateway)->configurePeers($instances['gateway'], $mesh->wgEasyPeers());
 
     foreach (['gateway', 'control', 'dev', 'prod'] as $role) {
         if (! isset($instances[$role])) {
@@ -850,6 +914,20 @@ $sshOverWireGuard = E2ECommand::ssh(
 );
 
 expect($sshOverWireGuard->successful())->toBeTrue();
+```
+
+Add gateway server-shape assertion:
+
+```php
+$gatewayWireGuardShape = E2ECommand::ssh(
+    $gateway,
+    'orbit',
+    $key,
+    'set -euo pipefail; docker exec wg-easy wg show wg0 listen-port | grep -Fx 51820; test "$(sudo wg show wg-orbit listen-port)" != "51820"; sudo ss -lunp | grep -F ":51820" | grep -F docker-proxy',
+    timeoutSeconds: 30,
+);
+
+expect($gatewayWireGuardShape->successful())->toBeTrue();
 ```
 
 - [ ] **Step 2: Run live contract when Incus topology is available**

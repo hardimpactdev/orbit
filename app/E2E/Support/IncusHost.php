@@ -90,9 +90,8 @@ class IncusHost
     }
 
     /**
-     * Push a remote bundle into an Incus instance and run the control-node
-     * installer inside it. Gateway and app topology roles are provisioned later
-     * through node:new from the prepared control node.
+     * Push a remote bundle into an Incus instance and install the requested
+     * topology role inside it.
      */
     public function provisionInstance(
         string $instanceName,
@@ -101,8 +100,8 @@ class IncusHost
         ?string $controlUser = null,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
-        if ($role !== 'control') {
-            throw new RuntimeException("Incus topology provisioning only installs control nodes directly; got [{$role}].");
+        if (! in_array($role, ['control', 'gateway', 'app'], true)) {
+            throw new RuntimeException("Incus topology provisioning role must be control, gateway, or app; got [{$role}].");
         }
 
         $bundleTarget = "{$instanceName}/tmp/";

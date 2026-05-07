@@ -23,9 +23,9 @@ via `--family=firewall_rule`. Fix map handles `rule_missing` and
   `FirewallRuleProbe::adopt()`. Adopts observed UFW rules into registry records,
   skips baseline SSH policy, handles name collisions. Pest coverage:
   `tests/Unit/Services/Firewall/FirewallRuleProbeTest.php`. Doctor adopt dispatch
-  coverage: `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
-  E2E coverage deferred — doctor adopt requires gateway SSH introspection of app
-  nodes, which is not reliably available in prepared topologies.
+  coverage: `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`;
+  Incus VM-feature coverage:
+  `tests/E2E/FirewallDoctorAdoptTest.php`.
 
 ## Activity backfill
 

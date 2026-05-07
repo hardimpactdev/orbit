@@ -276,7 +276,7 @@ final class IncusInstance implements E2EInstance
     {
         try {
             $result = $this->host->run(sprintf(
-                "incus list %s --format csv -c 4 | grep -v '(wg-orbit)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true",
+                "incus list %s --format csv -c 4 | grep -Ev '\\((wg-orbit|docker0|br-|veth|wg0)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true",
                 escapeshellarg($this->name),
             ), timeoutSeconds: 30);
         } catch (\Throwable) {

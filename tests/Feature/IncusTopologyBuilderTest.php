@@ -210,6 +210,10 @@ it('builds prepared topology templates through staged node:new snapshots', funct
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
         $commands[] = $command;
 
+        if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+            return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
+        }
+
         if (str_starts_with($command, 'mktemp -d ')) {
             return incusTopologyBuilderProcessResult("/tmp/orbit-topology-builder-test\n");
         }
@@ -266,9 +270,20 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-dev'")
         ->and($commandOutput)->toContain("incus launch 'orbit-blank-ubuntu-26.04' 'orbit-template-prod'")
         ->and($commandOutput)->not->toContain('orbit-template-control-gateway-dev-prod-control')
-        ->and($commandOutput)->toContain('orbit node:new gateway-1')
-        ->and($commandOutput)->toContain('--role=gateway')
-        ->and($commandOutput)->toContain('--control-name=control-1')
+        ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
+        ->and($commandOutput)->not->toContain('--role=gateway')
+        ->and($commandOutput)->not->toContain('--control-name=control-1')
+        ->and($commandOutput)->toContain('/tmp/orbit-e2e-bundle/e2e-provision-node')
+        ->and($commandOutput)->toContain('--role=')
+        ->and($commandOutput)->toContain('gateway')
+        ->and($commandOutput)->toContain('docker run -d')
+        ->and($commandOutput)->toContain('--name wg-easy')
+        ->and($commandOutput)->toContain('-p 51820:51820/udp')
+        ->and($commandOutput)->not->toContain('51822')
+        ->and($commandOutput)->toContain('gateway-ca/orbit.crt')
+        ->and($commandOutput)->toContain('ca_pem_path')
+        ->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')
+        ->and($commandOutput)->not->toContain('ListenPort = 51820')
         ->and($commandOutput)->toContain('orbit node:new')
         ->and($commandOutput)->toContain('app-dev-1')
         ->and($commandOutput)->toContain('10.201.0.12')

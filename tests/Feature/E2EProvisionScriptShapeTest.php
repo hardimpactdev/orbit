@@ -42,9 +42,9 @@ it('prints help with --help', function (): void {
 
     expect($result->successful())->toBeTrue();
     expect($result->output())->toContain('usage: bin/e2e-provision-node');
-    expect($result->output())->toContain('--role=control');
+    expect($result->output())->toContain('--role=control|gateway|app');
     expect($result->output())->toContain('--source-archive=PATH');
-    expect($result->output())->toContain('Gateway and app topology roles are');
+    expect($result->output())->toContain('Topology role being installed');
 });
 
 it('runs install-orbit without role semantics', function (): void {
@@ -69,7 +69,7 @@ it('fails when --role is invalid', function (): void {
     $result = Process::run([provisionScript(), '--role=invalid', '--source-archive=/tmp/missing']);
 
     expect($result->successful())->toBeFalse();
-    expect($result->errorOutput())->toContain('--role must be: control');
+    expect($result->errorOutput())->toContain('--role must be: control, gateway, or app');
 });
 
 it('fails when --source-archive is missing', function (): void {

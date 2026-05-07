@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use App\Services\WireGuard\WireGuardKeyGenerator;
 use RuntimeException;
 
 class IncusTopologyBuilder
@@ -13,10 +14,6 @@ class IncusTopologyBuilder
     private const string GatewayWireGuardIp = '10.6.0.2';
 
     private const string ControlWireGuardIp = '10.6.0.3';
-
-    private const string DevWireGuardIp = '10.6.0.4';
-
-    private const string ProdWireGuardIp = '10.6.0.5';
 
     private readonly E2EPhaseTimer $timer;
 
@@ -222,10 +219,15 @@ class IncusTopologyBuilder
         $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
         $instances['gateway'] = $gateway;
 
-        $this->timer->measure('gateway.node-new', fn () => $this->runGatewayNodeNew($control, $key, $gatewayIp));
+        $this->timer->measure('gateway.provision', fn () => $this->host->provisionInstance($gateway->name(), 'gateway', (string) $this->remoteBundleDir));
+        $this->timer->measure('gateway.real-wireguard', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($gateway));
+        $this->timer->measure('gateway.trust-control', fn () => $this->trustGatewayCaOnControl($control, $gateway, $key));
+        $this->timer->measure('gateway.seed-control', fn () => E2EGatewayApi::seedControlIdentity($gateway, self::ControlWireGuardIp, $this->host->config->controlUser));
+        $this->timer->measure('gateway.retarget-control', fn () => $this->retargetControl($control, $key));
         $this->timer->measure('gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($control, $key));
-        $this->timer->measure('gateway.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
         $this->timer->measure('gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key));
+        $this->timer->measure('gateway.api.start', fn () => E2EGatewayApi::start($gateway, 'template-gateway'));
         $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key));
 
         return $instances;
@@ -238,7 +240,8 @@ class IncusTopologyBuilder
     {
         $instances = $this->startTemplateRoles(['control', 'gateway'], $key);
 
-        $this->timer->measure('dev.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
+        $this->timer->measure('dev.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('dev.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-dev'));
         $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
 
         $dev = $this->launchBlankRole('dev', $key);
@@ -253,6 +256,7 @@ class IncusTopologyBuilder
             'development',
             'test',
         ));
+        $this->timer->measure('dev.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
@@ -264,7 +268,8 @@ class IncusTopologyBuilder
     {
         $instances = $this->startTemplateRoles(['control', 'gateway', 'dev'], $key);
 
-        $this->timer->measure('prod.wireguard-routes', fn () => $this->reestablishWireGuardRoutes($instances));
+        $this->timer->measure('prod.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
+        $this->timer->measure('prod.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prod'));
         $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['control'], $this->host->config->controlUser, $key));
 
         $prod = $this->launchBlankRole('prod', $key);
@@ -278,6 +283,7 @@ class IncusTopologyBuilder
             $prodIp,
             'production',
         ));
+        $this->timer->measure('prod.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
         return $instances;
     }
@@ -328,29 +334,6 @@ class IncusTopologyBuilder
         $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
 
         return $instance;
-    }
-
-    private function runGatewayNodeNew(
-        IncusInstance $control,
-        SshKeyPair $key,
-        string $host,
-    ): void {
-        $parts = [
-            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && orbit node:new gateway-1',
-            '--role=gateway',
-            '--host='.escapeshellarg($host),
-            '--ssh-user='.escapeshellarg($this->host->config->bootstrapUser),
-            '--control-name=control-1',
-            '--json',
-        ];
-
-        E2ECommand::ssh(
-            $control,
-            $this->host->config->controlUser,
-            $key,
-            implode(' ', $parts),
-            timeoutSeconds: 900,
-        );
     }
 
     private function useWireGuardGatewayUrl(IncusInstance $control, SshKeyPair $key): void
@@ -407,6 +390,91 @@ PHP;
         E2EGatewayApi::waitForGatewayApi($control, $this->host->config->controlUser, $key);
     }
 
+    private function bootstrapGatewayLocal(IncusInstance $gateway): void
+    {
+        E2ECommand::orbit(
+            $gateway,
+            sprintf(
+                'cd /home/orbit/orbit && php artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-runtime-install',
+                escapeshellarg(self::GatewayWireGuardIp),
+            ),
+            'Could not bootstrap local gateway identity',
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function retargetControl(IncusInstance $control, SshKeyPair $key): void
+    {
+        $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
+
+        $php = <<<PHP
+\\App\\Models\\Node::query()->updateOrCreate(
+    ['name' => 'gateway'],
+    [
+        'role' => 'gateway',
+        'environment' => null,
+        'tld' => null,
+        'platform' => 'unknown',
+        'host' => {$gatewayIpValue},
+        'wireguard_address' => {$gatewayIpValue},
+        'gateway_endpoint' => null,
+        'ssh_user' => 'orbit',
+        'user' => 'orbit',
+        'orbit_path' => '/home/orbit/orbit',
+        'status' => 'active',
+        'is_local' => false,
+    ],
+);
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
+    private function trustGatewayCaOnControl(IncusInstance $control, IncusInstance $gateway, SshKeyPair $key): void
+    {
+        $rootCa = E2ECommand::orbit(
+            $gateway,
+            'cd /home/orbit/orbit && php artisan tinker --execute='.escapeshellarg('echo app(\App\Services\Ca\OrbitCaService::class)->rootCert();'),
+            'Could not read gateway root CA',
+            timeoutSeconds: 60,
+        )->output();
+
+        $rootCaValue = var_export($rootCa, true);
+        $gatewayUrlValue = var_export('https://'.self::GatewayWireGuardIp, true);
+        $gatewayIpValue = var_export(self::GatewayWireGuardIp, true);
+
+        $php = <<<PHP
+\$rootCa = {$rootCaValue};
+\$pemPath = storage_path('app/orbit/gateway-ca/orbit.crt');
+\\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$pemPath));
+\\Illuminate\\Support\\Facades\\File::put(\$pemPath, \$rootCa);
+
+\$settings = \\App\\Models\\LocalGatewaySettings::current();
+\$settings->fill([
+    'gateway_url' => {$gatewayUrlValue},
+    'gateway_wg_ip' => {$gatewayIpValue},
+    'ca_sha256' => hash('sha256', \$rootCa),
+    'ca_pem_path' => \$pemPath,
+    'trusted_at' => now(),
+]);
+\$settings->save();
+PHP;
+
+        E2ECommand::ssh(
+            $control,
+            $this->host->config->controlUser,
+            $key,
+            'cd '.escapeshellarg('/home/'.$this->host->config->controlUser.'/orbit').' && php artisan tinker --execute='.escapeshellarg($php),
+            timeoutSeconds: 120,
+        );
+    }
+
     private function installPrivateSshKey(IncusInstance $instance, SshKeyPair $key, string $user): void
     {
         $home = $user === 'root' ? '/root' : "/home/{$user}";
@@ -442,7 +510,7 @@ PHP;
     /**
      * @param  array<string, IncusInstance>  $instances
      */
-    private function reestablishWireGuardRoutes(array $instances): void
+    private function installRealWireGuard(array $instances): void
     {
         $control = $instances['control'] ?? null;
         $gateway = $instances['gateway'] ?? null;
@@ -451,29 +519,52 @@ PHP;
             return;
         }
 
-        $controlIp = $control->waitForIpv4();
-        $gatewayIp = $gateway->waitForIpv4();
+        $gatewayProviderIp = $gateway->waitForIpv4();
+        $wgEasy = new E2EWgEasyGateway;
+        $wgEasy->start($gateway, $gatewayProviderIp);
 
-        E2ENetwork::assignWireGuardIp($control, self::ControlWireGuardIp);
-        E2ENetwork::assignWireGuardIp($gateway, self::GatewayWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($control, self::GatewayWireGuardIp, $gatewayIp, self::ControlWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($gateway, self::ControlWireGuardIp, $controlIp, self::GatewayWireGuardIp);
+        $mesh = $this->meshFor($instances, $gatewayProviderIp);
+        $wgEasy->configurePeers($gateway, $mesh->wgEasyPeers());
 
-        $this->routeAppPeer($gateway, $gatewayIp, $instances['dev'] ?? null, self::DevWireGuardIp);
-        $this->routeAppPeer($gateway, $gatewayIp, $instances['prod'] ?? null, self::ProdWireGuardIp);
-    }
+        foreach (['gateway', 'control', 'dev', 'prod'] as $role) {
+            if (! isset($instances[$role])) {
+                continue;
+            }
 
-    private function routeAppPeer(IncusInstance $gateway, string $gatewayIp, ?IncusInstance $app, string $appWireGuardIp): void
-    {
-        if ($app === null) {
-            return;
+            $mesh->installRole($instances[$role], $role);
         }
 
-        $appIp = $app->waitForIpv4();
+        $mesh->verifyRole($gateway, 'gateway', array_values(array_filter([
+            'control',
+            isset($instances['dev']) ? 'dev' : null,
+            isset($instances['prod']) ? 'prod' : null,
+        ])));
+    }
 
-        E2ENetwork::assignWireGuardIp($app, $appWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($gateway, $appWireGuardIp, $appIp, self::GatewayWireGuardIp);
-        E2ENetwork::routeWireGuardPeer($app, self::GatewayWireGuardIp, $gatewayIp, $appWireGuardIp);
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function meshFor(array $instances, string $gatewayProviderIp): E2EWireGuardMesh
+    {
+        $generator = app(WireGuardKeyGenerator::class);
+        $gatewayHost = $generator->generateKeyPair();
+        $control = $generator->generateKeyPair();
+        $dev = isset($instances['dev']) ? $generator->generateKeyPair() : null;
+        $prod = isset($instances['prod']) ? $generator->generateKeyPair() : null;
+        $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
+
+        return E2EWireGuardMesh::standard(
+            gatewayProviderIp: $gatewayProviderIp,
+            wgEasyPublicKey: $wgEasyPublicKey,
+            gatewayHostPrivateKey: $gatewayHost['private_key'],
+            gatewayHostPublicKey: $gatewayHost['public_key'],
+            controlPrivateKey: $control['private_key'],
+            controlPublicKey: $control['public_key'],
+            devPrivateKey: $dev['private_key'] ?? null,
+            devPublicKey: $dev['public_key'] ?? null,
+            prodPrivateKey: $prod['private_key'] ?? null,
+            prodPublicKey: $prod['public_key'] ?? null,
+        );
     }
 
     /**

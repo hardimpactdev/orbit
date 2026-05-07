@@ -16,7 +16,8 @@ traffic and WireGuard-interface traffic. Firewall and VPN tests can pass while
 missing bugs that only appear when traffic enters through `wg-orbit`.
 
 Docker prepared topology has the same problem at a larger boundary: it cannot
-represent gateway VM behavior if the gateway owns WireGuard and runs `wg-easy`.
+represent gateway VM behavior where `wg-easy` owns the WireGuard server and the
+gateway host joins that VPN as a normal peer.
 
 ## Decision
 
@@ -36,11 +37,18 @@ Incus gateway topologies use a real WireGuard mesh during preparation and after
 clone acquisition.
 
 The gateway VM installs Docker and runs the `wg-easy` container using the same
-shape as historical Orbit: UDP `51820`, admin UI on loopback/private access,
-`NET_ADMIN`, `SYS_MODULE`, `/lib/modules` mounted read-only, and persistent
-state under the `orbit` user's home directory. The gateway host also installs
-its own `wg-orbit` interface so host-level Orbit services can reach peers even
-though `wg-easy` owns an internal container namespace.
+shape as historical Orbit: `wg-easy` is the only WireGuard server, Docker
+publishes UDP `51820` to the container's `wg0`, the admin UI is exposed on
+loopback/private access, `NET_ADMIN`, `SYS_MODULE`, `/lib/modules` is mounted
+read-only, and persistent state lives under the `orbit` user's home directory.
+The gateway host also installs its own `wg-orbit` interface as a peer/client of
+`wg-easy` so host-level Orbit services can reach peers even though the server
+interface lives inside the container.
+
+The gateway host `wg-orbit` config must not contain `ListenPort = 51820` and
+must not act as a second WireGuard server. It has the gateway VPN address
+(`10.6.0.2`) and connects to the local `wg-easy` server endpoint on the
+gateway provider IP at UDP `51820`, just like the live gateway.
 
 Control, development app, and production app VMs each install
 `/etc/wireguard/wg-orbit.conf` and start `wg-quick@wg-orbit`. Peer endpoints
