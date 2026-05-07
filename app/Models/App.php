@@ -22,7 +22,11 @@ use Illuminate\Support\Str;
  * @property string $php_version
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
+ * @property string|null $latest_deployment_status
+ * @property int|null $latest_deployment_run_id
  * @property-read Node|null $node
+ * @property-read Collection<int, DeployStep> $deploySteps
+ * @property-read Collection<int, DeploymentRun> $deploymentRuns
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Workspace> $workspaces
@@ -42,6 +46,8 @@ class App extends Model
         'php_version',
         'adopted',
         'agent_ide_config',
+        'latest_deployment_status',
+        'latest_deployment_run_id',
     ];
 
     #[\Override]
@@ -83,6 +89,22 @@ class App extends Model
     public function workspaces(): HasMany
     {
         return $this->hasMany(Workspace::class)->orderBy('name');
+    }
+
+    /**
+     * @return HasMany<DeployStep, $this>
+     */
+    public function deploySteps(): HasMany
+    {
+        return $this->hasMany(DeployStep::class)->orderBy('sort_order');
+    }
+
+    /**
+     * @return HasMany<DeploymentRun, $this>
+     */
+    public function deploymentRuns(): HasMany
+    {
+        return $this->hasMany(DeploymentRun::class)->orderByDesc('started_at');
     }
 
     public function url(): string

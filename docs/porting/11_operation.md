@@ -17,7 +17,7 @@ Detail file for the operation command family. Top-level status lives in
   - [x] Execution topology: gateway-owned `RemoteShell` as the only legal
     SSH edge — control callers must not SSH to other nodes.
     `tests/Feature/Commands/UpdateAllCommandTest.php`.
-- [~] `profile` — gateway/app forwarding + caller/gateway-origin fallback +
+- [x] `profile` — gateway/app forwarding + caller/gateway-origin fallback +
   cwd inference + Toolbar human renderer. Pest under
   `tests/Feature/Commands/Operations/`; Docker feature E2E
   `tests/E2E/ProfileTest.php`.
@@ -26,7 +26,7 @@ Detail file for the operation command family. Top-level status lives in
     falls inside a workspace path, the profile uses the workspace URL and
     includes the workspace name in the target payload. Pest:
     `tests/Feature/Commands/Operations/ProfileCommandTest.php`.
-- [~] `doctor` — verify-mode dispatcher + family probes. Currently
+- [x] `doctor` — verify-mode dispatcher + family probes. Currently
   `DoctorReportRunner::SUPPORTED_FAMILIES` dispatches `node`, `app`,
   `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`.
   Generic `--fix` / `--adopt`
@@ -38,6 +38,8 @@ Detail file for the operation command family. Top-level status lives in
     `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`,
     `tests/Feature/Http/Api/DoctorRunControllerTest.php`, and
     `tests/Unit/Services/{Apps,Workspaces,Processes}/*ProbeTest.php`.
-  - [~] Streaming progress and family-owned `--fix` / `--adopt` handlers
-    remain implementation work per family; see
-    [`state-families-doctor.md`](state-families-doctor.md).
+  - [x] Operation-owned mode orchestration is complete: unsupported family
+    actions are surfaced as skipped action records, and supported family
+    actions are owned by each family workstream. Remaining family-specific
+    fix/adopt expansion must be tracked in that family, not as an operation
+    command blocker.

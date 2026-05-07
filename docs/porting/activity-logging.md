@@ -42,15 +42,16 @@ exception in the command's `## Activity Logging` section with a reason.
 | `1_node` | [x] all nine commands declared and enforced |
 | `2_gateway` | [x] |
 | `3_tool` | [x] read commands (`tool:list`, `tool:show`) |
-| `4_firewall` | [ ] commands ported; tech-contract sections + allowlist entries pending |
+| `4_firewall` | [x] commands ported; tech-contract sections enforced |
 | `5_app` | [x] |
 | `6_workspace` | [x] commands and step-policy commands |
 | `7_process` | [x] |
-| `8_proxy` | [ ] commands ported; tech-contract sections + allowlist entries pending |
+| `8_proxy` | [x] commands ported; tech-contract sections enforced |
 | `9_schedule` | [x] commands and API Loggable controllers |
-| `10_deploy` | [ ] commands not started; add per-command activity contracts while porting |
-| `11_operation` | [~] `update`, `update:all`, `profile`, verify-mode `doctor` declared. `doctor --fix`/`--adopt` pending per family action map. |
-| `12_cf` / `13_vpn` / `14_php` | [ ] commands not started; add per-command activity contracts while porting |
+| `10_deploy` | [x] command contracts declared; deploy output is stored in deployment history, not activity metadata |
+| `11_operation` | [x] `update`, `update:all`, `profile`, and verify-mode `doctor` declared. Family-specific `doctor --fix`/`--adopt` expansion is tracked by the owning family. |
+| `12_cf` | [-] deferred pending Cloudflare test API key/account |
+| `13_vpn` / `14_php` | [ ] commands not started; add per-command activity contracts while porting |
 | `15_agent-ide` | [x] `agent-ide:message` enforced |
 | `16_dns` | [x] |
 | `17_activity` | [x] (allowlist origin) |

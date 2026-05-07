@@ -42,11 +42,12 @@ the Saloon-based gateway transport pattern.
   run-history intake, registry sync.
 - [x] Tool — list, show, start, stop, restart, reload, logs.
 - [x] Activity — list, show.
+- [x] Deploy — step add/list/remove, run, history, log.
 - [x] Profile — `ShowProfileRequest` (gateway-origin profile execution).
-- [~] Doctor — `RunDoctorRequest` for verify-mode runs covers `node`,
+- [x] Doctor — `RunDoctorRequest` for verify-mode runs covers `node`,
   `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, and
-  `schedule`. Streaming progress and family-owned fix/adopt handlers remain
-  per-family implementation work.
+  `schedule`. Family-owned fix/adopt handlers remain per-family
+  implementation work and are not transport blockers.
 
 ## Cross-cutting
 

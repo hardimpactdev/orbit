@@ -6,7 +6,7 @@ Abstraction seed: `docs/abstractions/15_agent-ide.md`.
 
 ## Commands
 
-- [~] `agent-ide:message`
+- [x] `agent-ide:message`
   - [x] Gateway-local + Saloon forwarding for explicit app/workspace
     targets and cwd-inferred targets, with stdin input, human progress-tree
     rendering, and adapter diagnostics under `error.data`. Pest under
@@ -19,13 +19,16 @@ Abstraction seed: `docs/abstractions/15_agent-ide.md`.
   - [x] OpenCode core message transport: container-bound adapter resolves
     app/workspace targets via stored `agent_ide_workspace_id`, uses managed
     `opencode-server` endpoint and credentials, and posts to the async
-    prompt endpoint. Covered by HTTP-faked command tests.
-  - [~] Polyscope transport unported. Decide in the implementation slice
-    whether to add a first-party Polyscope HTTP adapter, add an SDK
-    dependency, or intentionally defer Polyscope with documented rationale.
-  - [ ] E2E coverage. Lane TBD: Docker feature for adapter HTTP fakes;
-    `lane=none` may be defensible if all adapter wiring is exercised at the
-    Pest layer with HTTP fakes.
+    prompt endpoint. Covered by HTTP-faked command tests and Docker feature
+    E2E `tests/E2E/AgentIdeMessageTest.php`.
+  - [-] Polyscope live message transport is intentionally deferred. Polyscope
+    remains a core descriptor/default value for node/app/workspace intent, but
+    the clean repo has no Polyscope SDK dependency and no current first-party
+    HTTP contract equivalent to OpenCode's prompt endpoint. The old repo used
+    `polyscope/laravel` SDK calls; reintroducing that package is a separate
+    product/dependency decision, not a command-port blocker.
+  - [x] Docker feature E2E:
+    `composer test:e2e:docker -- --filter='sends a workspace message through the managed OpenCode transport'`.
 
 ## Activity backfill
 
