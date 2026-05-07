@@ -91,7 +91,7 @@ final readonly class SshRemoteShell implements RemoteShell
         $user = $node->user ?: ($node->ssh_user ?: 'orbit');
 
         return sprintf(
-            'ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 %s@%s %s',
+            'ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 %s@%s %s',
             escapeshellarg($user),
             escapeshellarg($host),
             escapeshellarg('bash -lc '.escapeshellarg($script)),

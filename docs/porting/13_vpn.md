@@ -5,15 +5,27 @@ Detail file for the VPN command family. Top-level command status lives in
 
 ## Status
 
-Not started. The abstraction seed exists, so this family is ready for the first
-bounded implementation slice. Activity logging should be added command-by-command
-as each VPN surface is ported.
+Ported. The VPN command contracts have gateway-local service abstractions,
+in-memory command/service coverage, paired Docker feature E2E coverage for
+gateway-local execution and control-caller forwarding with a faked wg-easy
+backend, activity logging for the command/API surfaces, and a production
+`WgEasyVpnBackend::changeWebUiPassword` adapter for the current gateway-local
+wg-easy database and `.env` credential convention.
 
 ## Commands
 
-- [ ] `vpn-client-list`
-- [ ] `vpn-client-new`
-- [ ] `vpn-client-enable`
-- [ ] `vpn-client-disable`
-- [ ] `vpn-client-remove`
-- [ ] `vpn-web-ui-change-password`
+- [x] `vpn-client:list` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnClientCommandTest.php`,
+  `tests/Feature/Http/Api/VpnControllerActivityTest.php`, and
+  `tests/E2E/VpnCommandTest.php`.
+- [x] `vpn-client:new` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnClientCommandTest.php` and
+  `tests/E2E/VpnCommandTest.php`.
+- [x] `vpn-client:enable` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnClientCommandTest.php`.
+- [x] `vpn-client:disable` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnClientCommandTest.php`.
+- [x] `vpn-client:remove` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnClientCommandTest.php`.
+- [x] `vpn-web-ui:change-password` — Pest coverage:
+  `tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php`.

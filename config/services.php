@@ -22,6 +22,13 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'wg_easy' => [
+        'username' => env('WG_EASY_USERNAME', 'orbit'),
+        'password' => env('WG_EASY_PASSWORD'),
+        'database_path' => env('WG_EASY_DATABASE_PATH', env('HOME', '/home/orbit').'/.wg-easy/wg-easy.db'),
+        'fake_backend_path' => env('ORBIT_VPN_FAKE_BACKEND_PATH'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

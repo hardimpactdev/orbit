@@ -1,0 +1,192 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Data\Php\PhpRuntimeFailure;
+use App\Data\Php\PhpRuntimeOperation;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Php\UsePhpRuntimeRequest;
+use App\Http\Gateway\Responses\Php\PhpRuntimeUseResponse;
+use App\Models\Node;
+use App\Services\Php\PhpRuntimeManager;
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+use Throwable;
+
+#[Signature('php:use
+    {version? : PHP version to select}
+    {--app= : App selector}
+    {--workspace= : Workspace selector}
+    {--node= : Node selector}
+    {--inherit : Restore workspace PHP inheritance}
+    {--cli : Select node CLI PHP default}
+    {--json : Output as JSON}')]
+#[Description('Select PHP runtime intent for an app, workspace, or node CLI default')]
+class PhpUseCommand extends Command
+{
+    public function handle(PhpRuntimeManager $php): int
+    {
+        $callerRole = $this->callerRole();
+
+        if ($callerRole === 'unknown') {
+            return $this->failCommand(new PhpRuntimeFailure('caller_role_not_allowed', 'This caller role may not manage PHP runtime selection.', [
+                'caller_role' => 'unknown',
+            ]));
+        }
+
+        $result = $callerRole === 'gateway'
+            ? $php->use(
+                version: $this->stringArgument('version'),
+                app: $this->stringOption('app'),
+                workspace: $this->stringOption('workspace'),
+                node: $this->stringOption('node'),
+                inherit: (bool) $this->option('inherit'),
+                cli: (bool) $this->option('cli'),
+            )
+            : $this->forwardToGateway();
+
+        if ($result instanceof GatewayApiException) {
+            return $this->failCommand(new PhpRuntimeFailure(
+                code: $result->errorCode() ?? 'gateway_unavailable',
+                message: $result->getMessage() !== '' ? $result->getMessage() : 'Gateway connection is required to change PHP runtime selection.',
+                meta: $result->errorMeta(),
+            ));
+        }
+
+        if ($result->failed()) {
+            return $this->failCommand($result->failure);
+        }
+
+        if ($this->wantsJson()) {
+            return $this->jsonSuccess($result->payload, $result->meta);
+        }
+
+        $this->renderHuman($result->payload['result'] ?? []);
+
+        return self::SUCCESS;
+    }
+
+    private function forwardToGateway(): PhpRuntimeOperation|GatewayApiException
+    {
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new UsePhpRuntimeRequest(
+                    version: $this->stringArgument('version'),
+                    app: $this->stringOption('app'),
+                    workspace: $this->stringOption('workspace'),
+                    node: $this->stringOption('node'),
+                    inherit: (bool) $this->option('inherit'),
+                    cli: (bool) $this->option('cli'),
+                ))
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException('Gateway connection is required to change PHP runtime selection.', 'gateway_unavailable');
+        }
+
+        /** @var PhpRuntimeUseResponse $dto */
+        return new PhpRuntimeOperation(
+            payload: [
+                'php' => $dto->php,
+                'result' => $dto->result,
+            ],
+            meta: $dto->meta,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function renderHuman(array $result): void
+    {
+        $target = $result['target'] ?? 'php runtime';
+        $version = $result['version'] ?? '(unknown)';
+
+        if (($result['inherits'] ?? false) === true) {
+            $this->line("Successfully restored workspace PHP inheritance to PHP {$version}.");
+
+            return;
+        }
+
+        $this->line("Successfully updated {$target} to PHP {$version}.");
+    }
+
+    private function callerRole(): string
+    {
+        $localRole = Node::query()
+            ->where('is_local', true)
+            ->where('status', 'active')
+            ->value('role');
+
+        if (! is_string($localRole) || $localRole === '') {
+            return 'control';
+        }
+
+        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
+            return 'unknown';
+        }
+
+        return $localRole;
+    }
+
+    private function stringArgument(string $name): ?string
+    {
+        $value = $this->argument($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function stringOption(string $name): ?string
+    {
+        $value = $this->option($name);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
+     */
+    private function jsonSuccess(array $data, array $meta): int
+    {
+        $this->line(json_encode([
+            'success' => [
+                'data' => $data,
+                'meta' => $meta,
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        return self::SUCCESS;
+    }
+
+    private function failCommand(?PhpRuntimeFailure $failure): int
+    {
+        $failure ??= new PhpRuntimeFailure('validation_failed', 'Required input is missing or invalid.');
+
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'error' => [
+                    'code' => $failure->code,
+                    'message' => $failure->message,
+                    'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
+                ],
+            ], JSON_THROW_ON_ERROR));
+
+            return self::FAILURE;
+        }
+
+        $this->error($failure->message);
+
+        return self::FAILURE;
+    }
+
+    private function wantsJson(): bool
+    {
+        return (bool) $this->option('json');
+    }
+}

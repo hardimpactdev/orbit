@@ -9,8 +9,17 @@ Detail file for the proxy command family. Top-level status lives in
 - [x] `proxy:add` — custom proxy intent + runtime warnings.
 - [x] `proxy:remove` — custom proxy intent removal + runtime warnings.
 
-Pest under `tests/Feature/Commands/Proxy/`. No E2E coverage yet — backend
-reality is exercised via the family doctor.
+Pest under `tests/Feature/Commands/Proxy/`. Command-level Docker feature E2E
+proves gateway intent writes/reads/removal, JSON shape, warning metadata, and
+destructive consent. Backend Caddy/TLS reality remains covered by the family
+doctor gates below.
+
+## E2E
+
+- [x] Command-port Docker feature E2E:
+  `tests/E2E/ProxyCommandTest.php` for `proxy:add`, `proxy:list`, and
+  `proxy:remove`.
+  `composer test:e2e:docker -- --filter='writes lists and removes custom proxy intent'`.
 
 ## Family doctor
 
