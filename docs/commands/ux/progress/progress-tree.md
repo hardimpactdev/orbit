@@ -26,6 +26,9 @@ that may take longer than one second.
   in idle `○` state, before any side effects start.
 - Only the currently active step animates `○`/`◉`. Completed steps show
   `●` (green success, red failure, orange warning/skip).
+- Idle rows are dimmed. Active rows and completed rows keep full-strength
+  label text; dim text is reserved for waiting rows and secondary skip or
+  warning messages.
 - The footer prints `Working...` until completion, then a concrete result
   such as `Successfully removed node 'app-1'.`.
 - Step labels are product-level user feedback. Do not expose storage or
@@ -49,13 +52,17 @@ that may take longer than one second.
   └  Successfully removed node 'app-1'
 ```
 
-| State | Icon | Color |
-| --- | --- | --- |
-| Idle / waiting | `○` | dim |
-| In progress | `○`/`◉` alternating | cyan |
-| Success | `●` | green |
-| Failure | `●` | red |
-| Warning / skip | `●` | orange |
+| State | Icon | Icon Color | Label / Message Treatment |
+| --- | --- | --- | --- |
+| Idle / waiting | `○` | dim | dim label |
+| In progress | `○`/`◉` alternating | cyan | full-strength label |
+| Success | `●` | green | full-strength label, optional full-strength message |
+| Failure | `●` | red | full-strength label, red message |
+| Warning / skip | `●` | orange | full-strength label, dim secondary message |
+
+Do not dim active or completed labels. A running row should be visually present
+while its icon animates, and a completed row should stay readable in the final
+tree.
 
 ## Implementation
 
