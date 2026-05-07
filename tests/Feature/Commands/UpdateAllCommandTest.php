@@ -55,8 +55,7 @@ it('updates the local checkout and every active non-control remote node from the
     app()->instance(RemoteShell::class, $shell);
 
     $this->artisan('update:all')
-        ->expectsOutputToContain('Updated local Orbit checkout.')
-        ->expectsOutputToContain('Updated node beast.')
+        ->expectsOutputToContain('Successfully updated 2 nodes')
         ->assertSuccessful();
 
     Process::assertRanTimes(fn (): bool => true, 3);
@@ -71,8 +70,11 @@ it('updates the local checkout and every active non-control remote node from the
         && in_array('migrate', $process->command)
         && in_array('--force', $process->command));
 
-    expect($shell->nodes)->toHaveCount(1);
-    expect($shell->nodes[0]->name)->toBe('beast');
+    expect(array_map(fn (Node $node): string => $node->name, $shell->nodes))->toBe([
+        'beast',
+        'beast',
+        'beast',
+    ]);
 });
 
 it('excludes control nodes from remote update targets', function (): void {
@@ -108,7 +110,7 @@ it('excludes control nodes from remote update targets', function (): void {
     app()->instance(RemoteShell::class, $shell);
 
     $this->artisan('update:all')
-        ->expectsOutputToContain('Updated local Orbit checkout.')
+        ->expectsOutputToContain('Successfully updated 1 node')
         ->assertSuccessful();
 
     Process::assertRanTimes(fn (): bool => true, 3);

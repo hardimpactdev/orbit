@@ -10,8 +10,10 @@ use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
 use App\Contracts\RequestProfiler;
 use App\Contracts\ToolLogGatewayStream;
+use App\Contracts\UpdateAllGatewayStream;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\ToolLogGatewayStreamClient;
+use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Services\ActivityLogCorrelation;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
 use App\Services\CurlRequestProfiler;
@@ -43,6 +45,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(RemoteShell::class, SshRemoteShell::class);
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
+        $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);
 
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);

@@ -12,6 +12,7 @@ use App\Console\Commands\NodeRemoveCommand;
 use App\Console\Commands\NodeRevokeCommand;
 use App\Console\Commands\NodeShowCommand;
 use App\Console\Commands\NodeUpdateCommand;
+use App\Console\Commands\UpdateAllCommand;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -35,6 +36,7 @@ function callerRoleCommands(): array
         NodeNewCommand::class,
         GatewayAddCommand::class,
         DnsResolveTldCommand::class,
+        UpdateAllCommand::class,
     ];
 }
 
@@ -175,6 +177,45 @@ describe('callerRole parity across all commands', function (): void {
 
             expect($role)
                 ->toBe('control', "Expected {$commandClass} to return 'control' for inactive local node");
+        }
+    });
+
+    it('resolves caller role from the local node instead of the default app node', function (): void {
+        DB::table('nodes')->insert([
+            [
+                'name' => 'NMBP',
+                'role' => 'control',
+                'host' => '10.6.0.3',
+                'ssh_user' => 'nckrtl',
+                'orbit_path' => '/Users/nckrtl/orbit',
+                'status' => 'active',
+                'is_local' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'name' => 'beast',
+                'role' => 'app',
+                'host' => '10.6.0.7',
+                'ssh_user' => 'nckrtl',
+                'orbit_path' => '/home/nckrtl/orbit',
+                'status' => 'active',
+                'is_local' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('local_node_defaults')->insert([
+            'default_node_name' => 'beast',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (callerRoleCommands() as $commandClass) {
+            $role = invokeCallerRole(makeCommand($commandClass));
+
+            expect($role)
+                ->toBe('control', "Expected {$commandClass} to ignore the default app node for caller role");
         }
     });
 });

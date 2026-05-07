@@ -11,7 +11,7 @@ it('renders progress tree shape', function (): void {
     Process::preventStrayProcesses();
 
     $this->artisan('update')
-        ->expectsOutputToContain('┌ Update Orbit')
+        ->expectsOutputToContain('┌  Updating Orbit')
         ->expectsOutputToContain('Pull source')
         ->expectsOutputToContain('Install dependencies')
         ->expectsOutputToContain('Run migrations')

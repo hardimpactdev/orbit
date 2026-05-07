@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\LogsCommandActivity;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Services\OrbitUpdater;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult;
 
 #[Signature('update {--json : Output as JSON}')]
 #[Description('Update this Orbit checkout')]
 class UpdateCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
+    use WithSpinner;
+    use WithStepTree;
 
     private const array STEP_LABELS = [
         'pull_source' => 'Pull source',
@@ -62,72 +67,141 @@ class UpdateCommand extends Command implements Loggable
 
     private function executeUpdate(OrbitUpdater $updater): int
     {
+        if ($this->wantsJson()) {
+            return $this->executeUpdateJson($updater);
+        }
+
+        return $this->executeUpdateHuman($updater);
+    }
+
+    private function executeUpdateJson(OrbitUpdater $updater): int
+    {
+        $stepResults = [];
+
         $steps = [
             'pull_source' => $updater->pullSource(...),
             'install_dependencies' => $updater->installDependencies(...),
             'run_migrations' => $updater->runMigrations(...),
         ];
 
-        $stepResults = [];
-
-        if ($this->wantsJson()) {
-            foreach ($steps as $key => $step) {
-                $result = $step();
-                $stepResults[$key] = $result->successful() ? 'completed' : 'failed';
-
-                if (! $result->successful()) {
-                    $this->captureActivityFailure($key);
-
-                    if ($key === 'pull_source' && $result->exitCode() === 128) {
-                        return $this->jsonError(
-                            code: 'local_checkout_unavailable',
-                            message: 'Local Orbit checkout cannot be updated.',
-                            meta: ['path' => base_path()],
-                        );
-                    }
-
-                    return $this->jsonError(
-                        code: 'local_update_failed',
-                        message: 'Failed to update local Orbit checkout.',
-                        data: ['output' => trim($result->errorOutput() ?: $result->output())],
-                        meta: ['failed_step' => $key],
-                    );
-                }
-            }
-
-            $this->activityStatus = 'completed';
-
-            return $this->jsonSuccess($stepResults);
-        }
-
-        $this->renderProgressTree();
-
         foreach ($steps as $key => $step) {
             $result = $step();
             $stepResults[$key] = $result->successful() ? 'completed' : 'failed';
-            $this->updateProgressTree($stepResults);
 
             if (! $result->successful()) {
                 $this->captureActivityFailure($key);
 
-                $this->line('');
-                $this->error('Failed to update local Orbit checkout.');
-                $output = trim($result->errorOutput() ?: $result->output());
-
-                if ($output !== '') {
-                    $this->line($output);
+                if ($key === 'pull_source' && $result->exitCode() === 128) {
+                    return $this->jsonError(
+                        code: 'local_checkout_unavailable',
+                        message: 'Local Orbit checkout cannot be updated.',
+                        meta: ['path' => base_path()],
+                    );
                 }
 
-                return self::FAILURE;
+                return $this->jsonError(
+                    code: 'local_update_failed',
+                    message: 'Failed to update local Orbit checkout.',
+                    data: ['output' => trim($result->errorOutput() ?: $result->output())],
+                    meta: ['failed_step' => $key],
+                );
             }
         }
 
-        $this->line('');
-        $this->info('Updated local Orbit checkout.');
-
         $this->activityStatus = 'completed';
 
-        return self::SUCCESS;
+        return $this->jsonSuccess($stepResults);
+    }
+
+    private function executeUpdateHuman(OrbitUpdater $updater): int
+    {
+        $failedResult = null;
+        $failedKey = null;
+
+        $steps = [
+            [
+                'key' => 'pull_source',
+                'label' => self::STEP_LABELS['pull_source'],
+                'run' => function () use ($updater, &$failedResult, &$failedKey): string {
+                    $result = $updater->pullSource();
+
+                    if ($result->successful()) {
+                        return '';
+                    }
+
+                    $failedResult = $result;
+                    $failedKey = 'pull_source';
+
+                    return 'fail:'.$this->failureMessage($result);
+                },
+            ],
+            [
+                'key' => 'install_dependencies',
+                'label' => self::STEP_LABELS['install_dependencies'],
+                'run' => function () use ($updater, &$failedResult, &$failedKey): string {
+                    $result = $updater->installDependencies();
+
+                    if ($result->successful()) {
+                        return '';
+                    }
+
+                    $failedResult = $result;
+                    $failedKey = 'install_dependencies';
+
+                    return 'fail:'.$this->failureMessage($result);
+                },
+            ],
+            [
+                'key' => 'run_migrations',
+                'label' => self::STEP_LABELS['run_migrations'],
+                'run' => function () use ($updater, &$failedResult, &$failedKey): string {
+                    $result = $updater->runMigrations();
+
+                    if ($result->successful()) {
+                        return '';
+                    }
+
+                    $failedResult = $result;
+                    $failedKey = 'run_migrations';
+
+                    return 'fail:'.$this->failureMessage($result);
+                },
+            ],
+        ];
+
+        $exitCode = $this->runStepTree(
+            'Updating Orbit',
+            $steps,
+            doneFooter: 'Updated local Orbit checkout.',
+            failFooter: 'Failed to update local Orbit checkout.',
+        );
+
+        if ($exitCode === self::SUCCESS) {
+            $this->activityStatus = 'completed';
+            $this->info('Updated local Orbit checkout.');
+
+            return self::SUCCESS;
+        }
+
+        $this->captureActivityFailure($failedKey ?? 'unknown');
+        $this->error('Failed to update local Orbit checkout.');
+
+        if ($failedResult !== null) {
+            $output = trim($failedResult->errorOutput() ?: $failedResult->output());
+
+            if ($output !== '') {
+                $this->line($output);
+            }
+        }
+
+        return self::FAILURE;
+    }
+
+    private function failureMessage(ProcessResult $result): string
+    {
+        $message = trim($result->errorOutput() ?: $result->output());
+
+        return $message !== '' ? $message : 'exit code '.$result->exitCode();
     }
 
     private function captureActivityFailure(string $failedStep): void
@@ -201,44 +275,5 @@ class UpdateCommand extends Command implements Loggable
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return self::FAILURE;
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Update Orbit');
-
-        foreach (self::STEP_LABELS as $label) {
-            $this->line("○ {$label}");
-        }
-
-        $this->line('└ Local Orbit checkout updated');
-    }
-
-    /**
-     * @param  array<string, string>  $stepResults
-     */
-    private function updateProgressTree(array $stepResults): void
-    {
-        $lines = count(self::STEP_LABELS) + 2;
-
-        for ($i = 0; $i < $lines; $i++) {
-            $this->output->write("\e[1A\e[2K");
-        }
-
-        $this->line('┌ Update Orbit');
-
-        foreach (self::STEP_LABELS as $key => $label) {
-            $status = $stepResults[$key] ?? 'pending';
-            $symbol = match ($status) {
-                'completed' => '●',
-                'failed' => '✖',
-                default => '○',
-            };
-            $this->line("{$symbol} {$label}");
-        }
-
-        $hasFailure = in_array('failed', $stepResults, true);
-        $footer = $hasFailure ? 'Failed' : 'Local Orbit checkout updated';
-        $this->line("└ {$footer}");
     }
 }

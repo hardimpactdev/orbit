@@ -36,7 +36,9 @@ it('updates local checkout and returns updates array for gateway caller', functi
     $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
 
     $response->assertOk();
-    $response->assertJsonPath('success.data.updates.0.target', 'local');
+    $response->assertJsonPath('success.data.updates.0.target', 'gateway');
+    $response->assertJsonPath('success.data.updates.0.node', 'gateway');
+    $response->assertJsonPath('success.data.updates.0.role', 'gateway');
     $response->assertJsonPath('success.data.updates.0.status', 'completed');
     $response->assertJsonPath('success.meta.summary.total', 1);
     $response->assertJsonPath('success.meta.summary.completed', 1);
@@ -88,8 +90,11 @@ it('includes app nodes in updates and uses RemoteShell', function (): void {
     $response->assertJsonPath('success.data.updates.1.target', 'beast');
     $response->assertJsonPath('success.data.updates.1.status', 'completed');
 
-    expect($shell->nodes)->toHaveCount(1);
-    expect($shell->nodes[0]->name)->toBe('beast');
+    expect(array_map(fn (Node $node): string => $node->name, $shell->nodes))->toBe([
+        'beast',
+        'beast',
+        'beast',
+    ]);
 });
 
 it('excludes control nodes from remote updates', function (): void {
@@ -114,7 +119,7 @@ it('excludes control nodes from remote updates', function (): void {
     $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
 
     $response->assertOk();
-    $response->assertJsonPath('success.data.updates.0.target', 'local');
+    $response->assertJsonPath('success.data.updates.0.target', 'gateway');
 
     expect($shell->nodes)->toHaveCount(0);
 });
@@ -152,6 +157,42 @@ it('rejects unauthenticated requests', function (): void {
     $this->call('POST', '/api/update/all')
         ->assertStatus(403)
         ->assertJsonPath('error.code', 'authorization_failed');
+});
+
+it('streams progress events for gateway-owned update targets', function (): void {
+    Node::factory()->create([
+        'name' => 'beast',
+        'role' => 'app',
+        'host' => 'beast',
+        'ssh_user' => 'nckrtl',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+        'is_local' => false,
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
+
+    $response = $this->call('POST', '/api/update/all/stream', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+
+    $response->assertOk();
+    $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
+    $response->assertHeader('X-Accel-Buffering', 'no');
+    $content = $response->streamedContent();
+
+    expect($content)->toContain('event: tree')
+        ->and($content)->toContain('"key":"gateway"')
+        ->and($content)->toContain('"label":"Pulling source - gateway"')
+        ->and($content)->toContain('"key":"beast"')
+        ->and($content)->toContain('"status":"pulling_source"')
+        ->and($content)->toContain('"status":"installing_dependencies"')
+        ->and($content)->toContain('"status":"running_migrations"')
+        ->and($content)->toContain('"status":"done"')
+        ->and($content)->toContain('event: complete');
 });
 
 final class UpdateAllControllerRemoteShell implements RemoteShell

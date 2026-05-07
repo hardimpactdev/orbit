@@ -13,6 +13,8 @@ interface ProgressReporter
 
     public function stepStart(string $key): void;
 
+    public function stepProgress(string $key, string $status, ?string $message = null): void;
+
     public function stepDone(string $key, ?string $message = null): void;
 
     public function stepFail(string $key, string $message): void;

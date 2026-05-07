@@ -157,6 +157,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/tools/{tool}/start', ToolStartController::class);
         Route::post('/tools/{tool}/stop', ToolStopController::class);
         Route::get('/tools/{tool}', ToolShowController::class);
+        Route::post('/update/all/stream', [UpdateAllController::class, 'stream']);
         Route::post('/update/all', UpdateAllController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);

@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Concerns\LogsCommandActivity;
 use App\Contracts\Loggable;
+use App\Contracts\UpdateAllGatewayStream;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Operations\UpdateAllRequest;
@@ -13,9 +15,11 @@ use App\Http\Gateway\Responses\Operations\UpdateAllResponse;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
+use App\Support\Cli\UpdateAllProgress;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
@@ -39,12 +43,12 @@ class UpdateAllCommand extends Command implements Loggable
 
     private ?string $activityFailedStep = null;
 
-    public function handle(OrbitUpdater $updater): int
+    public function handle(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
         $this->bootActivityLog();
 
         try {
-            return $this->executeUpdateAll($updater);
+            return $this->executeUpdateAll($updater, $gatewayStream);
         } finally {
             $this->finishActivityLog();
         }
@@ -73,7 +77,7 @@ class UpdateAllCommand extends Command implements Loggable
         };
     }
 
-    private function executeUpdateAll(OrbitUpdater $updater): int
+    private function executeUpdateAll(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
         $callerRole = $this->callerRole();
 
@@ -106,14 +110,18 @@ class UpdateAllCommand extends Command implements Loggable
         }
 
         if ($callerRole === 'control') {
-            return $this->executeControlPath($updater);
+            return $this->executeControlPath($updater, $gatewayStream);
         }
 
         return $this->executeGatewayPath($updater);
     }
 
-    private function executeControlPath(OrbitUpdater $updater): int
+    private function executeControlPath(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
+        if (! $this->wantsJson()) {
+            return $this->executeControlHumanPath($updater, $gatewayStream);
+        }
+
         $updates = [];
         $localResult = $updater->updateLocal();
 
@@ -141,7 +149,10 @@ class UpdateAllCommand extends Command implements Loggable
                 ->send(new UpdateAllRequest)
                 ->dto();
         } catch (GatewayApiException $e) {
-            $updates = array_merge($updates, $e->errorData()['updates'] ?? []);
+            $errorData = $e->errorData();
+            $updates = array_merge($updates, $errorData['updates'] ?? []);
+            $errorData['updates'] = $updates;
+
             $this->captureActivitySummary($updates, 'failed', 'remote_update');
 
             return $this->failCommand(
@@ -150,7 +161,7 @@ class UpdateAllCommand extends Command implements Loggable
                     ? $e->getMessage()
                     : 'Gateway connection is required to update the fleet.',
                 meta: $e->errorMeta(),
-                data: ['updates' => $updates],
+                data: $errorData,
             );
         } catch (Throwable) {
             $this->captureActivitySummary($updates, 'failed', 'remote_update');
@@ -184,6 +195,89 @@ class UpdateAllCommand extends Command implements Loggable
             );
         }
 
+        $this->captureActivitySummary($updates, 'completed');
+
+        return $this->respondSuccess($updates);
+    }
+
+    private function executeControlHumanPath(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
+    {
+        $this->targets = [['target' => 'local', 'node' => null, 'role' => null]];
+        $localUpdate = ['target' => 'local', 'node' => null, 'role' => null, 'status' => 'pending'];
+
+        $progress = $this->openProgress();
+        $localResult = $this->updateLocalWithProgress($updater, $progress);
+        $localUpdate['status'] = $localResult->successful() ? 'completed' : 'failed';
+
+        if (! $localResult->successful()) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary([$localUpdate], 'failed', 'local_checkout');
+            $this->writePostTreeFailure('Failed to update local Orbit checkout.', $localResult->errorOutput() ?: $localResult->output());
+
+            return self::FAILURE;
+        }
+
+        $streamUpdates = [];
+        $streamError = null;
+        $streamData = [];
+
+        $streamResult = $gatewayStream->run(function (string $event, array $payload) use ($progress, &$streamUpdates, &$streamError, &$streamData): void {
+            if ($event === 'tree') {
+                $this->mergeStreamTargets($payload, $progress);
+
+                return;
+            }
+
+            if ($event === 'step') {
+                $this->applyStreamStep($payload, $progress);
+
+                return;
+            }
+
+            if (in_array($event, ['complete', 'error'], true)) {
+                $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+                $streamUpdates = is_array($data['updates'] ?? null) ? $data['updates'] : [];
+                $streamData = $data;
+
+                if ($event === 'error') {
+                    $streamError = is_string($payload['message'] ?? null)
+                        ? $payload['message']
+                        : 'One or more Orbit installations failed to update.';
+                }
+            }
+        });
+
+        $updates = array_merge([$localUpdate], $streamUpdates);
+
+        if ($streamResult instanceof GatewayApiException) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: $streamResult->errorCode() ?? 'gateway_unavailable',
+                message: $streamResult->getMessage() !== ''
+                    ? $streamResult->getMessage()
+                    : 'Gateway connection is required to update the fleet.',
+                meta: $streamResult->errorMeta(),
+                data: $streamResult->errorData(),
+            );
+        }
+
+        if ($streamResult !== self::SUCCESS || $streamError !== null) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: is_string($streamData['code'] ?? null) ? $streamData['code'] : 'remote_update_failed',
+                message: $streamError ?? 'One or more Orbit installations failed to update.',
+                data: ['updates' => $updates],
+                meta: [
+                    'summary' => $this->summary($updates),
+                ],
+            );
+        }
+
+        $progress->finish(success: true, footer: 'Successfully updated '.$this->nodeCountLabel(count($updates)));
         $this->captureActivitySummary($updates, 'completed');
 
         return $this->respondSuccess($updates);
@@ -276,23 +370,21 @@ class UpdateAllCommand extends Command implements Loggable
      */
     private function handleHuman(OrbitUpdater $updater, $nodes): int
     {
-        $this->renderProgressTree();
+        $progress = $this->openProgress();
+        $updates = [];
 
-        $results = [];
-        $localResult = $updater->updateLocal();
-        $results['local'] = $localResult->successful() ? 'completed' : 'failed';
-        $this->updateProgressTree($results);
+        $localResult = $this->updateLocalWithProgress($updater, $progress);
+        $updates[] = [
+            'target' => 'local',
+            'node' => null,
+            'role' => null,
+            'status' => $localResult->successful() ? 'completed' : 'failed',
+        ];
 
         if (! $localResult->successful()) {
-            $this->captureActivitySummaryFromResults($results, 'failed', 'local_checkout');
-
-            $this->line('');
-            $this->error('Failed to update local Orbit checkout.');
-            $output = trim($localResult->errorOutput() ?: $localResult->output());
-
-            if ($output !== '') {
-                $this->line($output);
-            }
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'local_checkout');
+            $this->writePostTreeFailure('Failed to update local Orbit checkout.', $localResult->errorOutput() ?: $localResult->output());
 
             return self::FAILURE;
         }
@@ -300,36 +392,180 @@ class UpdateAllCommand extends Command implements Loggable
         $failed = false;
 
         foreach ($nodes as $node) {
-            $result = $updater->updateRemote($node);
-            $results[$node->name] = $result->successful() ? 'completed' : 'failed';
-            $this->updateProgressTree($results);
+            $result = $this->updateRemoteWithProgress($updater, $node, $progress);
+            $updates[] = [
+                'target' => $node->name,
+                'node' => $node->name,
+                'role' => $node->role,
+                'status' => $result->successful() ? 'completed' : 'failed',
+            ];
 
             if (! $result->successful()) {
                 $failed = true;
-                $this->line('');
-                $this->error("Failed to update node {$node->name}.");
-                $output = trim($result->errorOutput() ?: $result->output());
+                $this->writePostTreeFailure("Failed to update node {$node->name}.", $result->errorOutput() ?: $result->output());
+            }
+        }
 
-                if ($output !== '') {
-                    $this->line($output);
-                }
+        if ($failed) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
 
+            return self::FAILURE;
+        }
+
+        $progress->finish(success: true, footer: 'Successfully updated '.$this->nodeCountLabel(count($updates)));
+        $this->captureActivitySummary($updates, 'completed');
+
+        return self::SUCCESS;
+    }
+
+    private function updateLocalWithProgress(OrbitUpdater $updater, UpdateAllProgress $progress): ProcessResult
+    {
+        $progress->start('local');
+        $progress->stage('local', 'pulling_source');
+        $result = $updater->pullSource();
+
+        if (! $result->successful()) {
+            $progress->fail('local', $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->stage('local', 'installing_dependencies');
+        $result = $updater->installDependencies();
+
+        if (! $result->successful()) {
+            $progress->fail('local', $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->stage('local', 'running_migrations');
+        $result = $updater->runMigrations();
+
+        if (! $result->successful()) {
+            $progress->fail('local', $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->done('local');
+
+        return $result;
+    }
+
+    private function updateRemoteWithProgress(OrbitUpdater $updater, Node $node, UpdateAllProgress $progress): RemoteShellResult
+    {
+        $progress->start($node->name);
+        $progress->stage($node->name, 'pulling_source');
+        $result = $updater->pullRemoteSource($node);
+
+        if (! $result->successful()) {
+            $progress->fail($node->name, $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->stage($node->name, 'installing_dependencies');
+        $result = $updater->installRemoteDependencies($node);
+
+        if (! $result->successful()) {
+            $progress->fail($node->name, $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->stage($node->name, 'running_migrations');
+        $result = $updater->runRemoteMigrations($node);
+
+        if (! $result->successful()) {
+            $progress->fail($node->name, $this->failureMessage($result->errorOutput() ?: $result->output()));
+
+            return $result;
+        }
+
+        $progress->done($node->name);
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function mergeStreamTargets(array $payload, UpdateAllProgress $progress): void
+    {
+        $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
+        $remoteTargets = [];
+
+        foreach ($steps as $step) {
+            if (! is_array($step)) {
                 continue;
             }
-        }
 
-        $this->captureActivitySummaryFromResults($results, $failed ? 'failed' : 'completed', $failed ? 'remote_update' : null);
+            $key = $step['key'] ?? null;
 
-        $this->line('');
-        $this->info('Updated local Orbit checkout.');
-
-        foreach ($nodes as $node) {
-            if ($results[$node->name] === 'completed') {
-                $this->info("Updated node {$node->name}.");
+            if (! is_string($key) || $key === '') {
+                continue;
             }
+
+            $remoteTargets[] = ['target' => $key, 'node' => $key, 'role' => null];
         }
 
-        return $failed ? self::FAILURE : self::SUCCESS;
+        $this->targets = array_merge(
+            [['target' => 'local', 'node' => null, 'role' => null]],
+            $remoteTargets,
+        );
+
+        $progress->extendWith($remoteTargets);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyStreamStep(array $payload, UpdateAllProgress $progress): void
+    {
+        $key = is_string($payload['key'] ?? null) ? $payload['key'] : null;
+        $status = is_string($payload['status'] ?? null) ? $payload['status'] : null;
+
+        if ($key === null || $status === null) {
+            return;
+        }
+
+        match ($status) {
+            'start' => $progress->start($key),
+            'pulling_source', 'installing_dependencies', 'running_migrations' => $progress->stage($key, $status),
+            'done' => $progress->done($key),
+            'fail' => $progress->fail($key, is_string($payload['message'] ?? null) ? $payload['message'] : 'failed'),
+            'skip' => $progress->done($key),
+            default => null,
+        };
+    }
+
+    private function failureMessage(string $output): string
+    {
+        $message = trim($output);
+
+        return $message !== '' ? $message : 'failed';
+    }
+
+    private function writePostTreeFailure(string $headline, string $captured): void
+    {
+        $this->line('');
+        $this->error($headline);
+
+        $captured = trim($captured);
+
+        if ($captured !== '') {
+            $this->line($captured);
+        }
+    }
+
+    private function openProgress(): UpdateAllProgress
+    {
+        return new UpdateAllProgress(
+            output: $this->output,
+            initialTargets: $this->targets,
+        );
     }
 
     /**
@@ -344,23 +580,6 @@ class UpdateAllCommand extends Command implements Loggable
             'completed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'completed')),
             'failed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'failed')),
         ];
-    }
-
-    /**
-     * @param  array<string, string>  $results
-     */
-    private function captureActivitySummaryFromResults(array $results, string $status, ?string $failedStep = null): void
-    {
-        $updates = [];
-
-        foreach ($this->targets as $target) {
-            $updates[] = [
-                ...$target,
-                'status' => $results[$target['target']] ?? 'pending',
-            ];
-        }
-
-        $this->captureActivitySummary($updates, $status, $failedStep);
     }
 
     private function finishActivityLog(): void
@@ -404,23 +623,26 @@ class UpdateAllCommand extends Command implements Loggable
      */
     private function buildTargets($nodes): array
     {
-        $targets = [
-            [
-                'target' => 'local',
-                'node' => null,
-                'role' => null,
-            ],
-        ];
+        $targets = [['target' => 'local', 'node' => null, 'role' => null]];
 
         foreach ($nodes as $node) {
-            $targets[] = [
-                'target' => $node->name,
-                'node' => $node->name,
-                'role' => $node->role,
-            ];
+            $targets[] = ['target' => $node->name, 'node' => $node->name, 'role' => $node->role];
         }
 
         return $targets;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $updates
+     * @return array{total: int, completed: int, failed: int}
+     */
+    private function summary(array $updates): array
+    {
+        return [
+            'total' => count($updates),
+            'completed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'completed')),
+            'failed' => count(array_filter($updates, fn (array $update): bool => $update['status'] === 'failed')),
+        ];
     }
 
     private function wantsJson(): bool
@@ -451,17 +673,6 @@ class UpdateAllCommand extends Command implements Loggable
                     ],
                 ],
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-
-            return self::SUCCESS;
-        }
-
-        $this->line('');
-        $this->info('Updated local Orbit checkout.');
-
-        foreach ($updates as $update) {
-            if ($update['status'] === 'completed' && $update['target'] !== 'local') {
-                $this->info("Updated node {$update['target']}.");
-            }
         }
 
         return self::SUCCESS;
@@ -493,59 +704,17 @@ class UpdateAllCommand extends Command implements Loggable
 
         $this->error($message);
 
+        $output = $data['output'] ?? null;
+
+        if (is_string($output) && trim($output) !== '') {
+            $this->line(trim($output));
+        }
+
         return self::FAILURE;
     }
 
-    private function renderProgressTree(): void
+    private function nodeCountLabel(int $count): string
     {
-        if ($this->wantsJson()) {
-            return;
-        }
-
-        $this->line('┌ Updating Orbit Installations');
-
-        foreach ($this->targets as $target) {
-            $label = $target['target'] === 'local'
-                ? 'Update local checkout'
-                : "Update {$target['target']}";
-            $this->line("○ {$label}");
-        }
-
-        $this->line('└ Working...');
-    }
-
-    /**
-     * @param  array<string, string>  $results
-     */
-    private function updateProgressTree(array $results): void
-    {
-        if ($this->wantsJson()) {
-            return;
-        }
-
-        $lines = count($this->targets) + 2;
-
-        for ($i = 0; $i < $lines; $i++) {
-            $this->output->write("\e[1A\e[2K");
-        }
-
-        $this->line('┌ Updating Orbit Installations');
-
-        foreach ($this->targets as $target) {
-            $label = $target['target'] === 'local'
-                ? 'Update local checkout'
-                : "Update {$target['target']}";
-            $status = $results[$target['target']] ?? 'pending';
-            $symbol = match ($status) {
-                'completed' => '●',
-                'failed' => '✖',
-                default => '○',
-            };
-            $this->line("{$symbol} {$label}");
-        }
-
-        $hasFailure = in_array('failed', $results, true);
-        $footer = $hasFailure ? 'Failed' : 'Working...';
-        $this->line("└ {$footer}");
+        return $count.' '.($count === 1 ? 'node' : 'nodes');
     }
 }

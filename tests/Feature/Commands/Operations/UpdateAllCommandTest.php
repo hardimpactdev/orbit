@@ -102,9 +102,9 @@ it('forwards control callers to gateway after local update succeeds', function (
                 'data' => [
                     'updates' => [
                         [
-                            'target' => 'local',
-                            'node' => null,
-                            'role' => null,
+                            'target' => 'gateway',
+                            'node' => 'gateway',
+                            'role' => 'gateway',
                             'status' => 'completed',
                         ],
                         [
@@ -134,7 +134,7 @@ it('forwards control callers to gateway after local update succeeds', function (
     expect($payload)->toHaveKey('success.data.updates');
     expect($payload['success']['data']['updates'])->toHaveCount(3);
     expect($payload['success']['data']['updates'][0]['target'])->toBe('local');
-    expect($payload['success']['data']['updates'][1]['target'])->toBe('local');
+    expect($payload['success']['data']['updates'][1]['target'])->toBe('gateway');
     expect($payload['success']['data']['updates'][2]['target'])->toBe('beast');
 });
 
@@ -169,6 +169,48 @@ it('returns local failure immediately for control callers without contacting gat
     $mockClient->assertNotSent(UpdateAllRequest::class);
 });
 
+it('preserves gateway local failure output for control callers', function (): void {
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_pem_path' => '/tmp/fake-orbit-ca.pem',
+    ])->save();
+
+    MockClient::global([
+        UpdateAllRequest::class => MockResponse::make([
+            'error' => [
+                'code' => 'local_update_failed',
+                'message' => 'Failed to update local Orbit checkout.',
+                'data' => [
+                    'output' => 'php-fpm8.5 usage',
+                ],
+                'meta' => [
+                    'failed_step' => 'local_checkout',
+                ],
+            ],
+        ], 422),
+    ]);
+
+    $exitCode = Artisan::call('update:all', ['--json' => true]);
+    $output = Artisan::output();
+    $payload = json_decode($output, true);
+
+    expect($exitCode)->toBe(1);
+    expect($payload['error']['code'])->toBe('local_update_failed');
+    expect($payload['error']['data']['output'])->toBe('php-fpm8.5 usage');
+    expect($payload['error']['data']['updates'][0])->toBe([
+        'target' => 'local',
+        'node' => null,
+        'role' => null,
+        'status' => 'completed',
+    ]);
+});
+
 it('forwards control callers to gateway and reports remote failure', function (): void {
     Process::fake([
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
@@ -189,9 +231,9 @@ it('forwards control callers to gateway and reports remote failure', function ()
                 'data' => [
                     'updates' => [
                         [
-                            'target' => 'local',
-                            'node' => null,
-                            'role' => null,
+                            'target' => 'gateway',
+                            'node' => 'gateway',
+                            'role' => 'gateway',
                             'status' => 'completed',
                         ],
                         [

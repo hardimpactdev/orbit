@@ -53,8 +53,9 @@ needs convergence verification.
 
 ## Output
 
-Human output shows a per-installation progress tree and reports each updated or
-failed target.
+Human output shows a per-node progress tree. Each node row moves through
+`Pulling source`, `Installing dependencies`, `Running migrations`, and `Done`.
+On full success, the final tree footer reports the total updated node count.
 
 JSON output reports all per-installation results. When any target fails, the
 command returns a JSON error envelope with successful and failed target results

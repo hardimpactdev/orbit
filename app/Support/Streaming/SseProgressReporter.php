@@ -22,6 +22,11 @@ final readonly class SseProgressReporter implements ProgressReporter
         $this->emitter->stepEvent($key, 'start');
     }
 
+    public function stepProgress(string $key, string $status, ?string $message = null): void
+    {
+        $this->emitter->stepEvent($key, $status, $message);
+    }
+
     public function stepDone(string $key, ?string $message = null): void
     {
         $this->emitter->stepEvent($key, 'done', $message);
