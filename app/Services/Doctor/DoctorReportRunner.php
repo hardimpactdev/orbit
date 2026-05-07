@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -18,6 +19,7 @@ use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Schedules\SchedulesFixer;
@@ -39,6 +41,7 @@ final readonly class DoctorReportRunner
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
         private ProxyRouteFixer $proxyRouteFixer,
+        private ProxyRouteAdopter $proxyRouteAdopter,
         private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
@@ -109,46 +112,150 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
-            foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
-                $snapshot = $this->proxyRouteProbe->introspect($route);
+            if ($mode === 'adopt') {
+                $proxyNodes = Node::query()
+                    ->where('status', 'active')
+                    ->whereIn('role', ['gateway', 'app'])
+                    ->get();
 
-                foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
-                    $action = $this->handleProxyAction($mode, $route, $entry);
+                foreach ($proxyNodes as $proxyNode) {
+                    $snapshot = $this->proxyRouteProbe->snapshotForAdopt($proxyNode);
 
-                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                        $actions[] = $action;
+                    foreach ($this->proxyRouteAdopter->adopt($proxyNode, $snapshot) as $result) {
+                        $actions[] = [
+                            'family' => $result->family,
+                            'node' => $proxyNode->name,
+                            'code' => $result->key,
+                            'key' => $result->key,
+                            'mode' => 'adopt',
+                            'status' => $result->action->value,
+                            'summary' => $result->summary,
+                            'details' => $result->detail,
+                        ];
+                    }
+                }
+            } else {
+                foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
+                    $snapshot = $this->proxyRouteProbe->introspect($route);
 
+                    foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
+                        $action = $this->handleProxyAction($mode, $route, $entry);
+
+                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                            $actions[] = $action;
+
+                            continue;
+                        }
+
+                        $issue = $this->proxyIssuePayload($entry, $route);
+                        $issues[] = $issue;
+
+                        if ($action !== null) {
+                            $actions[] = $action;
+                        }
+                    }
+                }
+
+                $scannedNodeIds = [];
+
+                foreach (ProxyRoute::query()->distinct()->pluck('node_id') as $nodeId) {
+                    $proxyNode = Node::query()->find($nodeId);
+
+                    if (! $proxyNode instanceof Node || $proxyNode->status !== 'active' || ! in_array($proxyNode->role, ['gateway', 'app'], true)) {
                         continue;
                     }
 
-                    $issue = $this->proxyIssuePayload($entry, $route);
-                    $issues[] = $issue;
+                    if (in_array($proxyNode->id, $scannedNodeIds, true)) {
+                        continue;
+                    }
 
-                    if ($action !== null) {
-                        $actions[] = $action;
+                    $scannedNodeIds[] = $proxyNode->id;
+
+                    $snapshot = $this->proxyRouteProbe->introspectNode($proxyNode);
+                    $dbDomains = ProxyRoute::query()->where('node_id', $proxyNode->id)->pluck('domain')->all();
+
+                    foreach ($snapshot->keys() as $domain) {
+                        $domain = (string) $domain;
+
+                        if (in_array($domain, $dbDomains, true)) {
+                            continue;
+                        }
+
+                        $entry = new DriftEntry(
+                            family: 'proxy',
+                            key: $domain,
+                            kind: DriftKind::Extra,
+                            summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+                        );
+
+                        $action = $this->handleProxyExtraAction($mode, $proxyNode, $entry);
+
+                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                            $actions[] = $action;
+
+                            continue;
+                        }
+
+                        $issues[] = [
+                            'family' => 'proxy',
+                            'node' => $proxyNode->name,
+                            'key' => $domain,
+                            'kind' => 'extra',
+                            'summary' => $entry->summary,
+                            'detail' => [],
+                        ];
+
+                        if ($action !== null) {
+                            $actions[] = $action;
+                        }
                     }
                 }
             }
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
-            foreach (FirewallRule::query()->with('node')->get() as $rule) {
-                $snapshot = $this->firewallRuleProbe->introspect($rule);
+            if ($mode === 'adopt') {
+                $firewallNodes = Node::query()
+                    ->where('status', 'active')
+                    ->where('platform', 'ubuntu')
+                    ->whereIn('role', ['gateway', 'app'])
+                    ->get();
 
-                foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
-                    $action = $this->handleFirewallAction($mode, $rule, $entry);
+                foreach ($firewallNodes as $firewallNode) {
+                    $snapshot = $this->firewallRuleProbe->introspectNode($firewallNode);
 
-                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                        $actions[] = $action;
-
-                        continue;
+                    foreach ($this->firewallRuleProbe->adopt($firewallNode, $snapshot) as $result) {
+                        $actions[] = [
+                            'family' => $result->family,
+                            'node' => $firewallNode->name,
+                            'code' => $result->key,
+                            'key' => $result->key,
+                            'mode' => 'adopt',
+                            'status' => $result->action->value,
+                            'summary' => $result->summary,
+                            'details' => $result->detail,
+                        ];
                     }
+                }
+            } else {
+                foreach (FirewallRule::query()->with('node')->get() as $rule) {
+                    $snapshot = $this->firewallRuleProbe->introspect($rule);
 
-                    $issue = $this->firewallIssuePayload($entry, $rule);
-                    $issues[] = $issue;
+                    foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
+                        $action = $this->handleFirewallAction($mode, $rule, $entry);
 
-                    if ($action !== null) {
-                        $actions[] = $action;
+                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
+                            $actions[] = $action;
+
+                            continue;
+                        }
+
+                        $issue = $this->firewallIssuePayload($entry, $rule);
+                        $issues[] = $issue;
+
+                        if ($action !== null) {
+                            $actions[] = $action;
+                        }
                     }
                 }
             }
@@ -325,6 +432,33 @@ final readonly class DoctorReportRunner
                 'mode' => $mode,
                 'status' => 'failed',
                 'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleProxyExtraAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode !== 'fix') {
+            return null;
+        }
+
+        try {
+            return $this->proxyRouteFixer->removeExtra($node, $entry->key);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to remove extra proxy route {$entry->key}.",
                 'details' => [
                     'error' => $e->getMessage(),
                 ],
@@ -545,7 +679,7 @@ final readonly class DoctorReportRunner
         return [
             'issues' => count($issues),
             'fixed' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'fix' && ($action['status'] ?? null) === 'completed')),
-            'adopted' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'adopt' && ($action['status'] ?? null) === 'completed')),
+            'adopted' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'adopt' && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true))),
             'skipped' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'skipped')),
             'conflicts' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'conflict')),
             'failed' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'failed')),

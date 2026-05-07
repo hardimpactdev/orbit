@@ -6,6 +6,7 @@ namespace App\Services\Proxy;
 
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
+use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 
@@ -123,5 +124,39 @@ SH,
             escapeshellarg($certPath),
             escapeshellarg($keyPath),
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function removeExtra(Node $node, string $domain): array
+    {
+        $sitePath = "/etc/caddy/sites/{$domain}.caddy";
+        $certPath = "/etc/orbit/certs/{$domain}.crt";
+        $keyPath = "/etc/orbit/certs/{$domain}.key";
+
+        $script = sprintf(
+            <<<'SH'
+sudo rm -f %s
+sudo rm -f %s
+sudo rm -f %s
+sudo systemctl reload caddy || true
+SH,
+            escapeshellarg($sitePath),
+            escapeshellarg($certPath),
+            escapeshellarg($keyPath),
+        );
+
+        $this->remoteShell->run($node, $script, ['throw' => true]);
+
+        return [
+            'family' => 'proxy',
+            'node' => $node->name,
+            'code' => $domain,
+            'key' => $domain,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Removed extra proxy route {$domain} from node.",
+        ];
     }
 }

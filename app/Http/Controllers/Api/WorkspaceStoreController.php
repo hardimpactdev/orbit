@@ -1,0 +1,155 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Actions\Workspaces\CreateWorkspace;
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceCreateFailed;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Workspace;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+final class WorkspaceStoreController implements Loggable
+{
+    private ?Workspace $activitySubject = null;
+
+    public function __construct(
+        private readonly CreateWorkspace $createWorkspace,
+    ) {}
+
+    public function __invoke(Request $request): JsonResponse
+    {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
+        }
+
+        if ($caller->role === 'app') {
+            return $this->error('caller_role_not_allowed', 'This command may only be run from a control or gateway node.', ['caller_role' => 'app'], 403);
+        }
+
+        $validator = validator($request->all(), [
+            'name' => ['required', 'string', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', 'max:63'],
+            'app' => ['required', 'string'],
+            'base' => ['nullable', 'string'],
+            'php_version' => ['nullable', 'string'],
+        ]);
+
+        if ($validator->fails()) {
+            $errors = $validator->errors();
+            $field = $errors->keys()[0] ?? 'unknown';
+
+            return $this->error('validation_failed', $errors->first(), ['field' => $field], 422);
+        }
+
+        $validated = $validator->validated();
+
+        $name = $validated['name'];
+        $appName = $validated['app'];
+        $base = $validated['base'] ?? 'main';
+        $phpVersion = $validated['php_version'] ?? null;
+
+        if ($name === 'main') {
+            return $this->error('validation_failed', "The workspace name 'main' is reserved.", ['field' => 'name'], 422);
+        }
+
+        $app = App::query()
+            ->with('node')
+            ->where('name', $appName)
+            ->first();
+
+        if (! $app instanceof App) {
+            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+        }
+
+        if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
+            return $this->error('validation_failed', 'Unsupported PHP version.', [
+                'field' => 'php_version',
+                'reason' => 'unsupported_php_version',
+            ], 422);
+        }
+
+        $existing = Workspace::query()
+            ->where('app_id', $app->id)
+            ->where('name', $name)
+            ->first();
+
+        if ($existing instanceof Workspace) {
+            return $this->error('workspace.already_exists', "Workspace '{$name}' already exists for app '{$appName}'.", [
+                'name' => $name,
+                'app' => $appName,
+            ], 422);
+        }
+
+        try {
+            $result = $this->createWorkspace->handle($app, $name, $base, $phpVersion);
+        } catch (WorkspaceCreateFailed $exception) {
+            $status = $exception->errorCode === 'workspace.ssh_failure' ? 503 : 422;
+
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
+        }
+
+        $workspace = Workspace::query()
+            ->where('app_id', $app->id)
+            ->where('name', $name)
+            ->first();
+        $this->activitySubject = $workspace instanceof Workspace ? $workspace : null;
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'result' => $result['result'],
+                    'workspace' => $result['workspace'],
+                ],
+                'meta' => $result['meta'],
+            ],
+        ], 201);
+    }
+
+    private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ],
+        ], $status);
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function type(): string
+    {
+        return 'api:POST /workspaces';
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return [];
+    }
+
+    public function description(): ?string
+    {
+        return null;
+    }
+}

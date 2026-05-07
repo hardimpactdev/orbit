@@ -19,23 +19,33 @@ Detail file for the app command family. Top-level status lives in
   interactive + PHP-FPM/proxy refresh. E2E `tests/E2E/AppRootTest.php`.
 - [x] `app:remove` — destructive intent removal + Saloon forwarding +
   interactive + node-side cleanup warnings. E2E `tests/E2E/AppRemoveTest.php`.
-- [~] `app:agent-ide` — gateway-local + Saloon forwarding + interactive.
-  E2E `tests/E2E/AppAgentIdeTest.php`.
-  - [ ] Workspace cleanup planning (waits for workspace schema/removal).
-- [ ] `app:prune` — ready for implementation. Discovers stale workspace
-  intent and delegates to `workspace:remove`.
+- [x] `app:agent-ide` — gateway-local + Saloon forwarding + interactive +
+  workspace cleanup during adapter switch. Captures previous effective adapter
+  before writing intent, then prunes stale workspaces managed by the previous
+  adapter via `PruneAppWorkspaces`. Supports `--force` / `force=true` for
+  destructive consent bypass. Interactive mode prompts for consent when stale
+  workspaces are detected. E2E `tests/E2E/AppAgentIdeTest.php`.
+- [x] `app:prune` — stale workspace discovery and removal implemented. Compares
+  gateway-tracked workspaces with adapter-reported workspaces (via new
+  `AgentIdeMessageAdapter::workspaces()` contract method), identifies stale
+  workspaces, and delegates removal to `RemoveWorkspace` action. Supports
+  `--dry-run` for preview. Pest:
+  `tests/Feature/Commands/Apps/AppPruneCommandTest.php`,
+  `tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php`.
 
 ## Family doctor
 
 `AppsProbe` foundation ported (record completeness, owning-node eligibility,
 agent-IDE default, source/document-root reality, PHP runtime, PHP-FPM
-config). Outstanding:
+config). Intentionally narrowed:
 
-- [~] External app runtime artifact checks: runtime configuration,
-  production policy, deployment health, stale app artifacts. No external
-  blocker remains; either port the needed deploy/runtime intent as part of the
-  app-doctor slice, or deliberately narrow `app-doctor` to the currently
-  implemented checks with documented rationale and paired tests.
+- [-] External app runtime artifact checks (runtime configuration, production
+  policy, deployment health, stale app artifacts) are deferred until the
+  `10_deploy` family is ported. The current `AppsProbe` checks cover the
+  app lifecycle surface that exists today: registry completeness, node
+  eligibility, path/document-root reality, PHP runtime availability, and
+  PHP-FPM config convergence. Paired tests:
+  `tests/Unit/Services/Apps/AppsProbeTest.php`.
 
 ## Open decisions
 

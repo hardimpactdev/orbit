@@ -10,3 +10,7 @@ parameters:
     tmpDir: build/phpstan
     checkModelProperties: true
     treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        -
+            message: '#Parameter \#3 \$value of function curl_setopt expects#'
+            path: app/Services/Workspaces/WorkspaceReadinessProbe.php

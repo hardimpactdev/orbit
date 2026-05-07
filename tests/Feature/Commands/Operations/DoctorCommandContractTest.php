@@ -247,7 +247,7 @@ describe('doctor command contract', function (): void {
             'kind' => 'proxy',
             'config' => ['upstream' => 'http://127.0.0.1:5173'],
         ]);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("0\t\t\t\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
         $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -272,7 +272,7 @@ describe('doctor command contract', function (): void {
             'kind' => 'proxy',
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
         ]);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("0\t\t\t\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
         $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -301,7 +301,7 @@ describe('doctor command contract', function (): void {
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
         ]);
         $route->forceFill(['source_hash' => app(ProxyRouteRenderer::class)->sourceHash($route)])->save();
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("1\t{$route->source_hash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t0\t1\n"));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "1\t{$route->source_hash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t0\t1\n", nodeLevelStdout: ''));
         app()->instance(OrbitCaService::class, new DoctorProxyFakeCa);
 
         $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
@@ -318,11 +318,106 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('reports proxy route_extra drift through the global doctor payload', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => ['upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            nodeLevelStdout: "extra.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/extra.test.crt\t/etc/orbit/certs/extra.test.key\t1\t1\n",
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('drift_detected')
+            ->and($payload['error']['data']['doctor']['issues'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'extra.test',
+                'kind' => 'extra',
+            ]);
+    });
+
+    it('lets fix mode remove extra proxy routes through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => ['upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
+            perRouteStdout: "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            nodeLevelStdout: "extra.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/extra.test.crt\t/etc/orbit/certs/extra.test.key\t1\t1\n",
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'extra.test',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
+    it('lets adopt mode create custom proxy intent from observed routes', function (): void {
+        ProxyRoute::query()->delete();
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $body = base64_encode("adopted.test {\n    reverse_proxy localhost:8080\n}\n");
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
+            perRouteStdout: '',
+            nodeLevelStdout: '',
+            perNodeStdout: [
+                'node_app-1' => "adopted.test\t".str_repeat('a', 64)."\t{$body}\n",
+            ],
+        ));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--adopt' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('adopt')
+            ->and($payload['success']['data']['doctor']['summary']['adopted'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'adopted.test',
+                'mode' => 'adopt',
+                'status' => 'created',
+            ]);
+
+        $adopted = ProxyRoute::query()->where('domain', 'adopted.test')->first();
+
+        expect($adopted)->not->toBeNull()
+            ->and($adopted->owner_type)->toBe('custom')
+            ->and($adopted->kind)->toBe('proxy');
+    });
+
     it('reports tool family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell('', 1));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -451,6 +546,32 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
+    it('lets fix mode install missing tools through family dispatch', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ]);
+    });
+
     it('runs the schedule family locally for gateway callers', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
@@ -476,7 +597,7 @@ describe('doctor command contract', function (): void {
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
-        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell('', 1));
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -579,12 +700,45 @@ describe('doctor command contract', function (): void {
                 'status' => 'completed',
             ]);
     });
+
+    it('lets adopt mode create registry records from observed backend rules', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24\n"));
+
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--adopt' => true, '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('adopt')
+            ->and($payload['success']['data']['doctor']['summary']['adopted'])->toBe(1)
+            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
+            ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
+                'family' => 'firewall_rule',
+                'node' => 'app-1',
+                'key' => 'incoming:allow:10.6.0.0/24:any:5173:tcp',
+                'mode' => 'adopt',
+                'status' => 'created',
+            ]);
+
+        $adopted = FirewallRule::query()->where('node_id', $appNode->id)->first();
+
+        expect($adopted)->not->toBeNull()
+            ->and($adopted->name)->toBe('incoming-allow-5173-tcp')
+            ->and($adopted->source)->toBe('10.6.0.0/24')
+            ->and($adopted->port)->toBe('5173');
+    });
 });
 
 final class DoctorProxyRemoteShell implements RemoteShell
 {
+    /**
+     * @param  array<string, string>  $perNodeStdout
+     */
     public function __construct(
-        private readonly string $stdout,
+        private readonly string $perRouteStdout = '',
+        private readonly string $nodeLevelStdout = '',
+        private readonly array $perNodeStdout = [],
         private readonly int $exitCode = 0,
     ) {}
 
@@ -593,7 +747,11 @@ final class DoctorProxyRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+        $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
+        $nodeKey = $isNodeLevel ? 'node_'.$node->name : 'route_'.$node->name;
+        $stdout = $this->perNodeStdout[$nodeKey] ?? ($isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout);
+
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $stdout, stderr: '', durationMs: 1);
     }
 }
 

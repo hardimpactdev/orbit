@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
@@ -54,13 +56,12 @@ class OrbitUpdater
         return $this->runMigrations();
     }
 
-    public function updateRemote(Node $node): ProcessResult
+    public function updateRemote(Node $node): RemoteShellResult
     {
-        $target = "{$node->ssh_user}@{$node->host}";
-        $remoteCommand = "cd {$node->orbit_path} && {$this->updateCommand()}";
-
-        return Process::timeout(600)
-            ->run("ssh {$target} ".escapeshellarg($remoteCommand));
+        return app(RemoteShell::class)->run($node, $this->updateCommand(), [
+            'cwd' => $node->orbit_path,
+            'timeout' => 600,
+        ]);
     }
 
     public function updateCommand(): string

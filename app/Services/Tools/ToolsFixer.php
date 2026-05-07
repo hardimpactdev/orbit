@@ -54,7 +54,13 @@ final readonly class ToolsFixer
 
     private function repairCommand(NodeTool $tool, DriftEntry $entry): ?string
     {
-        $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        if ($entry->key === 'tool.capability_missing') {
+            return $catalog->installScript($tool->name, is_array($tool->config) ? $tool->config : []);
+        }
+
+        $metadata = $catalog->probeMetadata($tool->name);
         $commands = is_array($metadata) && is_array($metadata['repair_commands'] ?? null)
             ? $metadata['repair_commands']
             : [];

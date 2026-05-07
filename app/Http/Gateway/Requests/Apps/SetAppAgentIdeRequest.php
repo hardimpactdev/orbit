@@ -20,6 +20,7 @@ final class SetAppAgentIdeRequest extends GatewayRequest implements HasBody
     public function __construct(
         public readonly string $app,
         public readonly string $agentIde,
+        public readonly bool $force = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -34,6 +35,7 @@ final class SetAppAgentIdeRequest extends GatewayRequest implements HasBody
     {
         return [
             'agent_ide' => $this->agentIde,
+            'force' => $this->force,
         ];
     }
 

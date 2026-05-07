@@ -3,8 +3,8 @@
 Detail file for the workspace command family. Top-level status lives in
 [`PORTING.md`](PORTING.md). Doc authority: `docs/commands/6_workspace/`.
 
-Read, step-policy, history/log, and `workspace:remove` surfaces are ported.
-Workspace creation/setup are the remaining lifecycle implementation slices.
+Read, step-policy, history/log, removal, creation/setup, and the current
+workspace doctor scope are ported.
 
 ## Commands
 
@@ -24,21 +24,31 @@ Workspace creation/setup are the remaining lifecycle implementation slices.
   `workspace-teardown-step:add|list|remove` — gateway-owned policy
   CRUD + Saloon forwarding + destructive consent + order compaction.
   E2E `tests/E2E/WorkspaceStep{Add,List,Remove}Test.php`.
-- [ ] `workspace:new` — ready for lifecycle implementation.
-- [ ] `workspace:setup` — ready for lifecycle implementation.
+- [x] `workspace:new` — atomic intent creation + remote provisioning.
+  Creates the workspace row with validation (slug format, reserved name,
+  uniqueness, supported PHP version), performs a gateway→app-node SSH
+  preflight, creates a detached git worktree from `--base`, runs the
+  `workspace:setup` convergence pipeline, and reports retryable downstream
+  drift in `success.meta.warnings[]`. Pest:
+  `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php`,
+  `tests/Feature/Http/Api/WorkspaceStoreControllerTest.php`. E2E:
+  `tests/E2E/WorkspaceNewTest.php`;
+  `composer test:e2e:docker -- --filter='creates and sets up a workspace|sets up an existing workspace path'`.
+- [x] `workspace:setup` — lifecycle implementation complete. Command resolves workspace identity (by name, path, or CWD), validates absolute paths, handles control/gateway/app caller roles (control/app forward to gateway API), and orchestrates 6 phases: registry convergence, proxy routing, FPM pool artifact enactment, setup step execution with hash-based skip logic, process runtime unit enactment, and HTTP readiness probe. Returns `set_up`/`adopted`/`converged` action. Pest: `tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php`, `tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php`. E2E: `tests/E2E/WorkspaceSetupTest.php`; `composer test:e2e:docker -- --filter='creates and sets up a workspace|sets up an existing workspace path'`.
 
 ## Family doctor
 
-`WorkspacesProbe` ported (record completeness, parent-app eligibility,
-effective PHP inheritance, source/parent-app path policy, PHP runtime,
-PHP-FPM config). Outstanding:
-
-- [~] External workspace runtime artifact checks: runtime configuration,
-  stale artifacts, adoption hints. Implement alongside the workspace
-  lifecycle/enactor slice that defines runtime config, managed ownership,
-  stale artifact inventory, and adoption scan inputs, or deliberately narrow
-  `workspace-doctor` to source + PHP + FPM reality with documented rationale
-  and paired tests.
+- [x] `WorkspacesProbe` — current workspace doctor scope is deliberately
+  narrowed to gateway record completeness, parent-app eligibility, effective
+  PHP inheritance, source/parent-app path policy, PHP runtime availability,
+  and PHP-FPM pool config drift. Runtime unit drift remains owned by
+  `process`; workspace-owned route drift remains owned by `proxy`; broad
+  stale-artifact scanning and arbitrary path adoption stay deferred until
+  deploy/runtime ownership introduces a durable inventory source. Pest:
+  `tests/Unit/Services/Workspaces/WorkspacesProbeTest.php`,
+  `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`. E2E:
+  `tests/E2E/Ephemeral/WorkspacesDoctorTest.php`;
+  `ORBIT_E2E_CHECKOUT_CACHE=0 composer test:e2e:docker -- --filter='reports workspace source drift'`.
 
 ## Foundations
 

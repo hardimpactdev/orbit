@@ -53,43 +53,59 @@ Detail file for the tool command family. Top-level status lives in
   `composer test:e2e:docker -- --filter='removes a docker-managed tool'`.
   Fixed: retry material is now preserved when remote cleanup fails; credentials
   are cleared only after the node-side remove script succeeds.
-- [~] `tool:credentials` — gateway-local + Saloon forwarding implementation
+- [x] `tool:credentials` — gateway-local + Saloon forwarding implementation
   and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php`. E2E lane:
   Docker feature because the command reads gateway intent and does not require
   VM-only behavior.
   Passed gate:
   `composer test:e2e:docker -- --filter='reads managed tool credentials'`.
-  Remaining: reconcile catalog credential support for credential-bearing tools
-  such as `opencode-server`.
-- [~] `tool:install` — gateway-local + Saloon forwarding implementation,
-  registry intent creation, remote script enactment for Docker-based tools,
-  and focused Pest coverage in
+  Fixed: catalog credential support for `opencode-server` (adds `credentials`
+  capability); `polyscope-server` correctly remains unsupported.
+- [x] `tool:install` — gateway-local + Saloon forwarding implementation,
+  registry intent creation, remote script enactment for Docker-based and
+  user-systemd tools (opencode-server, polyscope-server), credential generation
+  via post-install credentials script, and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolInstallCommandTest.php`. E2E lane:
   Docker feature because the test validates gateway intent plus Docker compose
   command generation with a controlled Docker CLI. Passed gate:
   `composer test:e2e:docker -- --filter='installs a docker-managed tool'`.
-  Remaining: reconcile documented credential generation, endpoint intent, and
-  `--status=installed` behavior.
-- [~] `tool:update` — gateway-local + Saloon forwarding implementation,
+  Fixed: added `credentialsScript()` to `ToolCatalog` and credential capture
+  in `ToolInstaller` for tools that declare credential support (opencode-server).
+  Added install scripts for opencode-server and polyscope-server matching the
+  old-repo systemd user unit pattern.
+  Deferred: tool-owned proxy route creation during install — the old repo does
+  not implement this and the current architecture has no tool endpoint
+  declaration mechanism; documented in `solo://proj/2/scratchpad/porting-deviations--143`.
+- [x] `tool:update` — gateway-local + Saloon forwarding implementation,
   registry version update, remote script enactment for Docker-based and
-  package-managed tools, and focused Pest coverage in
+  package-managed tools, optional `[tool]` argument for bulk update, and
+  focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolUpdateCommandTest.php`. E2E lane:
   Docker feature because the test validates gateway intent plus Docker compose
   command generation with a controlled Docker CLI. Passed gate:
   `composer test:e2e:docker -- --filter='updates a docker-managed tool'`.
   Fixed: requested version intent is preserved when remote enactment fails.
   Decision captured: the CLI uses `--expected-version` because `--version`
-  collides with Symfony's global console option. Remaining: align `[tool]` /
-  bulk update contract, catalog update capabilities, and bulk result shape.
-- [~] `tool:reconfigure` — gateway-local + Saloon forwarding implementation,
-  registry config/credential update, placeholder remote script for
-  polyscope-server and opencode-server, and focused Pest coverage in
+  collides with Symfony's global console option.
+  Fixed: made `[tool]` optional; added `POST /api/tools/update` bulk endpoint
+  (`ToolUpdateBulkController`), `UpdateToolsBulkRequest` gateway request,
+  `ToolUpdater::updateAll()` that iterates managed tools and updates each
+  with a declared `latestSupportedVersion()`, and bulk result shape with
+  `updated`/`skipped`/`failed` arrays. Added `latestSupportedVersion()` to
+  `ToolCatalog` (returns null for all current tools; future tools may declare
+  explicit latest versions).
+- [x] `tool:reconfigure` — gateway-local + Saloon forwarding implementation,
+  registry config/credential update, real remote scripts for polyscope-server
+  and opencode-server, and focused Pest coverage in
   `tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php`. E2E lane:
-  Incus VM-feature because the command exercises host-init managed service
-  reconfiguration. Remaining: align optional-tool selector contract, replace
-  placeholder scripts with real tool-specific behavior, validate password
-  support, and add paired E2E.
+  Docker feature because the command validates gateway intent plus reconfigure
+  script generation with a controlled Docker CLI.
+  Passed gate:
+  `composer test:e2e:docker -- --filter='reconfigures a managed tool on a node'`.
+  Fixed: replaced placeholder echo scripts with real systemd user unit
+  reconfiguration; `ToolReconfigurer` now merges password into config array
+  before script generation so `opencode-server` reconfigure includes auth env.
 
 ## Family doctor
 
@@ -99,18 +115,26 @@ config drift, and credential drift. Safe `--fix` handlers exist for
 catalog-declared lifecycle repair, safe catalog update commands for version
 drift, managed config rows (path/hash/content), and managed credential rows.
 
-- [~] Version fix handlers are ported for catalog definitions with explicit
+- [x] Version fix handlers are ported for catalog definitions with explicit
   safe update commands (`composer`, `gh`, `caddy`). Pest coverage:
   `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` and
   `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
   Paired E2E fix coverage exists in
   `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` via
   `composer test:e2e:docker -- --filter='repairs managed tool configuration drift'`.
-- [~] Capability fix handlers and adopt action handlers are outstanding
-  implementation work. Use catalog-declared safe install/restore/update
-  commands for fixes, and keep adoption scoped to explicitly selected observed
-  tool reality. No external blocker remains; add Pest plus paired E2E before
-  marking these actions complete.
+- [x] Capability fix handlers — `ToolsFixer` now maps `tool.capability_missing`
+  to `ToolCatalog::installScript()` for Docker-managed tools (redis, mailpit,
+  reverb, postgres, mysql). Pest coverage:
+  `tests/Unit/Services/Tools/ToolsFixerTest.php` and
+  `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
+  Passed gate:
+  `php artisan test --compact --filter='lets fix mode install missing tools'`.
+- [-] Adopt action handlers — intentionally not implemented. `ToolsProbe` is
+  DB-driven (per-row introspection via `NodeTool` records) and does not scan
+  the node for "extra" tools. This matches the old-repo design decision that
+  there is no practical "list every installed tool" shell script across all
+  tools (php, docker, caddy, node, gh, composer, etc.). Tool adoption is
+  therefore out of scope for the clean rebuild.
 
 ## Foundations
 

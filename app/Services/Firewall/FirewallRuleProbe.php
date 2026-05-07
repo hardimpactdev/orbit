@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Firewall;
 
 use App\Contracts\RemoteShell;
+use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -41,7 +43,12 @@ final readonly class FirewallRuleProbe
             return new ProbeSnapshot([]);
         }
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($rule->node, 'sudo ufw status numbered', ['throw' => true]);
+        return $this->introspectNode($rule->node);
+    }
+
+    public function introspectNode(Node $node): ProbeSnapshot
+    {
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, 'sudo ufw status numbered', ['throw' => true]);
         $items = [
             '__firewall_backend_inspected' => ['inspected' => true],
         ];
@@ -57,6 +64,87 @@ final readonly class FirewallRuleProbe
         }
 
         return new ProbeSnapshot($items);
+    }
+
+    /**
+     * @return list<AdoptResult>
+     */
+    public function adopt(Node $node, ProbeSnapshot $snapshot): array
+    {
+        $results = [];
+
+        foreach ($snapshot->items as $key => $observed) {
+            if (str_starts_with($key, '__firewall_backend_')) {
+                continue;
+            }
+
+            if ($this->isBaselineRule($observed)) {
+                continue;
+            }
+
+            $existing = FirewallRule::query()
+                ->where('node_id', $node->id)
+                ->where('direction', $observed['direction'])
+                ->where('action', $observed['action'])
+                ->where('source', $observed['source'])
+                ->where('destination', $observed['destination'] ?? null)
+                ->where('port', $observed['port'])
+                ->where('protocol', $observed['protocol'])
+                ->first();
+
+            if ($existing instanceof FirewallRule) {
+                continue;
+            }
+
+            $name = $this->deriveName($observed);
+
+            $collision = FirewallRule::query()
+                ->where('node_id', $node->id)
+                ->where('name', $name)
+                ->first();
+
+            if ($collision instanceof FirewallRule) {
+                $results[] = new AdoptResult(
+                    family: $this->key(),
+                    key: $key,
+                    action: AdoptAction::Conflict,
+                    summary: "Name collision: '{$name}' already exists with different identity.",
+                );
+
+                continue;
+            }
+
+            $shape = [
+                'direction' => $observed['direction'],
+                'action' => $observed['action'],
+                'source' => $observed['source'],
+                'destination' => $observed['destination'] ?? null,
+                'port' => $observed['port'],
+                'protocol' => $observed['protocol'],
+            ];
+
+            FirewallRule::query()->create([
+                'node_id' => $node->id,
+                'name' => $name,
+                ...$shape,
+                'reason' => $observed['comment'] ?? null,
+                'source_hash' => hash('sha256', json_encode([
+                    'node' => $node->name,
+                    'name' => $name,
+                    'shape' => $shape,
+                    'reason' => $observed['comment'] ?? null,
+                ], JSON_THROW_ON_ERROR)),
+            ]);
+
+            $results[] = new AdoptResult(
+                family: $this->key(),
+                key: $key,
+                action: AdoptAction::Created,
+                summary: "Adopted firewall rule '{$name}' ({$key}).",
+            );
+        }
+
+        return $results;
     }
 
     /**
@@ -278,6 +366,7 @@ final readonly class FirewallRuleProbe
             'destination' => null,
             'port' => $port,
             'protocol' => $protocol,
+            'comment' => $matches[5] ?? '',
         ];
     }
 
@@ -302,5 +391,57 @@ final readonly class FirewallRuleProbe
             $shape['port'],
             $shape['protocol'],
         ]);
+    }
+
+    /**
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string}  $observed
+     */
+    private function isBaselineRule(array $observed): bool
+    {
+        return $observed['direction'] === 'incoming'
+            && $observed['action'] === 'allow'
+            && $observed['source'] === 'any'
+            && $observed['destination'] === null
+            && $observed['protocol'] === 'tcp'
+            && $observed['port'] === '22';
+    }
+
+    /**
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, comment?: string}  $observed
+     */
+    private function deriveName(array $observed): string
+    {
+        $comment = $observed['comment'] ?? '';
+
+        if (str_starts_with($comment, 'orbit:')) {
+            $name = substr($comment, 6);
+
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        if ($comment !== '') {
+            $sanitized = preg_replace('/[^a-zA-Z0-9_-]/', '-', $comment);
+
+            if ($sanitized !== '' && $sanitized !== '-') {
+                return strtolower(trim((string) $sanitized, '-'));
+            }
+        }
+
+        $direction = $observed['direction'];
+        $action = $observed['action'];
+        $port = $observed['port'];
+        $protocol = $observed['protocol'];
+
+        if ($port !== '*' && $protocol !== '*') {
+            return "{$direction}-{$action}-{$port}-{$protocol}";
+        }
+
+        if ($port !== '*') {
+            return "{$direction}-{$action}-{$port}";
+        }
+
+        return "{$direction}-{$action}-rule";
     }
 }

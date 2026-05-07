@@ -24,4 +24,9 @@ final readonly class RemoteShellResult
             ->filter(fn (string $output): bool => $output !== '')
             ->implode('');
     }
+
+    public function errorOutput(): string
+    {
+        return $this->stderr;
+    }
 }

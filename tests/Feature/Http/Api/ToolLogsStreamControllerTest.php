@@ -46,7 +46,7 @@ describe('ToolLogsStreamController', function (): void {
             ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
             ->assertStreamedContent("streamed supervisor line\n");
 
-        expect($stream->scripts)->toBe(["sudo journalctl -u 'supervisor' -n 1 -f --no-pager --output=short-iso"]);
+        expect($stream->scripts)->toBe(["sudo journalctl _SYSTEMD_UNIT='supervisor.service' + SYSLOG_IDENTIFIER='supervisor' -n 1 -f --no-pager --output=short-iso"]);
     });
 
     it('returns a gateway error before opening the stream when logs are unsupported', function (): void {

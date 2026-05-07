@@ -85,6 +85,37 @@ describe('tool:install command contract', function (): void {
             ->and($shell->scripts)->toBe([]);
     });
 
+    it('generates and stores credentials for credential-bearing tools', function (): void {
+        createToolInstallLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $shell = new ToolInstallCredentialRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'opencode-server', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'opencode-server')->exists())->toBeTrue()
+            ->and($payload['success']['data']['tool'])->toMatchArray([
+                'name' => 'opencode-server',
+                'node' => 'app-1',
+                'state' => 'installed',
+            ])
+            ->and($shell->scripts)->toHaveCount(2)
+            ->and($shell->scripts[0])->toContain('opencode-server.service')
+            ->and($shell->scripts[1])->toContain('cat <<EOF');
+
+        $row = NodeTool::query()->where('node_id', $node->id)->where('name', 'opencode-server')->first();
+        expect($row->credentials)->toBe([
+            'fields' => [
+                'Host' => '127.0.0.1',
+                'Port' => '4096',
+                'Username' => '(no auth)',
+                'Password' => '(no auth)',
+            ],
+        ]);
+    });
+
     it('forwards non-gateway callers through the typed gateway request', function (): void {
         createToolInstallLocalNode('control');
 
@@ -144,6 +175,38 @@ final class ToolInstallRecordingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class ToolInstallCredentialRecordingShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if (str_contains($script, 'cat <<EOF')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'Host' => '127.0.0.1',
+                    'Port' => '4096',
+                    'Username' => '(no auth)',
+                    'Password' => '(no auth)',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }

@@ -48,37 +48,33 @@ describe('DoctorReportRunner', function (): void {
             ->and($shell->scripts[2])->toContain('[program:orbit_scheduler]');
     });
 
-    it('records skipped actions for unsupported fix issues while keeping drift visible', function (): void {
+    it('installs missing tools through fix mode family dispatch', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
-        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+        $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        ]));
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['tool']);
 
-        expect($report['healthy'])->toBeFalse()
+        expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
-                'issues' => 1,
-                'fixed' => 0,
-                'skipped' => 1,
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
             ])
-            ->and($report['issues'][0])->toMatchArray([
-                'family' => 'tool',
-                'node' => 'app-1',
-                'key' => 'tool.capability_missing',
-            ])
+            ->and($report['issues'])->toBe([])
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.capability_missing',
                 'mode' => 'fix',
-                'status' => 'skipped',
-                'details' => [
-                    'reason' => 'mode_not_supported',
-                ],
-            ]);
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[1])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'");
     });
 
     it('suppresses resolved tool version issues when a safe update fix completes', function (): void {

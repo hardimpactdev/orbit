@@ -192,6 +192,54 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()
             ->and($shell->scripts)->toBe([]);
     });
+
+    it('installs missing docker-managed tools through catalog install script', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool redis is missing on the target node.',
+            detail: ['tool' => 'redis'],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => 'tool.capability_missing',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'")
+            ->and($shell->scripts[0])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' up -d 'redis'");
+    });
+
+    it('returns null for capability missing when no install script exists', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'gh',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool gh is missing on the target node.',
+            detail: ['tool' => 'gh'],
+        ));
+
+        expect($action)->toBeNull()
+            ->and($shell->scripts)->toBe([]);
+    });
 });
 
 final class ToolsFixerRemoteShell implements RemoteShell

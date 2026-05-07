@@ -54,6 +54,11 @@ final class FakeAgentIdeMessageAdapter implements AgentIdeMessageAdapter
             'session' => $session,
         ];
     }
+
+    public function workspaces(array $target, string $adapter): array
+    {
+        return [];
+    }
 }
 
 it('delivers a JSON message to an explicit app target on the gateway', function (): void {

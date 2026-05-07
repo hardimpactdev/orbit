@@ -20,10 +20,20 @@ Verify-mode dispatcher integration via `--family=proxy`. Fix map handles
 `route_missing`, `route_mismatch`, `tls_missing`, and `tls_mismatch` via
 Caddy site reconciliation and Orbit-managed TLS material repair.
 
-- [~] Safe `route_extra` cleanup and custom-route adoption handlers are
-  outstanding implementation work. Keep adoption scoped to explicitly selected
-  observed routes that can be represented as custom proxy intent, then prove
-  the behavior with Pest plus paired E2E.
+- [x] Safe `route_extra` cleanup — `ProxyRouteFixer::removeExtra()` removes
+  orphaned Caddy sites and Orbit-managed TLS material from nodes. Pest coverage:
+  `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` (verify +
+  fix mode). Passed gate:
+  `php artisan test --compact --filter='reports proxy route_extra drift'` and
+  `php artisan test --compact --filter='lets fix mode remove extra proxy routes'`.
+- [x] Custom-route adoption handlers — `ProxyRouteAdopter` classifies observed
+  Caddy vhosts as custom proxy/redirect intent, skipping app-owned, workspace,
+  internal IP, and unclassifiable routes. Adoption checks global domain
+  uniqueness. Pest coverage:
+  `tests/Unit/Services/Proxy/ProxyRouteAdopterTest.php` and
+  `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` (adopt mode).
+  Passed gate:
+  `php artisan test --compact --filter='lets adopt mode create custom proxy intent'`.
 
 ## Activity backfill
 

@@ -102,7 +102,7 @@ describe('DoctorRunController', function (): void {
             'kind' => 'proxy',
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
         ]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("0\t\t\t\t0\t0\n"));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'fix',
@@ -119,7 +119,7 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode();
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell('', 1));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
@@ -191,7 +191,7 @@ describe('DoctorRunController', function (): void {
             'app_id' => $app->id,
             'name' => 'queue',
         ]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell('', 1));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
@@ -264,7 +264,8 @@ describe('DoctorRunController', function (): void {
 final class DoctorRunRemoteShell implements RemoteShell
 {
     public function __construct(
-        private readonly string $stdout,
+        private readonly string $perRouteStdout,
+        private readonly string $nodeLevelStdout = '',
         private readonly int $exitCode = 0,
     ) {}
 
@@ -273,6 +274,9 @@ final class DoctorRunRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+        $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
+        $stdout = $isNodeLevel ? $this->nodeLevelStdout : $this->perRouteStdout;
+
+        return new RemoteShellResult(exitCode: $this->exitCode, stdout: $stdout, stderr: '', durationMs: 1);
     }
 }

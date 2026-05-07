@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Contracts\AgentIdeMessageAdapter;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
@@ -451,4 +453,93 @@ it('renders converged human output', function (): void {
     $this->artisan('app:agent-ide docs opencode')
         ->expectsOutputToContain('└ App `docs` agent IDE already set to `opencode`')
         ->assertExitCode(0);
+});
+
+it('prunes stale workspaces when switching adapters with --force', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'stale-ws',
+        'path' => '/home/orbit/apps/docs/stale-ws',
+    ]);
+
+    app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
+
+    $exitCode = Artisan::call('app:agent-ide', [
+        'app' => 'docs',
+        'agent_ide' => 'polyscope',
+        '--force' => true,
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['action'])->toBe('set')
+        ->and($payload['success']['data']['previous_adapter'])->toBe('opencode')
+        ->and($payload['success']['data']['cleanup']['workspaces_removed'])->toBe(['stale-ws'])
+        ->and(Workspace::query()->where('name', 'stale-ws')->exists())->toBeFalse();
+});
+
+it('skips workspace cleanup when no previous adapter', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+    ]);
+
+    $exitCode = Artisan::call('app:agent-ide', [
+        'app' => 'docs',
+        'agent_ide' => 'opencode',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['previous_adapter'])->toBeNull()
+        ->and($payload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
+});
+
+it('prompts for workspace cleanup consent in interactive mode', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'stale-ws',
+        'path' => '/home/orbit/apps/docs/stale-ws',
+    ]);
+
+    app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
+
+    $this->artisan('app:agent-ide docs polyscope')
+        ->expectsConfirmation("This will remove 1 workspace(s) managed by the previous adapter 'opencode'. Continue?", 'yes')
+        ->expectsOutputToContain('Removed 1 stale workspaces during adapter switch:')
+        ->expectsOutputToContain('- stale-ws')
+        ->assertExitCode(0);
+
+    expect(Workspace::query()->where('name', 'stale-ws')->exists())->toBeFalse();
 });

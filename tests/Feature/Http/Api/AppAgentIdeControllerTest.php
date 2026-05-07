@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Contracts\AgentIdeMessageAdapter;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -179,4 +181,59 @@ describe('AppAgentIdeController', function (): void {
         'missing adapter' => [[], 'validation_failed', 'field'],
         'unsupported adapter' => [['agent_ide' => 'unknown-ide'], 'app.unsupported_adapter', 'adapter'],
     ]);
+
+    it('requires consent for destructive workspace cleanup without force', function (): void {
+        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'stale-ws',
+            'path' => '/home/orbit/apps/docs/stale-ws',
+        ]);
+
+        app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'polyscope',
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace_cleanup_consent_required')
+            ->assertJsonPath('error.meta.previous_adapter', 'opencode')
+            ->assertJsonPath('error.meta.stale_workspaces', ['stale-ws']);
+
+        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe(['adapter' => 'polyscope']);
+    });
+
+    it('prunes stale workspaces when force is true', function (): void {
+        createAppAgentIdeCallerNode(['role' => 'gateway']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'stale-ws',
+            'path' => '/home/orbit/apps/docs/stale-ws',
+        ]);
+
+        app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
+
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
+            'agent_ide' => 'polyscope',
+            'force' => true,
+        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.action', 'set')
+            ->assertJsonPath('success.data.previous_adapter', 'opencode')
+            ->assertJsonPath('success.data.cleanup.workspaces_removed', ['stale-ws']);
+
+        expect(Workspace::query()->where('name', 'stale-ws')->exists())->toBeFalse();
+    });
 });

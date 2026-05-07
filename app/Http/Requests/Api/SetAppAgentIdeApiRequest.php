@@ -22,6 +22,7 @@ class SetAppAgentIdeApiRequest extends FormRequest
     {
         return [
             'agent_ide' => ['required', 'string', 'filled'],
+            'force' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -31,6 +32,14 @@ class SetAppAgentIdeApiRequest extends FormRequest
         $agentIde = $this->validated('agent_ide');
 
         return $agentIde;
+    }
+
+    public function force(): bool
+    {
+        /** @var bool $force */
+        $force = $this->validated('force', false);
+
+        return $force;
     }
 
     #[\Override]

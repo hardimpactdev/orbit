@@ -62,6 +62,41 @@ describe('tool:credentials command contract', function (): void {
             ]);
     });
 
+    it('reads stored credentials for opencode-server', function (): void {
+        createToolCredentialsLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'expected_state' => 'running',
+            'credentials' => [
+                'fields' => [
+                    'host' => '127.0.0.1',
+                    'port' => 4096,
+                    'url' => 'https://opencode.test',
+                    'username' => 'orbit',
+                    'password' => 'generated-secret',
+                ],
+            ],
+        ]);
+
+        $exitCode = Artisan::call('tool:credentials', ['tool' => 'opencode-server', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['credentials'])->toMatchArray([
+                'tool' => 'opencode-server',
+                'node' => 'app-1',
+                'fields' => [
+                    'host' => '127.0.0.1',
+                    'port' => 4096,
+                    'url' => 'https://opencode.test',
+                    'username' => 'orbit',
+                    'password' => 'generated-secret',
+                ],
+            ]);
+    });
+
     it('rejects tools without credential support', function (): void {
         createToolCredentialsLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
@@ -78,6 +113,26 @@ describe('tool:credentials command contract', function (): void {
             ->and($payload['error']['code'])->toBe('tool.unsupported_action')
             ->and($payload['error']['meta'])->toMatchArray([
                 'tool' => 'caddy',
+                'action' => 'credentials',
+            ]);
+    });
+
+    it('rejects polyscope-server credential requests', function (): void {
+        createToolCredentialsLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'polyscope-server',
+            'expected_state' => 'running',
+        ]);
+
+        $exitCode = Artisan::call('tool:credentials', ['tool' => 'polyscope-server', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('tool.unsupported_action')
+            ->and($payload['error']['meta'])->toMatchArray([
+                'tool' => 'polyscope-server',
                 'action' => 'credentials',
             ]);
     });

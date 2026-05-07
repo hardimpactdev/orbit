@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +46,8 @@ it('selects json renderer with --json flag', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
+
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
 
@@ -55,6 +60,8 @@ it('renders success envelope shape with updates array and summary', function ():
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
     ]);
     Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
 
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
@@ -88,6 +95,8 @@ it('logs fleet update activity', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
+
     $exitCode = Artisan::call('update:all', ['--json' => true]);
 
     $entry = Activity::query()->first();
@@ -116,6 +125,8 @@ it('renders local_update_failed with failed_step and output', function (): void 
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
+
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
     $payload = json_decode($output, true);
@@ -127,14 +138,12 @@ it('renders local_update_failed with failed_step and output', function (): void 
 });
 
 it('renders remote_update_failed with partial target results and summary', function (): void {
-    Process::fake(function ($process) {
-        if (is_string($process->command) && str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit")) {
-            return Process::result(output: '', errorOutput: 'Permission denied (publickey).', exitCode: 255);
-        }
-
-        return Process::result(output: '', errorOutput: '', exitCode: 0);
-    });
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell(exitCode: 255, stderr: 'Permission denied (publickey).'));
 
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
@@ -174,6 +183,8 @@ it('excludes control nodes from updates array', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
+
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
     $payload = json_decode($output, true);
@@ -195,9 +206,29 @@ it('includes no extra fields in error envelope', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllJsonRemoteShell);
+
     $exitCode = Artisan::call('update:all', ['--json' => true]);
     $output = Artisan::output();
 
     expect($exitCode)->toBe(1);
     expect(str_contains($output, '"error"'))->toBeTrue();
 });
+
+final class UpdateAllJsonRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: $this->exitCode,
+            stdout: '',
+            stderr: $this->stderr,
+            durationMs: 1,
+        );
+    }
+}

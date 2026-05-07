@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
@@ -48,12 +51,15 @@ it('updates the local checkout and every active non-control remote node from the
     Process::fake();
     Process::preventStrayProcesses();
 
+    $shell = new UpdateAllRemoteShell(exitCode: 0);
+    app()->instance(RemoteShell::class, $shell);
+
     $this->artisan('update:all')
         ->expectsOutputToContain('Updated local Orbit checkout.')
         ->expectsOutputToContain('Updated node beast.')
         ->assertSuccessful();
 
-    Process::assertRanTimes(fn (): bool => true, 4);
+    Process::assertRanTimes(fn (): bool => true, 3);
     Process::assertRan(fn ($process): bool => $process->path === base_path()
         && $process->command === 'git pull --ff-only');
     Process::assertRan(fn ($process): bool => $process->path === base_path()
@@ -64,9 +70,9 @@ it('updates the local checkout and every active non-control remote node from the
         && is_array($process->command)
         && in_array('migrate', $process->command)
         && in_array('--force', $process->command));
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit && ")
-        && str_contains($process->command, '"$COMPOSER_BIN" install --no-interaction'));
+
+    expect($shell->nodes)->toHaveCount(1);
+    expect($shell->nodes[0]->name)->toBe('beast');
 });
 
 it('excludes control nodes from remote update targets', function (): void {
@@ -98,9 +104,32 @@ it('excludes control nodes from remote update targets', function (): void {
     Process::fake();
     Process::preventStrayProcesses();
 
+    $shell = new UpdateAllRemoteShell(exitCode: 0);
+    app()->instance(RemoteShell::class, $shell);
+
     $this->artisan('update:all')
         ->expectsOutputToContain('Updated local Orbit checkout.')
         ->assertSuccessful();
 
     Process::assertRanTimes(fn (): bool => true, 3);
+    expect($shell->nodes)->toHaveCount(0);
 });
+
+final class UpdateAllRemoteShell implements RemoteShell
+{
+    public array $nodes = [];
+
+    public function __construct(private readonly int $exitCode = 0) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->nodes[] = $node;
+
+        return new RemoteShellResult(
+            exitCode: $this->exitCode,
+            stdout: '',
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+}

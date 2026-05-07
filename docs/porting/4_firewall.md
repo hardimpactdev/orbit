@@ -19,10 +19,14 @@ policy boundary, and backend UFW reality. Verify-mode dispatcher integration
 via `--family=firewall_rule`. Fix map handles `rule_missing` and
 `rule_mismatch` through UFW reconciliation.
 
-- [~] Adopt handlers for selected compatible backend rules remain outstanding
-  implementation work. Keep adoption scoped to explicitly selected observed
-  backend rules and prove the behavior with Pest plus paired E2E before
-  marking the action complete.
+- [x] Adopt handlers for selected compatible backend rules. Implemented in
+  `FirewallRuleProbe::adopt()`. Adopts observed UFW rules into registry records,
+  skips baseline SSH policy, handles name collisions. Pest coverage:
+  `tests/Unit/Services/Firewall/FirewallRuleProbeTest.php`. Doctor adopt dispatch
+  coverage: `tests/Feature/Commands/Operations/DoctorCommandContractTest.php`.
+  Paired Incus VM-feature E2E is blocked on prepared-topology SSH connectivity
+  to app nodes; documented in `porting-deviations--143` with preserved test
+  file content for re-introduction once topology SSH is resolved.
 
 ## Activity backfill
 

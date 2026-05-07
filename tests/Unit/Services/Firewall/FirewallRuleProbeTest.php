@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -216,5 +217,114 @@ describe('firewall registry probe foundation', function (): void {
         $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.baseline_conflict')?->kind)->toBe(DriftKind::Divergent);
+    });
+});
+
+describe('firewall adopt handlers', function (): void {
+    it('adopts observed backend rules not in the registry', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+UFW);
+        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
+        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+
+        expect($results)->toHaveCount(1)
+            ->and($results[0]->action)->toBe(AdoptAction::Created)
+            ->and($results[0]->summary)->toContain('Adopted firewall rule')
+            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
+
+        $adopted = FirewallRule::query()->where('node_id', $node->id)->first();
+
+        expect($adopted->name)->toBe('incoming-allow-5173-tcp')
+            ->and($adopted->direction)->toBe('incoming')
+            ->and($adopted->action)->toBe('allow')
+            ->and($adopted->source)->toBe('10.6.0.0/24')
+            ->and($adopted->port)->toBe('5173')
+            ->and($adopted->protocol)->toBe('tcp');
+    });
+
+    it('skips baseline bootstrap rules during adoption', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere
+UFW);
+        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
+        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+
+        expect($results)->toBeEmpty()
+            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(0);
+    });
+
+    it('skips rules already present in the registry', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'local-vite',
+            'source' => '10.6.0.0/24',
+            'port' => '5173',
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+UFW);
+        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
+        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+
+        expect($results)->toBeEmpty()
+            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
+    });
+
+    it('reports conflict when name collides with different identity', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'incoming-allow-5173-tcp',
+            'source' => '192.168.1.0/24',
+            'port' => '5173',
+        ]);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+UFW);
+        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
+        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+
+        expect($results)->toHaveCount(1)
+            ->and($results[0]->action)->toBe(AdoptAction::Conflict)
+            ->and($results[0]->summary)->toContain('Name collision');
+    });
+
+    it('derives name from orbit: prefix comment', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24             # orbit:local-vite
+UFW);
+        $snapshot = (new FirewallRuleProbe($shell))->introspectNode($node);
+        $results = (new FirewallRuleProbe($shell))->adopt($node, $snapshot);
+
+        expect($results[0]->action)->toBe(AdoptAction::Created);
+
+        $adopted = FirewallRule::query()->where('node_id', $node->id)->first();
+
+        expect($adopted->name)->toBe('local-vite');
     });
 });

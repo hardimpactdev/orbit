@@ -45,6 +45,11 @@ final readonly class ToolReconfigurer
         }
 
         $mergedConfig = array_merge(is_array($model->config) ? $model->config : [], $config);
+
+        if ($password !== null) {
+            $mergedConfig['password'] = $password;
+        }
+
         $script = $this->catalog->reconfigureScript($tool, $mergedConfig);
 
         if ($script === null) {

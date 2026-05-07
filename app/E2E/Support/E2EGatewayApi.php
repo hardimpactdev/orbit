@@ -498,6 +498,52 @@ PHP;
             return run_orbit_command('php artisan workspace:log '.escapeshellarg($run).' --json');
         }
 
+        function run_workspace_new(array $input): array
+        {
+            $parts = [
+                'php artisan workspace:new',
+                escapeshellarg((string) ($input['name'] ?? '')),
+            ];
+
+            foreach ([
+                'app' => 'app',
+                'base' => 'base',
+                'php_version' => 'php-version',
+            ] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            $parts[] = '--json';
+
+            return run_orbit_command(implode(' ', $parts));
+        }
+
+        function run_workspace_setup(array $input): array
+        {
+            $parts = ['php artisan workspace:setup'];
+            $name = $input['name'] ?? null;
+
+            if (is_scalar($name) && (string) $name !== '') {
+                $parts[] = escapeshellarg((string) $name);
+            }
+
+            foreach (['app' => 'app', 'path' => 'path'] as $field => $option) {
+                $value = $input[$field] ?? null;
+
+                if (is_scalar($value) && (string) $value !== '') {
+                    $parts[] = "--{$option}=".escapeshellarg((string) $value);
+                }
+            }
+
+            $parts[] = '--json';
+
+            return run_orbit_command(implode(' ', $parts));
+        }
+
         function run_workspace_steps(string $phase, array $query): array
         {
             $parts = ["php artisan workspace-{$phase}-step:list"];
@@ -1092,6 +1138,52 @@ PHP;
 
             if (preg_match('#^GET /api/workspaces/runs/([^ ?]+)/log#', $requestLine, $matches) === 1) {
                 [$exitCode, $output] = run_workspace_log(urldecode($matches[1]));
+                respond($connection, $exitCode === 0 ? 200 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/workspaces ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_workspace_new($input);
+                respond($connection, $exitCode === 0 ? 201 : 422, $output);
+                fclose($connection);
+
+                continue;
+            }
+
+            if (str_starts_with($requestLine, 'POST /api/workspaces/setup ')) {
+                $input = json_decode(read_request_body($connection, $headers), true);
+
+                if (! is_array($input)) {
+                    respond($connection, 422, json_encode([
+                        'error' => [
+                            'code' => 'validation_failed',
+                            'message' => 'Invalid JSON request.',
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR));
+                    fclose($connection);
+
+                    continue;
+                }
+
+                [$exitCode, $output] = run_workspace_setup($input);
                 respond($connection, $exitCode === 0 ? 200 : 422, $output);
                 fclose($connection);
 

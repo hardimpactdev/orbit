@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\Apps\PruneAppWorkspaces;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
@@ -28,7 +29,7 @@ use function Laravel\Prompts\select;
 #[Description('Set the default agent IDE for an app')]
 class AppAgentIdeCommand extends Command
 {
-    public function handle(AppAgentIdeDefaults $defaults): int
+    public function handle(AppAgentIdeDefaults $defaults, PruneAppWorkspaces $pruneAppWorkspaces): int
     {
         $callerRole = $this->callerRole();
 
@@ -101,7 +102,13 @@ class AppAgentIdeCommand extends Command
             );
         }
 
-        return $this->successCommand($defaults->set($app, $agentIde));
+        $data = $defaults->set($app, $agentIde);
+
+        if ($data['action'] === 'set') {
+            $data = $this->maybeCleanupWorkspaces($app, $data, $pruneAppWorkspaces);
+        }
+
+        return $this->successCommand($data);
     }
 
     private function promptForAgentIde(string $callerRole, AppAgentIdeDefaults $defaults): string
@@ -151,7 +158,7 @@ class AppAgentIdeCommand extends Command
         try {
             /** @var AppAgentIdeResponse $dto */
             $dto = app(GatewayConnector::class)
-                ->send(new SetAppAgentIdeRequest($selector, $agentIde))
+                ->send(new SetAppAgentIdeRequest($selector, $agentIde, $this->option('force') === true))
                 ->dto();
         } catch (GatewayApiException $e) {
             return $this->failCommand(
@@ -170,6 +177,78 @@ class AppAgentIdeCommand extends Command
         }
 
         return $this->successCommand($dto->data);
+    }
+
+    /**
+     * @param  array{
+     *     app: array<string, mixed>,
+     *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
+     *     cleanup: array{workspaces_removed: list<string>},
+     *     action: string,
+     *     previous_adapter: string|null,
+     * }  $data
+     * @return array{
+     *     app: array<string, mixed>,
+     *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
+     *     cleanup: array{workspaces_removed: list<string>},
+     *     action: string,
+     *     previous_adapter: string|null,
+     * }
+     */
+    private function maybeCleanupWorkspaces(App $app, array $data, PruneAppWorkspaces $pruneAppWorkspaces): array
+    {
+        $previousAdapter = $data['previous_adapter'];
+        $currentEffective = $data['agent_ide']['effective_adapter'];
+
+        if ($previousAdapter === null || $previousAdapter === $currentEffective) {
+            return $data;
+        }
+
+        try {
+            $dryRun = $pruneAppWorkspaces->handle($app, dryRun: true, adapterName: $previousAdapter);
+            $staleWorkspaces = $dryRun['stale_workspaces'];
+
+            if ($staleWorkspaces === []) {
+                return $data;
+            }
+
+            $force = $this->option('force') === true;
+            $count = count($staleWorkspaces);
+
+            if (! $force && $this->isInteractiveInput()) {
+                $confirmed = $this->confirm(
+                    "This will remove {$count} workspace(s) managed by the previous adapter '{$previousAdapter}'. Continue?",
+                    false,
+                );
+
+                if (! $confirmed) {
+                    $this->warn('Adapter switch completed without workspace cleanup.');
+
+                    return $data;
+                }
+            }
+
+            if (! $force && ! $this->isInteractiveInput()) {
+                $this->warn("Skipped workspace cleanup: {$count} workspace(s) managed by '{$previousAdapter}' remain. Use --force to remove them.");
+
+                return $data;
+            }
+
+            $result = $pruneAppWorkspaces->handle($app, dryRun: false, adapterName: $previousAdapter);
+            $removed = array_values(array_filter(
+                $result['stale_workspaces'],
+                fn (array $ws): bool => $ws['removed'],
+            ));
+
+            $data['cleanup']['workspaces_removed'] = array_map(
+                fn (array $ws): string => $ws['name'],
+                $removed,
+            );
+        } catch (\RuntimeException) {
+            // Adapter does not support workspace discovery; skip cleanup.
+        }
+
+        return $data;
     }
 
     private function resolveApp(string $selector): ?App
@@ -218,7 +297,8 @@ class AppAgentIdeCommand extends Command
      *     app: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
-     *     action: string
+     *     action: string,
+     *     previous_adapter: string|null,
      * }  $data
      */
     private function successCommand(array $data): int
@@ -255,7 +335,8 @@ class AppAgentIdeCommand extends Command
      *     app: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
-     *     action: string
+     *     action: string,
+     *     previous_adapter: string|null,
      * }  $data
      */
     private function humanSetLine(array $data): string
@@ -286,7 +367,8 @@ class AppAgentIdeCommand extends Command
      *     app: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
-     *     action: string
+     *     action: string,
+     *     previous_adapter: string|null,
      * }  $data
      */
     private function humanConvergedLine(array $data): string

@@ -20,4 +20,9 @@ final class NullAgentIdeMessageAdapter implements AgentIdeMessageAdapter
             'session' => $session,
         ];
     }
+
+    public function workspaces(array $target, string $adapter): array
+    {
+        return [];
+    }
 }

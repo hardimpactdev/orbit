@@ -19,13 +19,15 @@ final readonly class AppAgentIdeDefaults
      *     app: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
-     *     action: string
+     *     action: string,
+     *     previous_adapter: string|null,
      * }
      */
     public function set(App $app, string $adapter): array
     {
         $app->loadMissing('node');
 
+        $previousAdapter = $this->payloadFor($app)['effective_adapter'];
         $currentAdapter = $this->explicitAdapter($app);
         $normalizedAdapter = $adapter === 'inherit' ? null : $adapter;
         $action = $currentAdapter === $normalizedAdapter ? 'converged' : 'set';
@@ -44,6 +46,7 @@ final readonly class AppAgentIdeDefaults
             'agent_ide' => $this->payloadFor($app),
             'cleanup' => ['workspaces_removed' => []],
             'action' => $action,
+            'previous_adapter' => $previousAdapter,
         ];
     }
 

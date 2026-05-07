@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +45,8 @@ it('renders progress tree shape', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
+
     $this->artisan('update:all')
         ->expectsOutputToContain('┌ Updating Orbit Installations')
         ->expectsOutputToContain('Update local checkout')
@@ -54,6 +59,8 @@ it('renders success prose', function (): void {
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
     ]);
     Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
 
     $this->artisan('update:all')
         ->expectsOutputToContain('Updated local Orbit checkout.')
@@ -71,6 +78,8 @@ it('renders failed local checkout prose', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
+
     $this->artisan('update:all')
         ->expectsOutputToContain('Failed to update local Orbit checkout.')
         ->expectsOutputToContain('merge conflict')
@@ -78,14 +87,12 @@ it('renders failed local checkout prose', function (): void {
 });
 
 it('renders partial remote failure prose and continues', function (): void {
-    Process::fake(function ($process) {
-        if (is_string($process->command) && str_starts_with($process->command, "ssh nckrtl@beast 'cd /home/nckrtl/orbit")) {
-            return Process::result(output: '', errorOutput: 'Permission denied (publickey).', exitCode: 255);
-        }
-
-        return Process::result(output: '', errorOutput: '', exitCode: 0);
-    });
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(exitCode: 255, stderr: 'Permission denied (publickey).'));
 
     $this->artisan('update:all')
         ->expectsOutputToContain('Updated local Orbit checkout.')
@@ -99,6 +106,8 @@ it('has no json envelope in human mode', function (): void {
         '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
     ]);
     Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
 
     $this->artisan('update:all')
         ->expectsOutputToContain('Updated local Orbit checkout.')
@@ -125,6 +134,8 @@ it('excludes control nodes from human output', function (): void {
     ]);
     Process::preventStrayProcesses();
 
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
+
     $exitCode = Artisan::call('update:all');
     $output = Artisan::output();
 
@@ -132,3 +143,21 @@ it('excludes control nodes from human output', function (): void {
     expect(str_contains($output, 'Updated local Orbit checkout.'))->toBeTrue();
     expect(str_contains($output, 'mini'))->toBeFalse();
 });
+
+final class UpdateAllHumanRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private readonly string $stderr = '',
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: $this->exitCode,
+            stdout: '',
+            stderr: $this->stderr,
+            durationMs: 1,
+        );
+    }
+}

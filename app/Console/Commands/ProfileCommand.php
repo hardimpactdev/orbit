@@ -15,6 +15,7 @@ use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Http\Gateway\Requests\Profile\ShowProfileRequest;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -248,12 +249,17 @@ class ProfileCommand extends Command implements Loggable
                 }
 
                 if ($app instanceof App) {
-                    $url = $this->profileUrl($app, $uri);
+                    $workspace = $this->resolveWorkspaceFromSelector($selector);
+                    $url = $workspace instanceof Workspace
+                        ? $workspace->url().$uri
+                        : $this->profileUrl($app, $uri);
                     $targetPayload = [
                         'app' => $app->name,
-                        'workspace' => null,
+                        'workspace' => $workspace?->name,
                         'node' => $app->node?->name,
-                        'domain' => $this->appDomain($app),
+                        'domain' => $workspace instanceof Workspace
+                            ? parse_url($workspace->url(), PHP_URL_HOST) ?? $this->appDomain($app)
+                            : $this->appDomain($app),
                     ];
                     $origin = 'gateway';
                     $this->captureActivityTarget($targetPayload, $origin);
@@ -265,12 +271,17 @@ class ProfileCommand extends Command implements Loggable
                     );
                 }
             } else {
-                $url = $this->profileUrl($app, $uri);
+                $workspace = $this->resolveWorkspaceFromSelector($selector);
+                $url = $workspace instanceof Workspace
+                    ? $workspace->url().$uri
+                    : $this->profileUrl($app, $uri);
                 $targetPayload = [
                     'app' => $app->name,
-                    'workspace' => null,
+                    'workspace' => $workspace?->name,
                     'node' => $app->node?->name,
-                    'domain' => $this->appDomain($app),
+                    'domain' => $workspace instanceof Workspace
+                        ? parse_url($workspace->url(), PHP_URL_HOST) ?? $this->appDomain($app)
+                        : $this->appDomain($app),
                 ];
                 $origin = 'gateway';
                 $this->captureActivityTarget($targetPayload, $origin);
@@ -628,6 +639,23 @@ class ProfileCommand extends Command implements Loggable
             ->where('domain', $selector)
             ->when($nodeConstraint !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $nodeConstraint)))
             ->first();
+    }
+
+    private function resolveWorkspaceFromSelector(?string $selector): ?Workspace
+    {
+        if (! is_string($selector) || $selector === '' || ! str_starts_with($selector, '/')) {
+            return null;
+        }
+
+        $normalizedSelector = realpath($selector) ?: $selector;
+
+        return Workspace::query()
+            ->get()
+            ->first(function (Workspace $workspace) use ($normalizedSelector): bool {
+                $workspacePath = realpath($workspace->path) ?: $workspace->path;
+
+                return $workspacePath === $normalizedSelector || str_starts_with($normalizedSelector, rtrim($workspacePath, '/').'/');
+            });
     }
 
     private function profileUrl(App $app, string $uri): string

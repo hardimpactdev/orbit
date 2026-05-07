@@ -233,6 +233,27 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
         return $value;
     }
 
+    public function workspaces(array $target, string $adapter): array
+    {
+        if ($adapter !== 'opencode') {
+            return [];
+        }
+
+        $app = App::query()
+            ->where('name', $target['app'])
+            ->first();
+
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        return Workspace::query()
+            ->where('app_id', $app->id)
+            ->whereNotNull('agent_ide_workspace_id')
+            ->pluck('name')
+            ->all();
+    }
+
     /**
      * @param  array{app: string, workspace: string|null, node: string}  $target
      * @param  array<string, mixed>  $extra

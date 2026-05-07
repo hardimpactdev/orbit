@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Tools\UpdateToolRequest;
+use App\Http\Gateway\Requests\Tools\UpdateToolsBulkRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -148,6 +149,63 @@ describe('tool:update command contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['tool']['name'])->toBe('redis');
+    });
+
+    it('bulk updates skip tools without a latest supported version', function (): void {
+        createToolUpdateLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'redis',
+            'expected_state' => 'running',
+            'expected_version' => '6.0',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docker',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolUpdateRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:update', ['--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['updated'])->toBe([])
+            ->and($payload['success']['data']['skipped'])->toHaveCount(2)
+            ->and($payload['success']['data']['failed'])->toBe([])
+            ->and($shell->scripts)->toBe([]);
+    });
+
+    it('forwards bulk update for non-gateway callers', function (): void {
+        createToolUpdateLocalNode('control');
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        MockClient::global([
+            UpdateToolsBulkRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'updated' => [],
+                        'skipped' => [
+                            ['tool' => 'redis', 'node' => 'app-1', 'reason' => 'null_latest_version'],
+                        ],
+                        'failed' => [],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('tool:update', ['--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['skipped'])->toHaveCount(1);
     });
 });
 

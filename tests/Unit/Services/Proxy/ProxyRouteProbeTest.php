@@ -311,6 +311,136 @@ describe('proxy backend and TLS reality', function (): void {
     });
 });
 
+describe('proxy node-level introspection', function (): void {
+    it('introspects all caddy sites on a node', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
+            ."api.docs.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/api.docs.test.crt\t/etc/orbit/certs/api.docs.test.key\t1\t1\n",
+        );
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+
+        expect($snapshot->keys())->toHaveCount(2)
+            ->and($snapshot->get('vite.docs.test'))->toMatchArray([
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_path' => '/etc/orbit/certs/vite.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/vite.docs.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ])
+            ->and($snapshot->get('api.docs.test'))->toMatchArray([
+                'route_exists' => true,
+                'route_hash' => str_repeat('b', 64),
+                'cert_path' => '/etc/orbit/certs/api.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/api.docs.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ]);
+    });
+
+    it('returns empty snapshot when no caddy sites exist', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $shell = new ProxyProbeRecordingRemoteShell('');
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+
+        expect($snapshot->isEmpty())->toBeTrue();
+    });
+
+    it('ignores malformed lines in node scan output', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
+            ."malformed-line-without-tabs\n"
+            ."\n",
+        );
+
+        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+
+        expect($snapshot->keys())->toHaveCount(1)
+            ->and($snapshot->get('vite.docs.test'))->not->toBeNull();
+    });
+});
+
+describe('proxy node-level diff', function (): void {
+    it('reports route_missing for db routes not on node', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffNode($node, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('reports route_extra for node routes not in db', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $snapshot = new ProbeSnapshot([
+            'extra.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('c', 64),
+                'cert_path' => '/etc/orbit/certs/extra.test.crt',
+                'key_path' => '/etc/orbit/certs/extra.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffNode($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'extra.test')?->kind)->toBe(DriftKind::Extra);
+    });
+
+    it('reports both missing and extra routes', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'db-only.test',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+        $snapshot = new ProbeSnapshot([
+            'node-only.test' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('b', 64),
+                'cert_path' => '',
+                'key_path' => '',
+                'cert_exists' => false,
+                'key_exists' => false,
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diffNode($node, $snapshot);
+
+        expect(count($drift))->toBe(2)
+            ->and(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'node-only.test')?->kind)->toBe(DriftKind::Extra);
+    });
+});
+
+describe('proxy adoption snapshot', function (): void {
+    it('returns vhost bodies for adoption', function (): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $body = "vite.docs.test {\n    reverse_proxy localhost:8080\n}\n";
+        $bodyB64 = base64_encode($body);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "vite.docs.test\t".str_repeat('a', 64)."\t{$bodyB64}\n",
+        );
+
+        $snapshot = (new ProxyRouteProbe($shell))->snapshotForAdopt($node);
+
+        expect($snapshot->keys())->toHaveCount(1)
+            ->and($snapshot->get('vite.docs.test'))->toMatchArray([
+                'hash' => str_repeat('a', 64),
+                'body' => $body,
+            ]);
+    });
+});
+
 final class ProxyProbeRecordingRemoteShell implements RemoteShell
 {
     /** @var list<Node> */

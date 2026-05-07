@@ -112,7 +112,8 @@ final readonly class ToolCatalog
                 'install', 'remove', 'start', 'stop', 'restart', 'update', 'logs', 'credentials', 'safe-fix', 'safe-adopt',
             ],
             'php' => ['install', 'remove', 'update'],
-            'polyscope-server', 'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'safe-fix'],
+            'polyscope-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'safe-fix'],
+            'opencode-server' => ['install', 'remove', 'start', 'stop', 'restart', 'update', 'reconfigure', 'credentials', 'safe-fix'],
             default => [],
         };
     }
@@ -130,6 +131,8 @@ final readonly class ToolCatalog
 
         return match ($tool) {
             'redis', 'mailpit', 'reverb', 'postgres', 'mysql' => $this->dockerComposeInstallScript($tool, $config),
+            'opencode-server' => $this->opencodeServerInstallScript($config),
+            'polyscope-server' => $this->polyscopeServerInstallScript($config),
             default => null,
         };
     }
@@ -159,18 +162,212 @@ final readonly class ToolCatalog
         };
     }
 
+    /** @phpstan-ignore return.unusedType */
+    public function latestSupportedVersion(string $tool): ?string
+    {
+        if (! $this->supports($tool)) {
+            return null;
+        }
+
+        return null;
+    }
+
+    public function credentialsScript(string $tool, array $config = []): ?string
+    {
+        if (! $this->hasCapability($tool, 'credentials')) {
+            return null;
+        }
+
+        return match ($tool) {
+            'opencode-server' => $this->opencodeServerCredentialsScript($config),
+            default => null,
+        };
+    }
+
     public function reconfigureScript(string $tool, array $config = []): ?string
     {
         if (! $this->hasCapability($tool, 'reconfigure')) {
             return null;
         }
 
-        // Reconfigure scripts are tool-specific and will be expanded as needed.
-        // Currently only polyscope-server and opencode-server declare this capability.
         return match ($tool) {
-            'polyscope-server', 'opencode-server' => 'echo "reconfigure not yet implemented for '.$tool.'"',
+            'opencode-server' => $this->opencodeServerReconfigureScript($config),
+            'polyscope-server' => $this->polyscopeServerReconfigureScript(),
             default => null,
         };
+    }
+
+    private function opencodeServerInstallScript(array $config): string
+    {
+        $port = (int) ($config['port'] ?? 4096);
+        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $username = $config['username'] ?? 'opencode';
+        $password = $config['password'] ?? null;
+
+        $authEnv = $password === null || $password === ''
+            ? ''
+            : "Environment=OPENCODE_SERVER_USERNAME={$username}\n        Environment=OPENCODE_SERVER_PASSWORD={$password}\n        ";
+
+        return <<<"BASH"
+#!/usr/bin/env bash
+# orbit install opencode-server
+set -e
+curl -fsSL https://opencode.ai/install | bash
+user=$(whoami)
+home=$(echo \$HOME)
+unitDir="\${home}/.config/systemd/user"
+unitPath="\${unitDir}/opencode-server.service"
+mkdir -p "\${unitDir}"
+cat > "\${unitPath}" <<UNIT
+[Unit]
+Description=OpenCode Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+        {$authEnv}ExecStart=\${home}/.opencode/bin/opencode serve --hostname {$hostname} --port {$port}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+sudo loginctl enable-linger "\${user}"
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+systemctl --user daemon-reload
+systemctl --user enable opencode-server
+systemctl --user start opencode-server
+BASH;
+    }
+
+    private function polyscopeServerInstallScript(array $config): string
+    {
+        $localTarget = $config['local_target'] ?? false;
+        $guidance = $localTarget ? '' : <<<'GUIDE'
+
+echo ""
+echo "  Polyscope Server installed but authentication is required."
+echo "  Run the following on this node to authenticate:"
+echo "    polyscope-server login"
+echo ""
+GUIDE;
+
+        return <<<"BASH"
+#!/usr/bin/env bash
+# orbit install polyscope-server
+set -e
+curl -fsSL https://getpolyscope.com/install/server | bash
+user=$(whoami)
+home=$(echo \$HOME)
+unitDir="\${home}/.config/systemd/user"
+unitPath="\${unitDir}/polyscope-server.service"
+mkdir -p "\${unitDir}"
+path=$(bash -lc 'echo \$PATH')
+userBin="\${home}/.local/bin"
+if [[ ":\${path}:" != *":\${userBin}:"* ]]; then
+  path="\${userBin}:\${path}"
+fi
+cat > "\${unitPath}" <<UNIT
+[Unit]
+Description=Polyscope Server
+After=network.target
+
+[Service]
+Type=simple
+Environment=HOME=\${home}
+Environment="PATH=\${path}"
+ExecStart=\${home}/.local/bin/polyscope-server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+sudo loginctl enable-linger "\${user}"
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+systemctl --user daemon-reload
+systemctl --user enable polyscope-server
+systemctl --user start polyscope-server
+{$guidance}
+BASH;
+    }
+
+    private function opencodeServerCredentialsScript(array $config): string
+    {
+        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $port = (int) ($config['port'] ?? 4096);
+        $username = $config['username'] ?? 'opencode';
+        $password = $config['password'] ?? null;
+
+        $authUsername = $password === null || $password === '' ? '(no auth)' : $username;
+        $authPassword = $password === null || $password === '' ? '(no auth)' : $password;
+
+        return <<<"BASH"
+cat <<EOF
+{
+  "Host": "{$hostname}",
+  "Port": "{$port}",
+  "Username": "{$authUsername}",
+  "Password": "{$authPassword}"
+}
+EOF
+BASH;
+    }
+
+    private function opencodeServerReconfigureScript(array $config): string
+    {
+        $port = (int) ($config['port'] ?? 4096);
+        $hostname = $config['hostname'] ?? '127.0.0.1';
+        $username = $config['username'] ?? 'opencode';
+        $password = $config['password'] ?? null;
+
+        $authEnv = $password === null || $password === ''
+            ? ''
+            : "Environment=OPENCODE_SERVER_USERNAME={$username}\n        Environment=OPENCODE_SERVER_PASSWORD={$password}\n        ";
+
+        return <<<"BASH"
+#!/usr/bin/env bash
+# orbit reconfigure opencode-server
+set -e
+home=$(echo \$HOME)
+unitPath="\${home}/.config/systemd/user/opencode-server.service"
+mkdir -p "\${home}/.config/systemd/user"
+cat > "\${unitPath}" <<UNIT
+[Unit]
+Description=OpenCode Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+        {$authEnv}ExecStart=\${home}/.opencode/bin/opencode serve --hostname {$hostname} --port {$port}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+export XDG_RUNTIME_DIR=/run/user/\$(id -u)
+systemctl --user daemon-reload
+systemctl --user restart opencode-server
+BASH;
+    }
+
+    private function polyscopeServerReconfigureScript(): string
+    {
+        return <<<'BASH'
+#!/usr/bin/env bash
+# orbit reconfigure polyscope-server
+set -e
+home=$(echo $HOME)
+unitPath="${home}/.config/systemd/user/polyscope-server.service"
+if [ -f "$unitPath" ]; then
+  export XDG_RUNTIME_DIR=/run/user/$(id -u)
+  systemctl --user daemon-reload
+  systemctl --user restart polyscope-server
+fi
+BASH;
     }
 
     private function dockerComposeInstallScript(string $service, array $config): string

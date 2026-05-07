@@ -43,6 +43,11 @@ final class FakeApiAgentIdeMessageAdapter implements AgentIdeMessageAdapter
             'session' => $session,
         ];
     }
+
+    public function workspaces(array $target, string $adapter): array
+    {
+        return [];
+    }
 }
 
 function createAgentIdeMessageCallerNode(array $overrides = []): Node

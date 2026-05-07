@@ -6,12 +6,18 @@ namespace App\Console\Commands;
 
 use App\Concerns\LogsCommandActivity;
 use App\Contracts\Loggable;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Operations\UpdateAllRequest;
+use App\Http\Gateway\Responses\Operations\UpdateAllResponse;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
+use Throwable;
 
 #[Signature('update:all {--json : Output as JSON}')]
 #[Description('Update this Orbit checkout and every active registered node')]
@@ -69,6 +75,122 @@ class UpdateAllCommand extends Command implements Loggable
 
     private function executeUpdateAll(OrbitUpdater $updater): int
     {
+        $callerRole = $this->callerRole();
+
+        if ($callerRole === 'app') {
+            return $this->failCommand(
+                code: 'caller_role_not_allowed',
+                message: 'This command may only be run from a control or gateway node.',
+                meta: ['caller_role' => 'app'],
+            );
+        }
+
+        if ($callerRole === 'unknown') {
+            return $this->failCommand(
+                code: 'local_context_invalid',
+                message: 'Local node role setting is invalid.',
+                meta: [
+                    'setting' => 'general.local_node_role',
+                    'reason' => 'unsupported_value',
+                    'caller_role' => 'unknown',
+                ],
+            );
+        }
+
+        if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update the fleet.',
+                meta: [],
+            );
+        }
+
+        if ($callerRole === 'control') {
+            return $this->executeControlPath($updater);
+        }
+
+        return $this->executeGatewayPath($updater);
+    }
+
+    private function executeControlPath(OrbitUpdater $updater): int
+    {
+        $updates = [];
+        $localResult = $updater->updateLocal();
+
+        $updates[] = [
+            'target' => 'local',
+            'node' => null,
+            'role' => null,
+            'status' => $localResult->successful() ? 'completed' : 'failed',
+        ];
+
+        if (! $localResult->successful()) {
+            $this->captureActivitySummary($updates, 'failed', 'local_checkout');
+
+            return $this->failCommand(
+                code: 'local_update_failed',
+                message: 'Failed to update local Orbit checkout.',
+                data: ['output' => trim($localResult->errorOutput() ?: $localResult->output())],
+                meta: ['failed_step' => 'local_checkout'],
+            );
+        }
+
+        try {
+            /** @var UpdateAllResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new UpdateAllRequest)
+                ->dto();
+        } catch (GatewayApiException $e) {
+            $updates = array_merge($updates, $e->errorData()['updates'] ?? []);
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: $e->errorCode() ?? 'gateway_unavailable',
+                message: $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Gateway connection is required to update the fleet.',
+                meta: $e->errorMeta(),
+                data: ['updates' => $updates],
+            );
+        } catch (Throwable) {
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: 'gateway_unavailable',
+                message: 'Gateway connection is required to update the fleet.',
+                meta: [],
+            );
+        }
+
+        $updates = array_merge($updates, $dto->updates);
+
+        $completed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'completed'));
+        $failed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'failed'));
+
+        if ($failed > 0) {
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: 'remote_update_failed',
+                message: 'One or more Orbit installations failed to update.',
+                data: ['updates' => $updates],
+                meta: [
+                    'summary' => [
+                        'total' => count($updates),
+                        'completed' => $completed,
+                        'failed' => $failed,
+                    ],
+                ],
+            );
+        }
+
+        $this->captureActivitySummary($updates, 'completed');
+
+        return $this->respondSuccess($updates);
+    }
+
+    private function executeGatewayPath(OrbitUpdater $updater): int
+    {
         $nodes = Node::query()
             ->where('status', 'active')
             ->where('is_local', false)
@@ -103,14 +225,13 @@ class UpdateAllCommand extends Command implements Loggable
         if (! $localResult->successful()) {
             $this->captureActivitySummary($updates, 'failed', 'local_checkout');
 
-            return $this->jsonError(
+            return $this->failCommand(
                 code: 'local_update_failed',
                 message: 'Failed to update local Orbit checkout.',
                 data: [
                     'output' => trim($localResult->errorOutput() ?: $localResult->output()),
                 ],
                 meta: ['failed_step' => 'local_checkout'],
-                updates: $updates,
             );
         }
 
@@ -131,7 +252,7 @@ class UpdateAllCommand extends Command implements Loggable
         if ($failed > 0) {
             $this->captureActivitySummary($updates, 'failed', 'remote_update');
 
-            return $this->jsonError(
+            return $this->failCommand(
                 code: 'remote_update_failed',
                 message: 'One or more Orbit installations failed to update.',
                 data: ['updates' => $updates],
@@ -147,7 +268,7 @@ class UpdateAllCommand extends Command implements Loggable
 
         $this->captureActivitySummary($updates, 'completed');
 
-        return $this->jsonSuccess($updates);
+        return $this->respondSuccess($updates);
     }
 
     /**
@@ -246,9 +367,35 @@ class UpdateAllCommand extends Command implements Loggable
     {
         try {
             $this->finalizeActivityLog();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Activity logging must not change the documented update:all result.
         }
+    }
+
+    private function callerRole(): string
+    {
+        $localRole = Node::query()
+            ->where('is_local', true)
+            ->where('status', 'active')
+            ->value('role');
+
+        if (! is_string($localRole) || $localRole === '') {
+            return 'control';
+        }
+
+        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
+            return 'unknown';
+        }
+
+        return $localRole;
+    }
+
+    private function hasConfiguredGateway(): bool
+    {
+        return LocalGatewaySettings::query()
+            ->whereNotNull('gateway_url')
+            ->where('gateway_url', '!=', '')
+            ->exists();
     }
 
     /**
@@ -284,64 +431,77 @@ class UpdateAllCommand extends Command implements Loggable
     /**
      * @param  list<array<string, mixed>>  $updates
      */
-    private function jsonSuccess(array $updates): int
+    private function respondSuccess(array $updates): int
     {
         $completed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'completed'));
         $failed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'failed'));
 
-        $this->line(json_encode([
-            'success' => [
-                'data' => [
-                    'updates' => $updates,
-                ],
-                'meta' => [
-                    'summary' => [
-                        'total' => count($updates),
-                        'completed' => $completed,
-                        'failed' => $failed,
+        if ($this->wantsJson()) {
+            $this->line(json_encode([
+                'success' => [
+                    'data' => [
+                        'updates' => $updates,
+                    ],
+                    'meta' => [
+                        'summary' => [
+                            'total' => count($updates),
+                            'completed' => $completed,
+                            'failed' => $failed,
+                        ],
                     ],
                 ],
-            ],
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return self::SUCCESS;
+        }
+
+        $this->line('');
+        $this->info('Updated local Orbit checkout.');
+
+        foreach ($updates as $update) {
+            if ($update['status'] === 'completed' && $update['target'] !== 'local') {
+                $this->info("Updated node {$update['target']}.");
+            }
+        }
 
         return self::SUCCESS;
     }
 
     /**
-     * @param  list<array<string, mixed>>  $updates
-     * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $data
      */
-    private function jsonError(
-        string $code,
-        string $message,
-        array $data = [],
-        array $meta = [],
-        array $updates = [],
-    ): int {
-        $error = [
-            'code' => $code,
-            'message' => $message,
-            'meta' => $meta,
-        ];
+    private function failCommand(string $code, string $message, array $meta = [], array $data = []): int
+    {
+        if ($this->wantsJson()) {
+            $error = [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ];
 
-        if ($data !== []) {
-            $error['data'] = $data;
+            if ($data !== []) {
+                $error['data'] = $data;
+            }
+
+            $this->line(json_encode([
+                'error' => $error,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return self::FAILURE;
         }
 
-        if ($updates !== []) {
-            $error['data']['updates'] = $updates;
-        }
-
-        $this->line(json_encode([
-            'error' => $error,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        $this->error($message);
 
         return self::FAILURE;
     }
 
     private function renderProgressTree(): void
     {
+        if ($this->wantsJson()) {
+            return;
+        }
+
         $this->line('┌ Updating Orbit Installations');
 
         foreach ($this->targets as $target) {
@@ -359,6 +519,10 @@ class UpdateAllCommand extends Command implements Loggable
      */
     private function updateProgressTree(array $results): void
     {
+        if ($this->wantsJson()) {
+            return;
+        }
+
         $lines = count($this->targets) + 2;
 
         for ($i = 0; $i < $lines; $i++) {

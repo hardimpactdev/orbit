@@ -91,6 +91,100 @@ BASH;
         ]);
     }
 
+    public function introspectNode(Node $node): ProbeSnapshot
+    {
+        $script = <<<'BASH'
+set -euo pipefail
+if [ ! -d /etc/caddy/sites ]; then
+    exit 0
+fi
+for f in /etc/caddy/sites/*.caddy; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .caddy)
+    hash=$(sha256sum "$f" | awk '{print $1}')
+    cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$f")
+    key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$f")
+    cert_exists=0; key_exists=0
+    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+done
+BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $items = [];
+
+        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode("\t", $line, 6);
+
+            if (count($parts) !== 6) {
+                continue;
+            }
+
+            [$name, $hash, $cert, $key, $certExists, $keyExists] = $parts;
+            $items[$name] = [
+                'route_exists' => true,
+                'route_hash' => $hash,
+                'cert_path' => $cert,
+                'key_path' => $key,
+                'cert_exists' => $certExists === '1',
+                'key_exists' => $keyExists === '1',
+            ];
+        }
+
+        return new ProbeSnapshot($items);
+    }
+
+    public function snapshotForAdopt(Node $node): ProbeSnapshot
+    {
+        $script = <<<'BASH'
+set -euo pipefail
+if [ ! -d /etc/caddy/sites ]; then
+    exit 0
+fi
+for f in /etc/caddy/sites/*.caddy; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .caddy)
+    vhost_hash=$(sha256sum "$f" | awk '{print $1}')
+    body_b64=$(base64 -w0 "$f" 2>/dev/null || base64 "$f" | tr -d '\n')
+    printf '%s\t%s\t%s\n' "$name" "$vhost_hash" "$body_b64"
+done
+BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $items = [];
+
+        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode("\t", $line, 3);
+
+            if (count($parts) !== 3) {
+                continue;
+            }
+
+            [$name, $hash, $bodyB64] = $parts;
+            $body = base64_decode($bodyB64, true);
+
+            if ($body === false) {
+                continue;
+            }
+
+            $items[$name] = [
+                'hash' => $hash,
+                'body' => $body,
+            ];
+        }
+
+        return new ProbeSnapshot($items);
+    }
+
     /**
      * @return list<DriftEntry>
      */
@@ -104,6 +198,56 @@ BASH;
             ...$this->checkBackendReality($route, $snapshot),
             ...$this->checkTlsReality($route, $snapshot),
         ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    public function diffNode(Node $node, ProbeSnapshot $snapshot): array
+    {
+        $drift = [];
+        $dbRoutes = ProxyRoute::query()->where('node_id', $node->id)->get();
+        $observedDomains = $snapshot->keys();
+
+        foreach ($dbRoutes as $route) {
+            $routeDrift = $this->diff($route, $snapshot);
+
+            if (! in_array($route->domain, $observedDomains, true)) {
+                $hasBackendDrift = collect($routeDrift)->contains(
+                    fn (DriftEntry $entry): bool => $entry->key === 'proxy.route_missing' || $entry->key === 'proxy.route_mismatch'
+                );
+
+                if (! $hasBackendDrift) {
+                    $routeDrift[] = new DriftEntry(
+                        family: $this->key(),
+                        key: 'proxy.route_missing',
+                        kind: DriftKind::Missing,
+                        summary: "Proxy backend route {$route->domain} is missing on the serving node.",
+                    );
+                }
+            }
+
+            $drift = array_merge($drift, $routeDrift);
+        }
+
+        $dbDomains = $dbRoutes->pluck('domain')->all();
+
+        foreach ($snapshot->keys() as $domain) {
+            $domain = (string) $domain;
+
+            if (in_array($domain, $dbDomains, true)) {
+                continue;
+            }
+
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: $domain,
+                kind: DriftKind::Extra,
+                summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+            );
+        }
+
+        return $drift;
     }
 
     /**

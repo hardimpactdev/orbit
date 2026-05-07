@@ -72,6 +72,21 @@ final readonly class ToolInstaller
             );
         }
 
+        $credentialsScript = $this->catalog->credentialsScript($tool, $config);
+
+        if ($credentialsScript !== null) {
+            $credResult = $this->remoteShell->run($targetNode, $credentialsScript, ['throw' => false]);
+
+            if ($credResult->successful()) {
+                $parsed = json_decode(trim($credResult->stdout), true);
+
+                if (is_array($parsed)) {
+                    $row->credentials = ['fields' => $parsed];
+                    $row->save();
+                }
+            }
+        }
+
         $row->refresh();
 
         return [
