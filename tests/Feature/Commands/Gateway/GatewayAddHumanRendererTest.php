@@ -95,15 +95,39 @@ it('shows human renderer by default', function (): void {
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('┌ Joining Gateway')
-        ->expectsOutputToContain('○ Resolve gateway')
-        ->expectsOutputToContain('○ Fetch trust material')
-        ->expectsOutputToContain('○ Trust gateway CA')
-        ->expectsOutputToContain('○ Verify gateway API')
-        ->expectsOutputToContain('○ Verify identity')
-        ->expectsOutputToContain('○ Store local config')
+        ->expectsOutputToContain('┌  Joining Gateway')
+        ->expectsOutputToContain('○  Resolve gateway')
+        ->expectsOutputToContain('○  Fetch trust material')
+        ->expectsOutputToContain('○  Trust gateway CA')
+        ->expectsOutputToContain('○  Verify gateway API')
+        ->expectsOutputToContain('○  Verify identity')
+        ->expectsOutputToContain('○  Store local config')
         ->expectsOutputToContain("Joined 'gateway-1' as 'control-1' (control)")
         ->assertSuccessful();
+});
+
+it('renders decorated add progress tree with ansi completed rows', function (): void {
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'data' => [
+                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+            ],
+        ]),
+    ]);
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('gateway:add', ['gateway_ip' => '10.6.0.2'], $output);
+    $text = $output->fetch();
+
+    expect($exitCode)->toBe(0);
+    expect($text)->toContain("\e[38;5;242m┌\e[39m  \e[97mJoining Gateway\e[39m")
+        ->and($text)->toContain("\e[32m●\e[39m")
+        ->and($text)->toContain('Working...')
+        ->and($text)->toContain("Joined 'gateway-1' as 'control-1' (control).");
 });
 
 it('shows converged progress tree', function (): void {
@@ -136,10 +160,10 @@ it('shows converged progress tree', function (): void {
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('┌ Joining Gateway')
-        ->expectsOutputToContain('○ Resolve gateway')
-        ->expectsOutputToContain('○ Verify gateway API')
-        ->expectsOutputToContain('○ Verify identity')
+        ->expectsOutputToContain('┌  Joining Gateway')
+        ->expectsOutputToContain('○  Resolve gateway')
+        ->expectsOutputToContain('○  Verify gateway API')
+        ->expectsOutputToContain('○  Verify identity')
         ->expectsOutputToContain('Gateway 10.6.0.2 is already configured')
         ->assertSuccessful();
 });

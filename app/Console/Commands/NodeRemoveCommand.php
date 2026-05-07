@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -27,6 +29,8 @@ use Throwable;
 class NodeRemoveCommand extends Command
 {
     use HandlesPromptCancellation;
+    use WithSpinner;
+    use WithStepTree;
 
     public function handle(): int
     {
@@ -134,22 +138,34 @@ class NodeRemoveCommand extends Command
             return $node;
         }
 
+        $grantsRemoved = 0;
+        $peerRemoved = false;
+        $operation = function () use ($node, &$grantsRemoved, &$peerRemoved): string {
+            $grantsRemoved = NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->orWhere('serving_node_id', $node->id)
+                ->delete();
+
+            $peerRemoved = WireGuardPeer::query()
+                ->where('node_id', $node->id)
+                ->delete() > 0;
+
+            app(DevelopmentDnsMappingEnactor::class)->remove($node);
+
+            $node->delete();
+
+            return 'removed';
+        };
+
         if (! $this->wantsJson()) {
-            $this->renderProgressTree($name);
+            $exitCode = $this->runNodeRemoveTree($name, $operation);
+
+            if ($exitCode !== self::SUCCESS) {
+                return self::FAILURE;
+            }
+        } else {
+            $operation();
         }
-
-        $grantsRemoved = NodeAccess::query()
-            ->where('consumer_node_id', $node->id)
-            ->orWhere('serving_node_id', $node->id)
-            ->delete();
-
-        $peerRemoved = WireGuardPeer::query()
-            ->where('node_id', $node->id)
-            ->delete() > 0;
-
-        app(DevelopmentDnsMappingEnactor::class)->remove($node);
-
-        $node->delete();
 
         $data = [
             'name' => $name,
@@ -180,15 +196,26 @@ class NodeRemoveCommand extends Command
 
     private function forwardRemove(string $name, bool $isSelfRemoval): int
     {
-        if (! $this->wantsJson()) {
-            $this->renderProgressTree($name);
-        }
-
         try {
-            /** @var NodeRemoveResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new RemoveNodeRequest($name, $this->option('force') ? 'force' : 'interactive_confirm'))
-                ->dto();
+            $dto = null;
+            $operation = function () use ($name, &$dto): string {
+                /** @var NodeRemoveResponse $dto */
+                $dto = app(GatewayConnector::class)
+                    ->send(new RemoveNodeRequest($name, $this->option('force') ? 'force' : 'interactive_confirm'))
+                    ->dto();
+
+                return 'removed';
+            };
+
+            if (! $this->wantsJson()) {
+                $exitCode = $this->runNodeRemoveTree($name, $operation);
+
+                if ($exitCode !== self::SUCCESS || ! $dto instanceof NodeRemoveResponse) {
+                    return self::FAILURE;
+                }
+            } else {
+                $operation();
+            }
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -280,14 +307,35 @@ class NodeRemoveCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    private function renderProgressTree(string $name): void
+    private function runNodeRemoveTree(string $name, callable $operation): int
     {
-        $this->line('┌ Remove Node');
-        $this->line('○ Validate removal');
-        $this->line('○ Remove node grants');
-        $this->line('○ Remove WireGuard peer');
-        $this->line('○ Remove node record');
-        $this->line("└ Node `{$name}` removed");
+        return $this->runStepTree(
+            'Remove Node',
+            [
+                [
+                    'label' => 'Validate removal',
+                    'doneLabel' => 'Validated removal',
+                    'run' => fn (): string => $name,
+                ],
+                [
+                    'label' => 'Remove node grants',
+                    'doneLabel' => 'Removed node grants',
+                    'run' => fn (): string => 'ready',
+                ],
+                [
+                    'label' => 'Remove WireGuard peer',
+                    'doneLabel' => 'Removed WireGuard peer',
+                    'run' => fn (): string => 'ready',
+                ],
+                [
+                    'label' => 'Remove node record',
+                    'doneLabel' => 'Removed node record',
+                    'run' => $operation,
+                ],
+            ],
+            doneFooter: "Node `{$name}` removed",
+            failFooter: "Failed to remove node `{$name}`",
+        );
     }
 
     private function confirmationMessage(string $name, bool $isSelfRemoval): string

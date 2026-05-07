@@ -48,6 +48,19 @@ describe('proxy add/remove commands', function (): void {
             ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('proxy.enactment_deferred');
     });
 
+    it('renders proxy add human progress through the shared step tree', function (): void {
+        createProxyMutationLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+
+        $this->artisan('proxy:add vite.docs.test --node=app-1 --upstream=http://127.0.0.1:5173')
+            ->expectsOutputToContain('┌  Adding Proxy Route')
+            ->expectsOutputToContain('●  Validated proxy route')
+            ->expectsOutputToContain('●  Applied and verified proxy route')
+            ->expectsOutputToContain('└  Proxy route intent saved')
+            ->expectsOutputToContain("Proxy route 'vite.docs.test' saved on node 'app-1'.")
+            ->assertSuccessful();
+    });
+
     it('removes custom proxy intent with force', function (): void {
         createProxyMutationLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
@@ -64,6 +77,20 @@ describe('proxy add/remove commands', function (): void {
             ->and($payload['success']['data']['route']['status'])->toBe('removed_with_drift')
             ->and($payload['success']['meta']['warnings'][0]['code'])->toBe('proxy.cleanup_deferred')
             ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())->toBeFalse();
+    });
+
+    it('renders proxy remove human progress through the shared step tree', function (): void {
+        createProxyMutationLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        ProxyRoute::factory()->create(['node_id' => $node->id, 'domain' => 'vite.docs.test']);
+
+        $this->artisan('proxy:remove vite.docs.test --force')
+            ->expectsOutputToContain('┌  Removing Proxy Route')
+            ->expectsOutputToContain('●  Confirmed destructive removal')
+            ->expectsOutputToContain('●  Removed backend proxy route')
+            ->expectsOutputToContain('└  Proxy route intent removed')
+            ->expectsOutputToContain("Proxy route 'vite.docs.test' removed.")
+            ->assertSuccessful();
     });
 
     it('requires destructive consent in json mode', function (): void {

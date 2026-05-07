@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
 use App\Concerns\LogsCommandActivity;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Exceptions\PromptAborted;
 use App\Models\LocalGatewaySettings;
@@ -32,6 +34,8 @@ class GatewayAddCommand extends Command implements Loggable
 {
     use HandlesPromptCancellation;
     use LogsCommandActivity;
+    use WithSpinner;
+    use WithStepTree;
 
     private const string LABEL = 'orbit';
 
@@ -42,6 +46,8 @@ class GatewayAddCommand extends Command implements Loggable
     private ?string $activityLocalNodeName = null;
 
     private ?string $activityResult = null;
+
+    private bool $progressTreeOpen = false;
 
     public function handle(FetchGatewayRootCa $fetch, WireGuardGatewayAddressResolver $gatewayAddressResolver): int
     {
@@ -191,21 +197,33 @@ class GatewayAddCommand extends Command implements Loggable
         }
 
         // 6. Fetch gateway root CA
+        $updateGatewayStep = null;
+        $gatewayStepWidth = 0;
+
         if (! $this->wantsJson()) {
-            $this->line('┌ Joining Gateway');
-            $this->line('○ Resolve gateway');
-            $this->line('○ Fetch trust material');
-            $this->line('○ Trust gateway CA');
-            $this->line('○ Verify gateway API');
-            $this->line('○ Verify identity');
-            $this->line('○ Store local config');
-            $this->line('└ Working...');
+            $gatewaySteps = [
+                ['label' => 'Resolve gateway'],
+                ['label' => 'Fetch trust material'],
+                ['label' => 'Trust gateway CA'],
+                ['label' => 'Verify gateway API'],
+                ['label' => 'Verify identity'],
+                ['label' => 'Store local config'],
+            ];
+            $gatewayStepWidth = $this->stepTreeLabelWidth($gatewaySteps);
+            $this->renderStepTree('Joining Gateway', $gatewaySteps);
+            $updateGatewayStep = $this->stepTreeUpdater(count($gatewaySteps));
+            $updateGatewayStep(0, $this->stepSuccess('Resolve gateway', $gatewayStepWidth, $gatewayIp));
+            $this->progressTreeOpen = true;
         }
 
         try {
             $caResult = $fetch->handle($gatewayIp);
         } catch (RuntimeException|ConnectionException $e) {
             return $this->mapFetchExceptionToError($e, $gatewayIp);
+        }
+
+        if ($updateGatewayStep !== null) {
+            $updateGatewayStep(1, $this->stepSuccess('Fetch trust material', $gatewayStepWidth, $caResult->sha256));
         }
 
         // 7. Persist CA PEM
@@ -237,6 +255,10 @@ class GatewayAddCommand extends Command implements Loggable
             );
         }
 
+        if ($updateGatewayStep !== null) {
+            $updateGatewayStep(2, $this->stepSuccess('Trust gateway CA', $gatewayStepWidth, 'trusted'));
+        }
+
         $verifyResult = $this->verifyGatewayApi($gatewayIp, $pemPath);
 
         if (array_key_exists('code', $verifyResult)) {
@@ -245,6 +267,11 @@ class GatewayAddCommand extends Command implements Loggable
                 message: $verifyResult['message'],
                 meta: $verifyResult['meta'],
             );
+        }
+
+        if ($updateGatewayStep !== null) {
+            $updateGatewayStep(3, $this->stepSuccess('Verify gateway API', $gatewayStepWidth, 'verified'));
+            $updateGatewayStep(4, $this->stepSuccess('Verify identity', $gatewayStepWidth, (string) ($verifyResult['local_node_name'] ?? 'verified')));
         }
 
         try {
@@ -263,6 +290,10 @@ class GatewayAddCommand extends Command implements Loggable
             );
         }
 
+        if ($updateGatewayStep !== null) {
+            $updateGatewayStep(5, $this->stepSuccess('Store local config', $gatewayStepWidth, 'stored'));
+        }
+
         // 11. Build result data
         $resultData = $this->buildSuccessData($verifyResult, 'added', $gatewayIp);
         $this->captureActivitySuccess($verifyResult, 'added', $gatewayIp);
@@ -273,8 +304,8 @@ class GatewayAddCommand extends Command implements Loggable
             $localNodeName = $verifyResult['local_node_name'] ?? 'control';
             $localNodeRole = $verifyResult['local_node_role'] ?? 'control';
             $footer = "Joined '{$gatewayName}' as '{$localNodeName}' ({$localNodeRole})";
-            $this->line("└ {$footer}");
-            $this->line('');
+            $this->finishStepTree("{$footer}.");
+            $this->progressTreeOpen = false;
         }
 
         if ($this->wantsJson()) {
@@ -507,12 +538,25 @@ class GatewayAddCommand extends Command implements Loggable
 
     private function renderConvergedTree(string $gatewayIp): void
     {
-        $this->line('┌ Joining Gateway');
-        $this->line('○ Resolve gateway');
-        $this->line('○ Verify gateway API');
-        $this->line('○ Verify identity');
-        $this->line("└ Gateway {$gatewayIp} is already configured");
-        $this->line('');
+        $this->runStepTree(
+            'Joining Gateway',
+            [
+                [
+                    'label' => 'Resolve gateway',
+                    'run' => fn (): string => $gatewayIp,
+                ],
+                [
+                    'label' => 'Verify gateway API',
+                    'run' => fn (): string => 'verified',
+                ],
+                [
+                    'label' => 'Verify identity',
+                    'run' => fn (): string => 'verified',
+                ],
+            ],
+            doneFooter: "Gateway {$gatewayIp} is already configured.",
+            failFooter: "Failed to verify gateway {$gatewayIp}.",
+        );
     }
 
     /**
@@ -555,6 +599,11 @@ class GatewayAddCommand extends Command implements Loggable
             ], JSON_THROW_ON_ERROR));
 
             return self::FAILURE;
+        }
+
+        if ($this->progressTreeOpen) {
+            $this->finishStepTree('Failed to join gateway.');
+            $this->progressTreeOpen = false;
         }
 
         $this->error($message);

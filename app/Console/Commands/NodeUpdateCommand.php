@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
@@ -30,6 +32,9 @@ use function Laravel\Prompts\text;
 #[Description('Update node registry metadata and role-owned settings')]
 class NodeUpdateCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(ReenactNodeArtifacts $reenactNodeArtifacts): int
     {
         $callerRole = $this->callerRole();
@@ -151,20 +156,33 @@ class NodeUpdateCommand extends Command
             );
         }
 
-        $this->renderProgressTree();
+        $changes = [];
+        $warnings = [];
+        $operation = function () use ($node, $providedFields, $reenactNodeArtifacts, &$changes, &$warnings): string {
+            $changes = $this->computeChanges($node, $providedFields);
 
-        $changes = $this->computeChanges($node, $providedFields);
+            if ($changes === []) {
+                return 'unchanged';
+            }
 
-        if ($changes === []) {
-            return $this->respondSuccess($name, []);
+            $node->update($changes);
+            $changedKeys = array_keys($changes);
+            $warnings = $this->reenactNodeArtifacts($reenactNodeArtifacts, $node->refresh(), $changedKeys);
+
+            return $warnings === [] ? 'updated' : 'updated with drift';
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runNodeUpdateTree($name, $operation);
+
+            if ($exitCode !== self::SUCCESS) {
+                return self::FAILURE;
+            }
+        } else {
+            $operation();
         }
 
-        $node->update($changes);
-
-        $changedKeys = array_keys($changes);
-        $warnings = $this->reenactNodeArtifacts($reenactNodeArtifacts, $node->refresh(), $changedKeys);
-
-        return $this->respondSuccess($name, $changedKeys, $warnings);
+        return $this->respondSuccess($name, array_keys($changes), $warnings);
     }
 
     private function resolveName(string $callerRole): ?string
@@ -270,13 +288,30 @@ class NodeUpdateCommand extends Command
      */
     private function forwardUpdate(string $name, array $providedFields): int
     {
-        $this->renderProgressTree();
-
         try {
-            /** @var NodeUpdateResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new UpdateNodeRequest($name, $providedFields))
-                ->dto();
+            $dto = null;
+            $operation = function () use ($name, $providedFields, &$dto): string {
+                /** @var NodeUpdateResponse $dto */
+                $dto = app(GatewayConnector::class)
+                    ->send(new UpdateNodeRequest($name, $providedFields))
+                    ->dto();
+
+                if ($dto->changed === []) {
+                    return 'unchanged';
+                }
+
+                return $dto->warnings === [] ? 'updated' : 'updated with drift';
+            };
+
+            if (! $this->wantsJson()) {
+                $exitCode = $this->runNodeUpdateTree($name, $operation);
+
+                if ($exitCode !== self::SUCCESS || ! $dto instanceof NodeUpdateResponse) {
+                    return self::FAILURE;
+                }
+            } else {
+                $operation();
+            }
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -558,9 +593,6 @@ class NodeUpdateCommand extends Command
             default => "Node '{$name}' updated",
         };
 
-        $this->line("└ {$footer}");
-        $this->line('');
-
         if ($changed === []) {
             $this->line("Node '{$name}' unchanged");
             $this->line('  No fields were modified.');
@@ -603,16 +635,75 @@ class NodeUpdateCommand extends Command
         return (bool) $this->option('json');
     }
 
-    private function renderProgressTree(): void
+    private function runNodeUpdateTree(string $name, callable $operation): int
     {
-        if ($this->wantsJson()) {
-            return;
-        }
+        $steps = [
+            [
+                'label' => 'Validate node',
+                'doneLabel' => 'Validated node',
+                'run' => fn (): string => $name,
+            ],
+            [
+                'label' => 'Apply and verify node change',
+                'doneLabel' => 'Applied and verified node change',
+                'run' => $operation,
+            ],
+            [
+                'label' => 'Apply node artifacts',
+                'doneLabel' => 'Applied node artifacts',
+                'run' => fn (): string => 'ready',
+            ],
+        ];
 
-        $this->line('┌ Updating Node');
-        $this->line('○ Validate node');
-        $this->line('○ Apply and verify node change');
-        $this->line('○ Apply node artifacts');
+        $width = $this->stepTreeLabelWidth($steps);
+        $this->renderStepTree('Updating Node', $steps);
+        $updateLine = $this->stepTreeUpdater(count($steps));
+        $allOk = true;
+        $footer = "Node '{$name}' updated";
+
+        $this->runSequentialWithSpinners(
+            array_map(fn (array $step, int $index): callable => function () use ($step, $index, $steps, $width, $updateLine): mixed {
+                $updateLine(
+                    $index,
+                    $this->stepTreeSpinner(self::$spinnerFrames[0], $steps[$index]['label'], $width),
+                );
+
+                return ($step['run'])();
+            }, $steps, array_keys($steps)),
+            fn (int $index, string $frame): mixed => $updateLine(
+                $index,
+                $this->stepTreeSpinner($frame, $steps[$index]['label'], $width),
+            ),
+            function (int $index, mixed $message) use (&$allOk, &$footer, $name, $steps, $width, $updateLine): void {
+                $message = (string) $message;
+                $label = $steps[$index]['doneLabel'];
+
+                if ($message === 'unchanged') {
+                    $footer = "Node '{$name}' unchanged";
+                }
+
+                if ($message === 'updated with drift') {
+                    $footer = "Node '{$name}' updated with drift";
+                }
+
+                if (str_starts_with($message, 'fail:')) {
+                    $allOk = false;
+                    $updateLine($index, $this->stepFailed($label, $width, substr($message, 5)));
+
+                    return;
+                }
+
+                $updateLine($index, $this->stepSuccess($label, $width, $message));
+            },
+            function (int $index, Throwable $e) use (&$allOk, $steps, $width, $updateLine): void {
+                $allOk = false;
+                $updateLine($index, $this->stepFailed($steps[$index]['doneLabel'], $width, $e->getMessage()));
+            },
+        );
+
+        $this->finishStepTree($allOk ? $footer : "Failed to update node '{$name}'");
+
+        return $allOk ? self::SUCCESS : self::FAILURE;
     }
 
     /**

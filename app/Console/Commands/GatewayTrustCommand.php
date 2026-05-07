@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\LogsCommandActivity;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Models\LocalGatewaySettings;
 use App\Services\Gateway\FetchGatewayRootCa;
@@ -26,6 +28,8 @@ use RuntimeException;
 class GatewayTrustCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
+    use WithSpinner;
+    use WithStepTree;
 
     private const string LABEL = 'orbit';
 
@@ -112,9 +116,7 @@ class GatewayTrustCommand extends Command implements Loggable
         $this->activityGatewayIp = $gatewayIp;
 
         if (! $this->wantsJson()) {
-            $this->line('┌ Trust Gateway CA');
-            $this->line('○ Resolve configured gateway');
-            $this->line('○ Fetch trust material');
+            return $this->executeGatewayTrustHuman($fetch, $installer, $gatewayUrl, $gatewayIp);
         }
 
         try {
@@ -148,13 +150,6 @@ class GatewayTrustCommand extends Command implements Loggable
         if ($this->isAlreadyTrusted($installer, $pemPath, $result->sha256)) {
             $this->captureActivitySuccess($result->sha256, 'already_trusted');
 
-            if (! $this->wantsJson()) {
-                $this->line('○ Check local trust');
-                $this->line("└ Gateway CA already trusted for {$gatewayUrl}");
-                $this->line('');
-                $this->line("Gateway CA already trusted for {$gatewayUrl}.");
-            }
-
             return $this->jsonSuccess([
                 'gateway_trust' => [
                     'gateway_url' => $gatewayUrl,
@@ -165,15 +160,8 @@ class GatewayTrustCommand extends Command implements Loggable
             ], ['trusted_at' => $this->trustedAt()->toIso8601String()]);
         }
 
-        if (! $this->wantsJson()) {
-            $this->line('○ Install local trust');
-            $this->line('○ Store trust metadata');
-        }
-
         try {
-            $installer->trustCa($pemPath, self::LABEL, $this->wantsJson() ? null : function (string $line): void {
-                $this->line($line);
-            });
+            $installer->trustCa($pemPath, self::LABEL);
         } catch (TrustStoreInstallException $e) {
             if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
                 return $this->failCommand(
@@ -206,12 +194,6 @@ class GatewayTrustCommand extends Command implements Loggable
             );
         }
 
-        if (! $this->wantsJson()) {
-            $this->line("└ Gateway CA trusted for {$gatewayUrl}");
-            $this->line('');
-            $this->line("Gateway CA trusted for {$gatewayUrl}.");
-        }
-
         $this->captureActivitySuccess($result->sha256, 'trusted');
 
         return $this->jsonSuccess([
@@ -222,6 +204,124 @@ class GatewayTrustCommand extends Command implements Loggable
                 'ca_sha256' => $result->sha256,
             ],
         ], ['trusted_at' => $this->trustedAt()->toIso8601String()]);
+    }
+
+    private function executeGatewayTrustHuman(
+        FetchGatewayRootCa $fetch,
+        TrustStoreInstaller $installer,
+        string $gatewayUrl,
+        string $gatewayIp,
+    ): int {
+        $result = null;
+        $pemPath = null;
+        $alreadyTrusted = false;
+
+        $exitCode = $this->runStepTree(
+            'Trust Gateway CA',
+            [
+                [
+                    'label' => 'Resolve configured gateway',
+                    'run' => fn (): string => $gatewayUrl,
+                ],
+                [
+                    'label' => 'Fetch trust material',
+                    'run' => function () use ($fetch, $gatewayUrl, $gatewayIp, &$result, &$pemPath): string {
+                        try {
+                            $result = $fetch->handle($gatewayIp);
+                        } catch (RuntimeException|ConnectionException $e) {
+                            if ($e instanceof ConnectionException || str_contains($e->getMessage(), 'HTTP')) {
+                                return "fail:Could not fetch the gateway CA from {$gatewayUrl}.";
+                            }
+
+                            return 'fail:Gateway returned invalid CA material.';
+                        }
+
+                        $pemPath = $this->persistPem($result);
+
+                        if ($pemPath === null) {
+                            return 'fail:Failed to store local gateway CA material.';
+                        }
+
+                        return $result->sha256;
+                    },
+                ],
+                [
+                    'label' => 'Check local trust',
+                    'run' => function () use ($installer, &$result, &$pemPath, &$alreadyTrusted): string {
+                        if (! $result instanceof RootCaFetchResult || $pemPath === null) {
+                            return 'fail:Gateway returned invalid CA material.';
+                        }
+
+                        $alreadyTrusted = $this->isAlreadyTrusted($installer, $pemPath, $result->sha256);
+
+                        return $alreadyTrusted ? 'already trusted' : 'trust required';
+                    },
+                ],
+                [
+                    'label' => 'Install local trust',
+                    'run' => function () use ($installer, &$result, &$pemPath, &$alreadyTrusted): string {
+                        if ($alreadyTrusted) {
+                            return 'skip:Already trusted';
+                        }
+
+                        if (! $result instanceof RootCaFetchResult || $pemPath === null) {
+                            return 'fail:Gateway returned invalid CA material.';
+                        }
+
+                        try {
+                            $installer->trustCa($pemPath, self::LABEL);
+                        } catch (TrustStoreInstallException $e) {
+                            if ($e->reason === TrustStoreInstallReason::UnsupportedPlatform) {
+                                return 'fail:This platform does not support automatic gateway CA trust installation.';
+                            }
+
+                            return 'fail:Failed to install the gateway CA into the local trust store.';
+                        }
+
+                        return 'trusted';
+                    },
+                ],
+                [
+                    'label' => 'Store trust metadata',
+                    'run' => function () use ($gatewayUrl, $gatewayIp, &$result, &$pemPath, &$alreadyTrusted): string {
+                        if (! $result instanceof RootCaFetchResult || $pemPath === null) {
+                            return 'fail:Gateway returned invalid CA material.';
+                        }
+
+                        if ($alreadyTrusted) {
+                            return 'skip:Already trusted';
+                        }
+
+                        try {
+                            LocalGatewaySettings::current()->fill([
+                                'gateway_url' => $gatewayUrl,
+                                'gateway_wg_ip' => $gatewayIp,
+                                'ca_sha256' => $result->sha256,
+                                'ca_pem_path' => $pemPath,
+                                'trusted_at' => now(),
+                            ])->save();
+                        } catch (RuntimeException) {
+                            return 'fail:Failed to write local trust metadata.';
+                        }
+
+                        return 'metadata stored';
+                    },
+                ],
+            ],
+            doneFooter: "Gateway CA trust completed for {$gatewayUrl}.",
+            failFooter: "Failed to trust Gateway CA for {$gatewayUrl}.",
+        );
+
+        if ($exitCode !== self::SUCCESS || ! $result instanceof RootCaFetchResult) {
+            return self::FAILURE;
+        }
+
+        $status = $alreadyTrusted ? 'already_trusted' : 'trusted';
+        $statusLabel = $status === 'already_trusted' ? 'already trusted' : 'trusted';
+        $this->captureActivitySuccess($result->sha256, $status);
+        $this->line("Gateway CA {$statusLabel} for {$gatewayUrl}.");
+
+        return self::SUCCESS;
     }
 
     private function finishActivityLog(): void

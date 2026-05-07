@@ -209,11 +209,15 @@ trait WithStepTree
         $allOk = true;
 
         $this->runSequentialWithSpinners(
-            array_map(fn (array $s): callable => function () use ($s, $reporter): mixed {
+            array_map(fn (array $s, int $i): callable => function () use ($s, $i, $reporter, $updateLine, $steps, $width): mixed {
+                $updateLine(
+                    $i,
+                    $this->stepTreeSpinner(self::$spinnerFrames[0], $steps[$i]['label'], $width),
+                );
                 $reporter->stepStart($s['key']);
 
                 return ($s['run'])();
-            }, $steps),
+            }, $steps, array_keys($steps)),
             fn (int $i, string $frame) => $updateLine(
                 $i,
                 $this->stepTreeSpinner($frame, $steps[$i]['label'], $width),

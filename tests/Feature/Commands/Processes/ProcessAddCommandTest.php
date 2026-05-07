@@ -16,6 +16,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 uses(RefreshDatabase::class);
 
@@ -242,7 +244,7 @@ describe('process:add base contract', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 350),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
@@ -251,13 +253,44 @@ describe('process:add base contract', function (): void {
             'processCommand' => 'npm run dev',
             '--app' => 'docs',
         ])
-            ->expectsOutput('┌ Adding Process')
-            ->expectsOutput('○ Validate process')
-            ->expectsOutput('○ Create process intent')
-            ->expectsOutput('○ Render runtime units')
-            ->expectsOutput('└ Process added')
+            ->expectsOutputToContain('  ┌  Adding Process')
+            ->expectsOutputToContain('  │')
+            ->expectsOutputToContain('  ○  Validate process')
+            ->expectsOutputToContain('  ○  Create process intent')
+            ->expectsOutputToContain('  ○  Render runtime units')
+            ->expectsOutputToContain('  ●  Validated process')
+            ->expectsOutputToContain('  └  Process added')
             ->expectsOutput("Process 'vite' added for app 'docs'")
             ->assertSuccessful();
+    });
+
+    it('renders a decorated process add progress tree', function (): void {
+        createProcessAddLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        app()->instance(RemoteShell::class, new ProcessAddRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $output = new BufferedOutput(OutputInterface::VERBOSITY_NORMAL, true);
+
+        Artisan::call('process:add', [
+            'name' => 'vite',
+            'processCommand' => 'npm run dev',
+            '--app' => 'docs',
+        ], $output);
+
+        $text = $output->fetch();
+
+        expect($text)
+            ->toContain('┌')
+            ->toContain('│')
+            ->toContain('└')
+            ->toContain("\e[38;5;242m○  Validate process\e[39m")
+            ->toContain("\e[32m●\e[39m")
+            ->toContain('Process added');
     });
 });
 
@@ -275,6 +308,9 @@ final class ProcessAddRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        $result = array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        usleep($result->durationMs * 1000);
+
+        return $result;
     }
 }

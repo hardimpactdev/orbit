@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Firewall\StoreFirewallRuleRequest;
@@ -16,6 +18,9 @@ use Throwable;
 
 abstract class AbstractFirewallStoreCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     abstract protected function firewallAction(): string;
 
     public function handle(FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
@@ -24,6 +29,10 @@ abstract class AbstractFirewallStoreCommand extends Command
 
         if (is_int($input)) {
             return $input;
+        }
+
+        if (! $this->wantsJson()) {
+            return $this->handleStoreHuman($input, $intent, $callerRoleResolver);
         }
 
         try {
@@ -54,6 +63,81 @@ abstract class AbstractFirewallStoreCommand extends Command
                 message: 'Gateway connection is required to manage firewall rules.',
                 meta: [],
             );
+        }
+
+        return $this->successPayload($result['data'], $result['meta']);
+    }
+
+    /**
+     * @param  array{name: string, node: string, direction: string, source: string, destination: ?string, port: string, protocol: string, reason: ?string}  $input
+     */
+    private function handleStoreHuman(array $input, FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    {
+        $result = null;
+
+        $exitCode = $this->runStepTree(
+            'Managing Firewall Rule',
+            [
+                [
+                    'label' => 'Validate firewall target',
+                    'run' => fn (): string => (string) $input['node'],
+                ],
+                [
+                    'label' => 'Check baseline policy boundary',
+                    'run' => fn (): string => $input['direction'],
+                ],
+                [
+                    'label' => 'Apply and verify firewall rule',
+                    'run' => function () use ($input, $intent, $callerRoleResolver, &$result): string {
+                        try {
+                            if ($callerRoleResolver->resolve() !== 'gateway') {
+                                /** @var FirewallRuleMutationResponse $dto */
+                                $dto = app(GatewayConnector::class)
+                                    ->send(new StoreFirewallRuleRequest(
+                                        action: $this->firewallAction(),
+                                        name: $input['name'],
+                                        node: $input['node'],
+                                        direction: $input['direction'],
+                                        source: $input['source'],
+                                        destination: $input['destination'],
+                                        port: $input['port'],
+                                        protocol: $input['protocol'],
+                                        reason: $input['reason'],
+                                    ))
+                                    ->dto();
+
+                                $result = ['data' => $dto->data, 'meta' => $dto->meta];
+
+                                return 'gateway updated';
+                            }
+
+                            $result = $intent->store(
+                                action: $this->firewallAction(),
+                                name: $input['name'],
+                                nodeName: $input['node'],
+                                direction: $input['direction'],
+                                source: $input['source'],
+                                destination: $input['destination'],
+                                port: $input['port'],
+                                protocol: $input['protocol'],
+                                reason: $input['reason'],
+                            );
+
+                            return 'rule saved';
+                        } catch (GatewayApiException $e) {
+                            return 'fail:'.($e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to manage firewall rules.');
+                        } catch (Throwable) {
+                            return 'fail:Gateway connection is required to manage firewall rules.';
+                        }
+                    },
+                ],
+            ],
+            doneFooter: 'Firewall rule intent saved.',
+            failFooter: 'Failed to save firewall rule intent.',
+        );
+
+        if ($exitCode !== self::SUCCESS || $result === null) {
+            return self::FAILURE;
         }
 
         return $this->successPayload($result['data'], $result['meta']);
@@ -133,11 +217,6 @@ abstract class AbstractFirewallStoreCommand extends Command
         }
 
         $rule = is_array($data['rule'] ?? null) ? $data['rule'] : [];
-        $this->line('┌ Managing Firewall Rule');
-        $this->line('○ Validate firewall target');
-        $this->line('○ Check baseline policy boundary');
-        $this->line('○ Apply and verify firewall rule');
-        $this->line('└ Firewall rule intent saved');
         $this->line("Firewall rule '".(string) ($rule['name'] ?? '')."' saved on node '".(string) ($rule['node'] ?? '')."'.");
 
         $this->renderWarnings($meta);

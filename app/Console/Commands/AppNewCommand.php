@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Actions\Apps\CreateAppSourceOnNode;
 use App\Actions\Apps\EnactAppRuntime;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
@@ -33,6 +35,9 @@ use function Laravel\Prompts\text;
 #[Description('Create a new app on an app node')]
 class AppNewCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
     public function handle(CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): int
@@ -108,24 +113,142 @@ class AppNewCommand extends Command
             );
         }
 
-        $source = $createAppSourceOnNode->handle(
-            node: $node,
-            name: $input['name'],
-            repository: $input['repository'],
-            domain: $input['domain'],
-        );
+        if (! $this->wantsJson()) {
+            return $this->createForHuman($input, $node, $createAppSourceOnNode, $enactAppRuntime);
+        }
+
+        $source = $this->createSource($input, $node, $createAppSourceOnNode);
 
         if (! $source['result']->successful()) {
             return $this->failCommand(
                 code: 'app.source_creation_failed',
                 message: "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
                 meta: [
-                    'reason' => trim($source['result']->output()) ?: 'source creation failed',
+                    'reason' => trim((string) $source['result']->output()) ?: 'source creation failed',
                     ...($input['repository'] !== null ? ['transport' => $this->repositoryTransport($input['repository'])] : []),
                 ],
             );
         }
 
+        $app = $this->createAppRecord($input, $node, $source);
+        $warnings = $enactAppRuntime->handle($app);
+
+        return $this->successCommand([
+            'result' => ['action' => 'created'],
+            'app' => $this->appPayload($app),
+        ], $warnings);
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function createForHuman(
+        array $input,
+        Node $node,
+        CreateAppSourceOnNode $createAppSourceOnNode,
+        EnactAppRuntime $enactAppRuntime,
+    ): int {
+        $source = null;
+        $app = null;
+        $warnings = [];
+        $failureMessage = null;
+
+        $exitCode = $this->runStepTree(
+            'Creating App',
+            [
+                [
+                    'key' => 'create_source',
+                    'label' => 'Create app source',
+                    'doneLabel' => 'Created app source',
+                    'run' => function () use ($input, $node, $createAppSourceOnNode, &$source, &$failureMessage): string {
+                        $source = $this->createSource($input, $node, $createAppSourceOnNode);
+
+                        if (! $source['result']->successful()) {
+                            $failureMessage = "Source creation for app '{$input['name']}' failed on node '{$node->name}'.";
+
+                            return 'fail:'.$this->sourceFailureReason($source, $input);
+                        }
+
+                        return (string) $source['path'];
+                    },
+                ],
+                [
+                    'key' => 'register_app',
+                    'label' => 'Apply and verify app registration',
+                    'doneLabel' => 'Applied and verified app registration',
+                    'run' => function () use ($input, $node, &$source, &$app): string {
+                        if (! is_array($source)) {
+                            return 'fail:App source was not created.';
+                        }
+
+                        $app = $this->createAppRecord($input, $node, $source);
+
+                        return (string) $app->name;
+                    },
+                ],
+                [
+                    'key' => 'apply_php_fpm',
+                    'label' => 'Apply PHP-FPM configuration',
+                    'doneLabel' => 'Applied PHP-FPM configuration',
+                    'run' => function () use ($enactAppRuntime, &$app, &$warnings): string {
+                        if (! $app instanceof App) {
+                            return 'fail:App was not registered.';
+                        }
+
+                        $warnings = $enactAppRuntime->handle($app);
+
+                        return 'ready';
+                    },
+                ],
+                [
+                    'key' => 'apply_routes',
+                    'label' => 'Apply proxy routes',
+                    'doneLabel' => 'Applied proxy routes',
+                    'run' => fn (): string => 'ready',
+                ],
+            ],
+            doneFooter: "App '{$input['name']}' created",
+            failFooter: "Failed to create app '{$input['name']}'.",
+        );
+
+        if ($exitCode !== self::SUCCESS) {
+            $this->error($failureMessage ?? "Failed to create app '{$input['name']}'.");
+
+            return self::FAILURE;
+        }
+
+        if (! $app instanceof App) {
+            $this->error("Failed to create app '{$input['name']}'.");
+
+            return self::FAILURE;
+        }
+
+        return $this->successCommand([
+            'result' => ['action' => 'created'],
+            'app' => $this->appPayload($app),
+        ], $warnings);
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @return array{path: string, result: mixed}
+     */
+    private function createSource(array $input, Node $node, CreateAppSourceOnNode $createAppSourceOnNode): array
+    {
+        return $createAppSourceOnNode->handle(
+            node: $node,
+            name: $input['name'],
+            repository: $input['repository'],
+            domain: $input['domain'],
+        );
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{path: string, result: mixed}  $source
+     */
+    private function createAppRecord(array $input, Node $node, array $source): App
+    {
         $app = App::query()->create([
             'name' => $input['name'],
             'node_id' => $node->id,
@@ -139,12 +262,23 @@ class AppNewCommand extends Command
         ]);
 
         $app->setRelation('node', $node);
-        $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand([
-            'result' => ['action' => 'created'],
-            'app' => $this->appPayload($app),
-        ], $warnings);
+        return $app;
+    }
+
+    /**
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{path: string, result: mixed}  $source
+     */
+    private function sourceFailureReason(array $source, array $input): string
+    {
+        $reason = trim((string) $source['result']->output()) ?: 'source creation failed';
+
+        if ($input['repository'] === null) {
+            return $reason;
+        }
+
+        return $reason.' ('.$this->repositoryTransport($input['repository']).')';
     }
 
     /**
@@ -417,12 +551,6 @@ class AppNewCommand extends Command
             /** @var array{name?: string, node?: string, environment?: string, url?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
 
-            $this->line('┌ Creating App');
-            $this->line('○ Create app source');
-            $this->line('○ Apply and verify app registration');
-            $this->line('○ Apply PHP-FPM configuration');
-            $this->line('○ Apply proxy routes');
-            $this->line("└ App '".(string) ($app['name'] ?? '')."' created");
             $this->line(sprintf(
                 "App '%s' created successfully on node '%s'.",
                 (string) ($app['name'] ?? ''),

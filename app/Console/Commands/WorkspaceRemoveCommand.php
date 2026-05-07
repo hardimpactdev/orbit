@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\RemoveWorkspace;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
@@ -27,6 +29,9 @@ use Throwable;
 #[Description('Remove a workspace and its owned artifacts')]
 class WorkspaceRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(RemoveWorkspace $removeWorkspace): int
     {
         $callerRole = $this->callerRole();
@@ -90,13 +95,35 @@ class WorkspaceRemoveCommand extends Command
             );
         }
 
+        $keepFiles = $this->option('keep-files') === true;
+        $workspace = $matches->firstOrFail();
+
         if (! $this->wantsJson()) {
-            $this->renderProgressTree($this->option('keep-files') === true);
+            $result = null;
+            $exitCode = $this->runStepTree(
+                'Removing Workspace',
+                $this->progressSteps($keepFiles, function () use ($removeWorkspace, $workspace, $keepFiles, &$result): array {
+                    $result = $removeWorkspace->handle(
+                        workspace: $workspace,
+                        keepFiles: $keepFiles,
+                    );
+
+                    return $result;
+                }),
+                doneFooter: "Workspace '{$workspace->name}' removed.",
+                failFooter: "Failed to remove workspace '{$workspace->name}'.",
+            );
+
+            if ($exitCode !== self::SUCCESS || ! is_array($result)) {
+                return self::FAILURE;
+            }
+
+            return $this->successCommand($result);
         }
 
         $result = $removeWorkspace->handle(
-            workspace: $matches->firstOrFail(),
-            keepFiles: $this->option('keep-files') === true,
+            workspace: $workspace,
+            keepFiles: $keepFiles,
         );
 
         return $this->successCommand($result);
@@ -211,16 +238,53 @@ class WorkspaceRemoveCommand extends Command
         return $this->option('json') === true;
     }
 
-    private function renderProgressTree(bool $keepFiles): void
+    /**
+     * @return list<array{key: string, label: string, doneLabel: string, run: callable}>
+     */
+    private function progressSteps(bool $keepFiles, callable $remove): array
     {
-        $this->line('┌ Removing Workspace');
-        $this->line('○ Apply and verify workspace removal');
-        $this->line('○ Stopping traffic for workspace hostname');
-        $this->line('○ Stopping inherited processes');
-        $this->line('○ Running teardown steps');
-        $this->line('○ Cleaning workspace PHP-FPM pool');
-        $this->line($keepFiles ? '● Removing worktree skipped because `--keep-files` was set' : '○ Removing worktree');
-        $this->line('└ Working...');
+        return [
+            [
+                'key' => 'remove_workspace',
+                'label' => 'Apply and verify workspace removal',
+                'doneLabel' => 'Applied and verified workspace removal',
+                'run' => function () use ($remove): string {
+                    $remove();
+
+                    return 'removed';
+                },
+            ],
+            [
+                'key' => 'stop_traffic',
+                'label' => 'Stop traffic for workspace hostname',
+                'doneLabel' => 'Stopped traffic for workspace hostname',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'stop_processes',
+                'label' => 'Stop inherited processes',
+                'doneLabel' => 'Stopped inherited processes',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'run_teardown',
+                'label' => 'Run teardown steps',
+                'doneLabel' => 'Ran teardown steps',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'clean_php_fpm',
+                'label' => 'Clean workspace PHP-FPM pool',
+                'doneLabel' => 'Cleaned workspace PHP-FPM pool',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'remove_worktree',
+                'label' => 'Remove worktree',
+                'doneLabel' => $keepFiles ? 'Skipped removing worktree' : 'Removed worktree',
+                'run' => fn (): string => $keepFiles ? 'skip:--keep-files was set' : 'done',
+            ],
+        ];
     }
 
     /**

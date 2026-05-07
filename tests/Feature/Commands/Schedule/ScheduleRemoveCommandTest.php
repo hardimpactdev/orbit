@@ -147,6 +147,32 @@ it('forwards non-gateway schedule removes through the typed gateway request', fu
         ->and($payload['success']['data']['schedule']['name'])->toBe('laravel-scheduler');
 });
 
+it('renders human progress and success prose', function (): void {
+    createScheduleRemoveLocalNode('gateway');
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+    ]);
+
+    $this->artisan('schedule:remove', [
+        'name' => 'laravel-scheduler',
+        '--app' => 'docs',
+        '--force' => true,
+    ])
+        ->expectsOutputToContain('  ┌  Removing Schedule')
+        ->expectsOutputToContain('  │')
+        ->expectsOutputToContain('  ○  Resolve schedule')
+        ->expectsOutputToContain('  ○  Apply and verify removal')
+        ->expectsOutputToContain('  ○  Notify Orbit Scheduler')
+        ->expectsOutputToContain('  ●  Resolved schedule')
+        ->expectsOutputToContain('  └  Schedule removed')
+        ->expectsOutput("Schedule 'laravel-scheduler' removed.")
+        ->assertSuccessful();
+});
+
 it('exposes schedule remove over the authenticated gateway API', function (): void {
     $caller = Node::factory()->create([
         'name' => 'control-1',

@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Spatie\Activitylog\Models\Activity;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 uses(RefreshDatabase::class);
 
@@ -136,6 +138,55 @@ it('forwards non-gateway schedule adds through the typed gateway request', funct
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['data']['schedule']['name'])->toBe('laravel-scheduler');
+});
+
+it('renders human progress and success prose', function (): void {
+    createScheduleAddLocalNode('gateway');
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+    $this->artisan('schedule:add', [
+        'name' => 'laravel-scheduler',
+        '--app' => 'docs',
+        '--command' => 'php artisan schedule:run',
+        '--interval' => 'every minute',
+    ])
+        ->expectsOutputToContain('  ┌  Adding Schedule')
+        ->expectsOutputToContain('  │')
+        ->expectsOutputToContain('  ○  Validate schedule')
+        ->expectsOutputToContain('  ○  Create schedule intent')
+        ->expectsOutputToContain('  ○  Confirm scheduler pickup')
+        ->expectsOutputToContain('  ●  Validated schedule')
+        ->expectsOutputToContain('  └  Schedule added')
+        ->expectsOutput("Schedule 'laravel-scheduler' added.")
+        ->assertSuccessful();
+});
+
+it('renders a decorated schedule add progress tree', function (): void {
+    createScheduleAddLocalNode('gateway');
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+    $output = new BufferedOutput(OutputInterface::VERBOSITY_NORMAL, true);
+
+    Artisan::call('schedule:add', [
+        'name' => 'laravel-scheduler',
+        '--app' => 'docs',
+        '--command' => 'php artisan schedule:run',
+        '--interval' => 'every minute',
+    ], $output);
+
+    $text = $output->fetch();
+
+    expect($text)
+        ->toContain('┌')
+        ->toContain('│')
+        ->toContain('└')
+        ->toContain("\e[38;5;242m○  Validate schedule\e[39m")
+        ->toContain("\e[32m●\e[39m")
+        ->toContain('Schedule added');
 });
 
 it('exposes schedule add over the authenticated gateway API', function (): void {

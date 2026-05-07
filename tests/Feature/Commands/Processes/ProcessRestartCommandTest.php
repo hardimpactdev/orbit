@@ -177,11 +177,11 @@ describe('process:restart base contract', function (): void {
             'name' => 'vite',
             '--app' => 'docs',
         ])
-            ->expectsOutput('┌ Restarting Processes')
-            ->expectsOutput('○ Resolve runtime units')
-            ->expectsOutput('○ Restart runtime units')
-            ->expectsOutput('○ Record process events')
-            ->expectsOutput('└ Working...')
+            ->expectsOutputToContain('┌  Restarting Processes')
+            ->expectsOutputToContain('○  Resolve runtime units')
+            ->expectsOutputToContain('○  Restart runtime units')
+            ->expectsOutputToContain('○  Record process events')
+            ->expectsOutputToContain('└  Working...')
             ->expectsOutput("Process 'vite' restarted for app 'docs'")
             ->assertSuccessful();
     });

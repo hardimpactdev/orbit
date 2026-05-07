@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\RemoveProcess;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\RemoveProcessRequest;
@@ -26,6 +28,9 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove an app process definition')]
 class ProcessRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(RemoveProcess $removeProcess, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -50,38 +55,80 @@ class ProcessRemoveCommand extends Command
             return $consent;
         }
 
-        try {
-            if ($callerRole === 'control') {
-                return $this->forwardRemove($input);
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $input, $removeProcess, &$result, &$failure): string {
+            try {
+                if ($callerRole === 'control') {
+                    $result = $this->forwardRemoveResult($input);
+
+                    return 'gateway accepted';
+                }
+
+                $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+
+                if (! $app instanceof App) {
+                    $failure = [
+                        'code' => 'validation_failed',
+                        'message' => "App '{$input['app']}' not found.",
+                        'meta' => ['field' => 'app', 'value' => $input['app']],
+                    ];
+
+                    return "fail:{$failure['message']}";
+                }
+
+                $result = $removeProcess->handle($app, $input['name']);
+
+                return 'process removed';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to remove processes.',
+                    'meta' => $e->errorMeta(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to remove processes.',
+                    'meta' => [],
+                ];
+
+                return "fail:{$failure['message']}";
             }
+        };
 
-            $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Removing Process', [
+                [
+                    'label' => 'Validate process',
+                    'doneLabel' => 'Validated process',
+                    'run' => fn (): string => 'input resolved',
+                ],
+                [
+                    'label' => 'Remove runtime units',
+                    'doneLabel' => 'Removed runtime units',
+                    'run' => fn (): string => 'runtime units removed',
+                ],
+                [
+                    'label' => 'Apply and verify process removal',
+                    'doneLabel' => 'Applied and verified process removal',
+                    'run' => $operation,
+                ],
+            ], doneFooter: 'Process removed', failFooter: 'Process remove failed');
 
-            if (! $app instanceof App) {
-                return $this->failCommand(
-                    code: 'validation_failed',
-                    message: "App '{$input['app']}' not found.",
-                    meta: ['field' => 'app', 'value' => $input['app']],
-                );
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'])
+                    : self::FAILURE;
             }
+        } else {
+            $operation();
 
-            if (! $this->wantsJson()) {
-                $this->renderProgressTree();
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta']);
             }
-
-            $result = $removeProcess->handle($app, $input['name']);
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to remove processes.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to remove processes.',
-                meta: [],
-            );
         }
 
         return $this->successPayload($result['data'], $result['warnings']);
@@ -89,15 +136,16 @@ class ProcessRemoveCommand extends Command
 
     /**
      * @param  array{name: string, app: string}  $input
+     * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    private function forwardRemove(array $input): int
+    private function forwardRemoveResult(array $input): array
     {
         /** @var ProcessRemoveResponse $dto */
         $dto = app(GatewayConnector::class)
             ->send(new RemoveProcessRequest(app: $input['app'], name: $input['name']))
             ->dto();
 
-        return $this->successPayload($dto->data, $dto->warnings);
+        return ['data' => $dto->data, 'warnings' => $dto->warnings];
     }
 
     /**
@@ -141,15 +189,6 @@ class ProcessRemoveCommand extends Command
             message: 'Operation cancelled.',
             meta: ['field' => 'force'],
         );
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Removing Process');
-        $this->line('○ Validate process');
-        $this->line('○ Remove runtime units');
-        $this->line('○ Apply and verify process removal');
-        $this->line('└ Working...');
     }
 
     /**

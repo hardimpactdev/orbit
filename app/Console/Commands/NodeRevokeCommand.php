@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -26,6 +28,8 @@ use Throwable;
 class NodeRevokeCommand extends Command
 {
     use HandlesPromptCancellation;
+    use WithSpinner;
+    use WithStepTree;
 
     public function handle(): int
     {
@@ -121,10 +125,25 @@ class NodeRevokeCommand extends Command
         }
 
         try {
-            /** @var NodeRevokeResponse $dto */
-            $dto = app(GatewayConnector::class)
-                ->send(new RevokeNodeRequest($consumerName, $servingName))
-                ->dto();
+            $dto = null;
+            $operation = function () use ($consumerName, $servingName, &$dto): string {
+                /** @var NodeRevokeResponse $dto */
+                $dto = app(GatewayConnector::class)
+                    ->send(new RevokeNodeRequest($consumerName, $servingName))
+                    ->dto();
+
+                return 'revoked';
+            };
+
+            if (! $this->wantsJson()) {
+                $exitCode = $this->runNodeRevokeTree($consumerName, $servingName, false, false, $operation);
+
+                if ($exitCode !== self::SUCCESS || ! $dto instanceof NodeRevokeResponse) {
+                    return self::FAILURE;
+                }
+            } else {
+                $operation();
+            }
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -164,7 +183,15 @@ class NodeRevokeCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->renderProgressTree($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
+        $footer = $alreadyAbsent
+            ? "Access from '{$consumerName}' to '{$servingName}' was already revoked"
+            : "Access from '{$consumerName}' to '{$servingName}' revoked";
+
+        $this->line($footer);
+
+        if ($isSelfLockout) {
+            $this->line('  This machine no longer has Orbit gateway access.');
+        }
 
         return self::SUCCESS;
     }
@@ -252,14 +279,24 @@ class NodeRevokeCommand extends Command
             ->where('serving_node_id', $serving->id)
             ->exists();
 
-        if (! $this->wantsJson()) {
-            $this->renderProgressTree($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
-        }
+        $operation = function () use ($consumer, $serving): string {
+            NodeAccess::query()
+                ->where('consumer_node_id', $consumer->id)
+                ->where('serving_node_id', $serving->id)
+                ->delete();
 
-        NodeAccess::query()
-            ->where('consumer_node_id', $consumer->id)
-            ->where('serving_node_id', $serving->id)
-            ->delete();
+            return 'revoked';
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runNodeRevokeTree($consumerName, $servingName, $alreadyAbsent, $isSelfLockout, $operation);
+
+            if ($exitCode !== self::SUCCESS) {
+                return self::FAILURE;
+            }
+        } else {
+            $operation();
+        }
 
         return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
     }
@@ -325,22 +362,34 @@ class NodeRevokeCommand extends Command
         );
     }
 
-    private function renderProgressTree(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout): void
+    private function runNodeRevokeTree(string $consumerName, string $servingName, bool $alreadyAbsent, bool $isSelfLockout, callable $operation): int
     {
-        $this->line('┌ Revoke Grant');
-        $this->line('○ Validate nodes');
-        $this->line('○ Verify authorization');
-        $this->line('○ Revoke access');
+        $footer = $alreadyAbsent
+            ? "Access from '{$consumerName}' to '{$servingName}' was already revoked"
+            : "Access from '{$consumerName}' to '{$servingName}' revoked";
 
-        if ($alreadyAbsent) {
-            $this->line("└ Access from '{$consumerName}' to '{$servingName}' was already revoked");
-        } else {
-            $this->line("└ Access from '{$consumerName}' to '{$servingName}' revoked");
-        }
-
-        if ($isSelfLockout) {
-            $this->line('  This machine no longer has Orbit gateway access.');
-        }
+        return $this->runStepTree(
+            'Revoke Grant',
+            [
+                [
+                    'label' => 'Validate nodes',
+                    'doneLabel' => 'Validated nodes',
+                    'run' => fn (): string => "{$consumerName} -> {$servingName}",
+                ],
+                [
+                    'label' => 'Verify authorization',
+                    'doneLabel' => 'Verified authorization',
+                    'run' => fn (): string => 'authorized',
+                ],
+                [
+                    'label' => 'Revoke access',
+                    'doneLabel' => $alreadyAbsent ? 'Access already revoked' : 'Revoked access',
+                    'run' => $operation,
+                ],
+            ],
+            doneFooter: $footer,
+            failFooter: "Failed to revoke access from '{$consumerName}' to '{$servingName}'",
+        );
     }
 
     /**

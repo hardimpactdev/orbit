@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use App\Actions\Profile\ShowProfile;
 use App\Concerns\LogsCommandActivity;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
@@ -36,6 +38,8 @@ use function Laravel\Prompts\datatable;
 class ProfileCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
+    use WithSpinner;
+    use WithStepTree;
 
     private ?string $activityTarget = null;
 
@@ -730,12 +734,7 @@ class ProfileCommand extends Command implements Loggable
         $status = $request['status'] ?? '-';
         $totalMs = is_numeric($timings['total_ms'] ?? null) ? (float) $timings['total_ms'] : 0.0;
 
-        $this->line('┌ Profiling '.($request['uri'] ?? '/'));
-        $this->line('● Resolved target');
-        $this->line('● Authorized profile read');
-        $this->line('● Sent request');
-        $this->line('● Collected timing data');
-        $this->line("└ Profiled {$url} in ".$this->formatMs($totalMs).'ms');
+        $this->renderProfileProgressTree($request, $url, $totalMs);
         $this->newLine();
         $this->line("GET {$url} {$status} in ".$this->formatMs($totalMs).'ms');
         $this->line('DNS '.$this->formatMsValue($timings, 'dns_ms'));
@@ -745,6 +744,40 @@ class ProfileCommand extends Command implements Loggable
         $this->renderToolbarHuman(is_array($data['toolbar'] ?? null) ? $data['toolbar'] : null);
         $this->line('Download response '.$this->formatMsValue($timings, 'download_ms'));
         $this->line('Total '.$this->formatMs($totalMs).'ms');
+    }
+
+    /**
+     * @param  array<string, mixed>  $request
+     */
+    private function renderProfileProgressTree(array $request, string $url, float $totalMs): void
+    {
+        $this->runStepTree(
+            'Profiling '.($request['uri'] ?? '/'),
+            [
+                [
+                    'label' => 'Resolve target',
+                    'doneLabel' => 'Resolved target',
+                    'run' => fn (): string => '',
+                ],
+                [
+                    'label' => 'Authorize profile read',
+                    'doneLabel' => 'Authorized profile read',
+                    'run' => fn (): string => '',
+                ],
+                [
+                    'label' => 'Send request',
+                    'doneLabel' => 'Sent request',
+                    'run' => fn (): string => '',
+                ],
+                [
+                    'label' => 'Collect timing data',
+                    'doneLabel' => 'Collected timing data',
+                    'run' => fn (): string => '',
+                ],
+            ],
+            doneFooter: "Profiled {$url} in ".$this->formatMs($totalMs).'ms',
+            failFooter: 'Failed to profile request',
+        );
     }
 
     /**

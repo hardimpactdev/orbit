@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
@@ -24,6 +26,9 @@ use function Laravel\Prompts\select;
 #[Description('Choose, show, set, or clear the local default development app node')]
 class NodeDefaultCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(): int
     {
         $callerRole = $this->callerRole();
@@ -119,7 +124,35 @@ class NodeDefaultCommand extends Command
             return $validation;
         }
 
-        $this->writeDefaultNode($name);
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree(
+                'Set Default Node',
+                [
+                    [
+                        'label' => 'Load visible development app nodes',
+                        'doneLabel' => 'Loaded visible development app nodes',
+                        'run' => fn (): string => 'validated',
+                    ],
+                    [
+                        'label' => 'Store local default',
+                        'doneLabel' => 'Stored local default',
+                        'run' => function () use ($name): string {
+                            $this->writeDefaultNode($name);
+
+                            return $name;
+                        },
+                    ],
+                ],
+                doneFooter: "Default development app node set to {$name}",
+                failFooter: 'Failed to set default development app node',
+            );
+
+            if ($exitCode !== self::SUCCESS) {
+                return self::FAILURE;
+            }
+        } else {
+            $this->writeDefaultNode($name);
+        }
 
         return $this->successResponse(
             action: 'set',
@@ -129,12 +162,7 @@ class NodeDefaultCommand extends Command
                 'environment' => 'development',
             ],
             meta: [],
-            humanRenderer: function () use ($name): void {
-                $this->line('┌ Set Default Node');
-                $this->line('○ Load visible development app nodes');
-                $this->line('○ Store local default');
-                $this->line("└ Default development app node set to {$name}");
-            },
+            humanRenderer: fn (): null => null,
         );
     }
 

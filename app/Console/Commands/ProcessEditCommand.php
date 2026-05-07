@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\EditProcess;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
@@ -29,6 +31,9 @@ use Throwable;
 #[Description('Edit an app process definition')]
 class ProcessEditCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(EditProcess $editProcess, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -47,39 +52,85 @@ class ProcessEditCommand extends Command
             return $input;
         }
 
-        try {
-            if ($callerRole === 'control') {
-                return $this->forwardEdit($input);
-            }
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $input, $editProcess, &$result, &$failure): string {
+            try {
+                if ($callerRole === 'control') {
+                    $result = $this->forwardEditResult($input);
 
-            $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+                    return 'gateway accepted';
+                }
 
-            if (! $app instanceof App) {
-                return $this->failCommand(
-                    code: 'validation_failed',
-                    message: "App '{$input['app']}' not found.",
-                    meta: ['field' => 'app', 'value' => $input['app']],
+                $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+
+                if (! $app instanceof App) {
+                    $failure = [
+                        'code' => 'validation_failed',
+                        'message' => "App '{$input['app']}' not found.",
+                        'meta' => ['field' => 'app', 'value' => $input['app']],
+                    ];
+
+                    return "fail:{$failure['message']}";
+                }
+
+                $result = $editProcess->handle(
+                    app: $app,
+                    name: $input['name'],
+                    changes: $input['changes'],
+                    restart: $input['restart'],
                 );
-            }
 
-            $result = $editProcess->handle(
-                app: $app,
-                name: $input['name'],
-                changes: $input['changes'],
-                restart: $input['restart'],
-            );
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to edit processes.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to edit processes.',
-                meta: [],
-            );
+                return $input['restart'] ? 'runtime units restarted' : 'runtime units rendered';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to edit processes.',
+                    'meta' => $e->errorMeta(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to edit processes.',
+                    'meta' => [],
+                ];
+
+                return "fail:{$failure['message']}";
+            }
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Editing Process', [
+                [
+                    'label' => 'Validate process',
+                    'doneLabel' => 'Validated process',
+                    'run' => fn (): string => 'input resolved',
+                ],
+                [
+                    'label' => 'Apply and verify process change',
+                    'doneLabel' => 'Applied and verified process change',
+                    'run' => fn (): string => 'change accepted',
+                ],
+                [
+                    'label' => $input['restart'] ? 'Restart runtime units' : 'Render runtime units',
+                    'doneLabel' => $input['restart'] ? 'Restarted runtime units' : 'Rendered runtime units',
+                    'run' => $operation,
+                ],
+            ], doneFooter: 'Process updated', failFooter: 'Process update failed');
+
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'])
+                    : self::FAILURE;
+            }
+        } else {
+            $operation();
+
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta']);
+            }
         }
 
         return $this->successPayload($result['data'], $result['warnings']);
@@ -87,8 +138,9 @@ class ProcessEditCommand extends Command
 
     /**
      * @param  array{name: string, app: string, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification}, restart: bool}  $input
+     * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    private function forwardEdit(array $input): int
+    private function forwardEditResult(array $input): array
     {
         /** @var ProcessEditResponse $dto */
         $dto = app(GatewayConnector::class)
@@ -102,7 +154,7 @@ class ProcessEditCommand extends Command
             ))
             ->dto();
 
-        return $this->successPayload($dto->data, $dto->warnings);
+        return ['data' => $dto->data, 'warnings' => $dto->warnings];
     }
 
     /**
@@ -203,16 +255,6 @@ class ProcessEditCommand extends Command
         }
 
         $process = is_array($data['process'] ?? null) ? $data['process'] : [];
-        $this->line('┌ Editing Process');
-        $this->line('○ Validate process');
-        $this->line('○ Apply and verify process change');
-        $this->line('○ Render runtime units');
-
-        if ($this->option('restart') === true) {
-            $this->line('○ Restart runtime units');
-        }
-
-        $this->line('└ Process updated');
         $this->line("Process '".(string) ($process['name'] ?? '')."' updated for app '".(string) ($process['app'] ?? '')."'");
 
         foreach ($warnings as $warning) {

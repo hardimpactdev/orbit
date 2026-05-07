@@ -192,11 +192,11 @@ describe('process:remove base contract', function (): void {
             '--app' => 'docs',
             '--force' => true,
         ])
-            ->expectsOutput('┌ Removing Process')
-            ->expectsOutput('○ Validate process')
-            ->expectsOutput('○ Remove runtime units')
-            ->expectsOutput('○ Apply and verify process removal')
-            ->expectsOutput('└ Working...')
+            ->expectsOutputToContain('┌  Removing Process')
+            ->expectsOutputToContain('○  Validate process')
+            ->expectsOutputToContain('○  Remove runtime units')
+            ->expectsOutputToContain('○  Apply and verify process removal')
+            ->expectsOutputToContain('└  Working...')
             ->expectsOutput("Process 'vite' removed from app 'docs'")
             ->assertSuccessful();
     });

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\RemoveSchedule;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
@@ -27,6 +29,9 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove a recurring schedule')]
 class ScheduleRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(SchedulePayload $payload, RemoveSchedule $removeSchedule, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -43,27 +48,80 @@ class ScheduleRemoveCommand extends Command
             return $consent;
         }
 
-        try {
-            if ($callerRole !== 'gateway') {
-                return $this->forwardRemove();
-            }
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $payload, $removeSchedule, &$result, &$failure): string {
+            try {
+                if ($callerRole !== 'gateway') {
+                    $result = $this->forwardRemoveResult();
 
-            if (! $this->wantsJson()) {
-                $this->renderProgressTree();
-            }
+                    return 'gateway accepted';
+                }
 
-            $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
-            $result = $removeSchedule->handle($schedule);
-        } catch (GatewayApiException $e) {
-            return $this->failCommand($e->errorCode() ?? 'gateway_unavailable', $e->getMessage(), $e->errorMeta(), $e->errorData());
-        } catch (Throwable) {
-            return $this->failCommand('gateway_unavailable', 'Gateway connection is required to remove schedules.', []);
+                $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
+                $result = $removeSchedule->handle($schedule);
+
+                return 'scheduler pickup confirmed';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage(),
+                    'meta' => $e->errorMeta(),
+                    'data' => $e->errorData(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to remove schedules.',
+                    'meta' => [],
+                    'data' => [],
+                ];
+
+                return "fail:{$failure['message']}";
+            }
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Removing Schedule', [
+                [
+                    'label' => 'Resolve schedule',
+                    'doneLabel' => 'Resolved schedule',
+                    'run' => fn (): string => 'schedule resolved',
+                ],
+                [
+                    'label' => 'Apply and verify removal',
+                    'doneLabel' => 'Applied and verified removal',
+                    'run' => fn (): string => 'removal accepted',
+                ],
+                [
+                    'label' => 'Notify Orbit Scheduler',
+                    'doneLabel' => 'Notified Orbit Scheduler',
+                    'run' => $operation,
+                ],
+            ], doneFooter: 'Schedule removed', failFooter: 'Schedule remove failed');
+
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data'])
+                    : self::FAILURE;
+            }
+        } else {
+            $operation();
+
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data']);
+            }
         }
 
         return $this->successPayload($result['data'], $result['meta']);
     }
 
-    private function forwardRemove(): int
+    /**
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
+     */
+    private function forwardRemoveResult(): array
     {
         /** @var ScheduleRemoveResponse $dto */
         $dto = app(GatewayConnector::class)
@@ -74,7 +132,7 @@ class ScheduleRemoveCommand extends Command
             ))
             ->dto();
 
-        return $this->successPayload($dto->data, $dto->meta);
+        return ['data' => $dto->data, 'meta' => $dto->meta];
     }
 
     private function confirmRemoval(string $name): ?int
@@ -96,15 +154,6 @@ class ScheduleRemoveCommand extends Command
         return $this->failCommand('destructive_consent_required', 'No schedule was removed.', [
             'field' => 'force',
         ]);
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Removing Schedule');
-        $this->line('○ Resolve schedule');
-        $this->line('○ Apply and verify removal');
-        $this->line('○ Notify Orbit Scheduler');
-        $this->line('└ Working...');
     }
 
     /**

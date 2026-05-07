@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -52,6 +53,46 @@ describe('firewall mutation commands', function (): void {
         'allow' => ['firewall:allow', 'allow'],
         'deny' => ['firewall:deny', 'deny'],
     ]);
+
+    it('renders the raw store progress tree before the success prose', function (): void {
+        createFirewallMutationLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+
+        $exitCode = Artisan::call('firewall:allow', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--port' => '5173',
+            '--from' => '10.6.0.0/24',
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0);
+        expect($output)->toContain('┌  Managing Firewall Rule')
+            ->and($output)->toContain('○  Validate firewall target')
+            ->and($output)->toContain('●  Apply and verify firewall rule')
+            ->and($output)->toContain('└  Firewall rule intent saved.')
+            ->and($output)->toContain("Firewall rule 'local-vite' saved on node 'app-1'.");
+    });
+
+    it('renders the decorated remove progress tree with ansi state dots', function (): void {
+        createFirewallMutationLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
+
+        $output = new BufferedOutput(decorated: true);
+        $exitCode = Artisan::call('firewall:remove', [
+            'name' => 'local-vite',
+            '--node' => 'app-1',
+            '--force' => true,
+        ], $output);
+        $text = $output->fetch();
+
+        expect($exitCode)->toBe(0);
+        expect($text)->toContain("\e[38;5;242m┌\e[39m  \e[97mRemoving Firewall Rule\e[39m")
+            ->and($text)->toContain("\e[32m●\e[39m")
+            ->and($text)->toContain('Working...')
+            ->and($text)->toContain("Firewall rule 'local-vite' removed from node 'app-1'.");
+    });
 
     it('forwards non-gateway store calls through the typed gateway request', function (): void {
         createFirewallMutationLocalNode('control');

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Concerns\LogsCommandActivity;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
@@ -27,6 +29,8 @@ use function Laravel\Prompts\text;
 class DnsResolveTldCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
+    use WithSpinner;
+    use WithStepTree;
 
     private ?string $activityTld = null;
 
@@ -204,14 +208,17 @@ class DnsResolveTldCommand extends Command implements Loggable
         $existing = $resolver->existingTarget($tld);
 
         if (! $this->wantsJson()) {
-            if ($existing === $target) {
-                $this->renderAlreadyResolvedTree($tld, $target);
-            } else {
-                $this->renderResolveTree($tld);
-            }
-        }
+            $result = null;
+            $exitCode = $existing === $target
+                ? $this->runAlreadyResolvedTree($resolver, $tld, $target, $result)
+                : $this->runResolveTree($resolver, $tld, $target, $result);
 
-        $result = $resolver->resolve($tld, $target);
+            if ($exitCode !== self::SUCCESS || $result === null) {
+                return self::FAILURE;
+            }
+        } else {
+            $result = $resolver->resolve($tld, $target);
+        }
 
         if ($result['status'] === 'write_failed') {
             return $this->failCommand(
@@ -312,14 +319,17 @@ class DnsResolveTldCommand extends Command implements Loggable
         $hasResolver = Process::timeout(10)->run("test -f /etc/resolver/{$tld}")->successful();
 
         if (! $this->wantsJson()) {
-            if ($existing === null && ! $hasResolver) {
-                $this->renderAlreadyAbsentTree($tld);
-            } else {
-                $this->renderResetTree($tld);
-            }
-        }
+            $result = null;
+            $exitCode = $existing === null && ! $hasResolver
+                ? $this->runAlreadyAbsentTree($resolver, $tld, $result)
+                : $this->runResetTree($resolver, $tld, $result);
 
-        $result = $resolver->reset($tld);
+            if ($exitCode !== self::SUCCESS || $result === null) {
+                return self::FAILURE;
+            }
+        } else {
+            $result = $resolver->reset($tld);
+        }
 
         if ($result['status'] === 'write_failed') {
             return $this->failCommand(
@@ -555,37 +565,142 @@ class DnsResolveTldCommand extends Command implements Loggable
         return self::FAILURE;
     }
 
-    private function renderResolveTree(string $tld): void
+    /**
+     * @param  array{status: string, changed: bool, error?: string}|null  $result
+     */
+    private function runResolveTree(LocalResolver $resolver, string $tld, string $target, ?array &$result): int
     {
-        $this->line('┌ Configuring Local DNS');
-        $this->line("○ Validate .{$tld}");
-        $this->line('○ Write resolver override');
-        $this->line('○ Refresh resolver');
-        $this->line('└ Working...');
+        return $this->runStepTree(
+            'Configuring Local DNS',
+            [
+                [
+                    'label' => "Validate .{$tld}",
+                    'run' => fn (): string => ".{$tld}",
+                ],
+                [
+                    'label' => 'Write resolver override',
+                    'run' => function () use ($resolver, $tld, $target, &$result): string {
+                        $result = $resolver->resolve($tld, $target);
+
+                        return $this->dnsResultMessage($result, 'resolve', $tld);
+                    },
+                ],
+                [
+                    'label' => 'Refresh resolver',
+                    'run' => fn (): string => '',
+                ],
+            ],
+            doneFooter: ".{$tld} resolves to {$target}.",
+            failFooter: "Failed to configure .{$tld}.",
+        );
     }
 
-    private function renderAlreadyResolvedTree(string $tld, string $target): void
+    /**
+     * @param  array{status: string, changed: bool, error?: string}|null  $result
+     */
+    private function runAlreadyResolvedTree(LocalResolver $resolver, string $tld, string $target, ?array &$result): int
     {
-        $this->line('┌ Configuring Local DNS');
-        $this->line("○ Validate .{$tld}");
-        $this->line('○ Check resolver override');
-        $this->line("└ .{$tld} already resolves to {$target}");
+        return $this->runStepTree(
+            'Configuring Local DNS',
+            [
+                [
+                    'label' => "Validate .{$tld}",
+                    'run' => fn (): string => ".{$tld}",
+                ],
+                [
+                    'label' => 'Check resolver override',
+                    'run' => function () use ($resolver, $tld, $target, &$result): string {
+                        $result = $resolver->resolve($tld, $target);
+
+                        return $this->dnsResultMessage($result, 'resolve', $tld);
+                    },
+                ],
+            ],
+            doneFooter: ".{$tld} already resolves to {$target}.",
+            failFooter: "Failed to check .{$tld}.",
+        );
     }
 
-    private function renderResetTree(string $tld): void
+    /**
+     * @param  array{status: string, changed: bool, error?: string}|null  $result
+     */
+    private function runResetTree(LocalResolver $resolver, string $tld, ?array &$result): int
     {
-        $this->line('┌ Resetting Local DNS');
-        $this->line("○ Validate .{$tld}");
-        $this->line('○ Remove resolver override');
-        $this->line('○ Refresh resolver');
-        $this->line("└ .{$tld} resolver override removed");
+        return $this->runStepTree(
+            'Resetting Local DNS',
+            [
+                [
+                    'label' => "Validate .{$tld}",
+                    'run' => fn (): string => ".{$tld}",
+                ],
+                [
+                    'label' => 'Remove resolver override',
+                    'run' => function () use ($resolver, $tld, &$result): string {
+                        $result = $resolver->reset($tld);
+
+                        return $this->dnsResultMessage($result, 'reset', $tld);
+                    },
+                ],
+                [
+                    'label' => 'Refresh resolver',
+                    'run' => fn (): string => '',
+                ],
+            ],
+            doneFooter: ".{$tld} resolver override removed.",
+            failFooter: "Failed to reset .{$tld}.",
+        );
     }
 
-    private function renderAlreadyAbsentTree(string $tld): void
+    /**
+     * @param  array{status: string, changed: bool, error?: string}|null  $result
+     */
+    private function runAlreadyAbsentTree(LocalResolver $resolver, string $tld, ?array &$result): int
     {
-        $this->line('┌ Resetting Local DNS');
-        $this->line("○ Validate .{$tld}");
-        $this->line('○ Check resolver override');
-        $this->line("└ .{$tld} resolver override already absent");
+        return $this->runStepTree(
+            'Resetting Local DNS',
+            [
+                [
+                    'label' => "Validate .{$tld}",
+                    'run' => fn (): string => ".{$tld}",
+                ],
+                [
+                    'label' => 'Check resolver override',
+                    'run' => function () use ($resolver, $tld, &$result): string {
+                        $result = $resolver->reset($tld);
+
+                        return $this->dnsResultMessage($result, 'reset', $tld);
+                    },
+                ],
+            ],
+            doneFooter: ".{$tld} resolver override already absent.",
+            failFooter: "Failed to check .{$tld}.",
+        );
+    }
+
+    /**
+     * @param  array{status: string, changed: bool, error?: string}  $result
+     */
+    private function dnsResultMessage(array $result, string $action, string $tld): string
+    {
+        if ($result['status'] === 'write_failed') {
+            return 'fail:Failed to update local DNS resolver configuration.';
+        }
+
+        if ($result['status'] === 'refresh_failed') {
+            return 'fail:Local DNS resolver configuration changed, but the resolver could not be refreshed.';
+        }
+
+        if ($result['status'] === 'already_resolved') {
+            return ".{$tld} already resolved";
+        }
+
+        if ($result['status'] === 'already_absent') {
+            return ".{$tld} already absent";
+        }
+
+        return match ($action) {
+            'reset' => ".{$tld} reset",
+            default => ".{$tld} configured",
+        };
     }
 }

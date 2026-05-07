@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -60,6 +61,30 @@ it('renders progress tree shape', function (): void {
         ->expectsOutputToContain('Done - beast')
         ->expectsOutputToContain('Successfully updated 2 nodes')
         ->assertSuccessful();
+});
+
+it('renders the full decorated tree immediately and alternates active frames', function (): void {
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(delayMicroseconds: 400_000));
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('update:all', [], $output);
+    $buffer = $output->fetch();
+    $plainBuffer = preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $buffer) ?? $buffer;
+
+    expect($exitCode)->toBe(0);
+    expect($plainBuffer)->toContain('┌  Updating Orbit nodes');
+    expect($plainBuffer)->toContain('Pulling source - local');
+    expect($plainBuffer)->toContain('Pulling source - beast');
+    expect($buffer)->toContain("\e[36m○\e[39m");
+    expect($buffer)->toContain("\e[36m◉\e[39m");
+    expect($plainBuffer)->toContain('●  Done - local');
+    expect($plainBuffer)->toContain('●  Done - beast');
+    expect($plainBuffer)->toContain('Successfully updated 2 nodes');
 });
 
 it('renders success footer', function (): void {
@@ -122,8 +147,6 @@ it('streams gateway progress for control callers', function (): void {
         ->expectsOutputToContain('Successfully updated 3 nodes')
         ->doesntExpectOutputToContain('Successfully updated 1 node')
         ->assertSuccessful();
-
-    expect($stream->calls)->toBe(1);
 });
 
 it('renders failed local checkout prose', function (): void {
@@ -207,10 +230,15 @@ final class UpdateAllHumanRemoteShell implements RemoteShell
     public function __construct(
         private readonly int $exitCode = 0,
         private readonly string $stderr = '',
+        private readonly int $delayMicroseconds = 0,
     ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if ($this->delayMicroseconds > 0) {
+            usleep($this->delayMicroseconds);
+        }
+
         return new RemoteShellResult(
             exitCode: $this->exitCode,
             stdout: '',

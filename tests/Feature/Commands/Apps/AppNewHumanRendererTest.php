@@ -6,6 +6,8 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -27,12 +29,13 @@ it('renders the documented progress tree and completion summary', function (): v
 
     $this->artisan('app:new docs --node=app-1')
         ->expectsConfirmation('Clone from a git repository?', 'no')
-        ->expectsOutputToContain('┌ Creating App')
-        ->expectsOutputToContain('○ Create app source')
-        ->expectsOutputToContain('○ Apply and verify app registration')
-        ->expectsOutputToContain('○ Apply PHP-FPM configuration')
-        ->expectsOutputToContain('○ Apply proxy routes')
-        ->expectsOutputToContain("└ App 'docs' created")
+        ->expectsOutputToContain('┌  Creating App')
+        ->expectsOutputToContain('○  Create app source')
+        ->expectsOutputToContain('●  Created app source')
+        ->expectsOutputToContain('●  Applied and verified app registration')
+        ->expectsOutputToContain('●  Applied PHP-FPM configuration')
+        ->expectsOutputToContain('●  Applied proxy routes')
+        ->expectsOutputToContain("└  App 'docs' created")
         ->expectsOutputToContain("App 'docs' created successfully on node 'app-1'.")
         ->expectsOutputToContain('Environment: development')
         ->expectsOutputToContain('URL: https://docs.test')
@@ -50,6 +53,39 @@ it('renders validation failures without a progress tree', function (): void {
         ->doesntExpectOutputToContain('┌ Creating App')
         ->expectsOutputToContain('App name must be a slug of 40 characters or fewer.')
         ->assertExitCode(1);
+});
+
+it('renders decorated progress tree glyphs and colors', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppNewHumanRecordingRemoteShell);
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'docs',
+        '--node' => 'app-1',
+    ], $output);
+    $buffer = $output->fetch();
+    $plainBuffer = preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $buffer) ?? $buffer;
+
+    expect($exitCode)->toBe(0)
+        ->and($plainBuffer)->toContain('┌  Creating App')
+        ->and($plainBuffer)->toContain('○  Create app source')
+        ->and($plainBuffer)->toContain('●  Created app source')
+        ->and($plainBuffer)->toContain("└  App 'docs' created")
+        ->and($buffer)->toContain("\e[36m○\e[39m")
+        ->and($buffer)->toContain("\e[32m●\e[39m");
 });
 
 it('renders warning retry hints in human output', function (): void {

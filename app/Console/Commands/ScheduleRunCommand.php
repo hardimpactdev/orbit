@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\RunSchedule;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RunScheduleRequest;
@@ -24,6 +26,9 @@ use Throwable;
 #[Description('Run one configured schedule immediately')]
 class ScheduleRunCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(SchedulePayload $payload, RunSchedule $runSchedule, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -34,27 +39,85 @@ class ScheduleRunCommand extends Command
             ]);
         }
 
-        try {
-            if ($callerRole !== 'gateway') {
-                return $this->forwardRun();
-            }
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $payload, $runSchedule, &$result, &$failure): string {
+            try {
+                if ($callerRole !== 'gateway') {
+                    $result = $this->forwardRunResult();
 
-            if (! $this->wantsJson()) {
-                $this->renderProgressTree();
-            }
+                    return 'gateway accepted';
+                }
 
-            $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
-            $result = $runSchedule->handle($schedule);
-        } catch (GatewayApiException $e) {
-            return $this->failCommand($e->errorCode() ?? 'gateway_unavailable', $e->getMessage(), $e->errorMeta(), $e->errorData());
-        } catch (Throwable) {
-            return $this->failCommand('gateway_unavailable', 'Gateway connection is required to run schedules.', []);
+                $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
+                $result = $runSchedule->handle($schedule);
+
+                return 'scheduled command completed';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage(),
+                    'meta' => $e->errorMeta(),
+                    'data' => $e->errorData(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to run schedules.',
+                    'meta' => [],
+                    'data' => [],
+                ];
+
+                return "fail:{$failure['message']}";
+            }
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Running Schedule', [
+                [
+                    'label' => 'Resolve schedule',
+                    'doneLabel' => 'Resolved schedule',
+                    'run' => fn (): string => 'schedule resolved',
+                ],
+                [
+                    'label' => 'Open gateway execution',
+                    'doneLabel' => 'Opened gateway execution',
+                    'run' => fn (): string => 'execution opened',
+                ],
+                [
+                    'label' => 'Run scheduled command',
+                    'doneLabel' => 'Ran scheduled command',
+                    'run' => $operation,
+                ],
+                [
+                    'label' => 'Record run history',
+                    'doneLabel' => 'Recorded run history',
+                    'run' => fn (): string => 'history recorded',
+                ],
+            ], doneFooter: 'Schedule run completed', failFooter: 'Schedule run failed');
+
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data'])
+                    : self::FAILURE;
+            }
+        } else {
+            $operation();
+
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data']);
+            }
         }
 
         return $this->successPayload($result['data'], $result['meta']);
     }
 
-    private function forwardRun(): int
+    /**
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
+     */
+    private function forwardRunResult(): array
     {
         /** @var ScheduleManualRunResponse $dto */
         $dto = app(GatewayConnector::class)
@@ -65,17 +128,7 @@ class ScheduleRunCommand extends Command
             ))
             ->dto();
 
-        return $this->successPayload($dto->data, $dto->meta);
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Running Schedule');
-        $this->line('○ Resolve schedule');
-        $this->line('○ Open gateway execution');
-        $this->line('○ Run scheduled command');
-        $this->line('○ Record run history');
-        $this->line('└ Working...');
+        return ['data' => $dto->data, 'meta' => $dto->meta];
     }
 
     /**

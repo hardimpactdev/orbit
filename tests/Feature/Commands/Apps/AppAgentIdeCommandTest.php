@@ -369,7 +369,7 @@ it('queries gateway adapter choices before prompting configured control callers'
             'none' => 'None',
             'custom-agent' => 'custom-agent',
         ])
-        ->expectsOutputToContain('└ App `docs` agent IDE set to `custom-agent` (effective: `custom-agent`)')
+        ->expectsOutputToContain('App `docs` agent IDE set to `custom-agent` (effective: `custom-agent`)')
         ->assertExitCode(0);
 
     $mockClient->assertSent(ListAgentIdeAdaptersRequest::class);
@@ -423,11 +423,13 @@ it('prompts for missing human input and renders the progress tree', function ():
             'opencode' => 'opencode',
             'polyscope' => 'polyscope',
         ])
-        ->expectsOutputToContain('┌ Configuring App Agent IDE')
-        ->expectsOutputToContain('○ Validate adapter')
-        ->expectsOutputToContain('○ Check for workspace cleanup')
-        ->expectsOutputToContain('○ Apply and verify app agent IDE')
-        ->expectsOutputToContain('└ App `docs` agent IDE set to `opencode` (effective: `opencode`)')
+        ->expectsOutputToContain('┌  Configuring App Agent IDE')
+        ->expectsOutputToContain('○  Validate adapter')
+        ->expectsOutputToContain('●  Validated adapter')
+        ->expectsOutputToContain('●  Checked for workspace cleanup')
+        ->expectsOutputToContain('●  Applied and verified app agent IDE')
+        ->expectsOutputToContain("└  App 'docs' agent IDE configured")
+        ->expectsOutputToContain('App `docs` agent IDE set to `opencode` (effective: `opencode`)')
         ->assertExitCode(0);
 });
 
@@ -454,8 +456,8 @@ it('renders inherited and explicit none human success states', function (string 
         ->expectsOutputToContain($expected)
         ->assertExitCode(0);
 })->with([
-    'inherit' => ['inherit', '└ App `docs` agent IDE set to inherit (effective: `polyscope` from node `app-1`)'],
-    'none' => ['none', '└ App `docs` agent IDE set to none (effective: none)'],
+    'inherit' => ['inherit', 'App `docs` agent IDE set to inherit (effective: `polyscope` from node `app-1`)'],
+    'none' => ['none', 'App `docs` agent IDE set to none (effective: none)'],
 ]);
 
 it('renders converged human output', function (): void {
@@ -471,7 +473,7 @@ it('renders converged human output', function (): void {
     ]);
 
     $this->artisan('app:agent-ide docs opencode')
-        ->expectsOutputToContain('└ App `docs` agent IDE already set to `opencode`')
+        ->expectsOutputToContain('App `docs` agent IDE already set to `opencode`')
         ->assertExitCode(0);
 });
 

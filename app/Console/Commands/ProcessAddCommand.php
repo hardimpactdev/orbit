@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\AddProcess;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Gateway\GatewayApiException;
@@ -29,6 +31,9 @@ use Throwable;
 #[Description('Add an app process definition')]
 class ProcessAddCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     private const string NAME_PATTERN = '/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/';
 
     public function handle(AddProcess $addProcess, CallerRoleResolver $callerRoleResolver): int
@@ -49,41 +54,78 @@ class ProcessAddCommand extends Command
             return $input;
         }
 
-        try {
-            if ($callerRole === 'control') {
-                return $this->forwardAdd($input);
-            }
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $input, $addProcess, &$result, &$failure): string {
+            try {
+                if ($callerRole === 'control') {
+                    $result = $this->forwardAddResult($input);
 
-            $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+                    return 'gateway accepted';
+                }
 
-            if (! $app instanceof App) {
-                return $this->failCommand(
-                    code: 'validation_failed',
-                    message: "App '{$input['app']}' not found.",
-                    meta: ['field' => 'app', 'value' => $input['app']],
+                $app = App::query()->with(['node', 'workspaces'])->where('name', $input['app'])->first();
+
+                if (! $app instanceof App) {
+                    $failure = [
+                        'code' => 'validation_failed',
+                        'message' => "App '{$input['app']}' not found.",
+                        'meta' => ['field' => 'app', 'value' => $input['app']],
+                    ];
+
+                    return "fail:{$failure['message']}";
+                }
+
+                $result = $addProcess->handle(
+                    app: $app,
+                    name: $input['name'],
+                    command: $input['command'],
+                    restartPolicy: $input['restart_policy'],
+                    crashNotification: $input['crash_notification'],
+                    start: $input['start'],
                 );
-            }
 
-            $result = $addProcess->handle(
-                app: $app,
-                name: $input['name'],
-                command: $input['command'],
-                restartPolicy: $input['restart_policy'],
-                crashNotification: $input['crash_notification'],
-                start: $input['start'],
-            );
-        } catch (GatewayApiException $e) {
-            return $this->failCommand(
-                code: $e->errorCode() ?? 'gateway_unavailable',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to add processes.',
-                meta: $e->errorMeta(),
-            );
-        } catch (Throwable) {
-            return $this->failCommand(
-                code: 'gateway_unavailable',
-                message: 'Gateway connection is required to add processes.',
-                meta: [],
-            );
+                return $input['start'] ? 'runtime units started' : 'runtime units rendered';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to add processes.',
+                    'meta' => $e->errorMeta(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to add processes.',
+                    'meta' => [],
+                ];
+
+                return "fail:{$failure['message']}";
+            }
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Adding Process', $this->progressSteps(
+                validateDoneLabel: 'Validated process',
+                workLabel: 'Create process intent',
+                workDoneLabel: 'Created process intent',
+                finalLabel: $input['start'] ? 'Start runtime units' : 'Render runtime units',
+                finalDoneLabel: $input['start'] ? 'Started runtime units' : 'Rendered runtime units',
+                operation: $operation,
+            ), doneFooter: 'Process added', failFooter: 'Process add failed');
+
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'])
+                    : self::FAILURE;
+            }
+        } else {
+            $operation();
+
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta']);
+            }
         }
 
         return $this->successPayload($result['data'], $result['warnings']);
@@ -91,8 +133,9 @@ class ProcessAddCommand extends Command
 
     /**
      * @param  array{name: string, command: string, app: string, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, start: bool}  $input
+     * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    private function forwardAdd(array $input): int
+    private function forwardAddResult(array $input): array
     {
         /** @var ProcessAddResponse $dto */
         $dto = app(GatewayConnector::class)
@@ -106,7 +149,7 @@ class ProcessAddCommand extends Command
             ))
             ->dto();
 
-        return $this->successPayload($dto->data, $dto->warnings);
+        return ['data' => $dto->data, 'warnings' => $dto->warnings];
     }
 
     /**
@@ -199,16 +242,6 @@ class ProcessAddCommand extends Command
         }
 
         $process = is_array($data['process'] ?? null) ? $data['process'] : [];
-        $this->line('┌ Adding Process');
-        $this->line('○ Validate process');
-        $this->line('○ Create process intent');
-        $this->line('○ Render runtime units');
-
-        if ($this->option('start') === true) {
-            $this->line('○ Start runtime units');
-        }
-
-        $this->line('└ Process added');
         $this->line("Process '".(string) ($process['name'] ?? '')."' added for app '".(string) ($process['app'] ?? '')."'");
 
         foreach ($warnings as $warning) {
@@ -257,5 +290,35 @@ class ProcessAddCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    /**
+     * @return list<array{label: string, doneLabel: string, run: callable}>
+     */
+    private function progressSteps(
+        string $validateDoneLabel,
+        string $workLabel,
+        string $workDoneLabel,
+        string $finalLabel,
+        string $finalDoneLabel,
+        callable $operation,
+    ): array {
+        return [
+            [
+                'label' => 'Validate process',
+                'doneLabel' => $validateDoneLabel,
+                'run' => fn (): string => 'input resolved',
+            ],
+            [
+                'label' => $workLabel,
+                'doneLabel' => $workDoneLabel,
+                'run' => fn (): string => 'intent accepted',
+            ],
+            [
+                'label' => $finalLabel,
+                'doneLabel' => $finalDoneLabel,
+                'run' => $operation,
+            ],
+        ];
     }
 }

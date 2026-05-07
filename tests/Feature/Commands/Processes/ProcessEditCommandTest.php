@@ -219,11 +219,13 @@ describe('process:edit base contract', function (): void {
             '--app' => 'docs',
             '--command' => 'npm run dev -- --host=0.0.0.0',
         ])
-            ->expectsOutput('┌ Editing Process')
-            ->expectsOutput('○ Validate process')
-            ->expectsOutput('○ Apply and verify process change')
-            ->expectsOutput('○ Render runtime units')
-            ->expectsOutput('└ Process updated')
+            ->expectsOutputToContain('  ┌  Editing Process')
+            ->expectsOutputToContain('  │')
+            ->expectsOutputToContain('  ○  Validate process')
+            ->expectsOutputToContain('  ○  Apply and verify process change')
+            ->expectsOutputToContain('  ○  Render runtime units')
+            ->expectsOutputToContain('  ●  Validated process')
+            ->expectsOutputToContain('  └  Process updated')
             ->expectsOutput("Process 'vite' updated for app 'docs'")
             ->assertSuccessful();
     });

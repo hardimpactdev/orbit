@@ -177,11 +177,11 @@ describe('process:stop base contract', function (): void {
             'name' => 'vite',
             '--app' => 'docs',
         ])
-            ->expectsOutput('┌ Stopping Processes')
-            ->expectsOutput('○ Resolve runtime units')
-            ->expectsOutput('○ Stop runtime units')
-            ->expectsOutput('○ Record process events')
-            ->expectsOutput('└ Working...')
+            ->expectsOutputToContain('┌  Stopping Processes')
+            ->expectsOutputToContain('○  Resolve runtime units')
+            ->expectsOutputToContain('○  Stop runtime units')
+            ->expectsOutputToContain('○  Record process events')
+            ->expectsOutputToContain('└  Working...')
             ->expectsOutput("Process 'vite' stopped for app 'docs'")
             ->assertSuccessful();
     });

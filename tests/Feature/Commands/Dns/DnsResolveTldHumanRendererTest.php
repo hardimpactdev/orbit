@@ -149,11 +149,36 @@ describe('dns:resolve-tld human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Configuring Local DNS')
-            ->and($output)->toContain('○ Validate .test')
-            ->and($output)->toContain('○ Write resolver override')
-            ->and($output)->toContain('○ Refresh resolver')
+        expect($output)->toContain('┌  Configuring Local DNS')
+            ->and($output)->toContain('○  Validate .test')
+            ->and($output)->toContain('○  Write resolver override')
+            ->and($output)->toContain('○  Refresh resolver')
             ->and($output)->toContain('└');
+    });
+
+    it('renders decorated resolve progress tree with ansi state dots', function (): void {
+        setupDnsResolveTldHumanControlCaller();
+        setupDnsResolveTldHumanMacosResolver();
+
+        Process::fake([
+            'which dnsmasq' => Process::result(output: '/opt/homebrew/bin/dnsmasq', errorOutput: '', exitCode: 0),
+            'brew --prefix' => Process::result(output: '/opt/homebrew', errorOutput: '', exitCode: 0),
+            '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+        ]);
+        Process::preventStrayProcesses();
+
+        $output = new BufferedOutput(decorated: true);
+        $exitCode = Artisan::call('dns:resolve-tld', [
+            'tld' => 'test',
+            'target' => '10.6.0.7',
+        ], $output);
+        $text = $output->fetch();
+
+        expect($exitCode)->toBe(0);
+        expect($text)->toContain("\e[38;5;242m┌\e[39m  \e[97mConfiguring Local DNS\e[39m")
+            ->and($text)->toContain("\e[32m●\e[39m")
+            ->and($text)->toContain('Working...')
+            ->and($text)->toContain('.test resolves to 10.6.0.7.');
     });
 
     it('renders already-resolved progress tree', function (): void {
@@ -176,8 +201,8 @@ describe('dns:resolve-tld human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Configuring Local DNS')
-            ->and($output)->toContain('○ Check resolver override')
+        expect($output)->toContain('┌  Configuring Local DNS')
+            ->and($output)->toContain('○  Check resolver override')
             ->and($output)->toContain('.test already resolves to 10.6.0.7');
     });
 
@@ -247,9 +272,9 @@ describe('dns:resolve-tld human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Resetting Local DNS')
-            ->and($output)->toContain('○ Remove resolver override')
-            ->and($output)->toContain('○ Refresh resolver')
+        expect($output)->toContain('┌  Resetting Local DNS')
+            ->and($output)->toContain('○  Remove resolver override')
+            ->and($output)->toContain('○  Refresh resolver')
             ->and($output)->toContain('.test resolver override removed');
     });
 
@@ -272,8 +297,8 @@ describe('dns:resolve-tld human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Resetting Local DNS')
-            ->and($output)->toContain('○ Check resolver override')
+        expect($output)->toContain('┌  Resetting Local DNS')
+            ->and($output)->toContain('○  Check resolver override')
             ->and($output)->toContain('.test resolver override already absent');
     });
 

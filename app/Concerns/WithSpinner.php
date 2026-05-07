@@ -176,4 +176,136 @@ trait WithSpinner
 
         return $results;
     }
+
+    /**
+     * Run multiple callables in parallel while animating all pending rows.
+     *
+     * @param  list<callable>  $tasks
+     * @param  callable  $renderSpinner  fn(int $index, string $frame): void
+     * @param  callable  $renderResult  fn(int $index, mixed $result): void
+     * @param  callable|null  $renderError  fn(int $index, \Throwable $e): void
+     * @return list<mixed>
+     */
+    public function runAllWithSpinners(
+        array $tasks,
+        callable $renderSpinner,
+        callable $renderResult,
+        ?callable $renderError = null,
+    ): array {
+        $frames = self::$spinnerFrames;
+        $count = count($tasks);
+
+        if (! function_exists('pcntl_fork') || ! function_exists('stream_socket_pair') || $count === 0) {
+            $results = [];
+
+            foreach ($tasks as $i => $task) {
+                try {
+                    $result = $task();
+                    $renderResult($i, $result);
+                    $results[$i] = $result;
+                } catch (\Throwable $e) {
+                    $renderError !== null ? $renderError($i, $e) : throw $e;
+                    $results[$i] = null;
+                }
+            }
+
+            return $results;
+        }
+
+        $pipes = [];
+        $pids = [];
+
+        foreach ($tasks as $i => $task) {
+            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+            if ($pair === false) {
+                return $this->runSequentialWithSpinners($tasks, $renderSpinner, $renderResult, $renderError);
+            }
+
+            $pid = pcntl_fork();
+
+            if ($pid === -1) {
+                fclose($pair[0]);
+                fclose($pair[1]);
+
+                return $this->runSequentialWithSpinners($tasks, $renderSpinner, $renderResult, $renderError);
+            }
+
+            if ($pid === 0) {
+                fclose($pair[0]);
+
+                try {
+                    fwrite($pair[1], serialize(['ok' => true, 'result' => $task()]));
+                } catch (\Throwable $e) {
+                    fwrite($pair[1], serialize(['ok' => false, 'error' => $e->getMessage()]));
+                }
+
+                fclose($pair[1]);
+                posix_kill(getmypid(), SIGKILL);
+            }
+
+            fclose($pair[1]);
+            stream_set_blocking($pair[0], false);
+            $pipes[$i] = $pair[0];
+            $pids[$i] = $pid;
+        }
+
+        $completed = array_fill(0, $count, false);
+        $results = array_fill(0, $count, null);
+        $buffers = array_fill(0, $count, '');
+        $tick = 0;
+
+        while (in_array(false, $completed, true)) {
+            foreach ($pipes as $i => $pipe) {
+                if ($completed[$i]) {
+                    continue;
+                }
+
+                $data = stream_get_contents($pipe);
+
+                if (is_string($data) && $data !== '') {
+                    $buffers[$i] .= $data;
+                }
+
+                $wait = pcntl_waitpid($pids[$i], $status, WNOHANG);
+
+                if ($wait <= 0) {
+                    continue;
+                }
+
+                $remaining = stream_get_contents($pipe);
+
+                if (is_string($remaining) && $remaining !== '') {
+                    $buffers[$i] .= $remaining;
+                }
+
+                fclose($pipe);
+                $completed[$i] = true;
+
+                $payload = @unserialize($buffers[$i]);
+
+                if (is_array($payload) && ($payload['ok'] ?? false)) {
+                    $results[$i] = $payload['result'] ?? null;
+                    $renderResult($i, $results[$i]);
+
+                    continue;
+                }
+
+                $error = new \RuntimeException(is_array($payload) ? (string) ($payload['error'] ?? 'Unknown error') : 'Unknown error');
+                $renderError !== null ? $renderError($i, $error) : throw $error;
+            }
+
+            $frame = $frames[$tick++ % count($frames)];
+
+            foreach ($tasks as $i => $_) {
+                if (! $completed[$i]) {
+                    $renderSpinner($i, $frame);
+                }
+            }
+
+            usleep(self::$spinnerInterval);
+        }
+
+        return $results;
+    }
 }

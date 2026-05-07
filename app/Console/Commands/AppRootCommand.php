@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\EnactAppRuntime;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\UpdateAppRootRequest;
@@ -25,6 +27,9 @@ use function Laravel\Prompts\text;
 #[Description('Change the document root for an app')]
 class AppRootCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(EnactAppRuntime $enactAppRuntime): int
     {
         $callerRole = $this->callerRole();
@@ -80,13 +85,70 @@ class AppRootCommand extends Command
             );
         }
 
+        if (! $this->wantsJson()) {
+            return $this->updateRootForHuman($app, $normalized, $enactAppRuntime);
+        }
+
+        $changed = $this->applyRootChange($app, $normalized);
+        $warnings = $enactAppRuntime->handle($app);
+
+        return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+    }
+
+    private function updateRootForHuman(App $app, string $normalized, EnactAppRuntime $enactAppRuntime): int
+    {
+        $changed = false;
+        $warnings = [];
+
+        $exitCode = $this->runStepTree(
+            'Updating App Root',
+            [
+                [
+                    'key' => 'apply_root_change',
+                    'label' => 'Apply and verify root change',
+                    'doneLabel' => 'Applied and verified root change',
+                    'run' => function () use ($app, $normalized, &$changed): string {
+                        $changed = $this->applyRootChange($app, $normalized);
+
+                        return $normalized;
+                    },
+                ],
+                [
+                    'key' => 'apply_php_fpm',
+                    'label' => 'Apply PHP-FPM configuration',
+                    'doneLabel' => 'Applied PHP-FPM configuration',
+                    'run' => function () use ($app, $enactAppRuntime, &$warnings): string {
+                        $warnings = $enactAppRuntime->handle($app);
+
+                        return 'ready';
+                    },
+                ],
+                [
+                    'key' => 'apply_routes',
+                    'label' => 'Apply proxy routes',
+                    'doneLabel' => 'Applied proxy routes',
+                    'run' => fn (): string => 'ready',
+                ],
+            ],
+            doneFooter: 'App root updated',
+            failFooter: "Failed to update app root for '{$app->name}'.",
+        );
+
+        if ($exitCode !== self::SUCCESS) {
+            return self::FAILURE;
+        }
+
+        return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+    }
+
+    private function applyRootChange(App $app, string $normalized): bool
+    {
         $changed = $app->document_root !== $normalized;
         $app->document_root = $normalized;
         $app->save();
         $app->setRelation('node', $app->node);
-        $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+        return $changed;
     }
 
     private function forwardUpdate(string $selector, string $root): int
@@ -253,11 +315,6 @@ class AppRootCommand extends Command
             $result = is_array($data['result'] ?? null) ? $data['result'] : [];
             $changed = (bool) ($result['changed'] ?? false);
 
-            $this->line('┌ Updating App Root');
-            $this->line('○ Apply and verify root change');
-            $this->line('○ Apply PHP-FPM configuration');
-            $this->line('○ Apply proxy routes');
-            $this->line('└ App root updated');
             $this->line($changed
                 ? "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' updated to '".(string) ($app['root'] ?? '')."'."
                 : "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' is already '".(string) ($app['root'] ?? '')."'.");

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Firewall\RemoveFirewallRuleRequest;
@@ -26,6 +28,9 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove firewall rule intent')]
 class FirewallRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
     {
         $name = $this->stringArgument('name');
@@ -43,6 +48,10 @@ class FirewallRemoveCommand extends Command
 
         if (is_int($consent)) {
             return $consent;
+        }
+
+        if (! $this->wantsJson()) {
+            return $this->handleRemoveHuman($name, $node, $intent, $callerRoleResolver);
         }
 
         try {
@@ -63,6 +72,58 @@ class FirewallRemoveCommand extends Command
                 message: 'Gateway connection is required to remove firewall rules.',
                 meta: [],
             );
+        }
+
+        return $this->successPayload($result['data'], $result['meta']);
+    }
+
+    private function handleRemoveHuman(string $name, string $node, FirewallRuleIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    {
+        $result = null;
+
+        $exitCode = $this->runStepTree(
+            'Removing Firewall Rule',
+            [
+                [
+                    'label' => 'Confirm destructive removal',
+                    'run' => fn (): string => $name,
+                ],
+                [
+                    'label' => 'Resolve firewall rule',
+                    'run' => fn (): string => $node,
+                ],
+                [
+                    'label' => 'Remove backend firewall rule',
+                    'run' => function () use ($name, $node, $intent, $callerRoleResolver, &$result): string {
+                        try {
+                            if ($callerRoleResolver->resolve() !== 'gateway') {
+                                /** @var FirewallRuleMutationResponse $dto */
+                                $dto = app(GatewayConnector::class)
+                                    ->send(new RemoveFirewallRuleRequest(name: $name, node: $node))
+                                    ->dto();
+
+                                $result = ['data' => $dto->data, 'meta' => $dto->meta];
+
+                                return 'gateway updated';
+                            }
+
+                            $result = $intent->remove($name, $node);
+
+                            return 'rule removed';
+                        } catch (GatewayApiException $e) {
+                            return 'fail:'.($e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to remove firewall rules.');
+                        } catch (Throwable) {
+                            return 'fail:Gateway connection is required to remove firewall rules.';
+                        }
+                    },
+                ],
+            ],
+            doneFooter: 'Firewall rule intent removed.',
+            failFooter: 'Failed to remove firewall rule intent.',
+        );
+
+        if ($exitCode !== self::SUCCESS || $result === null) {
+            return self::FAILURE;
         }
 
         return $this->successPayload($result['data'], $result['meta']);
@@ -121,11 +182,6 @@ class FirewallRemoveCommand extends Command
         }
 
         $rule = is_array($data['rule'] ?? null) ? $data['rule'] : [];
-        $this->line('┌ Removing Firewall Rule');
-        $this->line('○ Confirm destructive removal');
-        $this->line('○ Resolve firewall rule');
-        $this->line('○ Remove backend firewall rule');
-        $this->line('└ Firewall rule intent removed');
         $this->line("Firewall rule '".(string) ($rule['name'] ?? '')."' removed from node '".(string) ($rule['node'] ?? '')."'.");
 
         $this->renderWarnings($meta);

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\EnactAppRuntime;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Contracts\RemoteShell;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -33,6 +35,9 @@ use function Laravel\Prompts\text;
 #[Description('Register or re-apply Orbit management for an app')]
 class AppRegisterCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     private const array SUPPORTED_PHP_VERSIONS = ['8.5'];
 
     public function handle(EnactAppRuntime $enactAppRuntime): int
@@ -160,7 +165,99 @@ class AppRegisterCommand extends Command
             );
         }
 
+        if (! $this->wantsJson()) {
+            return $this->registerForHuman($input, $node, $path, $existingApp, $enactAppRuntime);
+        }
+
         $action = $existingApp instanceof App ? 'converged' : 'adopted';
+        $app = $this->registerAppRecord($input, $node, $path, $existingApp);
+        $warnings = $enactAppRuntime->handle($app);
+
+        return $this->successCommand([
+            'result' => ['action' => $action],
+            'app' => $this->appPayload($app),
+        ], $warnings, $node->name);
+    }
+
+    /**
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function registerForHuman(
+        array $input,
+        Node $node,
+        string $path,
+        ?App $existingApp,
+        EnactAppRuntime $enactAppRuntime,
+    ): int {
+        $action = $existingApp instanceof App ? 'converged' : 'adopted';
+        $app = null;
+        $warnings = [];
+
+        $exitCode = $this->runStepTree(
+            'Registering App',
+            [
+                [
+                    'key' => 'resolve_intent',
+                    'label' => 'Resolve app intent',
+                    'doneLabel' => 'Resolved app intent',
+                    'run' => fn (): string => $input['name'],
+                ],
+                [
+                    'key' => 'register_app',
+                    'label' => 'Register app record or adopt app path',
+                    'doneLabel' => 'Registered app record or adopted app path',
+                    'run' => function () use ($input, $node, $path, $existingApp, &$app): string {
+                        $app = $this->registerAppRecord($input, $node, $path, $existingApp);
+
+                        return (string) $app->name;
+                    },
+                ],
+                [
+                    'key' => 'apply_runtime',
+                    'label' => 'Apply and verify app runtime',
+                    'doneLabel' => 'Applied and verified app runtime',
+                    'run' => function () use ($enactAppRuntime, &$app, &$warnings): string {
+                        if (! $app instanceof App) {
+                            return 'fail:App was not registered.';
+                        }
+
+                        $warnings = $enactAppRuntime->handle($app);
+
+                        return 'ready';
+                    },
+                ],
+                [
+                    'key' => 'apply_routing',
+                    'label' => 'Apply and verify app routing',
+                    'doneLabel' => 'Applied and verified app routing',
+                    'run' => fn (): string => 'ready',
+                ],
+                [
+                    'key' => 'verify_enactment',
+                    'label' => 'Verify enactment',
+                    'doneLabel' => 'Verified enactment',
+                    'run' => fn (): string => 'ready',
+                ],
+            ],
+            doneFooter: "App '{$input['name']}' registered",
+            failFooter: "Failed to register app '{$input['name']}'.",
+        );
+
+        if ($exitCode !== self::SUCCESS || ! $app instanceof App) {
+            return self::FAILURE;
+        }
+
+        return $this->successCommand([
+            'result' => ['action' => $action],
+            'app' => $this->appPayload($app),
+        ], $warnings, $node->name);
+    }
+
+    /**
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     */
+    private function registerAppRecord(array $input, Node $node, string $path, ?App $existingApp): App
+    {
         $app = App::query()->updateOrCreate(
             ['name' => $input['name']],
             [
@@ -176,12 +273,8 @@ class AppRegisterCommand extends Command
         );
 
         $app->setRelation('node', $node);
-        $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand([
-            'result' => ['action' => $action],
-            'app' => $this->appPayload($app),
-        ], $warnings, $node->name);
+        return $app;
     }
 
     /**
@@ -440,13 +533,6 @@ class AppRegisterCommand extends Command
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
             $action = (string) ($data['result']['action'] ?? '');
 
-            $this->line('┌ Registering App');
-            $this->line('○ Resolve app intent');
-            $this->line('○ Register app record or adopt app path');
-            $this->line('○ Apply and verify app runtime');
-            $this->line('○ Apply and verify app routing');
-            $this->line('○ Verify enactment');
-            $this->line("└ App '".(string) ($app['name'] ?? '')."' registered");
             $this->line($this->successLine($action, $app));
             $this->line('URL: '.(string) ($app['url'] ?? ''));
 

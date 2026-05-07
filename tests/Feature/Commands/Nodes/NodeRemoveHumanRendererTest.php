@@ -111,12 +111,12 @@ describe('node:remove human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Remove Node')
-            ->and($output)->toContain('○ Validate removal')
-            ->and($output)->toContain('○ Remove node grants')
-            ->and($output)->toContain('○ Remove WireGuard peer')
-            ->and($output)->toContain('○ Remove node record')
-            ->and($output)->toContain('└ Node `app-1` removed');
+        expect($output)->toContain('┌  Remove Node')
+            ->and($output)->toContain('○  Validate removal')
+            ->and($output)->toContain('○  Remove node grants')
+            ->and($output)->toContain('○  Remove WireGuard peer')
+            ->and($output)->toContain('○  Remove node record')
+            ->and($output)->toContain('└  Node `app-1` removed');
     });
 
     it('renders removal success prose', function (): void {

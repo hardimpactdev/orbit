@@ -132,10 +132,10 @@ describe('node:revoke human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('┌ Revoke Grant')
-            ->and($output)->toContain('○ Validate nodes')
-            ->and($output)->toContain('○ Verify authorization')
-            ->and($output)->toContain('○ Revoke access')
+        expect($output)->toContain('┌  Revoke Grant')
+            ->and($output)->toContain('○  Validate nodes')
+            ->and($output)->toContain('○  Verify authorization')
+            ->and($output)->toContain('○  Revoke access')
             ->and($output)->toContain('└');
     });
 

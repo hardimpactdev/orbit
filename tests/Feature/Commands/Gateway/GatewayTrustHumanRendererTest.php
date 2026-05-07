@@ -103,14 +103,36 @@ it('shows human renderer by default', function (): void {
     ]);
 
     $this->artisan('gateway:trust')
-        ->expectsOutputToContain('┌ Trust Gateway CA')
-        ->expectsOutputToContain('○ Resolve configured gateway')
-        ->expectsOutputToContain('○ Fetch trust material')
-        ->expectsOutputToContain('○ Install local trust')
-        ->expectsOutputToContain('○ Store trust metadata')
-        ->expectsOutputToContain('└ Gateway CA trusted for https://10.6.0.2')
-        ->expectsOutputToContain('Gateway CA trusted for https://10.6.0.2.')
+        ->expectsOutputToContain('┌  Trust Gateway CA')
+        ->expectsOutputToContain('○  Resolve configured gateway')
+        ->expectsOutputToContain('○  Fetch trust material')
+        ->expectsOutputToContain('○  Install local trust')
+        ->expectsOutputToContain('○  Store trust metadata')
+        ->expectsOutputToContain('Gateway CA trusted')
         ->assertSuccessful();
+});
+
+it('renders decorated trust progress tree with ansi state dots', function (): void {
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+    ])->save();
+
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+    ]);
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('gateway:trust', [], $output);
+    $text = $output->fetch();
+
+    expect($exitCode)->toBe(0);
+    expect($text)->toContain("\e[38;5;242m┌\e[39m  \e[97mTrust Gateway CA\e[39m")
+        ->and($text)->toContain("\e[32m●\e[39m")
+        ->and($text)->toContain('Working...')
+        ->and($text)->toContain('Gateway CA trusted for https://10.6.0.2.');
 });
 
 it('shows already-trusted progress tree', function (): void {
@@ -127,11 +149,10 @@ it('shows already-trusted progress tree', function (): void {
     $this->fakeInstaller->isTrusted = true;
 
     $this->artisan('gateway:trust')
-        ->expectsOutputToContain('┌ Trust Gateway CA')
-        ->expectsOutputToContain('○ Resolve configured gateway')
-        ->expectsOutputToContain('○ Check local trust')
-        ->expectsOutputToContain('└ Gateway CA already trusted for https://10.6.0.2')
-        ->expectsOutputToContain('Gateway CA already trusted for https://10.6.0.2.')
+        ->expectsOutputToContain('┌  Trust Gateway CA')
+        ->expectsOutputToContain('○  Resolve configured gateway')
+        ->expectsOutputToContain('○  Check local trust')
+        ->expectsOutputToContain('Gateway CA already trusted')
         ->assertSuccessful();
 });
 

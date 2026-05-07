@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\RemoveProxyRouteRequest;
@@ -24,6 +26,9 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove custom proxy route intent')]
 class ProxyRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
     {
         $domain = $this->stringArgument('domain');
@@ -36,6 +41,10 @@ class ProxyRemoveCommand extends Command
 
         if (is_int($consent)) {
             return $consent;
+        }
+
+        if (! $this->wantsJson()) {
+            return $this->handleRemoveHuman($domain, $intent, $callerRoleResolver);
         }
 
         try {
@@ -56,6 +65,91 @@ class ProxyRemoveCommand extends Command
                 message: 'Gateway connection is required to remove proxy routes.',
                 meta: [],
             );
+        }
+
+        return $this->successPayload($result['data'], $result['meta']);
+    }
+
+    private function handleRemoveHuman(string $domain, ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    {
+        $result = null;
+        $failure = null;
+        $callerRole = null;
+
+        $exitCode = $this->runStepTree(
+            'Removing Proxy Route',
+            [
+                [
+                    'label' => 'Confirm destructive removal',
+                    'doneLabel' => 'Confirmed destructive removal',
+                    'run' => fn (): string => $domain,
+                ],
+                [
+                    'label' => 'Resolve proxy route',
+                    'doneLabel' => 'Resolved proxy route',
+                    'run' => function () use ($callerRoleResolver, &$callerRole): string {
+                        $callerRole = $callerRoleResolver->resolve();
+
+                        return $callerRole;
+                    },
+                ],
+                [
+                    'label' => 'Remove backend proxy route',
+                    'doneLabel' => 'Removed backend proxy route',
+                    'run' => function () use ($domain, $intent, &$result, &$failure, &$callerRole): string {
+                        try {
+                            if ($callerRole !== 'gateway') {
+                                /** @var ProxyRouteMutationResponse $dto */
+                                $dto = app(GatewayConnector::class)
+                                    ->send(new RemoveProxyRouteRequest(domain: $domain))
+                                    ->dto();
+
+                                $result = ['data' => $dto->data, 'meta' => $dto->meta];
+
+                                return 'gateway removed route intent';
+                            }
+
+                            $result = $intent->remove($domain);
+
+                            return 'route intent removed';
+                        } catch (GatewayApiException $e) {
+                            $failure = [
+                                'code' => $e->errorCode() ?? 'gateway_unavailable',
+                                'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to remove proxy routes.',
+                                'meta' => $e->errorMeta(),
+                            ];
+
+                            return "fail:{$failure['message']}";
+                        } catch (Throwable) {
+                            $failure = [
+                                'code' => 'gateway_unavailable',
+                                'message' => 'Gateway connection is required to remove proxy routes.',
+                                'meta' => [],
+                            ];
+
+                            return "fail:{$failure['message']}";
+                        }
+                    },
+                ],
+                [
+                    'label' => 'Remove route-scoped TLS material',
+                    'doneLabel' => 'Removed route-scoped TLS material',
+                    'run' => fn (): string => 'TLS cleanup deferred to doctor',
+                ],
+                [
+                    'label' => 'Apply and verify proxy removal',
+                    'doneLabel' => 'Applied and verified proxy removal',
+                    'run' => fn (): string => 'removal accepted',
+                ],
+            ],
+            doneFooter: 'Proxy route intent removed',
+            failFooter: 'Failed to remove proxy route intent',
+        );
+
+        if ($exitCode !== self::SUCCESS || $result === null) {
+            return is_array($failure)
+                ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'])
+                : self::FAILURE;
         }
 
         return $this->successPayload($result['data'], $result['meta']);
@@ -114,13 +208,6 @@ class ProxyRemoveCommand extends Command
         }
 
         $route = is_array($data['route'] ?? null) ? $data['route'] : [];
-        $this->line('┌ Removing Proxy Route');
-        $this->line('○ Confirm destructive removal');
-        $this->line('○ Resolve proxy route');
-        $this->line('○ Remove backend proxy route');
-        $this->line('○ Remove route-scoped TLS material');
-        $this->line('○ Apply and verify proxy removal');
-        $this->line('└ Proxy route intent removed');
         $this->line("Proxy route '".(string) ($route['domain'] ?? '')."' removed.");
 
         $this->renderWarnings($meta);

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\ShowProcessLogs;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\ShowProcessLogsRequest;
@@ -27,6 +29,9 @@ use Throwable;
 #[Description('Read app process runtime logs')]
 class ProcessLogsCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(ShowProcessLogs $showProcessLogs, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -59,10 +64,30 @@ class ProcessLogsCommand extends Command
             [$app, $workspace] = $context;
 
             if (! $this->wantsJson()) {
-                $this->renderProgressTree();
-            }
+                $result = null;
+                $exitCode = $this->runStepTree('Streaming Process Logs', [
+                    [
+                        'label' => 'Resolve runtime unit',
+                        'doneLabel' => 'Resolved runtime unit',
+                        'run' => fn (): string => 'runtime unit resolved',
+                    ],
+                    [
+                        'label' => 'Open log stream',
+                        'doneLabel' => 'Opened log stream',
+                        'run' => function () use ($showProcessLogs, $app, $workspace, $input, &$result): string {
+                            $result = $showProcessLogs->handle($app, $workspace, $input['name'], $input['lines'], $input['follow']);
 
-            $result = $showProcessLogs->handle($app, $workspace, $input['name'], $input['lines'], $input['follow']);
+                            return 'log stream opened';
+                        },
+                    ],
+                ], doneFooter: 'Log stream opened', failFooter: 'Process logs failed');
+
+                if ($exitCode !== self::SUCCESS) {
+                    return self::FAILURE;
+                }
+            } else {
+                $result = $showProcessLogs->handle($app, $workspace, $input['name'], $input['lines'], $input['follow']);
+            }
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -168,14 +193,6 @@ class ProcessLogsCommand extends Command
         }
 
         return [$app, null];
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Streaming Process Logs');
-        $this->line('○ Resolve runtime unit');
-        $this->line('○ Open log stream');
-        $this->line('└ Working...');
     }
 
     /**

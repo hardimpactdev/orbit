@@ -50,7 +50,9 @@ it('renders baseline profile timing in human mode', function (): void {
     });
 
     $this->artisan('profile docs')
-        ->expectsOutputToContain('┌ Profiling /')
+        ->expectsOutputToContain('┌  Profiling /')
+        ->expectsOutputToContain('●  Resolved target')
+        ->expectsOutputToContain('●  Collected timing data')
         ->expectsOutputToContain('Profiled https://docs.test/ in 52.00ms')
         ->expectsOutputToContain('GET https://docs.test/ 200 in 52.00ms')
         ->expectsOutputToContain('DNS 1.00ms')

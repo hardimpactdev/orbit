@@ -222,11 +222,11 @@ describe('process:start base contract', function (): void {
             'name' => 'vite',
             '--app' => 'docs',
         ])
-            ->expectsOutput('┌ Starting Processes')
-            ->expectsOutput('○ Resolve runtime units')
-            ->expectsOutput('○ Start runtime units')
-            ->expectsOutput('○ Record process events')
-            ->expectsOutput('└ Working...')
+            ->expectsOutputToContain('┌  Starting Processes')
+            ->expectsOutputToContain('○  Resolve runtime units')
+            ->expectsOutputToContain('○  Start runtime units')
+            ->expectsOutputToContain('○  Record process events')
+            ->expectsOutputToContain('└  Working...')
             ->expectsOutput("Process 'vite' started for app 'docs'")
             ->assertSuccessful();
     });

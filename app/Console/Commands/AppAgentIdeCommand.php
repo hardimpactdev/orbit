@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\PruneAppWorkspaces;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
@@ -31,6 +33,9 @@ use function Laravel\Prompts\text;
 #[Description('Set the default agent IDE for an app')]
 class AppAgentIdeCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(AppAgentIdeDefaults $defaults, PruneAppWorkspaces $pruneAppWorkspaces): int
     {
         $callerRole = $this->callerRole();
@@ -104,10 +109,63 @@ class AppAgentIdeCommand extends Command
             );
         }
 
+        if (! $this->wantsJson()) {
+            return $this->setAgentIdeForHuman($app, $agentIde, $defaults, $pruneAppWorkspaces);
+        }
+
         $data = $defaults->set($app, $agentIde);
 
         if ($data['action'] === 'set') {
             $data = $this->maybeCleanupWorkspaces($app, $data, $pruneAppWorkspaces);
+        }
+
+        return $this->successCommand($data);
+    }
+
+    private function setAgentIdeForHuman(
+        App $app,
+        string $agentIde,
+        AppAgentIdeDefaults $defaults,
+        PruneAppWorkspaces $pruneAppWorkspaces,
+    ): int {
+        $data = null;
+
+        $exitCode = $this->runStepTree(
+            'Configuring App Agent IDE',
+            [
+                [
+                    'key' => 'validate_adapter',
+                    'label' => 'Validate adapter',
+                    'doneLabel' => 'Validated adapter',
+                    'run' => fn (): string => $agentIde,
+                ],
+                [
+                    'key' => 'check_cleanup',
+                    'label' => 'Check for workspace cleanup',
+                    'doneLabel' => 'Checked for workspace cleanup',
+                    'run' => fn (): string => 'ready',
+                ],
+                [
+                    'key' => 'apply_agent_ide',
+                    'label' => 'Apply and verify app agent IDE',
+                    'doneLabel' => 'Applied and verified app agent IDE',
+                    'run' => function () use ($app, $agentIde, $defaults, $pruneAppWorkspaces, &$data): string {
+                        $data = $defaults->set($app, $agentIde);
+
+                        if ($data['action'] === 'set') {
+                            $data = $this->maybeCleanupWorkspaces($app, $data, $pruneAppWorkspaces);
+                        }
+
+                        return (string) ($data['agent_ide']['effective_adapter'] ?? 'none');
+                    },
+                ],
+            ],
+            doneFooter: "App '{$app->name}' agent IDE configured",
+            failFooter: "Failed to configure app '{$app->name}' agent IDE.",
+        );
+
+        if ($exitCode !== self::SUCCESS || ! is_array($data)) {
+            return self::FAILURE;
         }
 
         return $this->successCommand($data);
@@ -306,11 +364,6 @@ class AppAgentIdeCommand extends Command
     private function successCommand(array $data): int
     {
         if (! $this->wantsJson()) {
-            $this->line('┌ Configuring App Agent IDE');
-            $this->line('○ Validate adapter');
-            $this->line('○ Check for workspace cleanup');
-            $this->line('○ Apply and verify app agent IDE');
-
             if ($data['action'] === 'converged') {
                 $this->line($this->humanConvergedLine($data));
 
@@ -350,18 +403,18 @@ class AppAgentIdeCommand extends Command
         $effectiveAdapter = $agentIde['effective_adapter'];
 
         if ($adapter === null && $agentIde['source'] === 'node' && $effectiveAdapter !== null) {
-            return "└ App `{$name}` agent IDE set to inherit (effective: `{$effectiveAdapter}` from node `{$node}`)";
+            return "App `{$name}` agent IDE set to inherit (effective: `{$effectiveAdapter}` from node `{$node}`)";
         }
 
         if ($adapter === null) {
-            return "└ App `{$name}` agent IDE set to inherit (effective: none)";
+            return "App `{$name}` agent IDE set to inherit (effective: none)";
         }
 
         if ($adapter === 'none') {
-            return "└ App `{$name}` agent IDE set to none (effective: none)";
+            return "App `{$name}` agent IDE set to none (effective: none)";
         }
 
-        return "└ App `{$name}` agent IDE set to `{$adapter}` (effective: `{$effectiveAdapter}`)";
+        return "App `{$name}` agent IDE set to `{$adapter}` (effective: `{$effectiveAdapter}`)";
     }
 
     /**
@@ -380,14 +433,14 @@ class AppAgentIdeCommand extends Command
         $adapter = $agentIde['adapter'] ?? null;
 
         if ($adapter === null && $agentIde['source'] === 'node') {
-            return "└ App `{$name}` agent IDE already set to inherit";
+            return "App `{$name}` agent IDE already set to inherit";
         }
 
         if ($adapter === null) {
-            return "└ App `{$name}` agent IDE already set to none";
+            return "App `{$name}` agent IDE already set to none";
         }
 
-        return "└ App `{$name}` agent IDE already set to `{$adapter}`";
+        return "App `{$name}` agent IDE already set to `{$adapter}`";
     }
 
     /**

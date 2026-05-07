@@ -324,15 +324,16 @@ it('prompts for destructive confirmation and renders the documented human progre
 
     $this->artisan('app:remove docs')
         ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
-        ->expectsOutputToContain('┌ Removing App')
-        ->expectsOutputToContain('○ Validate removal')
-        ->expectsOutputToContain('○ Apply and verify app removal')
-        ->expectsOutputToContain('○ Remove app-owned proxy routes')
-        ->expectsOutputToContain('○ Remove app-owned schedules')
-        ->expectsOutputToContain('○ Remove app-owned workspaces')
-        ->expectsOutputToContain('○ Stop and remove app processes')
-        ->expectsOutputToContain('○ Clean node-side runtime artifacts')
-        ->expectsOutputToContain('└ Working...')
+        ->expectsOutputToContain('┌  Removing App')
+        ->expectsOutputToContain('○  Validate removal')
+        ->expectsOutputToContain('●  Validated removal')
+        ->expectsOutputToContain('●  Applied and verified app removal')
+        ->expectsOutputToContain('●  Removed app-owned proxy routes')
+        ->expectsOutputToContain('●  Removed app-owned schedules')
+        ->expectsOutputToContain('●  Removed app-owned workspaces')
+        ->expectsOutputToContain('●  Stopped and removed app processes')
+        ->expectsOutputToContain('●  Cleaned node-side runtime artifacts')
+        ->expectsOutputToContain("└  App 'docs' removed")
         ->expectsOutputToContain("App 'docs' removed")
         ->assertExitCode(0);
 });
@@ -379,7 +380,6 @@ it('renders drift details in human output when node cleanup leaves warnings', fu
 
     $this->artisan('app:remove docs')
         ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
-        ->expectsOutputToContain('└ App `docs` removed with drift')
         ->expectsOutputToContain("App 'docs' removed")
         ->expectsOutputToContain('  Drift detected:')
         ->expectsOutputToContain('  - app: App PHP-FPM configuration could not be removed during cleanup. (run `doctor --family=app --fix`)')

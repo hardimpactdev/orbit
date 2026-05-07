@@ -13,12 +13,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  * `Pulling source` → `Installing dependencies` → `Running migrations` → `Done`,
  * and dynamic extension when remote targets are discovered mid-flight.
  *
- * Each target is one row in the tree. The active row uses cyan `◉` with the
- * present-participle stage label; completed rows use green `●` with `Done`;
- * failed rows use red `●` with `Failed`.
+ * Each target is one row in the tree. The active row alternates cyan `○`/`◉`
+ * with the present-participle stage label; completed rows use green `●` with
+ * `Done`; failed rows use red `●` with `Failed`.
  */
 final class UpdateAllProgress
 {
+    private const int FRAME_INTERVAL_US = 300_000;
+
     private const string STATE_PENDING = 'pending';
 
     private const string STATE_ACTIVE = 'active';
@@ -45,6 +47,12 @@ final class UpdateAllProgress
 
     private bool $rendered = false;
 
+    private int $frame = 0;
+
+    private int $lastFrameAtUs = 0;
+
+    private readonly bool $decorated;
+
     /**
      * @param  list<array{target: string, node: string|null, role: string|null}>  $initialTargets
      */
@@ -52,6 +60,7 @@ final class UpdateAllProgress
         private readonly OutputInterface $output,
         array $initialTargets,
     ) {
+        $this->decorated = $output->isDecorated();
         $this->tree = new SpinnerTreeRenderer($output->isDecorated());
         $this->summary = new LifecycleSummaryRenderer($output->isDecorated());
 
@@ -80,6 +89,30 @@ final class UpdateAllProgress
     public function fail(string $key, string $message): void
     {
         $this->setRow($key, self::STATE_FAILED, $this->stageLabel('failed', $key), $message);
+    }
+
+    public function tick(): void
+    {
+        if (! $this->decorated || $this->finished) {
+            return;
+        }
+
+        $nowUs = (int) (microtime(true) * 1_000_000);
+
+        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < self::FRAME_INTERVAL_US) {
+            return;
+        }
+
+        $this->lastFrameAtUs = $nowUs;
+        $this->frame++;
+
+        $frame = $this->activeFrame();
+
+        foreach ($this->order as $key) {
+            if (($this->rows[$key]['state'] ?? null) === self::STATE_ACTIVE) {
+                $this->repaintRow($key, $frame);
+            }
+        }
     }
 
     /**
@@ -202,7 +235,7 @@ final class UpdateAllProgress
         $this->repaintRow($key);
     }
 
-    private function repaintRow(string $key): void
+    private function repaintRow(string $key, ?string $activeFrame = null): void
     {
         $index = array_search($key, $this->order, true);
 
@@ -213,7 +246,7 @@ final class UpdateAllProgress
         $row = $this->rows[$key];
         $line = match ($row['state']) {
             self::STATE_ACTIVE => $this->summary->spinnerLine(
-                "\e[36m◉\e[39m",
+                $activeFrame ?? $this->activeFrame(),
                 $row['label'],
                 $this->labelWidth,
             ),
@@ -223,6 +256,13 @@ final class UpdateAllProgress
         };
 
         $this->tree->updateLine($this->output, $index, count($this->order), $line);
+    }
+
+    private function activeFrame(): string
+    {
+        return $this->frame % 2 === 0
+            ? "\e[36m○\e[39m"
+            : "\e[36m◉\e[39m";
     }
 
     private function maxLabelWidthForTarget(string $target): int

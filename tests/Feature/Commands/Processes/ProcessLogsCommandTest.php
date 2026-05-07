@@ -79,10 +79,12 @@ describe('process:logs base contract', function (): void {
             '--lines' => 1,
             '--follow' => true,
         ])
-            ->expectsOutput('┌ Streaming Process Logs')
-            ->expectsOutput('○ Resolve runtime unit')
-            ->expectsOutput('○ Open log stream')
-            ->expectsOutput('└ Working...')
+            ->expectsOutputToContain('  ┌  Streaming Process Logs')
+            ->expectsOutputToContain('  │')
+            ->expectsOutputToContain('  ○  Resolve runtime unit')
+            ->expectsOutputToContain('  ○  Open log stream')
+            ->expectsOutputToContain('  ●  Resolved runtime unit')
+            ->expectsOutputToContain('  └  Log stream opened')
             ->expectsOutput('Vite ready')
             ->assertSuccessful();
 

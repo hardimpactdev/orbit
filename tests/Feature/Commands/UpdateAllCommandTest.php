@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 
@@ -54,9 +55,13 @@ it('updates the local checkout and every active non-control remote node from the
     $shell = new UpdateAllRemoteShell(exitCode: 0);
     app()->instance(RemoteShell::class, $shell);
 
-    $this->artisan('update:all')
-        ->expectsOutputToContain('Successfully updated 2 nodes')
-        ->assertSuccessful();
+    $exitCode = Artisan::call('update:all', ['--json' => true]);
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['updates'])->toHaveCount(2);
+    expect($payload['success']['data']['updates'][0]['target'])->toBe('local');
+    expect($payload['success']['data']['updates'][1]['target'])->toBe('beast');
 
     Process::assertRanTimes(fn (): bool => true, 3);
     Process::assertRan(fn ($process): bool => $process->path === base_path()
@@ -109,9 +114,12 @@ it('excludes control nodes from remote update targets', function (): void {
     $shell = new UpdateAllRemoteShell(exitCode: 0);
     app()->instance(RemoteShell::class, $shell);
 
-    $this->artisan('update:all')
-        ->expectsOutputToContain('Successfully updated 1 node')
-        ->assertSuccessful();
+    $exitCode = Artisan::call('update:all', ['--json' => true]);
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['updates'])->toHaveCount(1);
+    expect($payload['success']['data']['updates'][0]['target'])->toBe('local');
 
     Process::assertRanTimes(fn (): bool => true, 3);
     expect($shell->nodes)->toHaveCount(0);

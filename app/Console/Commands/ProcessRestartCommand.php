@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\RestartProcesses;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\RestartProcessesRequest;
@@ -25,6 +27,9 @@ use Throwable;
 #[Description('Restart app process runtime units')]
 class ProcessRestartCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(RestartProcesses $restartProcesses, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -51,10 +56,33 @@ class ProcessRestartCommand extends Command
             [$app, $workspace] = $context;
 
             if (! $this->wantsJson()) {
-                $this->renderProgressTree();
-            }
+                $result = null;
+                $exitCode = $this->runProcessRuntimeTree(
+                    title: 'Restarting Processes',
+                    actionLabel: 'Restart runtime units',
+                    actionDoneLabel: 'Restarted runtime units',
+                    doneFooter: 'Processes restarted',
+                    failFooter: 'Process restart failed',
+                    operation: function () use ($restartProcesses, $app, $workspace, &$result): string {
+                        $result = $restartProcesses->handle($app, $workspace, $this->stringArgument('name'));
 
-            $result = $restartProcesses->handle($app, $workspace, $this->stringArgument('name'));
+                        return $result['failed'] ? 'fail:'.$result['message'] : 'runtime units restarted';
+                    },
+                );
+
+                if ($exitCode !== self::SUCCESS) {
+                    return is_array($result)
+                        ? $this->failCommand(
+                            code: 'process.runtime_action_failed',
+                            message: $result['message'],
+                            meta: $result['meta'],
+                            data: $result['data'],
+                        )
+                        : self::FAILURE;
+                }
+            } else {
+                $result = $restartProcesses->handle($app, $workspace, $this->stringArgument('name'));
+            }
         } catch (GatewayApiException $e) {
             return $this->failCommand(
                 code: $e->errorCode() ?? 'gateway_unavailable',
@@ -139,15 +167,6 @@ class ProcessRestartCommand extends Command
         }
 
         return [$app, null];
-    }
-
-    private function renderProgressTree(): void
-    {
-        $this->line('┌ Restarting Processes');
-        $this->line('○ Resolve runtime units');
-        $this->line('○ Restart runtime units');
-        $this->line('○ Record process events');
-        $this->line('└ Working...');
     }
 
     /**
@@ -241,5 +260,32 @@ class ProcessRestartCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
+    }
+
+    private function runProcessRuntimeTree(
+        string $title,
+        string $actionLabel,
+        string $actionDoneLabel,
+        string $doneFooter,
+        string $failFooter,
+        callable $operation,
+    ): int {
+        return $this->runStepTree($title, [
+            [
+                'label' => 'Resolve runtime units',
+                'doneLabel' => 'Resolved runtime units',
+                'run' => fn (): string => 'runtime units resolved',
+            ],
+            [
+                'label' => $actionLabel,
+                'doneLabel' => $actionDoneLabel,
+                'run' => $operation,
+            ],
+            [
+                'label' => 'Record process events',
+                'doneLabel' => 'Recorded process events',
+                'run' => fn (): string => 'events recorded',
+            ],
+        ], doneFooter: $doneFooter, failFooter: $failFooter);
     }
 }

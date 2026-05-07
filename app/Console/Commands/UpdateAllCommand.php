@@ -202,6 +202,154 @@ class UpdateAllCommand extends Command implements Loggable
 
     private function executeControlHumanPath(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
+        if (! function_exists('pcntl_fork') || ! function_exists('stream_socket_pair')) {
+            return $this->executeControlHumanPathSequential($updater, $gatewayStream);
+        }
+
+        $streamWorker = $this->startGatewayStreamWorker($gatewayStream);
+
+        if ($streamWorker === null) {
+            return $this->executeControlHumanPathSequential($updater, $gatewayStream);
+        }
+
+        ['pipe' => $streamPipe, 'pid' => $streamPid] = $streamWorker;
+        stream_set_blocking($streamPipe, false);
+
+        $streamBuffer = '';
+        $queuedStreamEvents = [];
+        $remoteTargets = [];
+        $streamTerminal = null;
+
+        while ($remoteTargets === [] && $streamTerminal === null) {
+            $this->drainGatewayStreamEvents($streamPipe, $streamBuffer, function (array $event) use (&$remoteTargets, &$queuedStreamEvents, &$streamTerminal): void {
+                $queuedStreamEvents[] = $event;
+
+                if (($event['event'] ?? null) === 'tree') {
+                    $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
+                    $remoteTargets = $this->remoteTargetsFromStreamPayload($payload);
+                }
+
+                if (in_array($event['event'] ?? null, ['complete', 'error', 'exception', 'result'], true)) {
+                    $streamTerminal = $event;
+                }
+            });
+
+            if (pcntl_waitpid($streamPid, $status, WNOHANG) > 0 && $remoteTargets === []) {
+                $streamTerminal ??= ['event' => 'exception', 'message' => 'Gateway stream ended before declaring update targets.'];
+                break;
+            }
+
+            usleep(50_000);
+        }
+
+        $this->targets = array_merge(
+            [['target' => 'local', 'node' => null, 'role' => null]],
+            $remoteTargets,
+        );
+
+        $progress = $this->openProgress();
+        $localWorker = $this->startLocalTargetWorker($updater);
+
+        if ($localWorker === null) {
+            return $this->executeControlHumanPathSequential($updater, $gatewayStream);
+        }
+
+        ['pipe' => $localPipe, 'pid' => $localPid] = $localWorker;
+        stream_set_blocking($localPipe, false);
+
+        $localBuffer = '';
+        $updatesByIndex = [];
+        $localFailures = [];
+        $streamUpdates = [];
+        $streamError = null;
+        $streamData = [];
+        $streamResult = null;
+        $localDone = false;
+        $streamDone = $streamTerminal !== null;
+
+        foreach ($queuedStreamEvents as $event) {
+            $this->applyGatewayStreamEvent($event, $progress, $streamUpdates, $streamError, $streamData, $streamResult);
+        }
+
+        while (! $localDone || ! $streamDone) {
+            if (! $localDone) {
+                $this->drainTargetEvents($localPipe, $localBuffer, $progress, $updatesByIndex, $localFailures);
+
+                if (pcntl_waitpid($localPid, $status, WNOHANG) > 0) {
+                    $this->drainTargetEvents($localPipe, $localBuffer, $progress, $updatesByIndex, $localFailures);
+                    fclose($localPipe);
+                    $localDone = true;
+                }
+            }
+
+            if (! $streamDone) {
+                $this->drainGatewayStreamEvents($streamPipe, $streamBuffer, function (array $event) use ($progress, &$streamUpdates, &$streamError, &$streamData, &$streamResult): void {
+                    $this->applyGatewayStreamEvent($event, $progress, $streamUpdates, $streamError, $streamData, $streamResult);
+                });
+
+                if ($streamResult !== null || $streamError !== null || pcntl_waitpid($streamPid, $status, WNOHANG) > 0) {
+                    $this->drainGatewayStreamEvents($streamPipe, $streamBuffer, function (array $event) use ($progress, &$streamUpdates, &$streamError, &$streamData, &$streamResult): void {
+                        $this->applyGatewayStreamEvent($event, $progress, $streamUpdates, $streamError, $streamData, $streamResult);
+                    });
+                    fclose($streamPipe);
+                    $streamDone = true;
+                }
+            }
+
+            $progress->tick();
+            usleep(50_000);
+        }
+
+        ksort($updatesByIndex);
+        $updates = array_merge(array_values($updatesByIndex), $streamUpdates);
+
+        if ($localFailures !== []) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'local_checkout');
+
+            foreach ($localFailures as $failure) {
+                $this->writePostTreeFailure($failure['headline'], $failure['output']);
+            }
+
+            return self::FAILURE;
+        }
+
+        if ($streamResult instanceof GatewayApiException) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: $streamResult->errorCode() ?? 'gateway_unavailable',
+                message: $streamResult->getMessage() !== ''
+                    ? $streamResult->getMessage()
+                    : 'Gateway connection is required to update the fleet.',
+                meta: $streamResult->errorMeta(),
+                data: $streamResult->errorData(),
+            );
+        }
+
+        if ($streamResult !== self::SUCCESS || $streamError !== null) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            return $this->failCommand(
+                code: is_string($streamData['code'] ?? null) ? $streamData['code'] : 'remote_update_failed',
+                message: $streamError ?? 'One or more Orbit installations failed to update.',
+                data: ['updates' => $updates],
+                meta: [
+                    'summary' => $this->summary($updates),
+                ],
+            );
+        }
+
+        $progress->finish(success: true, footer: 'Successfully updated '.$this->nodeCountLabel(count($updates)));
+        $this->captureActivitySummary($updates, 'completed');
+
+        return $this->respondSuccess($updates);
+    }
+
+    private function executeControlHumanPathSequential(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
+    {
         $this->targets = [['target' => 'local', 'node' => null, 'role' => null]];
         $localUpdate = ['target' => 'local', 'node' => null, 'role' => null, 'status' => 'pending'];
 
@@ -371,7 +519,155 @@ class UpdateAllCommand extends Command implements Loggable
     private function handleHuman(OrbitUpdater $updater, $nodes): int
     {
         $progress = $this->openProgress();
+        [$updates, $failures] = $this->runTargetsWithProgress($updater, $nodes, $progress);
+        $failed = $failures !== [];
+
+        if ($failed) {
+            $progress->finish(success: false, footer: 'Failed');
+            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+
+            foreach ($failures as $failure) {
+                $this->writePostTreeFailure($failure['headline'], $failure['output']);
+            }
+
+            return self::FAILURE;
+        }
+
+        $progress->finish(success: true, footer: 'Successfully updated '.$this->nodeCountLabel(count($updates)));
+        $this->captureActivitySummary($updates, 'completed');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return array{
+     *     0: list<array<string, mixed>>,
+     *     1: list<array{headline: string, output: string}>,
+     * }
+     */
+    private function runTargetsWithProgress(OrbitUpdater $updater, $nodes, UpdateAllProgress $progress): array
+    {
+        if (! function_exists('pcntl_fork') || ! function_exists('stream_socket_pair')) {
+            return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
+        }
+
+        $targets = [
+            [
+                'key' => 'local',
+                'node' => null,
+                'role' => null,
+                'run' => function (mixed $pipe, int $index) use ($updater): void {
+                    $this->runLocalTargetWorker($updater, $pipe, $index);
+                },
+            ],
+        ];
+
+        foreach ($nodes as $node) {
+            $targets[] = [
+                'key' => $node->name,
+                'node' => $node->name,
+                'role' => $node->role,
+                'run' => function (mixed $pipe, int $index) use ($updater, $node): void {
+                    $this->runRemoteTargetWorker($updater, $node, $pipe, $index);
+                },
+            ];
+        }
+
+        $pipes = [];
+        $pids = [];
+        $buffers = [];
+        $completed = [];
+
+        foreach ($targets as $index => $target) {
+            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+            if ($pair === false) {
+                return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
+            }
+
+            $pid = pcntl_fork();
+
+            if ($pid === -1) {
+                fclose($pair[0]);
+                fclose($pair[1]);
+
+                return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
+            }
+
+            if ($pid === 0) {
+                fclose($pair[0]);
+                ($target['run'])($pair[1], $index);
+                fclose($pair[1]);
+                posix_kill(getmypid(), SIGKILL);
+            }
+
+            fclose($pair[1]);
+            stream_set_blocking($pair[0], false);
+            $pipes[$index] = $pair[0];
+            $pids[$index] = $pid;
+            $buffers[$index] = '';
+            $completed[$index] = false;
+        }
+
+        $updatesByIndex = [];
+        $failures = [];
+
+        while (in_array(false, $completed, true)) {
+            foreach ($pipes as $index => $pipe) {
+                if ($completed[$index]) {
+                    continue;
+                }
+
+                $this->drainTargetEvents($pipe, $buffers[$index], $progress, $updatesByIndex, $failures);
+
+                $wait = pcntl_waitpid($pids[$index], $status, WNOHANG);
+
+                if ($wait <= 0) {
+                    continue;
+                }
+
+                $this->drainTargetEvents($pipe, $buffers[$index], $progress, $updatesByIndex, $failures);
+                fclose($pipe);
+                $completed[$index] = true;
+
+                if (! isset($updatesByIndex[$index])) {
+                    $target = $targets[$index];
+                    $key = (string) $target['key'];
+                    $progress->fail($key, 'failed');
+                    $updatesByIndex[$index] = [
+                        'target' => $key,
+                        'node' => $target['node'],
+                        'role' => $target['role'],
+                        'status' => 'failed',
+                    ];
+                    $failures[] = [
+                        'headline' => $key === 'local' ? 'Failed to update local Orbit checkout.' : "Failed to update node {$key}.",
+                        'output' => 'Worker exited without reporting a result.',
+                    ];
+                }
+            }
+
+            $progress->tick();
+            usleep(50_000);
+        }
+
+        ksort($updatesByIndex);
+
+        return [array_values($updatesByIndex), $failures];
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return array{
+     *     0: list<array<string, mixed>>,
+     *     1: list<array{headline: string, output: string}>,
+     * }
+     */
+    private function runTargetsSequentiallyWithProgress(OrbitUpdater $updater, $nodes, UpdateAllProgress $progress): array
+    {
         $updates = [];
+        $failures = [];
 
         $localResult = $this->updateLocalWithProgress($updater, $progress);
         $updates[] = [
@@ -382,14 +678,11 @@ class UpdateAllCommand extends Command implements Loggable
         ];
 
         if (! $localResult->successful()) {
-            $progress->finish(success: false, footer: 'Failed');
-            $this->captureActivitySummary($updates, 'failed', 'local_checkout');
-            $this->writePostTreeFailure('Failed to update local Orbit checkout.', $localResult->errorOutput() ?: $localResult->output());
-
-            return self::FAILURE;
+            return [$updates, [[
+                'headline' => 'Failed to update local Orbit checkout.',
+                'output' => $localResult->errorOutput() ?: $localResult->output(),
+            ]]];
         }
-
-        $failed = false;
 
         foreach ($nodes as $node) {
             $result = $this->updateRemoteWithProgress($updater, $node, $progress);
@@ -401,22 +694,413 @@ class UpdateAllCommand extends Command implements Loggable
             ];
 
             if (! $result->successful()) {
-                $failed = true;
-                $this->writePostTreeFailure("Failed to update node {$node->name}.", $result->errorOutput() ?: $result->output());
+                $failures[] = [
+                    'headline' => "Failed to update node {$node->name}.",
+                    'output' => $result->errorOutput() ?: $result->output(),
+                ];
             }
         }
 
-        if ($failed) {
-            $progress->finish(success: false, footer: 'Failed');
-            $this->captureActivitySummary($updates, 'failed', 'remote_update');
+        return [$updates, $failures];
+    }
 
-            return self::FAILURE;
+    private function runLocalTargetWorker(OrbitUpdater $updater, mixed $pipe, int $index): void
+    {
+        foreach (['pulling_source', 'installing_dependencies', 'running_migrations'] as $stage) {
+            $this->writeTargetEvent($pipe, [
+                'type' => 'stage',
+                'index' => $index,
+                'key' => 'local',
+                'stage' => $stage,
+            ]);
+
+            $result = match ($stage) {
+                'pulling_source' => $updater->pullSource(),
+                'installing_dependencies' => $updater->installDependencies(),
+                'running_migrations' => $updater->runMigrations(),
+            };
+
+            if (! $result->successful()) {
+                $this->writeTargetEvent($pipe, [
+                    'type' => 'fail',
+                    'index' => $index,
+                    'key' => 'local',
+                    'node' => null,
+                    'role' => null,
+                    'output' => $this->failureMessage($result->errorOutput() ?: $result->output()),
+                ]);
+
+                return;
+            }
         }
 
-        $progress->finish(success: true, footer: 'Successfully updated '.$this->nodeCountLabel(count($updates)));
-        $this->captureActivitySummary($updates, 'completed');
+        $this->writeTargetEvent($pipe, [
+            'type' => 'done',
+            'index' => $index,
+            'key' => 'local',
+            'node' => null,
+            'role' => null,
+        ]);
+    }
 
-        return self::SUCCESS;
+    /**
+     * @return array{pipe: resource, pid: int}|null
+     */
+    private function startLocalTargetWorker(OrbitUpdater $updater): ?array
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+        if ($pair === false) {
+            return null;
+        }
+
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            fclose($pair[0]);
+            fclose($pair[1]);
+
+            return null;
+        }
+
+        if ($pid === 0) {
+            fclose($pair[0]);
+            $this->runLocalTargetWorker($updater, $pair[1], 0);
+            fclose($pair[1]);
+            posix_kill(getmypid(), SIGKILL);
+        }
+
+        fclose($pair[1]);
+
+        return ['pipe' => $pair[0], 'pid' => $pid];
+    }
+
+    /**
+     * @return array{pipe: resource, pid: int}|null
+     */
+    private function startGatewayStreamWorker(UpdateAllGatewayStream $gatewayStream): ?array
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+        if ($pair === false) {
+            return null;
+        }
+
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            fclose($pair[0]);
+            fclose($pair[1]);
+
+            return null;
+        }
+
+        if ($pid === 0) {
+            fclose($pair[0]);
+            $result = $gatewayStream->run(function (string $event, array $payload) use ($pair): void {
+                $this->writeGatewayStreamEvent($pair[1], [
+                    'event' => $event,
+                    'payload' => $payload,
+                ]);
+            });
+
+            if ($result instanceof GatewayApiException) {
+                $this->writeGatewayStreamEvent($pair[1], [
+                    'event' => 'exception',
+                    'message' => $result->getMessage(),
+                    'code' => $result->errorCode(),
+                    'meta' => $result->errorMeta(),
+                    'data' => $result->errorData(),
+                ]);
+            } else {
+                $this->writeGatewayStreamEvent($pair[1], [
+                    'event' => 'result',
+                    'result' => $result,
+                ]);
+            }
+
+            fclose($pair[1]);
+            posix_kill(getmypid(), SIGKILL);
+        }
+
+        fclose($pair[1]);
+
+        return ['pipe' => $pair[0], 'pid' => $pid];
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     */
+    private function writeGatewayStreamEvent(mixed $pipe, array $event): void
+    {
+        fwrite($pipe, json_encode($event, JSON_THROW_ON_ERROR)."\n");
+    }
+
+    /**
+     * @param  callable(array<string, mixed>): void  $onEvent
+     */
+    private function drainGatewayStreamEvents(mixed $pipe, string &$buffer, callable $onEvent): void
+    {
+        $data = stream_get_contents($pipe);
+
+        if (is_string($data) && $data !== '') {
+            $buffer .= $data;
+        }
+
+        while (($position = strpos($buffer, "\n")) !== false) {
+            $line = substr($buffer, 0, $position);
+            $buffer = substr($buffer, $position + 1);
+
+            if ($line === '') {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $event */
+                $event = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                continue;
+            }
+
+            $onEvent($event);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return list<array{target: string, node: string|null, role: string|null}>
+     */
+    private function remoteTargetsFromStreamPayload(array $payload): array
+    {
+        $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
+        $targets = [];
+
+        foreach ($steps as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $key = $step['key'] ?? null;
+
+            if (! is_string($key) || $key === '') {
+                continue;
+            }
+
+            $targets[] = ['target' => $key, 'node' => $key, 'role' => null];
+        }
+
+        return $targets;
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @param  list<array<string, mixed>>  $streamUpdates
+     * @param  array<string, mixed>  $streamData
+     */
+    private function applyGatewayStreamEvent(
+        array $event,
+        UpdateAllProgress $progress,
+        array &$streamUpdates,
+        ?string &$streamError,
+        array &$streamData,
+        GatewayApiException|int|null &$streamResult,
+    ): void {
+        $eventName = is_string($event['event'] ?? null) ? $event['event'] : null;
+
+        if ($eventName === 'tree') {
+            return;
+        }
+
+        if ($eventName === 'step') {
+            $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
+            $this->applyStreamStep($payload, $progress);
+
+            return;
+        }
+
+        if (in_array($eventName, ['complete', 'error'], true)) {
+            $payload = is_array($event['payload'] ?? null) ? $event['payload'] : [];
+            /** @var array<string, mixed> $data */
+            $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+            $updates = is_array($data['updates'] ?? null) ? $data['updates'] : [];
+            $streamUpdates = [];
+
+            foreach ($updates as $update) {
+                if (is_array($update)) {
+                    /** @var array<string, mixed> $update */
+                    $streamUpdates[] = $update;
+                }
+            }
+
+            $streamData = $data;
+            $streamResult = (int) ($payload['exit_code'] ?? ($eventName === 'complete' ? self::SUCCESS : self::FAILURE));
+
+            if ($eventName === 'error') {
+                $streamError = is_string($payload['message'] ?? null)
+                    ? $payload['message']
+                    : 'One or more Orbit installations failed to update.';
+            }
+
+            return;
+        }
+
+        if ($eventName === 'exception') {
+            $streamResult = new GatewayApiException(
+                message: is_string($event['message'] ?? null) ? $event['message'] : 'Gateway connection is required to update the fleet.',
+                errorCode: is_string($event['code'] ?? null) ? $event['code'] : null,
+                errorMeta: is_array($event['meta'] ?? null) ? $event['meta'] : [],
+                errorData: is_array($event['data'] ?? null) ? $event['data'] : [],
+            );
+
+            return;
+        }
+
+        if ($eventName === 'result') {
+            $streamResult = is_int($event['result'] ?? null) ? $event['result'] : self::FAILURE;
+        }
+    }
+
+    private function runRemoteTargetWorker(OrbitUpdater $updater, Node $node, mixed $pipe, int $index): void
+    {
+        foreach (['pulling_source', 'installing_dependencies', 'running_migrations'] as $stage) {
+            $this->writeTargetEvent($pipe, [
+                'type' => 'stage',
+                'index' => $index,
+                'key' => $node->name,
+                'stage' => $stage,
+            ]);
+
+            $result = match ($stage) {
+                'pulling_source' => $updater->pullRemoteSource($node),
+                'installing_dependencies' => $updater->installRemoteDependencies($node),
+                'running_migrations' => $updater->runRemoteMigrations($node),
+            };
+
+            if (! $result->successful()) {
+                $this->writeTargetEvent($pipe, [
+                    'type' => 'fail',
+                    'index' => $index,
+                    'key' => $node->name,
+                    'node' => $node->name,
+                    'role' => $node->role,
+                    'output' => $this->failureMessage($result->errorOutput() ?: $result->output()),
+                ]);
+
+                return;
+            }
+        }
+
+        $this->writeTargetEvent($pipe, [
+            'type' => 'done',
+            'index' => $index,
+            'key' => $node->name,
+            'node' => $node->name,
+            'role' => $node->role,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     */
+    private function writeTargetEvent(mixed $pipe, array $event): void
+    {
+        fwrite($pipe, json_encode($event, JSON_THROW_ON_ERROR)."\n");
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $updatesByIndex
+     * @param  list<array{headline: string, output: string}>  $failures
+     */
+    private function drainTargetEvents(
+        mixed $pipe,
+        string &$buffer,
+        UpdateAllProgress $progress,
+        array &$updatesByIndex,
+        array &$failures,
+    ): void {
+        $data = stream_get_contents($pipe);
+
+        if (is_string($data) && $data !== '') {
+            $buffer .= $data;
+        }
+
+        while (($position = strpos($buffer, "\n")) !== false) {
+            $line = substr($buffer, 0, $position);
+            $buffer = substr($buffer, $position + 1);
+
+            if ($line === '') {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $event */
+                $event = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                continue;
+            }
+
+            $this->applyTargetEvent($event, $progress, $updatesByIndex, $failures);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @param  array<int, array<string, mixed>>  $updatesByIndex
+     * @param  list<array{headline: string, output: string}>  $failures
+     */
+    private function applyTargetEvent(
+        array $event,
+        UpdateAllProgress $progress,
+        array &$updatesByIndex,
+        array &$failures,
+    ): void {
+        $type = is_string($event['type'] ?? null) ? $event['type'] : null;
+        $key = is_string($event['key'] ?? null) ? $event['key'] : null;
+        $index = is_int($event['index'] ?? null) ? $event['index'] : null;
+
+        if ($type === null || $key === null || $index === null) {
+            return;
+        }
+
+        if ($type === 'stage') {
+            $stage = is_string($event['stage'] ?? null) ? $event['stage'] : null;
+
+            if ($stage !== null) {
+                $progress->stage($key, $stage);
+            }
+
+            return;
+        }
+
+        $node = is_string($event['node'] ?? null) ? $event['node'] : null;
+        $role = is_string($event['role'] ?? null) ? $event['role'] : null;
+
+        if ($type === 'done') {
+            $progress->done($key);
+            $updatesByIndex[$index] = [
+                'target' => $key,
+                'node' => $node,
+                'role' => $role,
+                'status' => 'completed',
+            ];
+
+            return;
+        }
+
+        if ($type === 'fail') {
+            $output = is_string($event['output'] ?? null) ? $event['output'] : 'failed';
+            $progress->fail($key, $output);
+            $updatesByIndex[$index] = [
+                'target' => $key,
+                'node' => $node,
+                'role' => $role,
+                'status' => 'failed',
+            ];
+            $failures[] = [
+                'headline' => $key === 'local' ? 'Failed to update local Orbit checkout.' : "Failed to update node {$key}.",
+                'output' => $output,
+            ];
+        }
     }
 
     private function updateLocalWithProgress(OrbitUpdater $updater, UpdateAllProgress $progress): ProcessResult

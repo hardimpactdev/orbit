@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\AddSchedule;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\AddScheduleRequest;
@@ -29,6 +31,9 @@ use Throwable;
 #[Description('Add a recurring schedule')]
 class ScheduleAddCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(AddSchedule $addSchedule, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
@@ -45,29 +50,87 @@ class ScheduleAddCommand extends Command
             return $input;
         }
 
-        try {
-            if ($callerRole !== 'gateway') {
-                return $this->forwardAdd($input);
-            }
+        $target = null;
 
+        if ($callerRole === 'gateway') {
             $target = $this->resolveTarget($input['app'], $input['node']);
 
             if (is_int($target)) {
                 return $target;
             }
+        }
 
-            $result = $addSchedule->handle(
-                target: $target,
-                name: $input['name'],
-                interval: $input['interval'],
-                timezone: $input['timezone'],
-                executionType: $input['execution_type'],
-                executionValue: $input['execution_value'],
-            );
-        } catch (GatewayApiException $e) {
-            return $this->failCommand($e->errorCode() ?? 'gateway_unavailable', $e->getMessage(), $e->errorMeta(), $e->errorData());
-        } catch (Throwable) {
-            return $this->failCommand('gateway_unavailable', 'Gateway connection is required to add schedules.', []);
+        $result = null;
+        $failure = null;
+        $operation = function () use ($callerRole, $input, $addSchedule, $target, &$result, &$failure): string {
+            try {
+                if ($callerRole !== 'gateway') {
+                    $result = $this->forwardAddResult($input);
+
+                    return 'gateway accepted';
+                }
+
+                $result = $addSchedule->handle(
+                    target: $target,
+                    name: $input['name'],
+                    interval: $input['interval'],
+                    timezone: $input['timezone'],
+                    executionType: $input['execution_type'],
+                    executionValue: $input['execution_value'],
+                );
+
+                return 'scheduler pickup confirmed';
+            } catch (GatewayApiException $e) {
+                $failure = [
+                    'code' => $e->errorCode() ?? 'gateway_unavailable',
+                    'message' => $e->getMessage(),
+                    'meta' => $e->errorMeta(),
+                    'data' => $e->errorData(),
+                ];
+
+                return "fail:{$failure['message']}";
+            } catch (Throwable) {
+                $failure = [
+                    'code' => 'gateway_unavailable',
+                    'message' => 'Gateway connection is required to add schedules.',
+                    'meta' => [],
+                    'data' => [],
+                ];
+
+                return "fail:{$failure['message']}";
+            }
+        };
+
+        if (! $this->wantsJson()) {
+            $exitCode = $this->runStepTree('Adding Schedule', [
+                [
+                    'label' => 'Validate schedule',
+                    'doneLabel' => 'Validated schedule',
+                    'run' => fn (): string => 'input resolved',
+                ],
+                [
+                    'label' => 'Create schedule intent',
+                    'doneLabel' => 'Created schedule intent',
+                    'run' => fn (): string => 'intent accepted',
+                ],
+                [
+                    'label' => 'Confirm scheduler pickup',
+                    'doneLabel' => 'Confirmed scheduler pickup',
+                    'run' => $operation,
+                ],
+            ], doneFooter: 'Schedule added', failFooter: 'Schedule add failed');
+
+            if ($exitCode !== self::SUCCESS) {
+                return is_array($failure)
+                    ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data'])
+                    : self::FAILURE;
+            }
+        } else {
+            $operation();
+
+            if (is_array($failure)) {
+                return $this->failCommand($failure['code'], $failure['message'], $failure['meta'], $failure['data']);
+            }
         }
 
         return $this->successPayload($result['data']);
@@ -75,8 +138,9 @@ class ScheduleAddCommand extends Command
 
     /**
      * @param  array{name: string, app: string|null, node: string|null, interval: string, timezone: string, command: string|null, script: string|null, execution_type: string, execution_value: string}  $input
+     * @return array{data: array<string, mixed>}
      */
-    private function forwardAdd(array $input): int
+    private function forwardAddResult(array $input): array
     {
         /** @var ScheduleAddResponse $dto */
         $dto = app(GatewayConnector::class)
@@ -91,7 +155,7 @@ class ScheduleAddCommand extends Command
             ))
             ->dto();
 
-        return $this->successPayload($dto->data);
+        return ['data' => $dto->data];
     }
 
     /**
@@ -184,11 +248,6 @@ class ScheduleAddCommand extends Command
         }
 
         $schedule = is_array($data['schedule'] ?? null) ? $data['schedule'] : [];
-        $this->line('┌ Adding Schedule');
-        $this->line('○ Validate schedule');
-        $this->line('○ Create schedule intent');
-        $this->line('○ Confirm scheduler pickup');
-        $this->line('└ Schedule added');
         $this->line("Schedule '".(string) ($schedule['name'] ?? '')."' added.");
 
         return self::SUCCESS;

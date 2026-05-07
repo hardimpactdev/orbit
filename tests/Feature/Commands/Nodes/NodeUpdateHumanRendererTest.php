@@ -66,11 +66,11 @@ describe('node:update human renderer contract', function (): void {
             'name' => 'app-1',
             '--host' => '10.6.0.99',
         ])
-            ->expectsOutputToContain('┌ Updating Node')
-            ->expectsOutputToContain('○ Validate node')
-            ->expectsOutputToContain('○ Apply and verify node change')
-            ->expectsOutputToContain('○ Apply node artifacts')
-            ->expectsOutputToContain("└ Node 'app-1' updated")
+            ->expectsOutputToContain('┌  Updating Node')
+            ->expectsOutputToContain('○  Validate node')
+            ->expectsOutputToContain('○  Apply and verify node change')
+            ->expectsOutputToContain('○  Apply node artifacts')
+            ->expectsOutputToContain("└  Node 'app-1' updated")
             ->assertSuccessful();
     });
 
@@ -90,7 +90,7 @@ describe('node:update human renderer contract', function (): void {
             'name' => 'app-1',
             '--host' => '10.6.0.99',
         ])
-            ->expectsOutputToContain("└ Node 'app-1' updated with drift")
+            ->expectsOutputToContain("└  Node 'app-1' updated with drift")
             ->expectsOutputToContain('Drift detected: Node artifact re-enactment failed after intent update.')
             ->assertSuccessful();
     });
@@ -116,7 +116,7 @@ describe('node:update human renderer contract', function (): void {
             'name' => 'app-1',
             '--host' => '10.6.0.7',
         ])
-            ->expectsOutputToContain("└ Node 'app-1' unchanged")
+            ->expectsOutputToContain("└  Node 'app-1' unchanged")
             ->expectsOutputToContain("Node 'app-1' unchanged")
             ->expectsOutputToContain('No fields were modified.')
             ->assertSuccessful();

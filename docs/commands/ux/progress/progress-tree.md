@@ -71,6 +71,13 @@ gateway-streamed SSE shape.
 Laravel Prompts is banned as a tree header (the `┌ Title` line is the
 header).
 
+## Pao
+
+Orbit disables `laravel/pao` output cleaning by default because progress trees
+are a CLI contract, not cosmetic decoration. When debugging tree rendering in a
+context where Pao may still be active, run the command with `PAO_DISABLE=1` so
+agent-observed output preserves box drawing, status glyphs, and ANSI state.
+
 ## Example
 
 ```php

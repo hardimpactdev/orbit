@@ -36,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
+        $_SERVER['PAO_DISABLE'] ??= '1';
+
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->singleton(GatewayConnector::class);
         $this->app->singleton(LocalResolver::class);

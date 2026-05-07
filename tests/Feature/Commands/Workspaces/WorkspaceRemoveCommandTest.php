@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
@@ -122,6 +123,98 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         ->and($payload['success']['meta'])->toMatchArray([
             'kept_files' => false,
         ]);
+});
+
+it('renders the documented human progress tree while removing a workspace', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'user' => 'orbit',
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+        'php_version' => '8.5',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature-api',
+        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+    ]);
+
+    app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $this->artisan('workspace:remove feature-api --app=docs --force')
+        ->expectsOutputToContain('┌  Removing Workspace')
+        ->expectsOutputToContain('○  Apply and verify workspace removal')
+        ->expectsOutputToContain('●  Applied and verified workspace removal')
+        ->expectsOutputToContain('●  Stopped traffic for workspace hostname')
+        ->expectsOutputToContain('●  Stopped inherited processes')
+        ->expectsOutputToContain('●  Ran teardown steps')
+        ->expectsOutputToContain('●  Cleaned workspace PHP-FPM pool')
+        ->expectsOutputToContain('●  Removed worktree')
+        ->expectsOutputToContain("└  Workspace 'feature-api' removed.")
+        ->expectsOutputToContain("Workspace 'feature-api' removed.")
+        ->assertExitCode(0);
+});
+
+it('renders decorated progress tree glyphs and colors while removing a workspace', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'user' => 'orbit',
+    ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+        'php_version' => '8.5',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature-api',
+        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+    ]);
+
+    app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('workspace:remove', [
+        'name' => 'feature-api',
+        '--app' => 'docs',
+        '--force' => true,
+    ], $output);
+    $buffer = $output->fetch();
+    $plainBuffer = preg_replace('/\e\[[0-9;?]*[A-Za-z]/', '', $buffer) ?? $buffer;
+
+    expect($exitCode)->toBe(0)
+        ->and($plainBuffer)->toContain('┌  Removing Workspace')
+        ->and($plainBuffer)->toContain('○  Apply and verify workspace removal')
+        ->and($plainBuffer)->toContain('●  Applied and verified workspace removal')
+        ->and($plainBuffer)->toContain("└  Workspace 'feature-api' removed.")
+        ->and($buffer)->toContain("\e[36m○\e[39m")
+        ->and($buffer)->toContain("\e[32m●\e[39m");
 });
 
 it('requires destructive consent in non-interactive mode', function (): void {

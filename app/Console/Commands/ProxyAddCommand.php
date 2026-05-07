@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Proxy\AddProxyRouteRequest;
@@ -27,12 +29,19 @@ use Throwable;
 #[Description('Create or update custom proxy route intent')]
 class ProxyAddCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
     {
         $input = $this->validatedInput();
 
         if (is_int($input)) {
             return $input;
+        }
+
+        if (! $this->wantsJson()) {
+            return $this->handleAddHuman($input, $intent, $callerRoleResolver);
         }
 
         try {
@@ -60,6 +69,103 @@ class ProxyAddCommand extends Command
                 message: 'Gateway connection is required to add proxy routes.',
                 meta: [],
             );
+        }
+
+        return $this->successPayload($result['data'], $result['meta']);
+    }
+
+    /**
+     * @param  array{domain: string, node: string, upstream: ?string, redirect: ?string, code: ?int, force: bool}  $input
+     */
+    private function handleAddHuman(array $input, ProxyRouteIntent $intent, CallerRoleResolver $callerRoleResolver): int
+    {
+        $result = null;
+        $failure = null;
+        $callerRole = null;
+
+        $exitCode = $this->runStepTree(
+            'Adding Proxy Route',
+            [
+                [
+                    'label' => 'Validate proxy route',
+                    'doneLabel' => 'Validated proxy route',
+                    'run' => fn (): string => $input['domain'],
+                ],
+                [
+                    'label' => 'Check ownership boundary',
+                    'doneLabel' => 'Checked ownership boundary',
+                    'run' => function () use ($callerRoleResolver, &$callerRole): string {
+                        $callerRole = $callerRoleResolver->resolve();
+
+                        return $callerRole;
+                    },
+                ],
+                [
+                    'label' => 'Apply and verify proxy route',
+                    'doneLabel' => 'Applied and verified proxy route',
+                    'run' => function () use ($input, $intent, &$result, &$failure, &$callerRole): string {
+                        try {
+                            if ($callerRole !== 'gateway') {
+                                /** @var ProxyRouteMutationResponse $dto */
+                                $dto = app(GatewayConnector::class)
+                                    ->send(new AddProxyRouteRequest(
+                                        domain: $input['domain'],
+                                        node: $input['node'],
+                                        upstream: $input['upstream'],
+                                        redirect: $input['redirect'],
+                                        code: $input['code'],
+                                        force: $input['force'],
+                                    ))
+                                    ->dto();
+
+                                $result = ['data' => $dto->data, 'meta' => $dto->meta];
+
+                                return 'gateway accepted route intent';
+                            }
+
+                            $result = $intent->add(
+                                domain: $input['domain'],
+                                nodeName: $input['node'],
+                                upstream: $input['upstream'],
+                                redirect: $input['redirect'],
+                                code: $input['code'],
+                                force: $input['force'],
+                            );
+
+                            return 'route intent saved';
+                        } catch (GatewayApiException $e) {
+                            $failure = [
+                                'code' => $e->errorCode() ?? 'gateway_unavailable',
+                                'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Gateway connection is required to add proxy routes.',
+                                'meta' => $e->errorMeta(),
+                            ];
+
+                            return "fail:{$failure['message']}";
+                        } catch (Throwable) {
+                            $failure = [
+                                'code' => 'gateway_unavailable',
+                                'message' => 'Gateway connection is required to add proxy routes.',
+                                'meta' => [],
+                            ];
+
+                            return "fail:{$failure['message']}";
+                        }
+                    },
+                ],
+                [
+                    'label' => 'Apply and verify TLS material',
+                    'doneLabel' => 'Applied and verified TLS material',
+                    'run' => fn (): string => 'TLS enactment deferred to doctor',
+                ],
+            ],
+            doneFooter: 'Proxy route intent saved',
+            failFooter: 'Failed to save proxy route intent',
+        );
+
+        if ($exitCode !== self::SUCCESS || $result === null) {
+            return is_array($failure)
+                ? $this->failCommand($failure['code'], $failure['message'], $failure['meta'])
+                : self::FAILURE;
         }
 
         return $this->successPayload($result['data'], $result['meta']);
@@ -157,12 +263,6 @@ class ProxyAddCommand extends Command
         }
 
         $route = is_array($data['route'] ?? null) ? $data['route'] : [];
-        $this->line('┌ Adding Proxy Route');
-        $this->line('○ Validate proxy route');
-        $this->line('○ Check ownership boundary');
-        $this->line('○ Apply and verify proxy route');
-        $this->line('○ Apply and verify TLS material');
-        $this->line('└ Proxy route intent saved');
         $this->line("Proxy route '".(string) ($route['domain'] ?? '')."' saved on node '".(string) ($route['node'] ?? '')."'.");
 
         $this->renderWarnings($meta);

@@ -93,10 +93,10 @@ describe('node:default human renderer contract', function (): void {
         DB::table('nodes')->insert(nodeDefaultHumanRow());
 
         $this->artisan('node:default', ['name' => 'app-1'])
-            ->expectsOutputToContain('┌ Set Default Node')
-            ->expectsOutputToContain('○ Load visible development app nodes')
-            ->expectsOutputToContain('○ Store local default')
-            ->expectsOutputToContain('└ Default development app node set to app-1')
+            ->expectsOutputToContain('┌  Set Default Node')
+            ->expectsOutputToContain('○  Load visible development app nodes')
+            ->expectsOutputToContain('○  Store local default')
+            ->expectsOutputToContain('└  Default development app node set to app-1')
             ->assertSuccessful();
     });
 
@@ -107,8 +107,8 @@ describe('node:default human renderer contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0);
-        expect($output)->toContain('└ Default development app node set to app-1');
-        expect($output)->not->toContain('└ Default development app node set to app-1.');
+        expect($output)->toContain('└  Default development app node set to app-1');
+        expect($output)->not->toContain('└  Default development app node set to app-1.');
     });
 
     it('does not render progress tree for show sub-action', function (): void {

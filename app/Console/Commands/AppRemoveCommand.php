@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\RemoveApp;
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\RemoveAppRequest;
@@ -26,6 +28,9 @@ use function Laravel\Prompts\text;
 #[Description('Remove an app and its owned artifacts')]
 class AppRemoveCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(RemoveApp $removeApp): int
     {
         $callerRole = $this->callerRole();
@@ -75,7 +80,23 @@ class AppRemoveCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            $this->renderProgressTree();
+            $result = null;
+            $exitCode = $this->runStepTree(
+                'Removing App',
+                $this->progressSteps(function () use ($removeApp, $app, &$result): array {
+                    $result = $removeApp->handle($app);
+
+                    return $result;
+                }),
+                doneFooter: "App '{$app->name}' removed",
+                failFooter: "Failed to remove app '{$app->name}'.",
+            );
+
+            if ($exitCode !== self::SUCCESS || ! is_array($result)) {
+                return self::FAILURE;
+            }
+
+            return $this->successCommand($result);
         }
 
         $result = $removeApp->handle($app);
@@ -186,17 +207,59 @@ class AppRemoveCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    private function renderProgressTree(): void
+    /**
+     * @return list<array{key: string, label: string, doneLabel: string, run: callable}>
+     */
+    private function progressSteps(callable $remove): array
     {
-        $this->line('┌ Removing App');
-        $this->line('○ Validate removal');
-        $this->line('○ Apply and verify app removal');
-        $this->line('○ Remove app-owned proxy routes');
-        $this->line('○ Remove app-owned schedules');
-        $this->line('○ Remove app-owned workspaces');
-        $this->line('○ Stop and remove app processes');
-        $this->line('○ Clean node-side runtime artifacts');
-        $this->line('└ Working...');
+        return [
+            [
+                'key' => 'validate_removal',
+                'label' => 'Validate removal',
+                'doneLabel' => 'Validated removal',
+                'run' => fn (): string => 'ready',
+            ],
+            [
+                'key' => 'remove_app',
+                'label' => 'Apply and verify app removal',
+                'doneLabel' => 'Applied and verified app removal',
+                'run' => function () use ($remove): string {
+                    $remove();
+
+                    return 'removed';
+                },
+            ],
+            [
+                'key' => 'remove_proxy_routes',
+                'label' => 'Remove app-owned proxy routes',
+                'doneLabel' => 'Removed app-owned proxy routes',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'remove_schedules',
+                'label' => 'Remove app-owned schedules',
+                'doneLabel' => 'Removed app-owned schedules',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'remove_workspaces',
+                'label' => 'Remove app-owned workspaces',
+                'doneLabel' => 'Removed app-owned workspaces',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'remove_processes',
+                'label' => 'Stop and remove app processes',
+                'doneLabel' => 'Stopped and removed app processes',
+                'run' => fn (): string => 'done',
+            ],
+            [
+                'key' => 'clean_runtime',
+                'label' => 'Clean node-side runtime artifacts',
+                'doneLabel' => 'Cleaned node-side runtime artifacts',
+                'run' => fn (): string => 'done',
+            ],
+        ];
     }
 
     /**
@@ -219,10 +282,6 @@ class AppRemoveCommand extends Command
         if (! $this->wantsJson()) {
             $app = $result['app'];
             $name = (string) ($app['name'] ?? '');
-
-            if ($warnings !== []) {
-                $this->line("└ App `{$name}` removed with drift");
-            }
 
             $this->line("App '{$name}' removed");
 
