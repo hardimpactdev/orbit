@@ -26,8 +26,9 @@ final readonly class LifecycleSummaryRenderer
         string $label,
         int $labelWidth,
         string $message = '',
+        string $labelColor = SpinnerTreeRenderer::ACCENT,
     ): string {
-        $padded = SpinnerTreeRenderer::DIM.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
+        $padded = $labelColor.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
 
         $line = $message !== ''
             ? "  {$dot}  {$padded}  {$message}"
@@ -89,6 +90,7 @@ final readonly class LifecycleSummaryRenderer
             $label,
             $labelWidth,
             $message !== '' ? SpinnerTreeRenderer::DIM.$message.SpinnerTreeRenderer::RESET : '',
+            SpinnerTreeRenderer::DIM,
         );
     }
 
@@ -97,6 +99,6 @@ final readonly class LifecycleSummaryRenderer
      */
     public function spinnerLine(string $frame, string $label, int $labelWidth): string
     {
-        return "  {$frame}  ".SpinnerTreeRenderer::DIM.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
+        return "  {$frame}  ".SpinnerTreeRenderer::ACCENT.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
     }
 }

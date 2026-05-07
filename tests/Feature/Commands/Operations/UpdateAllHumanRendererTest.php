@@ -82,6 +82,9 @@ it('renders the full decorated tree immediately and alternates active frames', f
     expect($plainBuffer)->toContain('Pulling source - beast');
     expect($buffer)->toContain("\e[36m○\e[39m");
     expect($buffer)->toContain("\e[36m◉\e[39m");
+    expect($buffer)->toContain("\e[97mPulling source - beast");
+    expect($buffer)->toContain("\e[97mDone - local");
+    expect($buffer)->not->toContain("\e[38;5;242mDone - local");
     expect($plainBuffer)->toContain('●  Done - local');
     expect($plainBuffer)->toContain('●  Done - beast');
     expect($plainBuffer)->toContain('Successfully updated 2 nodes');
