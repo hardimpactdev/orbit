@@ -85,7 +85,9 @@ it('renders decorated progress tree glyphs and colors', function (): void {
         ->and($plainBuffer)->toContain('●  Created app source')
         ->and($plainBuffer)->toContain("└  App 'docs' created")
         ->and($buffer)->toContain("\e[36m○\e[39m")
-        ->and($buffer)->toContain("\e[32m●\e[39m");
+        ->and($buffer)->toContain("\e[32m●\e[39m")
+        ->and($buffer)->toContain("\e[97mApp 'docs' created")
+        ->and($buffer)->not->toContain("\e[38;5;242mApp 'docs' created");
 });
 
 it('renders warning retry hints in human output', function (): void {

@@ -51,7 +51,7 @@ final readonly class SpinnerTreeRenderer
         }
 
         $output->writeln($this->render('  '.self::DIM.'│'.self::RESET));
-        $output->writeln($this->render('  '.self::DIM.'└'.self::RESET.'  '.self::DIM.$footer.self::RESET));
+        $output->writeln($this->footerLine($footer));
 
         if ($this->styled) {
             $this->hideCursor($output);
@@ -91,6 +91,11 @@ final readonly class SpinnerTreeRenderer
         }
 
         $output->write("\e[1A\e[2K\r{$content}\e[1B\r");
+    }
+
+    public function footerLine(string $footer, string $footerColor = self::DIM): string
+    {
+        return $this->render('  '.self::DIM.'└'.self::RESET.'  '.$footerColor.$footer.self::RESET);
     }
 
     public function hideCursor(OutputInterface $output): void

@@ -85,6 +85,8 @@ it('renders the full decorated tree immediately and alternates active frames', f
     expect($buffer)->toContain("\e[97mPulling source - beast");
     expect($buffer)->toContain("\e[97mDone - local");
     expect($buffer)->not->toContain("\e[38;5;242mDone - local");
+    expect($buffer)->toContain("\e[97mSuccessfully updated 2 nodes");
+    expect($buffer)->not->toContain("\e[38;5;242mSuccessfully updated 2 nodes");
     expect($plainBuffer)->toContain('●  Done - local');
     expect($plainBuffer)->toContain('●  Done - beast');
     expect($plainBuffer)->toContain('Successfully updated 2 nodes');
@@ -183,6 +185,23 @@ it('renders partial remote failure prose and continues', function (): void {
         ->expectsOutputToContain('Failed to update node beast.')
         ->expectsOutputToContain('Permission denied (publickey).')
         ->assertFailed();
+});
+
+it('renders failed update footer in red', function (): void {
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(exitCode: 255, stderr: 'Permission denied (publickey).'));
+
+    $output = new BufferedOutput(decorated: true);
+    $exitCode = Artisan::call('update:all', [], $output);
+    $buffer = $output->fetch();
+
+    expect($exitCode)->toBe(1);
+    expect($buffer)->toContain("\e[31mFailed\e[39m");
+    expect($buffer)->not->toContain("\e[38;5;242mFailed\e[39m");
 });
 
 it('has no json envelope in human mode', function (): void {

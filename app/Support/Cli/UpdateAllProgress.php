@@ -152,7 +152,7 @@ final class UpdateAllProgress
 
         $this->tree->updateFooter(
             $this->output,
-            '  '.SpinnerTreeRenderer::DIM.'└'.SpinnerTreeRenderer::RESET.'  '.SpinnerTreeRenderer::DIM.$footer.SpinnerTreeRenderer::RESET,
+            $this->tree->footerLine($footer, $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED),
         );
 
         if ($this->output->isDecorated()) {
@@ -215,7 +215,7 @@ final class UpdateAllProgress
         }
 
         $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET);
-        $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'└'.SpinnerTreeRenderer::RESET.'  '.SpinnerTreeRenderer::DIM.'Working...'.SpinnerTreeRenderer::RESET);
+        $this->output->writeln($this->tree->footerLine('Working...'));
     }
 
     private function setRow(string $key, string $state, string $label, string $message = ''): void

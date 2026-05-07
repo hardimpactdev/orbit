@@ -50,6 +50,10 @@ box-drawing logic. Commands using `WithStepTree` get constants from the trait.
 Hand-rolled handlers define them locally only when a command truly needs custom
 rendering.
 
+Footer text is dim only while the command is pending (`Working...`). Final
+success footers use accent/full-strength text, and final failure footers use
+red text.
+
 ```php
 private const string DIM = "\e[38;5;242m";
 private const string ACCENT = "\e[97m";

@@ -139,13 +139,13 @@ trait WithStepTree
     /**
      * Update the footer and restore cursor.
      */
-    protected function finishStepTree(string $message): void
+    protected function finishStepTree(string $message, bool $success = true): void
     {
         $tree = new SpinnerTreeRenderer($this->output->isDecorated());
 
         $tree->updateFooter(
             $this->output,
-            '  '.SpinnerTreeRenderer::DIM.'└'.SpinnerTreeRenderer::RESET.'  '.SpinnerTreeRenderer::DIM.$message.SpinnerTreeRenderer::RESET,
+            $tree->footerLine($message, $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED),
         );
 
         if ($this->output->isDecorated()) {
@@ -252,7 +252,7 @@ trait WithStepTree
             },
         );
 
-        $this->finishStepTree($allOk ? $doneFooter : $failFooter);
+        $this->finishStepTree($allOk ? $doneFooter : $failFooter, $allOk);
 
         return $allOk ? self::SUCCESS : self::FAILURE;
     }

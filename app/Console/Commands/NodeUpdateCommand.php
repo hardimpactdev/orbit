@@ -701,7 +701,7 @@ class NodeUpdateCommand extends Command
             },
         );
 
-        $this->finishStepTree($allOk ? $footer : "Failed to update node '{$name}'");
+        $this->finishStepTree($allOk ? $footer : "Failed to update node '{$name}'", $allOk);
 
         return $allOk ? self::SUCCESS : self::FAILURE;
     }

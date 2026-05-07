@@ -29,8 +29,9 @@ that may take longer than one second.
 - Idle rows are dimmed. Active rows and completed rows keep full-strength
   label text; dim text is reserved for waiting rows and secondary skip or
   warning messages.
-- The footer prints `Working...` until completion, then a concrete result
-  such as `Successfully removed node 'app-1'.`.
+- The footer prints dim `Working...` until completion, then a concrete
+  full-strength success result such as `Successfully removed node 'app-1'.`.
+  Failure footers are red. Final footers are never dim.
 - Step labels are product-level user feedback. Do not expose storage or
   backend implementation labels such as `Write gateway intent` or
   `Enact runtime artifacts`.
@@ -63,6 +64,10 @@ that may take longer than one second.
 Do not dim active or completed labels. A running row should be visually present
 while its icon animates, and a completed row should stay readable in the final
 tree.
+
+The footer follows the same rule: `Working...` is dim while work is pending,
+but the final success footer is full-strength text and the final failure footer
+is red.
 
 ## Implementation
 

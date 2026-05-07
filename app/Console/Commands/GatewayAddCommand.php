@@ -602,7 +602,7 @@ class GatewayAddCommand extends Command implements Loggable
         }
 
         if ($this->progressTreeOpen) {
-            $this->finishStepTree('Failed to join gateway.');
+            $this->finishStepTree('Failed to join gateway.', success: false);
             $this->progressTreeOpen = false;
         }
 
