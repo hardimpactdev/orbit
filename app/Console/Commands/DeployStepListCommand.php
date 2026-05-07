@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
+use function Laravel\Prompts\table;
+
 #[Signature('deploy:step-list
     {app? : Production app name or domain}
     {--json : Output JSON}')]
@@ -67,13 +69,16 @@ class DeployStepListCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->table(['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'], array_map(fn (array $step): array => [
-            $step['id'],
-            $step['order'],
-            $step['title'],
-            $step['command'],
-            "{$step['timeout_seconds']}s",
-        ], $result['steps']));
+        table(
+            headers: ['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'],
+            rows: array_map(fn (array $step): array => [
+                $step['id'],
+                $step['order'],
+                $step['title'],
+                $step['command'],
+                "{$step['timeout_seconds']}s",
+            ], $result['steps']),
+        );
 
         return self::SUCCESS;
     }

@@ -104,7 +104,7 @@ describe('proxy:list', function (): void {
         ]);
 
         $this->artisan('proxy:list')
-            ->expectsTable(
+            ->expectsPromptsTable(
                 ['Domain', 'Kind', 'Owner', 'Node', 'Target', 'TLS', 'Status'],
                 [['custom.test', 'proxy', 'custom', 'app-1', 'upstream:http://127.0.0.1:9000', 'orbit', 'expected']],
             )

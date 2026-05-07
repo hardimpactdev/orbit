@@ -18,6 +18,10 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 #[Signature('app:new
     {name? : App name}
     {--node= : Target app node}
@@ -222,7 +226,7 @@ class AppNewCommand extends Command
     {
         $name = $this->stringArgument('name');
         if ($name === null && $this->isInteractiveInput()) {
-            $name = trim((string) $this->ask('App name (slug)'));
+            $name = trim(text(label: 'App name (slug)', required: true));
         }
 
         if ($name === null) {
@@ -239,8 +243,8 @@ class AppNewCommand extends Command
         }
 
         $repository = $this->stringOption('repo');
-        if ($repository === null && $this->isInteractiveInput() && $this->confirm('Clone from a git repository?', false)) {
-            $repository = trim((string) $this->ask('Repository URL (or GitHub owner/repo)'));
+        if ($repository === null && $this->isInteractiveInput() && confirm('Clone from a git repository?', default: false)) {
+            $repository = trim(text(label: 'Repository URL (or GitHub owner/repo)', required: true));
         }
 
         $repository = $this->canonicalRepository($repository);
@@ -301,7 +305,7 @@ class AppNewCommand extends Command
             );
         }
 
-        return (string) $this->choice('Select target app node', $nodes);
+        return (string) select('Select target app node', $nodes);
     }
 
     private function resolveTargetNode(string $nodeName): Node|int

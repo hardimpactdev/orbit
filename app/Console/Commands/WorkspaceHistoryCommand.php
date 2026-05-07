@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('workspace:history
     {name? : Workspace name}
     {--app= : Parent app slug}
@@ -283,7 +285,7 @@ class WorkspaceHistoryCommand extends Command
             return;
         }
 
-        $this->table(['ID', 'Action', 'Status', 'Started', 'Duration'], array_map(
+        table(['ID', 'ACTION', 'STATUS', 'STARTED', 'DURATION'], array_map(
             fn (array $run): array => [
                 $run['id'],
                 $run['action'],

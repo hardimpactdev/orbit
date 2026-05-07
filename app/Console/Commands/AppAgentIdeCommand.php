@@ -19,7 +19,9 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 #[Signature('app:agent-ide
     {app? : App name or hostname}
@@ -44,7 +46,7 @@ class AppAgentIdeCommand extends Command
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim((string) $this->ask('App name or hostname'));
+            $selector = trim(text(label: 'App name or hostname', required: true));
         }
 
         if ($selector === null) {
@@ -216,9 +218,9 @@ class AppAgentIdeCommand extends Command
             $count = count($staleWorkspaces);
 
             if (! $force && $this->isInteractiveInput()) {
-                $confirmed = $this->confirm(
-                    "This will remove {$count} workspace(s) managed by the previous adapter '{$previousAdapter}'. Continue?",
-                    false,
+                $confirmed = confirm(
+                    label: "This will remove {$count} workspace(s) managed by the previous adapter '{$previousAdapter}'. Continue?",
+                    default: false,
                 );
 
                 if (! $confirmed) {

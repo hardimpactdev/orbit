@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 #[Signature('workspace:show
     {name? : Workspace name}
     {--app= : Parent app slug}
@@ -133,7 +136,7 @@ class WorkspaceShowCommand extends Command
 
         if ($app === null && $matches->count() > 1) {
             if ($this->isInteractiveInput()) {
-                $app = $this->choice(
+                $app = (string) select(
                     'Parent app',
                     $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
                 );
@@ -186,9 +189,11 @@ class WorkspaceShowCommand extends Command
 
     private function promptForName(): ?string
     {
-        $name = $this->ask('Workspace name');
+        $name = text(label: 'Workspace name', required: true);
 
-        return is_string($name) && trim($name) !== '' ? trim($name) : null;
+        $name = trim($name);
+
+        return $name !== '' ? $name : null;
     }
 
     /**
@@ -205,7 +210,7 @@ class WorkspaceShowCommand extends Command
         /** @var list<string> $choices */
         $choices = array_values(array_filter($apps, is_string(...)));
 
-        return $this->choice('Parent app', $choices);
+        return (string) select('Parent app', $choices);
     }
 
     private function shouldPromptForAmbiguousApp(GatewayApiException $exception, ?string $app): bool

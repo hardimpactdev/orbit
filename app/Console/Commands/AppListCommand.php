@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('app:list
     {--node= : Filter by owning node}
     {--environment= : Filter by environment (development|production)}
@@ -204,7 +206,7 @@ class AppListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        $this->table(['Name', 'Environment', 'URL', 'Status'], $rows);
+        table(['NAME', 'ENVIRONMENT', 'URL', 'STATUS'], $rows);
     }
 
     /**

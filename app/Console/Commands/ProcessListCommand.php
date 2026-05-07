@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('process:list
     {--app= : Parent app slug}
     {--workspace= : Workspace name}
@@ -100,7 +102,7 @@ class ProcessListCommand extends Command
         $workspace = is_string($context['workspace'] ?? null) ? $context['workspace'] : null;
         $this->line($workspace === null ? "Processes for {$app}" : "Processes for {$app} / {$workspace}");
         $this->newLine();
-        $this->table(['Name', 'Command', 'Restart Policy', 'Crash Notification', 'Last Event'], array_map(
+        table(['Name', 'Command', 'Restart Policy', 'Crash Notification', 'Last Event'], array_map(
             fn (array $process): array => [
                 $process['name'] ?? '',
                 $process['command'] ?? '',

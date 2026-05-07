@@ -17,6 +17,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\text;
+
 #[Signature('app:prune
     {app? : App name or hostname}
     {--dry-run : Preview stale workspaces without removing}
@@ -40,7 +42,7 @@ class AppPruneCommand extends Command
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim((string) $this->ask('App name or hostname'));
+            $selector = trim(text(label: 'App name or hostname', required: true));
         }
 
         if ($selector === null) {

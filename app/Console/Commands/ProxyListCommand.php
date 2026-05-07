@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('proxy:list
     {--node= : Filter by serving node}
     {--filter=all : Filter routes by all, app, workspace, gateway, tool, custom, or redirect}
@@ -122,7 +124,7 @@ class ProxyListCommand extends Command
             $route['status'] ?? '',
         ], $routes);
 
-        $this->table(['Domain', 'Kind', 'Owner', 'Node', 'Target', 'TLS', 'Status'], $rows);
+        table(['Domain', 'Kind', 'Owner', 'Node', 'Target', 'TLS', 'Status'], $rows);
     }
 
     /**

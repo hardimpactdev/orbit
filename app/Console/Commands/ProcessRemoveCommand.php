@@ -16,6 +16,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+
 #[Signature('process:remove
     {name? : Existing process name}
     {--app= : Parent app slug}
@@ -130,7 +132,7 @@ class ProcessRemoveCommand extends Command
             return $this->failValidation('force', 'Use --force to remove this process.');
         }
 
-        if ($this->confirm("Remove process '{$name}'?", false)) {
+        if (confirm(label: "Remove process '{$name}'?", default: false)) {
             return null;
         }
 

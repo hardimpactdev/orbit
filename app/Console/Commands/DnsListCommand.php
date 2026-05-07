@@ -14,6 +14,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use RuntimeException;
 
+use function Laravel\Prompts\table;
+
 #[Signature('dns:list
     {--json : Output as JSON}')]
 #[Description('List caller-local Orbit DNS resolver overrides')]
@@ -203,25 +205,15 @@ class DnsListCommand extends Command implements Loggable
             return;
         }
 
-        $rows = array_map(fn (array $entry): array => [
-            'tld' => $entry['tld'],
-            'target' => $entry['target'],
-            'source' => $entry['source'],
-            'backend' => $entry['resolver_backend'],
-            'status' => $entry['status'],
-        ], $dns);
-
-        $this->line('TLD    TARGET     SOURCE           BACKEND   STATUS');
-
-        foreach ($rows as $row) {
-            $this->line(sprintf(
-                '%-6s %-10s %-16s %-9s %s',
-                $row['tld'],
-                $row['target'],
-                $row['source'],
-                $row['backend'],
-                $row['status'],
-            ));
-        }
+        table(
+            headers: ['TLD', 'TARGET', 'SOURCE', 'BACKEND', 'STATUS'],
+            rows: array_map(fn (array $entry): array => [
+                $entry['tld'],
+                $entry['target'],
+                $entry['source'],
+                $entry['resolver_backend'],
+                $entry['status'],
+            ], $dns),
+        );
     }
 }

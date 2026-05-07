@@ -101,7 +101,7 @@ describe('firewall:list command contract', function (): void {
 
         $this->artisan('firewall:list')
             ->expectsOutput('Node: app-1')
-            ->expectsTable(
+            ->expectsPromptsTable(
                 ['Name', 'Direction', 'Action', 'Source', 'Destination', 'Port', 'Protocol', 'Reason', 'Status'],
                 [['local-vite', 'incoming', 'allow', '10.6.0.0/24', '-', 5173, 'tcp', 'test firewall rule', 'expected']],
             )

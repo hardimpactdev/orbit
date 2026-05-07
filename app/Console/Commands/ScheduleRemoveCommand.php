@@ -16,6 +16,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+
 #[Signature('schedule:remove
     {name : Schedule name}
     {--app= : Filter by app scope}
@@ -87,7 +89,7 @@ class ScheduleRemoveCommand extends Command
             ]);
         }
 
-        if ($this->confirm("Remove schedule '{$name}'?", false)) {
+        if (confirm(label: "Remove schedule '{$name}'?", default: false)) {
             return null;
         }
 

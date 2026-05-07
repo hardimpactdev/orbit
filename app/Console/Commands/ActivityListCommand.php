@@ -17,6 +17,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('activity:list
     {--app= : Filter by app}
     {--node= : Filter by node}
@@ -192,9 +194,9 @@ class ActivityListCommand extends Command
             return;
         }
 
-        $this->table(
-            ['TIME', 'ID', 'EFFECT', 'TYPE', 'SUBJECT', 'ACTOR', 'COMMAND'],
-            array_map(fn (array $activity): array => [
+        table(
+            headers: ['TIME', 'ID', 'EFFECT', 'TYPE', 'SUBJECT', 'ACTOR', 'COMMAND'],
+            rows: array_map(fn (array $activity): array => [
                 $this->humanTime($activity['occurred_at'] ?? null),
                 $activity['id'] ?? '',
                 $activity['effect'] ?? '',

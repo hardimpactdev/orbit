@@ -16,6 +16,8 @@ use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 abstract class AbstractWorkspaceStepListCommand extends Command
 {
     abstract protected function phase(): WorkspaceLifecyclePhase;
@@ -187,7 +189,7 @@ abstract class AbstractWorkspaceStepListCommand extends Command
 
         $this->line(ucfirst($this->phaseLabel())." steps for {$appName}:");
         $this->newLine();
-        $this->table(
+        table(
             ['ID', 'ORDER', 'COMMAND', 'TIMEOUT'],
             array_map(fn (array $step): array => [
                 $step['id'],

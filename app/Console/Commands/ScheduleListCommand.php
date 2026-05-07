@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('schedule:list
     {--app= : Filter by app scope}
     {--node= : Filter by node scope}
@@ -85,7 +87,7 @@ class ScheduleListCommand extends Command
             return;
         }
 
-        $this->table(['Name', 'Scope', 'Target', 'Node', 'Interval', 'Execution', 'Last Run', 'Status'], array_map(
+        table(['Name', 'Scope', 'Target', 'Node', 'Interval', 'Execution', 'Last Run', 'Status'], array_map(
             fn (array $schedule): array => [
                 $schedule['name'] ?? '',
                 $schedule['scope'] ?? '',

@@ -113,8 +113,8 @@ describe('dns:list human renderer contract', function (): void {
             ->and($output)->toContain('local_resolver')
             ->and($output)->toContain('dnsmasq')
             ->and($output)->toContain('active')
-            ->and($output)->not->toContain('┌')
-            ->and($output)->not->toContain('○');
+            ->and($output)->not->toContain('○')
+            ->and($output)->not->toContain('Working...');
     });
 
     it('renders empty result prose', function (): void {

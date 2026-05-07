@@ -20,6 +20,26 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
 });
 
+if (! class_exists('PruneAppActionTestAdapter')) {
+    final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
+    {
+        public function activeSession(array $target, string $adapter): ?array
+        {
+            return null;
+        }
+
+        public function deliver(array $target, string $adapter, array $session, string $message): array
+        {
+            return ['status' => 'failed'];
+        }
+
+        public function workspaces(array $target, string $adapter): array
+        {
+            return ['active-ws'];
+        }
+    }
+}
+
 it('sets an app-level agent ide adapter from a gateway caller', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',

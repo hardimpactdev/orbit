@@ -16,6 +16,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\text;
+
 #[Signature('app:root
     {app? : App name or hostname}
     {root? : Document root relative to app path}
@@ -39,7 +41,7 @@ class AppRootCommand extends Command
         $root = $this->stringArgument('root');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim((string) $this->ask('App name or hostname'));
+            $selector = trim(text(label: 'App name or hostname', required: true));
         }
 
         if ($selector === null) {
@@ -47,7 +49,7 @@ class AppRootCommand extends Command
         }
 
         if ($root === null && $this->isInteractiveInput()) {
-            $root = trim((string) $this->ask('Document root'));
+            $root = trim(text(label: 'Document root', required: true));
         }
 
         if ($root === null) {

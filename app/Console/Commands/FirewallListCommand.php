@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('firewall:list
     {--node= : Filter by node name}
     {--json : Output JSON}')]
@@ -133,7 +135,7 @@ class FirewallListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        $this->table(['Name', 'Direction', 'Action', 'Source', 'Destination', 'Port', 'Protocol', 'Reason', 'Status'], $rows);
+        table(['Name', 'Direction', 'Action', 'Source', 'Destination', 'Port', 'Protocol', 'Reason', 'Status'], $rows);
     }
 
     /**

@@ -18,6 +18,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('tool:list
     {--app= : Filter by app selector}
     {--node= : Filter by owning node}
@@ -172,7 +174,7 @@ class ToolListCommand extends Command
     private function renderNodeTable(string $node, array $rows): void
     {
         $this->line("Node: {$node}");
-        $this->table(['Tool', 'Expected', 'Observed', 'Version', 'Managed'], $rows);
+        table(['Tool', 'Expected', 'Observed', 'Version', 'Managed'], $rows);
     }
 
     /**

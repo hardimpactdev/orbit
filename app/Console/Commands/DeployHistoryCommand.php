@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
+use function Laravel\Prompts\table;
+
 #[Signature('deploy:history
     {app? : Production app name or domain}
     {--limit=50 : Number of runs to return}
@@ -74,12 +76,15 @@ class DeployHistoryCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->table(['ID', 'STATUS', 'EXIT', 'STARTED'], array_map(fn (array $run): array => [
-            $run['id'],
-            $run['status'],
-            $run['exit_code'] ?? '',
-            $run['started_at'] ?? '',
-        ], $result['runs']));
+        table(
+            headers: ['ID', 'STATUS', 'EXIT', 'STARTED'],
+            rows: array_map(fn (array $run): array => [
+                $run['id'],
+                $run['status'],
+                $run['exit_code'] ?? '',
+                $run['started_at'] ?? '',
+            ], $result['runs']),
+        );
 
         return self::SUCCESS;
     }

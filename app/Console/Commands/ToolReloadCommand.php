@@ -19,6 +19,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\select;
+
 #[Signature('tool:reload
     {tool? : Tool catalog name to reload}
     {--app= : Resolve target by app selector}
@@ -125,7 +127,7 @@ class ToolReloadCommand extends Command
             );
         }
 
-        $answer = (string) $this->choice('Which tool should be reloaded?', array_keys($choices));
+        $answer = (string) select('Which tool should be reloaded?', array_keys($choices));
 
         return $choices[$answer] ?? $this->failCommand(
             code: 'validation_failed',

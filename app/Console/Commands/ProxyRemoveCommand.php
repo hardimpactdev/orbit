@@ -15,6 +15,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+
 #[Signature('proxy:remove
     {domain? : Existing custom proxy route domain}
     {--force : Confirm destructive operation without prompting}
@@ -83,7 +85,7 @@ class ProxyRemoveCommand extends Command
             );
         }
 
-        if ($this->confirm("Remove proxy route '{$domain}'?", false)) {
+        if (confirm(label: "Remove proxy route '{$domain}'?", default: false)) {
             return null;
         }
 

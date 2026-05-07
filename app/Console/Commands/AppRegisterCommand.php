@@ -18,6 +18,10 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 #[Signature('app:register
     {name? : App name}
     {--node= : Target app node}
@@ -79,7 +83,7 @@ class AppRegisterCommand extends Command
         $path = $input['path'] ?? $existingApp?->path;
 
         if ((! is_string($path) || $path === '') && $this->isInteractiveInput()) {
-            $path = trim((string) $this->ask('App path on node'));
+            $path = trim(text(label: 'App path on node', required: true));
         }
 
         if (! is_string($path) || $path === '') {
@@ -90,7 +94,7 @@ class AppRegisterCommand extends Command
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
-        if (! $existingApp instanceof App && $this->isInteractiveInput() && ! $this->confirm('Adopt existing app path?', true)) {
+        if (! $existingApp instanceof App && $this->isInteractiveInput() && ! confirm('Adopt existing app path?', default: true)) {
             return $this->failValidation('path', 'App path adoption was cancelled.');
         }
 
@@ -227,7 +231,7 @@ class AppRegisterCommand extends Command
     {
         $name = $this->stringArgument('name');
         if ($name === null && $this->isInteractiveInput()) {
-            $name = trim((string) $this->ask('App name'));
+            $name = trim(text(label: 'App name', required: true));
         }
 
         if ($name === null) {
@@ -290,7 +294,7 @@ class AppRegisterCommand extends Command
                 ->all();
 
             if ($this->isInteractiveInput() && $nodeNames !== []) {
-                $nodeName = (string) $this->choice('Target app node', $nodeNames);
+                $nodeName = (string) select('Target app node', $nodeNames);
             }
 
             if ($nodeName === null && count($nodeNames) !== 1) {

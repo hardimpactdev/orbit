@@ -16,6 +16,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\confirm;
+
 #[Signature('firewall:remove
     {name? : Firewall rule name}
     {--node= : Target node}
@@ -90,7 +92,7 @@ class FirewallRemoveCommand extends Command
             );
         }
 
-        if ($this->confirm("Remove firewall rule '{$name}' from {$node}?", false)) {
+        if (confirm(label: "Remove firewall rule '{$name}' from {$node}?", default: false)) {
             return null;
         }
 

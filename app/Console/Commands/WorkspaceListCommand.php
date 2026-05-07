@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('workspace:list
     {--app= : Filter by parent app}
     {--node= : Filter by owning node}
@@ -190,7 +192,7 @@ class WorkspaceListCommand extends Command
     {
         $this->line("Node: {$node}");
         $this->line("App: {$app}");
-        $this->table(['Workspace', 'URL', 'Lifecycle Status'], $rows);
+        table(['WORKSPACE', 'URL', 'LIFECYCLE STATUS'], $rows);
     }
 
     /**

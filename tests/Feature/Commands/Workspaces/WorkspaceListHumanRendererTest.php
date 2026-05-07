@@ -27,9 +27,9 @@ describe('workspace:list human renderer contract', function (): void {
             ->and($output)->toContain('App: docs')
             ->and($output)->toContain('feature-docs')
             ->and($output)->toContain('main')
-            ->and($output)->toContain('Workspace')
+            ->and($output)->toContain('WORKSPACE')
             ->and($output)->toContain('URL')
-            ->and($output)->toContain('Lifecycle Status')
+            ->and($output)->toContain('LIFECYCLE STATUS')
             ->and($output)->not->toContain('"success"');
     });
 

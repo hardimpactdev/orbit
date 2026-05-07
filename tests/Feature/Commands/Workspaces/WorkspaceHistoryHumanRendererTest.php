@@ -23,8 +23,8 @@ describe('workspace:history human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Workspace History: docs/feature-docs')
-            ->and($output)->toContain('Action')
-            ->and($output)->toContain('Status')
+            ->and($output)->toContain('ACTION')
+            ->and($output)->toContain('STATUS')
             ->and($output)->not->toContain('"success"')
             ->and($output)->not->toContain('○');
     });
