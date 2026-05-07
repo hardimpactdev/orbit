@@ -20,6 +20,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
+use function Laravel\Prompts\table;
+
 #[Signature('doctor
     {--app= : Limit to one app}
     {--workspace= : Limit to one workspace}
@@ -363,42 +365,19 @@ class DoctorCommand extends Command implements Loggable
     {
         $summary = is_array($doctor['summary'] ?? null) ? $doctor['summary'] : [];
         $headers = ['ISSUES', 'FIXED', 'ADOPTED', 'SKIPPED', 'CONFLICTS', 'FAILED'];
-        $values = [
+        $rows = [[
             (string) (int) ($summary['issues'] ?? 0),
             (string) (int) ($summary['fixed'] ?? 0),
             (string) (int) ($summary['adopted'] ?? 0),
             (string) (int) ($summary['skipped'] ?? 0),
             (string) (int) ($summary['conflicts'] ?? 0),
             (string) (int) ($summary['failed'] ?? 0),
-        ];
+        ]];
 
-        return $this->renderAlignedRows([$headers, $values]);
-    }
+        $this->line('Summary');
+        table(headers: $headers, rows: $rows);
 
-    /**
-     * @param  list<list<string>>  $rows
-     */
-    private function renderAlignedRows(array $rows): int
-    {
-        $widths = [];
-
-        foreach ($rows as $row) {
-            foreach ($row as $index => $value) {
-                $widths[$index] = max($widths[$index] ?? 0, mb_strlen($value));
-            }
-        }
-
-        foreach ($rows as $row) {
-            $line = [];
-
-            foreach ($row as $index => $value) {
-                $line[] = str_pad($value, $widths[$index]);
-            }
-
-            $this->line(rtrim(implode('  ', $line)));
-        }
-
-        return array_sum($widths) + max(0, count($widths) - 1) * 2;
+        return $this->doctorTableWidth($headers, $rows);
     }
 
     private function centeredDoctorDivider(int $width): string
@@ -446,7 +425,8 @@ class DoctorCommand extends Command implements Loggable
      */
     private function renderDoctorActions(array $actions): void
     {
-        $rows = [['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY']];
+        $headers = ['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY'];
+        $rows = [];
 
         foreach ($actions as $action) {
             $rows[] = [
@@ -460,7 +440,7 @@ class DoctorCommand extends Command implements Loggable
         }
 
         $this->line('Actions');
-        $this->renderAlignedRows($rows);
+        table(headers: $headers, rows: $rows);
     }
 
     /**
@@ -469,25 +449,26 @@ class DoctorCommand extends Command implements Loggable
      */
     private function renderDoctorIssues(array $issues, array $doctor): void
     {
-        foreach ($this->groupDoctorIssues($issues, $doctor) as $family => $kinds) {
-            $this->line((string) $family);
+        $issueLabel = count($issues) === 1 ? '1 issue found' : count($issues).' issues found';
 
+        $this->line($issueLabel);
+
+        foreach ($this->groupDoctorIssues($issues, $doctor) as $family => $kinds) {
             foreach ($kinds as $kind => $kindIssues) {
-                $this->line('  '.(string) $kind);
+                $headers = ['NODE', 'KEY', 'SUMMARY', 'NEXT'];
+                $rows = [];
 
                 foreach ($kindIssues as $issue) {
-                    $this->line(sprintf(
-                        '    %s: %s',
+                    $rows[] = [
+                        $this->doctorHumanValue($issue['node'] ?? null),
                         $this->doctorString($issue['key'] ?? $issue['code'] ?? null),
                         $this->doctorString($issue['summary'] ?? null),
-                    ));
-
-                    $next = $this->doctorIssueNextStep($issue);
-
-                    if ($next !== null) {
-                        $this->line('      Next: '.$next);
-                    }
+                        $this->doctorHumanValue($this->doctorIssueNextStep($issue)),
+                    ];
                 }
+
+                $this->line((string) $family.' / '.(string) $kind);
+                table(headers: $headers, rows: $rows);
             }
         }
     }
@@ -573,28 +554,60 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorResultBodyWidth(array $doctor): int
     {
-        $lines = [];
+        $width = 0;
+
+        $actionRows = [];
 
         foreach ($this->doctorList($doctor, 'actions') as $action) {
-            $lines[] = implode(' ', [
+            $actionRows[] = [
                 $this->doctorString($action['family'] ?? null),
                 $this->doctorString($action['node'] ?? null),
                 $this->doctorString($action['mode'] ?? null),
                 $this->doctorString($action['status'] ?? null),
                 $this->doctorString($action['key'] ?? $action['code'] ?? null),
                 $this->doctorString($action['summary'] ?? null),
-            ]);
+            ];
         }
 
-        foreach ($this->doctorList($doctor, 'issues') as $issue) {
-            $lines[] = $this->doctorString($issue['key'] ?? $issue['code'] ?? null).': '.$this->doctorString($issue['summary'] ?? null);
+        if ($actionRows !== []) {
+            $width = max($width, $this->doctorTableWidth(['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY'], $actionRows));
         }
 
-        return array_reduce(
-            $lines,
-            static fn (int $width, string $line): int => max($width, mb_strlen($line)),
-            0,
-        );
+        foreach ($this->groupDoctorIssues($this->doctorList($doctor, 'issues'), $doctor) as $kinds) {
+            foreach ($kinds as $kindIssues) {
+                $issueRows = [];
+
+                foreach ($kindIssues as $issue) {
+                    $issueRows[] = [
+                        $this->doctorHumanValue($issue['node'] ?? null),
+                        $this->doctorString($issue['key'] ?? $issue['code'] ?? null),
+                        $this->doctorString($issue['summary'] ?? null),
+                        $this->doctorHumanValue($this->doctorIssueNextStep($issue)),
+                    ];
+                }
+
+                $width = max($width, $this->doctorTableWidth(['NODE', 'KEY', 'SUMMARY', 'NEXT'], $issueRows));
+            }
+        }
+
+        return $width;
+    }
+
+    /**
+     * @param  list<string>  $headers
+     * @param  list<list<string>>  $rows
+     */
+    private function doctorTableWidth(array $headers, array $rows): int
+    {
+        $widths = array_map(mb_strlen(...), $headers);
+
+        foreach ($rows as $row) {
+            foreach ($row as $index => $value) {
+                $widths[$index] = max($widths[$index] ?? 0, mb_strlen($value));
+            }
+        }
+
+        return array_sum($widths) + count($widths) * 3 + 1;
     }
 
     private function doctorHumanValue(mixed $value): string

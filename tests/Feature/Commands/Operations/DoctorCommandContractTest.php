@@ -87,6 +87,8 @@ describe('doctor command contract', function (): void {
             ->and($output)->toContain('Doctor healthy.')
             ->and($output)->toContain('Mode: verify')
             ->and($output)->toContain('Scope: families=node')
+            ->and($output)->toContain('Summary')
+            ->and($output)->toContain('┌')
             ->and($output)->toContain('ISSUES')
             ->and($output)->toContain('D O C T O R   R E S U L T')
             ->and($output)->toContain('Everything is healthy!');
@@ -102,9 +104,11 @@ describe('doctor command contract', function (): void {
             ->and($output)->toContain('Doctor found drift.')
             ->and($output)->toContain('Mode: verify')
             ->and($output)->toContain('Scope: families=node')
+            ->and($output)->toContain('Summary')
             ->and($output)->toContain('D O C T O R   R E S U L T')
-            ->and($output)->toContain('node')
-            ->and($output)->toContain('missing')
+            ->and($output)->toContain('issues found')
+            ->and($output)->toContain('node / missing')
+            ->and($output)->toContain('┌')
             ->and($output)->toContain('node.record_incomplete')
             ->and($output)->toContain('Node record for local-gateway is missing required fields.');
     });
@@ -127,8 +131,10 @@ describe('doctor command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Doctor repaired drift.')
             ->and($output)->toContain('Mode: fix')
+            ->and($output)->toContain('Summary')
             ->and($output)->toContain('D O C T O R   R E S U L T')
             ->and($output)->toContain('Actions')
+            ->and($output)->toContain('┌')
             ->and($output)->toContain('FAMILY')
             ->and($output)->toContain('MODE')
             ->and($output)->toContain('STATUS')
