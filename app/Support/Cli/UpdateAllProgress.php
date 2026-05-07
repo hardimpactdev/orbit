@@ -9,13 +9,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Renders the per-target progress tree for `update:all`.
  *
- * Owns: tree layout, per-row label updates as each target moves through
+ * Owns: tree layout, per-row stage updates as each target moves through
  * `Pulling source` → `Installing dependencies` → `Running migrations` → `Done`,
  * and dynamic extension when remote targets are discovered mid-flight.
  *
  * Each target is one row in the tree. The active row alternates cyan `○`/`◉`
- * with the present-participle stage label; completed rows use green `●` with
- * `Done`; failed rows use red `●` with `Failed`.
+ * with the target name and present-participle stage; completed rows use green
+ * `●` with `Done`; failed rows use red `●` with `Failed`.
  */
 final class UpdateAllProgress
 {
@@ -38,10 +38,12 @@ final class UpdateAllProgress
     /** @var list<string> Ordered target keys */
     private array $order = [];
 
-    /** @var array<string, array{label: string, state: string, message: string}> */
+    /** @var array<string, array{stage: string, state: string, message: string}> */
     private array $rows = [];
 
     private int $labelWidth = 0;
+
+    private int $targetWidth = 0;
 
     private bool $finished = false;
 
@@ -73,22 +75,22 @@ final class UpdateAllProgress
 
     public function start(string $key): void
     {
-        $this->setRow($key, self::STATE_ACTIVE, $this->stageLabel('pulling_source', $key));
+        $this->setRow($key, self::STATE_ACTIVE, 'pulling_source');
     }
 
     public function stage(string $key, string $stage): void
     {
-        $this->setRow($key, self::STATE_ACTIVE, $this->stageLabel($stage, $key));
+        $this->setRow($key, self::STATE_ACTIVE, $stage);
     }
 
     public function done(string $key): void
     {
-        $this->setRow($key, self::STATE_DONE, $this->stageLabel('done', $key));
+        $this->setRow($key, self::STATE_DONE, 'done');
     }
 
     public function fail(string $key, string $message): void
     {
-        $this->setRow($key, self::STATE_FAILED, $this->stageLabel('failed', $key), $message);
+        $this->setRow($key, self::STATE_FAILED, 'failed', $message);
     }
 
     public function tick(): void
@@ -170,15 +172,13 @@ final class UpdateAllProgress
 
         $this->order[] = $key;
         $this->rows[$key] = [
-            'label' => $this->stageLabel('pulling_source', $key),
+            'stage' => 'pulling_source',
             'state' => self::STATE_PENDING,
             'message' => '',
         ];
 
-        $this->labelWidth = max(
-            $this->labelWidth,
-            $this->maxLabelWidthForTarget($key),
-        );
+        $this->targetWidth = max($this->targetWidth, mb_strlen($key));
+        $this->labelWidth = $this->maxLabelWidth();
     }
 
     private function renderInitial(): void
@@ -186,7 +186,7 @@ final class UpdateAllProgress
         $this->tree->renderFrame(
             $this->output,
             self::TITLE,
-            array_map(fn (string $key): string => $this->rows[$key]['label'], $this->order),
+            array_map($this->labelFor(...), $this->order),
             'Working...',
         );
         $this->rendered = true;
@@ -211,26 +211,30 @@ final class UpdateAllProgress
 
         foreach ($newKeys as $key) {
             $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET);
-            $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'○  '.$this->rows[$key]['label'].SpinnerTreeRenderer::RESET);
+            $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'○  '.$this->labelFor($key).SpinnerTreeRenderer::RESET);
         }
 
         $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET);
         $this->output->writeln($this->tree->footerLine('Working...'));
+
+        foreach ($this->order as $key) {
+            if (! in_array($key, $newKeys, true)) {
+                $this->repaintRow($key);
+            }
+        }
     }
 
-    private function setRow(string $key, string $state, string $label, string $message = ''): void
+    private function setRow(string $key, string $state, string $stage, string $message = ''): void
     {
         if (! isset($this->rows[$key])) {
             return;
         }
 
         $this->rows[$key] = [
-            'label' => $label,
+            'stage' => $stage,
             'state' => $state,
             'message' => $message,
         ];
-
-        $this->labelWidth = max($this->labelWidth, mb_strlen($label));
 
         $this->repaintRow($key);
     }
@@ -244,15 +248,16 @@ final class UpdateAllProgress
         }
 
         $row = $this->rows[$key];
+        $label = $this->labelFor($key);
         $line = match ($row['state']) {
             self::STATE_ACTIVE => $this->summary->spinnerLine(
                 $activeFrame ?? $this->activeFrame(),
-                $row['label'],
+                $label,
                 $this->labelWidth,
             ),
-            self::STATE_DONE => $this->summary->success($row['label'], $this->labelWidth, ''),
-            self::STATE_FAILED => $this->summary->failure($row['label'], $this->labelWidth, $row['message']),
-            default => $this->summary->idle($row['label'], $this->labelWidth),
+            self::STATE_DONE => $this->summary->success($label, $this->labelWidth, ''),
+            self::STATE_FAILED => $this->summary->failure($label, $this->labelWidth, $row['message']),
+            default => $this->summary->idle($label, $this->labelWidth),
         };
 
         $this->tree->updateLine($this->output, $index, count($this->order), $line);
@@ -265,25 +270,27 @@ final class UpdateAllProgress
             : "\e[36m◉\e[39m";
     }
 
-    private function maxLabelWidthForTarget(string $target): int
+    private function maxLabelWidth(): int
     {
-        $stages = ['pulling_source', 'installing_dependencies', 'running_migrations', 'done', 'failed'];
+        $stages = ['Pulling source', 'Installing dependencies', 'Running migrations', 'Done', 'Failed'];
 
-        return max(array_map(
-            fn (string $stage): int => mb_strlen($this->stageLabel($stage, $target)),
-            $stages,
-        ));
+        return $this->targetWidth + 1 + max(array_map(mb_strlen(...), $stages));
     }
 
-    private function stageLabel(string $stage, string $target): string
+    private function labelFor(string $target): string
+    {
+        return str_pad($target, $this->targetWidth).' '.$this->stageName($this->rows[$target]['stage'] ?? 'pulling_source');
+    }
+
+    private function stageName(string $stage): string
     {
         return match ($stage) {
-            'start', 'pulling_source' => "Pulling source - {$target}",
-            'installing_dependencies' => "Installing dependencies - {$target}",
-            'running_migrations' => "Running migrations - {$target}",
-            'done' => "Done - {$target}",
-            'failed', 'fail' => "Failed - {$target}",
-            default => $target,
+            'start', 'pulling_source' => 'Pulling source',
+            'installing_dependencies' => 'Installing dependencies',
+            'running_migrations' => 'Running migrations',
+            'done' => 'Done',
+            'failed', 'fail' => 'Failed',
+            default => $stage,
         };
     }
 }

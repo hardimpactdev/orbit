@@ -53,12 +53,12 @@ it('renders progress tree shape', function (): void {
 
     $this->artisan('update:all')
         ->expectsOutputToContain('┌  Updating Orbit nodes')
-        ->expectsOutputToContain('Pulling source - local')
-        ->expectsOutputToContain('Installing dependencies - local')
-        ->expectsOutputToContain('Running migrations - local')
-        ->expectsOutputToContain('Done - local')
-        ->expectsOutputToContain('Pulling source - beast')
-        ->expectsOutputToContain('Done - beast')
+        ->expectsOutputToContain('local Pulling source')
+        ->expectsOutputToContain('local Installing dependencies')
+        ->expectsOutputToContain('local Running migrations')
+        ->expectsOutputToContain('local Done')
+        ->expectsOutputToContain('beast Pulling source')
+        ->expectsOutputToContain('beast Done')
         ->expectsOutputToContain('Successfully updated 2 nodes')
         ->assertSuccessful();
 });
@@ -78,17 +78,17 @@ it('renders the full decorated tree immediately and alternates active frames', f
 
     expect($exitCode)->toBe(0);
     expect($plainBuffer)->toContain('┌  Updating Orbit nodes');
-    expect($plainBuffer)->toContain('Pulling source - local');
-    expect($plainBuffer)->toContain('Pulling source - beast');
+    expect($plainBuffer)->toContain('local Pulling source');
+    expect($plainBuffer)->toContain('beast Pulling source');
     expect($buffer)->toContain("\e[36m○\e[39m");
     expect($buffer)->toContain("\e[36m◉\e[39m");
-    expect($buffer)->toContain("\e[97mPulling source - beast");
-    expect($buffer)->toContain("\e[97mDone - local");
-    expect($buffer)->not->toContain("\e[38;5;242mDone - local");
+    expect($buffer)->toContain("\e[97mbeast Pulling source");
+    expect($buffer)->toContain("\e[97mlocal Done");
+    expect($buffer)->not->toContain("\e[38;5;242mlocal Done");
     expect($buffer)->toContain("\e[97mSuccessfully updated 2 nodes");
     expect($buffer)->not->toContain("\e[38;5;242mSuccessfully updated 2 nodes");
-    expect($plainBuffer)->toContain('●  Done - local');
-    expect($plainBuffer)->toContain('●  Done - beast');
+    expect($plainBuffer)->toContain('●  local Done');
+    expect($plainBuffer)->toContain('●  beast Done');
     expect($plainBuffer)->toContain('Successfully updated 2 nodes');
 });
 
@@ -101,10 +101,42 @@ it('renders success footer', function (): void {
     app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
 
     $this->artisan('update:all')
-        ->expectsOutputToContain('Done - local')
-        ->expectsOutputToContain('Done - beast')
+        ->expectsOutputToContain('local Done')
+        ->expectsOutputToContain('beast Done')
         ->expectsOutputToContain('Successfully updated 2 nodes')
         ->assertSuccessful();
+});
+
+it('aligns update stages by the longest node name', function (): void {
+    DB::table('nodes')->insert([
+        [
+            'name' => 'workspace-alpha',
+            'role' => 'app',
+            'host' => 'workspace-alpha',
+            'ssh_user' => 'nckrtl',
+            'orbit_path' => '/home/nckrtl/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell);
+
+    $output = new BufferedOutput(decorated: false);
+    $exitCode = Artisan::call('update:all', [], $output);
+    $buffer = $output->fetch();
+
+    expect($exitCode)->toBe(0);
+    expect($buffer)->toContain('local           Done');
+    expect($buffer)->toContain('beast           Done');
+    expect($buffer)->toContain('workspace-alpha Done');
 });
 
 it('streams gateway progress for control callers', function (): void {
@@ -139,16 +171,16 @@ it('streams gateway progress for control callers', function (): void {
 
     $this->artisan('update:all')
         ->expectsOutputToContain('┌  Updating Orbit nodes')
-        ->expectsOutputToContain('Pulling source - local')
-        ->expectsOutputToContain('Installing dependencies - local')
-        ->expectsOutputToContain('Running migrations - local')
-        ->expectsOutputToContain('Done - local')
-        ->expectsOutputToContain('Pulling source - gateway')
-        ->expectsOutputToContain('Installing dependencies - gateway')
-        ->expectsOutputToContain('Running migrations - gateway')
-        ->expectsOutputToContain('Done - gateway')
-        ->expectsOutputToContain('Pulling source - beast')
-        ->expectsOutputToContain('Done - beast')
+        ->expectsOutputToContain('local   Pulling source')
+        ->expectsOutputToContain('local   Installing dependencies')
+        ->expectsOutputToContain('local   Running migrations')
+        ->expectsOutputToContain('local   Done')
+        ->expectsOutputToContain('gateway Pulling source')
+        ->expectsOutputToContain('gateway Installing dependencies')
+        ->expectsOutputToContain('gateway Running migrations')
+        ->expectsOutputToContain('gateway Done')
+        ->expectsOutputToContain('beast   Pulling source')
+        ->expectsOutputToContain('beast   Done')
         ->expectsOutputToContain('Successfully updated 3 nodes')
         ->doesntExpectOutputToContain('Successfully updated 1 node')
         ->assertSuccessful();
@@ -181,7 +213,7 @@ it('renders partial remote failure prose and continues', function (): void {
     app()->instance(RemoteShell::class, new UpdateAllHumanRemoteShell(exitCode: 255, stderr: 'Permission denied (publickey).'));
 
     $this->artisan('update:all')
-        ->expectsOutputToContain('Done - local')
+        ->expectsOutputToContain('local Done')
         ->expectsOutputToContain('Failed to update node beast.')
         ->expectsOutputToContain('Permission denied (publickey).')
         ->assertFailed();
