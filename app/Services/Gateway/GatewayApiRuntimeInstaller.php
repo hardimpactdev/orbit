@@ -12,6 +12,7 @@ class GatewayApiRuntimeInstaller
 {
     public function __construct(
         private readonly OrbitCaService $caService,
+        private readonly CaddyGlobalConfig $caddyGlobalConfig,
     ) {}
 
     public function install(string $wireguardAddress, string $phpVersion = '8.5', string $orbitPath = ''): void
@@ -33,13 +34,14 @@ class GatewayApiRuntimeInstaller
             $this->fpmPool($orbitPath),
             'write Orbit API PHP-FPM pool',
         );
-        $this->runRequired('sudo install -d -m 0755 /etc/caddy', 'prepare Caddy config directory');
-        $this->runRequiredWithInput('sudo tee /etc/caddy/Caddyfile > /dev/null', $this->caddyfile(
+        $this->runRequired('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites', 'prepare Caddy config directories');
+        $this->ensureGlobalCaddyfile();
+        $this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
             wireguardAddress: $wireguardAddress,
             orbitPath: $orbitPath,
             certPath: $leaf['cert'],
             keyPath: $leaf['key'],
-        ), 'write Caddy config');
+        ), 'write Orbit API Caddy config');
         $this->runRequired("sudo systemctl restart php{$phpVersion}-fpm", 'restart PHP-FPM');
         $this->runRequired('sudo systemctl restart caddy', 'restart Caddy');
         $this->runRequired('sudo systemctl enable caddy', 'enable Caddy');
@@ -63,7 +65,7 @@ chdir = {$orbitPath}
 FPM;
     }
 
-    private function caddyfile(
+    private function gatewayApiCaddyfile(
         string $wireguardAddress,
         string $orbitPath,
         string $certPath,
@@ -79,6 +81,30 @@ https://{$wireguardAddress}:443 {
 }
 
 CADDY;
+    }
+
+    private function ensureGlobalCaddyfile(): void
+    {
+        $contents = $this->readOptional('/etc/caddy/Caddyfile');
+        $updated = $this->caddyGlobalConfig->ensure($contents);
+
+        if ($updated === $contents) {
+            return;
+        }
+
+        $this->runRequiredWithInput('sudo tee /etc/caddy/Caddyfile > /dev/null', $updated, 'write global Caddy config');
+    }
+
+    private function readOptional(string $path): string
+    {
+        $command = 'sudo test -f '.escapeshellarg($path).' && sudo cat '.escapeshellarg($path).' || true';
+        $result = Process::timeout(30)->run($command);
+
+        if ($result->successful()) {
+            return $result->output();
+        }
+
+        throw new RuntimeException("Failed to read {$path}: ".$this->output($result->errorOutput(), $result->output()));
     }
 
     private function grantCaddyAccessScript(string $certPath, string $keyPath): string

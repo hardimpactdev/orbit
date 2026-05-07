@@ -114,7 +114,12 @@ sudo install -d -m 0755 /etc/orbit/certs
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo chmod 0644 %s
-sudo chmod 0600 %s
+if getent group caddy >/dev/null 2>&1; then
+    sudo chgrp caddy %s
+    sudo chmod 0640 %s
+else
+    sudo chmod 0600 %s
+fi
 sudo systemctl reload caddy
 SH,
             escapeshellarg(base64_encode($cert)),
@@ -122,6 +127,8 @@ SH,
             escapeshellarg(base64_encode($key)),
             escapeshellarg($keyPath),
             escapeshellarg($certPath),
+            escapeshellarg($keyPath),
+            escapeshellarg($keyPath),
             escapeshellarg($keyPath),
         );
     }

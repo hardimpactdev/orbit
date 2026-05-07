@@ -130,7 +130,7 @@ describe('OrbitCaService', function () {
             $service->ensureRootCa();
         });
 
-        it('issues a leaf cert for a DNS host and returns correct paths', function () {
+        it('issues a runtime-private leaf cert for a DNS host and returns correct paths', function () {
             $service = new OrbitCaService;
             $dataPath = storage_path('app/orbit');
 

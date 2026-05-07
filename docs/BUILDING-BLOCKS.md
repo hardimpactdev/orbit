@@ -192,6 +192,32 @@ requests.
 The gateway runtime service readiness behind those sockets belongs to the
 `node` family and is verified through node/gateway readiness checks.
 
+### Caddy Include Boundaries
+
+Caddy configuration is split by exposure boundary, not by who happens to write
+the file. The global `/etc/caddy/Caddyfile` imports both managed include trees:
+
+- `/etc/caddy/orbit/*.caddy` for Orbit platform surfaces that are internal to
+  the Orbit network;
+- `/etc/caddy/sites/*.caddy` for app, workspace, and custom proxy site routes.
+
+Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the
+Orbit/WireGuard network or another explicitly internal gateway interface. The
+gateway API belongs here. Its site block must match the gateway WireGuard
+address, for example `https://10.6.0.2:443`, and must not create a broad public
+virtual host.
+
+Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes,
+workspace routes, and custom proxy routes write here because they may be served
+on public or project domains. These files may import shared snippets from the
+global Caddyfile, but they must not define Orbit control-plane endpoints.
+
+This split lets Caddy load one global config while preserving the operational
+boundary between Orbit's internal control plane and public application traffic.
+Installer and doctor repair code must be additive: they may ensure required
+imports and managed include files exist, but must not replace unrelated site
+blocks or remove existing imports.
+
 ## Remote Command Progress
 
 Long-running CLI-to-gateway commands stream structured command progress over
@@ -263,7 +289,8 @@ Typical app-node artifacts include:
 
 - app directories and workspace directories;
 - PHP-FPM pool configuration and sockets;
-- Caddy site configuration rendered from `proxy`;
+- public Caddy site configuration under `/etc/caddy/sites/*.caddy` rendered
+  from `proxy`;
 - Supervisor programs derived from app-owned process definitions;
 - the `orbit_scheduler` Supervisor program running the Orbit Scheduler daemon;
 - Docker Compose files for managed tools and services;

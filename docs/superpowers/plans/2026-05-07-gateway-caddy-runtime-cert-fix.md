@@ -2,123 +2,65 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make gateway runtime bootstrap additive and idempotent, while ensuring Orbit-managed TLS keys used by Caddy are readable by Caddy without weakening root CA key permissions.
+**Goal:** Make gateway runtime Caddy bootstrap additive and idempotent, while ensuring Caddy can read Orbit-managed TLS keys without weakening CA-issued private key defaults.
 
-**Architecture:** Introduce a focused Caddy layout helper used by `GatewayApiRuntimeInstaller` to maintain the global Caddyfile contract and write the gateway API as its own include file. Keep `OrbitCaService::issueLeaf()` as a private runtime issuer with `0600` local keys; each consumer that installs keys for Caddy must explicitly set Caddy-readable ownership/mode at the destination.
+**Architecture:** Keep `OrbitCaService::issueLeaf()` as a runtime-private issuer that writes local keys as `0600`. Move Caddy layout ownership into a small helper that preserves existing global Caddy config, ensures shared snippets and both include trees, and writes the gateway API as an internal Orbit include under `/etc/caddy/orbit/orbit-api.caddy`. Consumers that install leaf keys for Caddy must explicitly set Caddy-readable destination permissions.
 
 **Tech Stack:** Laravel 13, PHP 8.5, Pest 4, Laravel Process fake, Caddy config files, Linux filesystem permissions.
 
 ---
 
-## Complexity
+## Implementation Contract
 
-Files: 5-7 | Modules: Gateway runtime, CA consumers, tests | Risk: Medium
+The global `/etc/caddy/Caddyfile` imports both managed include trees:
 
-Primary risk is remote host mutation. Unit/feature tests should prove script content and idempotent file-write behavior before any live-node verification.
+- `/etc/caddy/orbit/*.caddy` for Orbit platform surfaces internal to the Orbit/WireGuard network.
+- `/etc/caddy/sites/*.caddy` for public app, workspace, and custom proxy site routes.
+
+The gateway API belongs in `/etc/caddy/orbit/orbit-api.caddy` and must match the gateway WireGuard address, for example `https://10.6.0.2:443`. It must not create a broad public virtual host.
+
+The helper must not blindly append Caddy global options to existing files. Global options are valid only at the top of a Caddyfile. For existing files, preserve the existing global block when present and append only missing snippets/imports.
 
 ## File Map
 
-- Create: `app/Services/Gateway/CaddyGlobalConfig.php` - returns the canonical shared snippets plus import line.
-- Modify: `app/Services/Gateway/GatewayApiRuntimeInstaller.php` - stop overwriting populated `/etc/caddy/Caddyfile`; write `/etc/caddy/orbit/orbit-api.caddy`; ensure global Caddyfile exists/imports the include path.
-- Modify: `app/Services/Proxy/ProxyRouteFixer.php` - install proxy TLS keys with Caddy-readable ownership/mode.
-- Modify: `tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php` - assert additive Caddy behavior and no direct destructive write.
-- Modify: `tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` - assert repaired TLS key permissions are readable by Caddy.
-- Modify: `tests/Feature/Services/Ca/OrbitCaServiceTest.php` - document `issueLeaf()` local key contract remains `0600`.
+- Create: `app/Services/Gateway/CaddyGlobalConfig.php` - owns global Caddyfile snippets and imports.
+- Modify: `app/Services/Gateway/GatewayApiRuntimeInstaller.php` - writes gateway API include, preserves global Caddyfile.
+- Modify: `app/Services/Proxy/ProxyRouteFixer.php` - installs repaired TLS keys as Caddy-readable.
+- Modify: `tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php` - covers split Caddy output and additive global handling.
+- Modify: `tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` - covers Caddy-readable repaired key permissions.
+- Modify: `tests/Feature/Services/Ca/OrbitCaServiceTest.php` - clarifies `issueLeaf()` key remains runtime-private.
 
-## Phase 1: Lock Current Bugs With Failing Tests
+## Phase 1: Failing Tests
 
-### Task 1: Gateway Installer Must Be Additive
+### Task 1: Gateway Installer Writes Internal Orbit Include Additively
 
 **Files:**
 - Modify: `tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php`
 
-- [ ] **Step 1: Replace the Caddyfile capture with command-specific captures**
+- [ ] Replace the current single `$writtenCaddyfile` capture with captures for:
+  - `/etc/caddy/Caddyfile`
+  - `/etc/caddy/orbit/orbit-api.caddy`
+  - `/etc/php/8.5/fpm/pool.d/orbit-api.conf`
 
-In the existing gateway installer test, change the fake callback to capture:
+- [ ] Update the existing installer test to assert:
+  - global Caddyfile includes `(security_headers)`, `(profiling_headers)`, `(path_blocking_public_root)`, `(path_blocking_project_root)`, `(security_txt)`, `(cache_headers)`;
+  - global Caddyfile includes `import /etc/caddy/orbit/*.caddy`;
+  - global Caddyfile includes `import /etc/caddy/sites/*.caddy`;
+  - gateway API block is written to `/etc/caddy/orbit/orbit-api.caddy`;
+  - gateway API block contains `https://10.6.0.2:443`;
+  - gateway API block does not contain `bind 10.6.0.2`;
+  - gateway API block points at the issued leaf cert and key;
+  - PHP-FPM pool still uses the `orbit-api` socket and `listen.group = caddy`.
+
+- [ ] Add a regression test for an existing populated Caddyfile. Fake this read command:
 
 ```php
-$writtenGlobalCaddyfile = null;
-$writtenGatewayApiCaddyfile = null;
-$writtenFpmPool = null;
-
-Process::fake(function ($process) use (&$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile, &$writtenFpmPool) {
-    if (str_contains($process->command, 'tee /etc/php/8.5/fpm/pool.d/orbit-api.conf')) {
-        $writtenFpmPool = (string) $process->input;
-    }
-
-    if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
-        $writtenGlobalCaddyfile = (string) $process->input;
-    }
-
-    if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
-        $writtenGatewayApiCaddyfile = (string) $process->input;
-    }
-
-    return Process::result();
-});
+$readExistingCaddyfileCommand = 'sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true';
 ```
 
-- [ ] **Step 2: Update expectations for split Caddy config**
+Return:
 
-Replace `$writtenCaddyfile` assertions with:
-
-```php
-expect($writtenGlobalCaddyfile)->toContain('(security_headers)')
-    ->and($writtenGlobalCaddyfile)->toContain('(profiling_headers)')
-    ->and($writtenGlobalCaddyfile)->toContain('(path_blocking_public_root)')
-    ->and($writtenGlobalCaddyfile)->toContain('(path_blocking_project_root)')
-    ->and($writtenGlobalCaddyfile)->toContain('(security_txt)')
-    ->and($writtenGlobalCaddyfile)->toContain('(cache_headers)')
-    ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/*.caddy')
-    ->and($writtenGatewayApiCaddyfile)->toContain('https://10.6.0.2')
-    ->and($writtenGatewayApiCaddyfile)->not->toContain('bind 10.6.0.2')
-    ->and($writtenGatewayApiCaddyfile)->toContain('tls '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.crt '.$this->tempStorage.'/app/orbit/certs/10.6.0.2.key')
-    ->and($writtenGatewayApiCaddyfile)->toContain('root * /home/orbit/orbit/public')
-    ->and($writtenGatewayApiCaddyfile)->toContain('php_fastcgi unix//run/php/orbit-api.sock')
-    ->and($writtenFpmPool)->toContain('[orbit-api]')
-    ->and($writtenFpmPool)->toContain('user = orbit')
-    ->and($writtenFpmPool)->toContain('listen.group = caddy')
-    ->and($writtenFpmPool)->toContain('chdir = /home/orbit/orbit');
-```
-
-- [ ] **Step 3: Update process assertions**
-
-Expect the new directory and site-file writes:
-
-```php
-Process::assertRan('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit');
-Process::assertRan('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null');
-```
-
-Keep the global Caddyfile assertion initially:
-
-```php
-Process::assertRan('sudo tee /etc/caddy/Caddyfile > /dev/null');
-```
-
-- [ ] **Step 4: Add a regression test for existing populated Caddyfile**
-
-Add this test below the existing installer test:
-
-```php
-it('preserves an existing global Caddyfile and only ensures the orbit import', function (): void {
-    $readExistingCaddyfileCommand = 'sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true';
-    $writtenGlobalCaddyfile = null;
-    $writtenGatewayApiCaddyfile = null;
-
-    $caDir = storage_path('app/orbit/ca');
-    $certsDir = storage_path('app/orbit/certs');
-
-    File::ensureDirectoryExists($caDir);
-    File::ensureDirectoryExists($certsDir);
-    File::put("{$caDir}/root.key", 'test-root-key');
-    File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
-    File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
-    File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
-
-    Process::fake(function ($process) use ($readExistingCaddyfileCommand, &$writtenGlobalCaddyfile, &$writtenGatewayApiCaddyfile) {
-        if ($process->command === $readExistingCaddyfileCommand) {
-            return Process::result(<<<'CADDY'
+```caddy
 {
     admin off
 }
@@ -126,159 +68,90 @@ it('preserves an existing global Caddyfile and only ensures the orbit import', f
 import /etc/caddy/sites/*.caddy
 import /etc/caddy/orbit/orbit-web.caddy
 import /etc/caddy/orbit/tld-proxies.caddy
-CADDY);
-        }
-
-        if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
-            $writtenGlobalCaddyfile = (string) $process->input;
-        }
-
-        if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
-            $writtenGatewayApiCaddyfile = (string) $process->input;
-        }
-
-        return Process::result();
-    });
-    Process::preventStrayProcesses();
-
-    app(GatewayApiRuntimeInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
-
-    expect($writtenGlobalCaddyfile)->toContain('import /etc/caddy/sites/*.caddy')
-        ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/orbit-web.caddy')
-        ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/tld-proxies.caddy')
-        ->and($writtenGlobalCaddyfile)->toContain('import /etc/caddy/orbit/*.caddy')
-        ->and(substr_count($writtenGlobalCaddyfile, 'import /etc/caddy/orbit/*.caddy'))->toBe(1)
-        ->and($writtenGatewayApiCaddyfile)->toContain('https://10.6.0.2:443');
-});
 ```
 
-- [ ] **Step 5: Run the gateway installer test and confirm it fails**
+Assert the rewritten global Caddyfile:
+  - keeps `admin off`;
+  - keeps `import /etc/caddy/sites/*.caddy`;
+  - keeps the specific existing Orbit imports;
+  - adds `import /etc/caddy/orbit/*.caddy`;
+  - does not duplicate `import /etc/caddy/sites/*.caddy`;
+  - does not duplicate `import /etc/caddy/orbit/*.caddy`;
+  - does not add a second global options block.
 
-Run:
+- [ ] Run:
 
 ```bash
 php artisan test --compact tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php
 ```
 
-Expected: FAIL because current implementation writes only `/etc/caddy/Caddyfile` and never writes `/etc/caddy/orbit/orbit-api.caddy`.
+Expected: FAIL because current code overwrites `/etc/caddy/Caddyfile` with the API block and does not write `/etc/caddy/orbit/orbit-api.caddy`.
 
-### Task 2: Proxy TLS Repair Must Install Caddy-Readable Keys
+### Task 2: Proxy TLS Repair Installs Caddy-Readable Keys
 
 **Files:**
 - Modify: `tests/Unit/Services/Proxy/ProxyRouteFixerTest.php`
 
-- [ ] **Step 1: Extend TLS repair assertions**
-
-In `it('repairs missing Orbit-managed TLS material for custom proxy routes'...)`, extend the chain:
+- [ ] Extend the TLS repair test to assert:
 
 ```php
 ->and($shell->scripts[0])->toContain('sudo chgrp caddy /etc/orbit/certs/vite.docs.test.key')
 ->and($shell->scripts[0])->toContain('sudo chmod 0640 /etc/orbit/certs/vite.docs.test.key')
-->and($shell->scripts[0])->not->toContain('sudo chmod 0600 /etc/orbit/certs/vite.docs.test.key');
+->and($shell->scripts[0])->toContain('else')
+->and($shell->scripts[0])->toContain('sudo chmod 0600 /etc/orbit/certs/vite.docs.test.key')
 ```
 
-- [ ] **Step 2: Run the proxy fixer test and confirm it fails**
-
-Run:
+- [ ] Run:
 
 ```bash
 php artisan test --compact tests/Unit/Services/Proxy/ProxyRouteFixerTest.php
 ```
 
-Expected: FAIL because current script does `sudo chmod 0600`.
+Expected: FAIL because current code only writes `sudo chmod 0600`.
 
-### Task 3: Keep CA Service Contract Narrow
+### Task 3: CA Leaf Contract Remains Runtime-Private
 
 **Files:**
 - Modify: `tests/Feature/Services/Ca/OrbitCaServiceTest.php`
 
-- [ ] **Step 1: Rename the permission expectation to clarify the contract**
-
-Rename the test:
+- [ ] Rename the DNS leaf test to:
 
 ```php
 it('issues a runtime-private leaf cert for a DNS host and returns correct paths', function () {
 ```
 
-Keep:
+- [ ] Keep the key permission assertion:
 
 ```php
 expect(decoct(fileperms($paths['key']) & 0777))->toBe('600');
 ```
 
-- [ ] **Step 2: Run the CA test**
-
-Run:
+- [ ] Run:
 
 ```bash
 php artisan test --compact tests/Feature/Services/Ca/OrbitCaServiceTest.php
 ```
 
-Expected: PASS. This proves the fix should live in Caddy consumers, not by globally weakening generated private keys.
+Expected: PASS.
 
-## Phase 2: Implement Additive Gateway Caddy Bootstrap
+## Phase 2: Add Caddy Global Config Helper
 
-### Task 4: Add Shared Caddy Global Config Helper
+### Task 4: Create `CaddyGlobalConfig`
 
 **Files:**
 - Create: `app/Services/Gateway/CaddyGlobalConfig.php`
 
-- [ ] **Step 1: Create the helper**
+- [ ] Create a final readonly helper with:
+  - `fresh(): string`
+  - `ensure(string $contents): string`
+  - private `globalOptions(): string`
+  - private `ensureSnippets(string $contents): string`
+  - private `ensureImports(string $contents): string`
+  - private `snippetBlocks(): array`
 
-Create:
+- [ ] `fresh()` must return global options, all snippets, and both imports:
 
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Services\Gateway;
-
-final readonly class CaddyGlobalConfig
-{
-    public function fresh(string $importPattern = '/etc/caddy/orbit/*.caddy'): string
-    {
-        return rtrim($this->snippets())."\n\nimport {$importPattern}\n";
-    }
-
-    public function ensureImport(string $contents, string $importPattern = '/etc/caddy/orbit/*.caddy'): string
-    {
-        $line = "import {$importPattern}";
-
-        if (str_contains($contents, $line)) {
-            return $this->ensureSnippets($contents);
-        }
-
-        return rtrim($this->ensureSnippets($contents))."\n\n{$line}\n";
-    }
-
-    private function ensureSnippets(string $contents): string
-    {
-        $updated = rtrim($contents);
-
-        foreach ($this->snippetBlocks() as $name => $block) {
-            if (str_contains($updated, "({$name})")) {
-                continue;
-            }
-
-            $updated .= "\n\n{$block}";
-        }
-
-        return $updated."\n";
-    }
-
-    private function snippets(): string
-    {
-        return implode("\n\n", $this->snippetBlocks())."\n";
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function snippetBlocks(): array
-    {
-        return [
-            'security_headers' => <<<'CADDY'
+```caddy
 {
     local_certs
     admin off
@@ -293,144 +166,51 @@ final readonly class CaddyGlobalConfig
         -Server
     }
 }
-CADDY,
-            'path_blocking_public_root' => <<<'CADDY'
-(path_blocking_public_root) {
-    @blocked path /.env /.env.* /.git/* /artisan
-    respond @blocked 404
-}
-CADDY,
-            'path_blocking_project_root' => <<<'CADDY'
-(path_blocking_project_root) {
-    @blocked path /.env /.env.* /.git/* /vendor/* /storage/* /config/* /database/* /node_modules/* /artisan
-    respond @blocked 404
-}
-CADDY,
-            'security_txt' => <<<'CADDY'
-(security_txt) {
-}
-CADDY,
-            'profiling_headers' => <<<'CADDY'
-(profiling_headers) {
-    request_header X-Caddy-Start "{time.now.unix_ms}"
-    header {
-        X-Caddy-End "{time.now.unix_ms}"
-        defer
-    }
-}
-CADDY,
-            'cache_headers' => <<<'CADDY'
-(cache_headers) {
-    @static {
-        path /build/*
-    }
-    header @static Cache-Control "public, max-age=31536000, immutable"
-}
-CADDY,
-        ];
-    }
-}
+
+...
+
+import /etc/caddy/orbit/*.caddy
+import /etc/caddy/sites/*.caddy
 ```
 
-- [ ] **Step 2: Run Pint on the new helper**
+- [ ] `ensure()` must preserve existing content and append only missing snippets/imports. It must not prepend or append a global options block to non-empty existing content.
 
-Run:
+## Phase 3: Implement Gateway Runtime Additive Caddy Writes
 
-```bash
-vendor/bin/pint --dirty --format agent
-```
-
-Expected: PASS or style changes applied.
-
-### Task 5: Update Gateway Runtime Installer
+### Task 5: Update `GatewayApiRuntimeInstaller`
 
 **Files:**
 - Modify: `app/Services/Gateway/GatewayApiRuntimeInstaller.php`
 
-- [ ] **Step 1: Inject the helper**
+- [ ] Inject `CaddyGlobalConfig`.
 
-Change constructor:
+- [ ] Replace the Caddy write block with:
+  - `sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites`
+  - read optional `/etc/caddy/Caddyfile`
+  - write global Caddyfile only when helper output differs from current contents
+  - write gateway API block to `/etc/caddy/orbit/orbit-api.caddy`
+
+- [ ] Rename `caddyfile()` to `gatewayApiCaddyfile()`.
+
+- [ ] Add:
 
 ```php
-public function __construct(
-    private readonly OrbitCaService $caService,
-    private readonly CaddyGlobalConfig $caddyGlobalConfig,
-) {}
+private function ensureGlobalCaddyfile(): void
 ```
 
-- [ ] **Step 2: Replace Caddy install block**
-
-Replace:
+and:
 
 ```php
-$this->runRequired('sudo install -d -m 0755 /etc/caddy', 'prepare Caddy config directory');
-$this->runRequiredWithInput('sudo tee /etc/caddy/Caddyfile > /dev/null', $this->caddyfile(...), 'write Caddy config');
-```
-
-with:
-
-```php
-$this->runRequired('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit', 'prepare Caddy config directories');
-$this->ensureGlobalCaddyfileImportsOrbit();
-$this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
-    wireguardAddress: $wireguardAddress,
-    orbitPath: $orbitPath,
-    certPath: $leaf['cert'],
-    keyPath: $leaf['key'],
-), 'write Orbit API Caddy config');
-```
-
-- [ ] **Step 3: Rename `caddyfile()`**
-
-Rename `private function caddyfile(...)` to:
-
-```php
-private function gatewayApiCaddyfile(
-    string $wireguardAddress,
-    string $orbitPath,
-    string $certPath,
-    string $keyPath,
-): string {
-```
-
-Keep the block body unchanged.
-
-- [ ] **Step 4: Add global Caddyfile methods**
-
-Add:
-
-```php
-private function ensureGlobalCaddyfileImportsOrbit(): void
-{
-    $contents = $this->readOptional('/etc/caddy/Caddyfile');
-
-    $updated = $contents === ''
-        ? $this->caddyGlobalConfig->fresh()
-        : $this->caddyGlobalConfig->ensureImport($contents);
-
-    if ($updated === $contents) {
-        return;
-    }
-
-    $this->runRequiredWithInput('sudo tee /etc/caddy/Caddyfile > /dev/null', $updated, 'write global Caddy config');
-}
-
 private function readOptional(string $path): string
-{
-    $command = 'sudo test -f '.escapeshellarg($path).' && sudo cat '.escapeshellarg($path).' || true';
-    $result = Process::timeout(30)->run($command);
-
-    if ($result->successful()) {
-        return $result->output();
-    }
-
-    throw new RuntimeException("Failed to read {$path}: ".$this->output($result->errorOutput(), $result->output()));
-}
 ```
 
-- [ ] **Step 5: Run the gateway installer test**
+using:
 
-Run:
+```sh
+sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true
+```
+
+- [ ] Run:
 
 ```bash
 php artisan test --compact tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php
@@ -438,48 +218,27 @@ php artisan test --compact tests/Feature/Services/Gateway/GatewayApiRuntimeInsta
 
 Expected: PASS.
 
-## Phase 3: Fix Proxy TLS Key Installation
+## Phase 4: Fix Proxy TLS Key Installation
 
-### Task 6: Make ProxyRouteFixer Destination Key Caddy-Readable
+### Task 6: Update Proxy TLS Repair Permissions
 
 **Files:**
 - Modify: `app/Services/Proxy/ProxyRouteFixer.php`
 
-- [ ] **Step 1: Change key permissions in `tlsInstallScript()`**
+- [ ] In `tlsInstallScript()`, keep cert mode `0644`.
 
-Replace:
-
-```sh
-sudo chmod 0644 %s
-sudo chmod 0600 %s
-sudo systemctl reload caddy
-```
-
-with:
+- [ ] Replace unconditional key `0600` with:
 
 ```sh
-sudo chmod 0644 %s
 if getent group caddy >/dev/null 2>&1; then
     sudo chgrp caddy %s
     sudo chmod 0640 %s
 else
     sudo chmod 0600 %s
 fi
-sudo systemctl reload caddy
 ```
 
-Update `sprintf()` arguments so the key path is passed three times after cert path:
-
-```php
-escapeshellarg($certPath),
-escapeshellarg($keyPath),
-escapeshellarg($keyPath),
-escapeshellarg($keyPath),
-```
-
-- [ ] **Step 2: Run proxy fixer test**
-
-Run:
+- [ ] Run:
 
 ```bash
 php artisan test --compact tests/Unit/Services/Proxy/ProxyRouteFixerTest.php
@@ -487,87 +246,42 @@ php artisan test --compact tests/Unit/Services/Proxy/ProxyRouteFixerTest.php
 
 Expected: PASS.
 
-## Phase 4: Regression Coverage And Formatting
+## Phase 5: Verification
 
-### Task 7: Run Focused Tests
-
-**Files:**
-- Test: `tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php`
-- Test: `tests/Feature/Services/Ca/OrbitCaServiceTest.php`
-- Test: `tests/Unit/Services/Proxy/ProxyRouteFixerTest.php`
-
-- [ ] **Step 1: Run focused tests**
-
-Run:
+- [ ] Run focused tests:
 
 ```bash
 php artisan test --compact tests/Feature/Services/Gateway/GatewayApiRuntimeInstallerTest.php tests/Feature/Services/Ca/OrbitCaServiceTest.php tests/Unit/Services/Proxy/ProxyRouteFixerTest.php
 ```
 
-Expected: PASS.
-
-- [ ] **Step 2: Run Pint**
-
-Run:
+- [ ] Run formatting:
 
 ```bash
 vendor/bin/pint --dirty --format agent
 ```
 
-Expected: PASS or style changes applied.
-
-- [ ] **Step 3: Run broad quality check if focused tests pass**
-
-Run:
+- [ ] Run the broad gate:
 
 ```bash
 composer quality-check
 ```
 
-Expected: PASS.
+## Live Verification Notes
 
-## Phase 5: Read-Only Live Verification
-
-### Task 8: Verify Gateway State Before Any Mutation
-
-**Files:** None
-
-- [ ] **Step 1: Inspect gateway Caddy layout**
-
-Run:
+Before mutating a real populated gateway, inspect:
 
 ```bash
-ssh gateway 'sed -n "1,180p" /etc/caddy/Caddyfile; ls -la /etc/caddy/orbit; id caddy'
+ssh gateway 'sed -n "1,220p" /etc/caddy/Caddyfile; find /etc/caddy -maxdepth 2 -type f -name "*.caddy" -print; id caddy'
 ```
 
-Expected:
-- Caddyfile still contains existing non-API imports.
-- Caddyfile contains or can safely gain `import /etc/caddy/orbit/*.caddy`.
-- `caddy` exists.
-
-- [ ] **Step 2: After deployment to gateway, verify config without restarting**
-
-Run:
+After deployment, validate before restart/reload where possible:
 
 ```bash
 ssh gateway 'sudo caddy validate --config /etc/caddy/Caddyfile'
 ```
 
-Expected: success.
-
-- [ ] **Step 3: Verify Caddy can read gateway API key**
-
-Run:
+Verify Caddy can read the gateway API key:
 
 ```bash
-ssh gateway 'sudo -n -u caddy test -r /home/gateway/orbit/storage/app/orbit/certs/10.6.0.2.key && echo readable'
+ssh gateway 'sudo -n -u caddy test -r /home/orbit/orbit/storage/app/orbit/certs/10.6.0.2.key && echo readable'
 ```
-
-Expected: `readable`.
-
-## Open Questions
-
-1. Should the canonical include path be `/etc/caddy/orbit/*.caddy` for gateways and `/etc/caddy/sites/*.caddy` for app nodes, or should the gateway global Caddyfile import both for compatibility?
-2. Should the gateway API Caddy block keep the current clean-rebuild socket `/run/php/orbit-api.sock`, or intentionally preserve the older `orbit-exec`/`orbit-stream` split for streaming endpoints?
-3. Should proxy TLS destination certs live under `/etc/orbit/certs` as they do now, or move under `/etc/caddy/orbit/certs` to make Caddy ownership explicit?
-

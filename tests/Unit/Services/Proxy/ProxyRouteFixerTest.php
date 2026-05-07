@@ -76,6 +76,10 @@ describe('ProxyRouteFixer', function (): void {
         ])
             ->and($shell->scripts[0])->toContain('/etc/orbit/certs/vite.docs.test.crt')
             ->and($shell->scripts[0])->toContain('/etc/orbit/certs/vite.docs.test.key')
+            ->and($shell->scripts[0])->toContain("sudo chgrp caddy '/etc/orbit/certs/vite.docs.test.key'")
+            ->and($shell->scripts[0])->toContain("sudo chmod 0640 '/etc/orbit/certs/vite.docs.test.key'")
+            ->and($shell->scripts[0])->toContain('else')
+            ->and($shell->scripts[0])->toContain("sudo chmod 0600 '/etc/orbit/certs/vite.docs.test.key'")
             ->and($shell->scripts[0])->toContain('sudo systemctl reload caddy');
     });
 });
