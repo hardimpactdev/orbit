@@ -63,7 +63,6 @@ class DoctorCommand extends Command implements Loggable
         $mode = $this->mode();
         $families = $this->families();
         $this->activityMode = $mode;
-        $this->activityFamilies = $families === [] ? $runner->supportedFamilies() : $families;
 
         if ((bool) $this->option('restore') && (bool) $this->option('adopt')) {
             return $this->failCommand(
@@ -100,19 +99,52 @@ class DoctorCommand extends Command implements Loggable
             );
         }
 
-        $failure = $validator->validate($families, $runner);
+        $target = $this->resolveTargetNode();
+        $isGatewayCaller = $this->isGatewayCaller();
 
-        if ($failure instanceof DoctorValidationFailure) {
-            return $this->failCommand($failure->code, $failure->message, $failure->meta);
+        if ($isGatewayCaller && $target === null) {
+            $requestedNode = $this->stringOption('node');
+
+            if ($requestedNode !== null) {
+                return $this->failCommand(
+                    code: 'scope_not_found',
+                    message: "Node '{$requestedNode}' could not be resolved.",
+                    meta: ['node' => $requestedNode],
+                );
+            }
+
+            return $this->failCommand(
+                code: 'scope_not_found',
+                message: 'No local node identity is registered yet. Run `orbit gateway:add` to register this machine, then try `orbit doctor` again.',
+                meta: ['node' => null],
+            );
         }
 
-        if (! $this->wantsJson()) {
-            $this->renderDoctoringPanel($families === [] ? $runner->supportedFamilies() : $families);
+        if ($target instanceof Node) {
+            $this->activityFamilies = $families === [] ? $runner->categoriesForRole((string) $target->role) : $families;
+
+            $failure = $validator->validate($families, $runner, $target);
+
+            if ($failure instanceof DoctorValidationFailure) {
+                return $this->failCommand($failure->code, $failure->message, $failure->meta);
+            }
+
+            $renderedFamilies = $families === [] ? $runner->categoriesForRole((string) $target->role) : $families;
+
+            if (! $this->wantsJson()) {
+                $this->renderDoctoringPanel($target, $renderedFamilies);
+            }
+        } else {
+            $this->activityFamilies = $families;
+
+            if (! $this->wantsJson()) {
+                $this->renderDeferredDoctoringPanel();
+            }
         }
 
-        $result = $this->isGatewayCaller()
-            ? $this->runLocalDoctor($runner, $mode, $families)
-            : $this->runGatewayDoctor($runner, $mode, $families);
+        $result = $isGatewayCaller && $target instanceof Node
+            ? $this->runLocalDoctor($runner, $target, $mode, $families)
+            : $this->runGatewayDoctor($runner, $target, $mode, $families);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -183,19 +215,17 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    private function runLocalDoctor(DoctorReportRunner $runner, string $mode, array $families): array
+    private function runLocalDoctor(DoctorReportRunner $runner, Node $target, string $mode, array $families): array
     {
-        $node = $this->localNode() ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first() ?? Node::query()->firstOrFail();
-
         if ($mode === 'verify') {
-            return $runner->probe($node, families: $families);
+            return $runner->probe($target, families: $families);
         }
 
         if ($mode !== 'interactive') {
-            return $runner->run($node, mode: $mode, families: $families);
+            return $runner->run($target, mode: $mode, families: $families);
         }
 
-        $probe = $runner->probe($node, families: $families);
+        $probe = $runner->probe($target, families: $families);
         $selected = $this->promptDoctorIssues($probe);
         $actions = [];
 
@@ -208,7 +238,7 @@ class DoctorCommand extends Command implements Loggable
 
             $actions = [
                 ...$actions,
-                ...$runner->apply($node, $resolutionMode, $issues),
+                ...$runner->apply($target, $resolutionMode, $issues),
             ];
         }
 
@@ -219,12 +249,12 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @return array<string, mixed>|GatewayApiException
      */
-    private function runGatewayDoctor(DoctorReportRunner $runner, string $mode, array $families): array|GatewayApiException
+    private function runGatewayDoctor(DoctorReportRunner $runner, ?Node $target, string $mode, array $families): array|GatewayApiException
     {
         try {
             if ($mode === 'verify') {
                 $dto = app(GatewayConnector::class)
-                    ->send($this->gatewayRunRequest($families))
+                    ->send($this->gatewayRunRequest($target, $families))
                     ->dto();
 
                 /** @var DoctorRunResponse $dto */
@@ -233,7 +263,7 @@ class DoctorCommand extends Command implements Loggable
 
             if ($mode !== 'interactive') {
                 $dto = app(GatewayConnector::class)
-                    ->send($this->gatewayFixRequest($mode, $families))
+                    ->send($this->gatewayFixRequest($target, $mode, $families))
                     ->dto();
 
                 /** @var DoctorRunResponse $dto */
@@ -241,7 +271,7 @@ class DoctorCommand extends Command implements Loggable
             }
 
             $probeDto = app(GatewayConnector::class)
-                ->send($this->gatewayRunRequest($families))
+                ->send($this->gatewayRunRequest($target, $families))
                 ->dto();
 
             /** @var DoctorRunResponse $probeDto */
@@ -257,7 +287,7 @@ class DoctorCommand extends Command implements Loggable
                 }
 
                 $fixDto = app(GatewayConnector::class)
-                    ->send($this->gatewayFixRequest($resolutionMode, $families, $issues))
+                    ->send($this->gatewayFixRequest($target, $resolutionMode, $families, $issues))
                     ->dto();
 
                 /** @var DoctorRunResponse $fixDto */
@@ -281,12 +311,12 @@ class DoctorCommand extends Command implements Loggable
     /**
      * @param  list<string>  $families
      */
-    private function gatewayRunRequest(array $families): RunDoctorRequest
+    private function gatewayRunRequest(?Node $target, array $families): RunDoctorRequest
     {
         return new RunDoctorRequest(
             families: $families,
-            node: $this->stringOption('node'),
-            self: (bool) $this->option('self'),
+            node: $target?->name ?? $this->stringOption('node'),
+            self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
         );
@@ -296,17 +326,27 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $families
      * @param  list<array<string, mixed>>|null  $issues
      */
-    private function gatewayFixRequest(string $mode, array $families, ?array $issues = null): FixDoctorRequest
+    private function gatewayFixRequest(?Node $target, string $mode, array $families, ?array $issues = null): FixDoctorRequest
     {
         return new FixDoctorRequest(
             mode: $mode,
             families: $families,
             issues: $issues,
-            node: $this->stringOption('node'),
-            self: (bool) $this->option('self'),
+            node: $target?->name ?? $this->stringOption('node'),
+            self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
         );
+    }
+
+    private function shouldForwardSelf(?Node $target): bool
+    {
+        if ((bool) $this->option('self')) {
+            return true;
+        }
+
+        // No --node and no local Node row: ask the gateway to resolve the caller.
+        return $target === null && $this->stringOption('node') === null;
     }
 
     /**
@@ -374,6 +414,21 @@ class DoctorCommand extends Command implements Loggable
             ->first();
 
         return $node instanceof Node ? $node : null;
+    }
+
+    private function resolveTargetNode(): ?Node
+    {
+        $name = $this->stringOption('node');
+
+        if ($name !== null) {
+            $node = Node::query()->where('name', $name)->first();
+
+            return $node instanceof Node ? $node : null;
+        }
+
+        return $this->localNode()
+            ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first()
+            ?? Node::query()->first();
     }
 
     private function isGatewayCaller(): bool
@@ -447,18 +502,37 @@ class DoctorCommand extends Command implements Loggable
         }
     }
 
-    /**
-     * @param  list<string>  $families
-     */
-    private function renderDoctoringPanel(array $families): void
+    private function renderDeferredDoctoringPanel(): void
     {
         $width = 78;
         $innerWidth = $width - 2;
-        $target = $this->doctorHumanValue($this->stringOption('node') ?? $this->localNode()?->name);
         $lines = [
             $this->doctorPanelRule('top', 'D O C T O R I N G', $width),
             $this->doctorPanelEmpty($innerWidth),
-            $this->doctorPanelRule('middle', "Performing check-up on {$target}", $width),
+            $this->doctorPanelRule('middle', 'Querying gateway for check-up scope', $width),
+            $this->doctorPanelEmpty($innerWidth),
+            $this->doctorPanelRule('bottom', null, $width),
+        ];
+
+        foreach ($lines as $line) {
+            $this->line($line);
+        }
+
+        $this->newLine();
+    }
+
+    /**
+     * @param  list<string>  $families
+     */
+    private function renderDoctoringPanel(Node $target, array $families): void
+    {
+        $width = 78;
+        $innerWidth = $width - 2;
+        $targetName = $this->doctorHumanValue($target->name);
+        $lines = [
+            $this->doctorPanelRule('top', 'D O C T O R I N G', $width),
+            $this->doctorPanelEmpty($innerWidth),
+            $this->doctorPanelRule('middle', "Performing check-up on {$targetName}", $width),
             $this->doctorPanelEmpty($innerWidth),
         ];
 
@@ -509,7 +583,7 @@ class DoctorCommand extends Command implements Loggable
             if ($familyIssues !== []) {
                 $lines = [
                     ...$lines,
-                    ...$this->doctorPanelIssueTable($familyIssues, $innerWidth),
+                    ...$this->doctorPanelIssueTable($family, $familyIssues, $innerWidth),
                 ];
             }
 
@@ -592,20 +666,114 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<array<string, mixed>>  $issues
      * @return list<string>
      */
-    private function doctorPanelIssueTable(array $issues, int $innerWidth): array
+    private function doctorPanelIssueTable(string $family, array $issues, int $innerWidth): array
     {
-        $lines = [$this->doctorPanelSeparator(['KEY', 'Issue'], [24, $innerWidth - 29])];
+        $columns = $this->doctorIssueColumns($family);
+        $widths = $this->doctorIssueColumnWidths($columns, $innerWidth);
+        $lines = [$this->doctorPanelSeparator(array_map('strtoupper', array_column($columns, 'label')), $widths)];
 
         foreach ($issues as $issue) {
-            $lines[] = $this->doctorPanelCells([
-                $this->doctorString($issue['key'] ?? null),
-                $this->doctorString($issue['summary'] ?? null),
-            ], [24, $innerWidth - 29]);
+            $values = array_map(
+                fn (array $column): string => $this->doctorString($this->doctorIssueColumnValue($column['key'], $issue)),
+                $columns,
+            );
+            $lines[] = $this->doctorPanelCells($values, $widths);
         }
 
         $lines[] = $this->doctorPanelSeparator([], []);
 
         return $lines;
+    }
+
+    /**
+     * @return list<array{key: string, label: string, weight: int}>
+     */
+    private function doctorIssueColumns(string $family): array
+    {
+        return match ($family) {
+            'node' => [
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 1],
+            ],
+            'app' => [
+                ['key' => 'app', 'label' => 'App', 'weight' => 1],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 4],
+            ],
+            'workspace' => [
+                ['key' => 'workspace', 'label' => 'Workspace', 'weight' => 2],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 5],
+            ],
+            'process' => [
+                ['key' => 'app', 'label' => 'App', 'weight' => 1],
+                ['key' => 'process', 'label' => 'Process', 'weight' => 1],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 4],
+            ],
+            'proxy' => [
+                ['key' => 'domain', 'label' => 'Domain', 'weight' => 2],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 5],
+            ],
+            'firewall_rule' => [
+                ['key' => 'rule', 'label' => 'Rule', 'weight' => 2],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 5],
+            ],
+            'tool' => [
+                ['key' => 'tool', 'label' => 'Tool', 'weight' => 2],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 5],
+            ],
+            'schedule' => [
+                ['key' => 'schedule', 'label' => 'Schedule', 'weight' => 2],
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 5],
+            ],
+            default => [
+                ['key' => 'summary', 'label' => 'Issue', 'weight' => 1],
+            ],
+        };
+    }
+
+    /**
+     * @param  list<array{key: string, label: string, weight: int}>  $columns
+     * @return list<int>
+     */
+    private function doctorIssueColumnWidths(array $columns, int $innerWidth): array
+    {
+        $available = max(count($columns) * 4, $innerWidth - count($columns));
+        $totalWeight = max(1, array_sum(array_column($columns, 'weight')));
+        $widths = [];
+
+        foreach ($columns as $index => $column) {
+            $widths[] = max(8, intdiv($available * $column['weight'], $totalWeight));
+        }
+
+        return $widths;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function doctorIssueColumnValue(string $key, array $issue): mixed
+    {
+        if ($key === 'summary' || $key === 'kind' || $key === 'family' || $key === 'node' || $key === 'key') {
+            return $issue[$key] ?? null;
+        }
+
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
+        if (array_key_exists($key, $detail)) {
+            return $detail[$key];
+        }
+
+        if ($key === 'app') {
+            return $issue['app'] ?? $detail['app'] ?? null;
+        }
+
+        if ($key === 'workspace') {
+            return $issue['key'] ?? null;
+        }
+
+        if ($key === 'process') {
+            return $issue['key'] ?? null;
+        }
+
+        return $issue[$key] ?? null;
     }
 
     /**
@@ -669,13 +837,13 @@ class DoctorCommand extends Command implements Loggable
         $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
         $families = is_array($scope['families'] ?? null) ? array_values(array_filter($scope['families'], is_string(...))) : [];
 
-        return $families === [] ? ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'] : $families;
+        return $families === [] ? ['node'] : $families;
     }
 
     private function doctorFamilyLabel(string $family): string
     {
         return match ($family) {
-            'node' => 'Nodes',
+            'node' => 'Node',
             'app' => 'Apps',
             'workspace' => 'Workspaces',
             'process' => 'Processes',
@@ -716,15 +884,9 @@ class DoctorCommand extends Command implements Loggable
             return 'No issues detected';
         }
 
-        $issues = $this->doctorList($doctor, 'issues');
-        $categoryCount = count(array_unique(array_map(
-            fn (array $issue): string => $this->doctorString($issue['family'] ?? null),
-            $issues,
-        )));
-
         return $issueCount === 1
-            ? '1 issue detected across 1 category'
-            : "{$issueCount} issues detected across {$categoryCount} categories";
+            ? '1 issue detected'
+            : "{$issueCount} issues detected";
     }
 
     /**

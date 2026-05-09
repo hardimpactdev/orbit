@@ -61,7 +61,19 @@ final class DoctorFixController implements Loggable
         }
 
         $families = $this->families($request);
-        $failure = $validator->validate($families, $runner);
+        $target = $this->resolveTarget($request, $caller);
+
+        if ($target === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'scope_not_found',
+                    'message' => 'Target node could not be resolved.',
+                    'meta' => ['node' => $request->input('node')],
+                ],
+            ], 422);
+        }
+
+        $failure = $validator->validate($families, $runner, $target);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([
@@ -76,8 +88,8 @@ final class DoctorFixController implements Loggable
         $issues = $this->issues($request);
 
         $doctor = $issues === null
-            ? $runner->run($caller, mode: $mode, families: $families)
-            : $this->applySelectedIssues($runner, $caller, $mode, $families, $issues);
+            ? $runner->run($target, mode: $mode, families: $families)
+            : $this->applySelectedIssues($runner, $target, $mode, $families, $issues);
 
         return response()->json([
             'success' => [
@@ -93,12 +105,25 @@ final class DoctorFixController implements Loggable
      * @param  list<array<string, mixed>>  $issues
      * @return array<string, mixed>
      */
-    private function applySelectedIssues(DoctorReportRunner $runner, Node $caller, string $mode, array $families, array $issues): array
+    private function applySelectedIssues(DoctorReportRunner $runner, Node $target, string $mode, array $families, array $issues): array
     {
-        $probe = $runner->probe($caller, $families);
-        $actions = $runner->apply($caller, $mode, $issues);
+        $probe = $runner->probe($target, $families);
+        $actions = $runner->apply($target, $mode, $issues);
 
         return $runner->finalize($probe, $mode, $actions);
+    }
+
+    private function resolveTarget(Request $request, Node $caller): ?Node
+    {
+        $name = $request->input('node');
+
+        if (is_string($name) && $name !== '') {
+            $target = Node::query()->where('name', $name)->first();
+
+            return $target instanceof Node ? $target : null;
+        }
+
+        return $caller;
     }
 
     /**

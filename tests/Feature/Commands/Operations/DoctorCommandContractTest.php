@@ -86,7 +86,7 @@ describe('doctor command contract', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('D O C T O R  R E S U L T')
             ->and($output)->toContain('Successfully performed check-up on local-gateway')
-            ->and($output)->toContain('Nodes')
+            ->and($output)->toContain('Node')
             ->and($output)->toContain('OK')
             ->and($output)->toContain('S U M M A R Y')
             ->and($output)->toContain('┌')
@@ -103,9 +103,8 @@ describe('doctor command contract', function (): void {
             ->and($output)->toContain('D O C T O R  R E S U L T')
             ->and($output)->toContain('Successfully performed check-up on local-gateway')
             ->and($output)->toContain('issues found')
-            ->and($output)->toContain('Nodes')
+            ->and($output)->toContain('Node')
             ->and($output)->toContain('┌')
-            ->and($output)->toContain('node.record_incomplete')
             ->and($output)->toContain('Node record for local-gateway is missing');
     });
 
@@ -121,7 +120,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--fix' => true, '--restore' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
@@ -214,7 +213,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("docs\t0\t0\t1\t1\t0\t0\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['app'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['app'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -242,7 +241,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("feature\t0\t0\t1\t0\t0\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['workspace'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['workspace'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -271,7 +270,7 @@ describe('doctor command contract', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing supervisorctl', durationMs: 1),
         ]));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['process'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['process'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -284,15 +283,15 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('runs the proxy family locally for gateway callers', function (): void {
+    it('rejects the proxy family when targeting a gateway node', function (): void {
         createDoctorLocalNode('gateway');
 
         $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['scope']['families'])->toBe(['proxy'])
-            ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0);
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('family_not_in_role_scope')
+            ->and($payload['error']['meta']['family'])->toBe('proxy');
     });
 
     it('reports proxy family drift through the global doctor payload', function (): void {
@@ -307,7 +306,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -332,7 +331,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -362,7 +361,7 @@ describe('doctor command contract', function (): void {
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "1\t{$route->source_hash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t0\t1\n", nodeLevelStdout: ''));
         app()->instance(OrbitCaService::class, new DoctorProxyFakeCa);
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -392,7 +391,7 @@ describe('doctor command contract', function (): void {
             nodeLevelStdout: "extra.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/extra.test.crt\t/etc/orbit/certs/extra.test.key\t1\t1\n",
         ));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -421,7 +420,7 @@ describe('doctor command contract', function (): void {
             nodeLevelStdout: "extra.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/extra.test.crt\t/etc/orbit/certs/extra.test.key\t1\t1\n",
         ));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -450,7 +449,7 @@ describe('doctor command contract', function (): void {
             ],
         ));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--adopt' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['proxy'], '--fix' => true, '--adopt' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -477,7 +476,7 @@ describe('doctor command contract', function (): void {
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'redis']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -500,7 +499,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -526,7 +525,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/local/bin/composer\tComposer version 2.8.0\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -559,7 +558,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/redis-server\t7.2.0\trunning\t0\t\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -590,7 +589,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/opencode-server\t\trunning\t\t\t0\t\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -614,7 +613,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -642,7 +641,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("running\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['schedule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -657,7 +656,7 @@ describe('doctor command contract', function (): void {
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['schedule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -677,7 +676,7 @@ describe('doctor command contract', function (): void {
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("missing\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['schedule'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -693,10 +692,12 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('runs the firewall rule family locally for gateway callers', function (): void {
+    it('runs the firewall rule family for an app node target', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -719,7 +720,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -743,7 +744,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--restore' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -764,7 +765,7 @@ describe('doctor command contract', function (): void {
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--adopt' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'app-1', '--family' => ['firewall_rule'], '--fix' => true, '--adopt' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)

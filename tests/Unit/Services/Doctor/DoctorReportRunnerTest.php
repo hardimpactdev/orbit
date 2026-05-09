@@ -28,7 +28,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -58,7 +58,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['tool']);
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -91,7 +91,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['tool']);
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -121,7 +121,7 @@ describe('DoctorReportRunner', function (): void {
             new RuntimeException('supervisor update failed'),
         ]));
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeFalse()
             ->and($report['summary'])->toMatchArray([

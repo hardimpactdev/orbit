@@ -55,12 +55,15 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
 
-    it('accepts the proxy family scope', function (): void {
+    it('accepts the proxy family scope when targeting an app node', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux', 'is_local' => true]);
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', nodeLevelStdout: ''));
 
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['proxy'],
             'mode' => 'verify',
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -84,6 +87,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['firewall_rule'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -107,6 +111,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['proxy'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -124,6 +129,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['tool'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -145,6 +151,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['app'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -171,6 +178,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['workspace'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -196,6 +204,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['process'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -217,6 +226,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'restore',
             'families' => ['tool'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
@@ -240,6 +250,7 @@ describe('DoctorRunController', function (): void {
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
             'families' => ['schedule'],
+            'node' => 'app-1',
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()

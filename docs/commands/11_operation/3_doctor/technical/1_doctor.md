@@ -31,9 +31,9 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | All doctor-supported product families. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. |
-| `node` | `--node` | Never. | `--self` is present. | Nodes selected by each family contract after authorization and app/workspace filters. | Gateway-known node name. |
-| `self` | `--self` | Never. | `--node` is present. | `false`. | Resolves to the caller's gateway-known node identity. |
+| `family` | `--family` | Never. | Never. | The full category set derived from the target node's role. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. Must intersect with the target role's category set. |
+| `node` | `--node` | Never. | `--self` is present. | The local caller's node (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
+| `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Resolves to the caller's gateway-known node identity. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
 | `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/app filters. | Gateway-known workspace name, resolved inside app scope when applicable. |
 | `fix` | `--fix` | Never. | Never. | `false`. | Selects resolution mode. Every attempted action must be declared safe by its family doctor contract. |
@@ -44,12 +44,14 @@ This command follows the shared
 ## Caller Role Behavior
 
 `doctor` resolves the caller role before probes, actions, or remote transport.
+Every run targets exactly one node. The caller role governs *who is allowed
+to ask*; the *target* node's role governs the rendered category set.
 
 | Caller role | Verify behavior | `--fix` / `--adopt` behavior |
 | --- | --- | --- |
-| `control` | Calls the gateway for scope authorization, family probe orchestration, and streamed progress. | Allowed when the gateway authorizes the resolved scope and every attempted action is supported by the owning family. |
-| `gateway` | Authority path. May inspect gateway-local facts and use gateway-owned node execution for selected node reality. | Allowed when every attempted action is supported by the owning family. |
-| `app` | Allowed for authorized verify-mode scopes. Local app/workspace context may help resolve defaults only when a family contract defines that behavior. | Denied before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
+| `control` | Calls the gateway for scope authorization, family probe orchestration, and streamed progress for the single-node target. | Allowed when the gateway authorizes the resolved scope and every attempted action is supported by the owning family. |
+| `gateway` | Authority path. May inspect gateway-local facts and use gateway-owned node execution for the target node's reality. | Allowed when every attempted action is supported by the owning family. |
+| `app` | Allowed for authorized verify-mode single-node scopes. Local app/workspace context may help resolve defaults only when a family contract defines that behavior. | Denied before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
 | `unknown` | Invalid local context. Fail before probes or side effects. | Invalid local context. Fail before probes or side effects. |
 
 Role-specific contract details are documented in companion files:
@@ -60,21 +62,36 @@ Role-specific contract details are documented in companion files:
 The generic role matrix is fully defined here; family contracts may only narrow
 app-node context behavior for the family they own.
 
+## Target Role And Category Set
+
+The rendered category set is derived from the target node's role:
+
+| Target role | Categories |
+| --- | --- |
+| `control` | `Node`; `DNS/TLD` only when custom TLD resolvers are configured on the target |
+| `gateway` | `Node`, `DNS` |
+| `app` | `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+
+Families outside the target role's set are rejected before probes. A narrow
+`--family` filter intersects with the target role's set. The renderer never
+shows placeholder rows for families that are not in the target's set.
+
 ## Input Resolution
 
 1. Resolve caller role before probes or side effects.
 2. Select the output renderer.
 3. Resolve mode: `verify`, `interactive`, `restore`, or `adopt`.
-4. Resolve family filters. Omitted `--family` means all doctor-supported product
-   families.
-5. Resolve node scope.
+4. Resolve the single-node target.
    - `--self` resolves to the caller's gateway-known node identity.
    - `--node=<node>` resolves to that gateway-known node.
-   - Omitted node scope means each selected family contract chooses authorized
-     nodes after applying the resolved app and workspace filters.
+   - Omitted node scope defaults to `--self` (the local caller's node).
+   - `--self` combined with `--node` is rejected before probes.
+5. Resolve target-role category set. Family filters intersect with that set;
+   families outside the set are rejected before probes.
 6. Resolve app and workspace scope when supplied.
 7. Apply gateway authorization for the resolved scope and mode.
-8. Dispatch selected family probes and optional fix/adopt actions.
+8. Dispatch selected family probes for the single-node target and optional
+   fix/adopt actions.
 
 Input-mode-specific contracts are required for `--fix` resolution:
 
@@ -111,12 +128,16 @@ It is the only doctor mode that may intentionally mutate gateway intent.
 ### Scope And Authorization Rules
 
 - Resolve and validate all scope filters before probes or side effects.
+- Resolve a single-node target before probes; multi-node scopes are not
+  supported.
 - Apply gateway-owned authorization to the resolved scope before probes or
   side effects.
 - Fail before probes when `--fix` and `--restore` are combined with `--adopt`.
 - Fail before probes when `--self` and `--node` are combined.
 - Fail before probes when a requested family, node, app, or workspace scope
   cannot be resolved.
+- Fail before probes when a requested family is outside the target node's
+  role-derived category set.
 - Fail before side effects when the selected family does not support the
   requested mode for the attempted issue actions.
 

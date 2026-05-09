@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Models\Node;
+
 final readonly class DoctorScopeValidator
 {
     /**
      * @param  list<string>  $families
      */
-    public function validate(array $families, DoctorReportRunner $runner): ?DoctorValidationFailure
+    public function validate(array $families, DoctorReportRunner $runner, ?Node $target = null): ?DoctorValidationFailure
     {
         foreach ($families as $family) {
             if (! in_array($family, $runner->supportedFamilies(), true)) {
@@ -18,6 +20,25 @@ final readonly class DoctorScopeValidator
                     message: "Doctor family '{$family}' is not available yet.",
                     meta: ['family' => $family],
                 );
+            }
+        }
+
+        if ($target instanceof Node) {
+            $targetRole = (string) ($target->role ?? '');
+            $allowed = $runner->categoriesForRole($targetRole);
+
+            foreach ($families as $family) {
+                if (! in_array($family, $allowed, true)) {
+                    return new DoctorValidationFailure(
+                        code: 'family_not_in_role_scope',
+                        message: "Doctor family '{$family}' is not part of the '{$targetRole}' node category set.",
+                        meta: [
+                            'family' => $family,
+                            'target_role' => $targetRole,
+                            'allowed_families' => $allowed,
+                        ],
+                    );
+                }
             }
         }
 

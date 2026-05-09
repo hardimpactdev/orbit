@@ -32,8 +32,19 @@ final class DoctorRunController implements Loggable
         }
 
         $families = $this->families($request);
+        $target = $this->resolveTarget($request, $caller);
 
-        $failure = $validator->validate($families, $runner);
+        if ($target === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'scope_not_found',
+                    'message' => 'Target node could not be resolved.',
+                    'meta' => ['node' => $request->input('node')],
+                ],
+            ], 422);
+        }
+
+        $failure = $validator->validate($families, $runner, $target);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([
@@ -45,7 +56,7 @@ final class DoctorRunController implements Loggable
             ], 422);
         }
 
-        $doctor = $runner->probe($caller, families: $families);
+        $doctor = $runner->probe($target, families: $families);
 
         return response()->json([
             'success' => [
@@ -68,6 +79,19 @@ final class DoctorRunController implements Loggable
         }
 
         return array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
+    }
+
+    private function resolveTarget(Request $request, Node $caller): ?Node
+    {
+        $name = $request->input('node');
+
+        if (is_string($name) && $name !== '') {
+            $target = Node::query()->where('name', $name)->first();
+
+            return $target instanceof Node ? $target : null;
+        }
+
+        return $caller;
     }
 
     public function effect(): ActivityLogType

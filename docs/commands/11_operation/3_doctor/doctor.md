@@ -2,15 +2,23 @@
 
 [Back to Operation commands.](../README.md)
 
-Verify gateway intent against observed node reality, and optionally repair or
-adopt supported drift.
+Verify gateway intent against observed node reality for one node at a time,
+and optionally repair or adopt supported drift.
 
-`doctor` is Orbit's convergence command. It orchestrates state-family probes for
-families such as `node`, `app`, `workspace`, `process`, `proxy`,
-`schedule`, `tool`, and `firewall_rule`. The global command owns scope
-resolution, mode selection, authorization, exit status, and output envelopes.
-Family doctor contracts own concrete probe facts, issue codes, and safe
-restore/adopt maps.
+`doctor` is Orbit's convergence command. Each run targets a single node. It
+orchestrates state-family probes for families such as `node`, `app`,
+`workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`.
+The global command owns scope resolution, mode selection, authorization,
+exit status, and output envelopes. Family doctor contracts own concrete
+probe facts, issue codes, and safe restore/adopt maps.
+
+The categories rendered for a run are derived from the target node's role:
+
+- `control` target: `Node`; `DNS/TLD` only when custom TLD resolvers are
+  configured on the target.
+- `gateway` target: `Node`, `DNS`.
+- `app` target: `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`,
+  `Proxy routes`, `Firewall`, `Tools`, `Scheduling`.
 
 ## Usage
 
@@ -41,8 +49,10 @@ orbit doctor --fix --family=workspace --app=docs --workspace=feature-api --adopt
 
 ## What Happens
 
-`doctor` resolves a scope, authorizes that scope on the gateway, runs the
-matching family probes, and reports the final diagnostic.
+`doctor` resolves a single-node scope, authorizes that scope on the gateway,
+runs the matching family probes for the target node's role, and reports the
+final diagnostic. Without `--self` or `--node`, the target defaults to the
+local caller's node.
 
 In verify mode (no `--fix`), it compares only and does not mutate gateway intent or node reality.
 
@@ -54,14 +64,14 @@ App-node callers may run authorized verify-mode doctor checks. App-node callers 
 
 ## Output
 
-Human output renders a framed check-up panel. While the command is running, the
-panel shows each selected category and its current state. The final result uses
-the same category rows, marks healthy categories as `OK`, renders issue tables
-inline below the category that owns them, and ends with a summary line. Healthy
-output must still say what was checked; an empty result is not enough because
-unselected families and nodes may not have been inspected. In `--fix` modes
-(interactive, restore, adopt), action results render inline below the owning
-category. Verify-mode runs do not render action tables.
+Human output renders a framed check-up panel for the single target node.
+While the command is running, the panel shows each category in the target's
+role-derived set and its current state. The final result uses the same
+category rows, marks healthy categories as `OK`, renders issue tables inline
+below the category that owns them, and ends with a summary line. Healthy
+output must still say what was checked. In `--fix` modes (interactive,
+restore, adopt), action results render inline below the owning category.
+Verify-mode runs do not render action tables.
 
 JSON output uses the shared command envelope. Healthy diagnostics are returned
 under `success.data.doctor`. Drift or probe/action failures return the same
