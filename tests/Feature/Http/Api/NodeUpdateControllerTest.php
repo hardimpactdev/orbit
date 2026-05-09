@@ -293,4 +293,60 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.message', "Node 'missing-node' not found.")
             ->assertJsonPath('error.meta.name', 'missing-node');
     });
+
+    it('updates the development tld for an app node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow(['tld' => null]));
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld']);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
+    });
+
+    it('rejects an invalid tld value', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow());
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'Invalid_TLD!'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'tld')
+            ->assertJsonPath('error.meta.value', 'Invalid_TLD!');
+    });
+
+    it('rejects tld on a production app node as role-incompatible', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow(['environment' => 'production']));
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.field_role_incompatible')
+            ->assertJsonPath('error.meta.field', 'tld');
+    });
+
+    it('rejects tld already assigned to another active node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow(['tld' => null]));
+        DB::table('nodes')->insert(apiUpdateNodeRow(['name' => 'app-2', 'tld' => 'test']));
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.tld_in_use')
+            ->assertJsonPath('error.meta.field', 'tld')
+            ->assertJsonPath('error.meta.value', 'test');
+    });
 });

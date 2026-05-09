@@ -25,6 +25,7 @@ class UpdateNodeApiRequest extends FormRequest
         return [
             'host' => ['sometimes', 'string', 'filled', 'max:255'],
             'environment' => ['sometimes', 'string', Rule::in(['development', 'production'])],
+            'tld' => ['sometimes', 'string', 'filled', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/'],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
             'public_ipv6' => ['sometimes', 'string', 'filled', 'ipv6'],
         ];
@@ -33,7 +34,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if ($this->hasAny(['host', 'environment', 'public_ipv4', 'public_ipv6'])) {
+            if ($this->hasAny(['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6'])) {
                 return;
             }
 
@@ -47,7 +48,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function updateFields(): array
     {
         /** @var array<string, string> $fields */
-        $fields = $this->safe()->only(['host', 'environment', 'public_ipv4', 'public_ipv6']);
+        $fields = $this->safe()->only(['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6']);
 
         return $fields;
     }
@@ -72,6 +73,7 @@ class UpdateNodeApiRequest extends FormRequest
         return match ($field) {
             'fields' => 'At least one field must be provided to update a node.',
             'environment' => "Invalid value for --environment: '{$value}'. Allowed values: development, production.",
+            'tld' => "Invalid value for --tld: '{$value}'. TLD must be a lowercase DNS label without a leading dot.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
             'public_ipv6' => "Invalid IPv6 address: '{$value}'.",
             default => "Field '{$field}' cannot be empty.",
@@ -91,7 +93,7 @@ class UpdateNodeApiRequest extends FormRequest
             ];
         }
 
-        if (in_array($field, ['public_ipv4', 'public_ipv6'], true)) {
+        if (in_array($field, ['tld', 'public_ipv4', 'public_ipv6'], true)) {
             return [
                 'field' => $field,
                 'value' => $value,

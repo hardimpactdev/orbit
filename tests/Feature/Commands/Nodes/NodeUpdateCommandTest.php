@@ -475,6 +475,76 @@ describe('node:update field value validation', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['success']['data']['changed'])->toBe(['public_ipv6']);
     });
+
+    it('sets tld on a development app node and reports it as changed', function (): void {
+        DB::table('nodes')->insert(nodeUpdateBaseRow(['tld' => null]));
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--tld' => 'test',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['changed'])->toBe(['tld'])
+            ->and(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
+    });
+
+    it('rejects an invalid tld value', function (): void {
+        DB::table('nodes')->insert(nodeUpdateBaseRow());
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--tld' => 'Invalid_TLD!',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['meta']['value'])->toBe('Invalid_TLD!');
+    });
+
+    it('rejects tld on a production app node', function (): void {
+        DB::table('nodes')->insert(nodeUpdateBaseRow(['environment' => 'production']));
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--tld' => 'test',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.field_role_incompatible')
+            ->and($payload['error']['meta']['field'])->toBe('tld');
+    });
+
+    it('rejects tld already assigned to another active node', function (): void {
+        DB::table('nodes')->insert(nodeUpdateBaseRow(['tld' => null]));
+        DB::table('nodes')->insert(nodeUpdateBaseRow([
+            'name' => 'app-2',
+            'tld' => 'test',
+        ]));
+
+        $exitCode = Artisan::call('node:update', [
+            'name' => 'app-1',
+            '--tld' => 'test',
+            '--json' => true,
+        ]);
+
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($payload['error']['code'])->toBe('node.tld_in_use')
+            ->and($payload['error']['meta']['field'])->toBe('tld')
+            ->and($payload['error']['meta']['value'])->toBe('test');
+    });
 });
 
 describe('node:update safety', function (): void {

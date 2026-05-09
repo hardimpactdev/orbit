@@ -52,6 +52,7 @@ describe('node:update interactive input mode', function (): void {
             ->expectsChoice('Which field would you like to update?', 'host', [
                 'host',
                 'environment',
+                'tld',
                 'public_ipv4',
                 'public_ipv6',
             ])
@@ -70,6 +71,7 @@ describe('node:update interactive input mode', function (): void {
             ->expectsChoice('Which field would you like to update?', 'environment', [
                 'host',
                 'environment',
+                'tld',
                 'public_ipv4',
                 'public_ipv6',
             ])
@@ -78,6 +80,43 @@ describe('node:update interactive input mode', function (): void {
             ->assertSuccessful();
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('environment'))->toBe('production');
+    });
+
+    it('prompts for tld and persists the selected value', function (): void {
+        setupNodeUpdateInteractiveGatewayCaller();
+        DB::table('nodes')->insert(nodeUpdateInteractiveRow(['tld' => null]));
+
+        $this->artisan('node:update app-1')
+            ->expectsChoice('Which field would you like to update?', 'tld', [
+                'host',
+                'environment',
+                'tld',
+                'public_ipv4',
+                'public_ipv6',
+            ])
+            ->expectsQuestion('Development TLD', 'test')
+            ->expectsOutputToContain('Changed: tld')
+            ->assertSuccessful();
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('test');
+    });
+
+    it('omits tld from prompts on production app nodes', function (): void {
+        setupNodeUpdateInteractiveGatewayCaller();
+        DB::table('nodes')->insert(nodeUpdateInteractiveRow([
+            'environment' => 'production',
+            'tld' => null,
+        ]));
+
+        $this->artisan('node:update app-1')
+            ->expectsChoice('Which field would you like to update?', 'host', [
+                'host',
+                'environment',
+                'public_ipv4',
+                'public_ipv6',
+            ])
+            ->expectsQuestion('Host', '10.6.0.99')
+            ->assertSuccessful();
     });
 
     it('does not prompt when json forces non-interactive mode', function (): void {

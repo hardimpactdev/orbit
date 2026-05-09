@@ -26,6 +26,7 @@ use function Laravel\Prompts\text;
     {name? : Node name to update}
     {--host= : New SSH/bootstrap endpoint}
     {--environment= : New environment (development/production)}
+    {--tld= : Development TLD for development app nodes}
     {--public-ipv4= : Public IPv4 address metadata}
     {--public-ipv6= : Public IPv6 address metadata}
     {--json : Output as JSON}')]
@@ -156,6 +157,25 @@ class NodeUpdateCommand extends Command
             );
         }
 
+        if (
+            isset($providedFields['tld'])
+            && $providedFields['tld'] !== $node->tld
+            && Node::query()
+                ->where('tld', $providedFields['tld'])
+                ->where('status', 'active')
+                ->where('id', '!=', $node->id)
+                ->exists()
+        ) {
+            return $this->failCommand(
+                code: 'node.tld_in_use',
+                message: "Development TLD '{$providedFields['tld']}' is already assigned to another node.",
+                meta: [
+                    'field' => 'tld',
+                    'value' => $providedFields['tld'],
+                ],
+            );
+        }
+
         $changes = [];
         $warnings = [];
         $operation = function () use ($node, $providedFields, $reenactNodeArtifacts, &$changes, &$warnings): string {
@@ -252,11 +272,13 @@ class NodeUpdateCommand extends Command
     private function interactiveFieldChoices(?Node $node): array
     {
         if (! $node instanceof Node) {
-            return ['host', 'environment', 'public_ipv4', 'public_ipv6'];
+            return ['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6'];
         }
 
         return match ($node->role) {
-            'app' => ['host', 'environment', 'public_ipv4', 'public_ipv6'],
+            'app' => $node->environment === 'development'
+                ? ['host', 'environment', 'tld', 'public_ipv4', 'public_ipv6']
+                : ['host', 'environment', 'public_ipv4', 'public_ipv6'],
             'gateway' => ['host', 'public_ipv4', 'public_ipv6'],
             default => [],
         };
@@ -270,6 +292,16 @@ class NodeUpdateCommand extends Command
                 options: ['development', 'production'],
                 required: true,
             );
+        }
+
+        if ($field === 'tld') {
+            return trim(text(
+                label: 'Development TLD',
+                required: true,
+                validate: fn (string $value): ?string => $this->isValidTld(trim($value))
+                    ? null
+                    : 'TLD must be a lowercase DNS label without a leading dot.',
+            ));
         }
 
         return trim(text(
@@ -397,7 +429,7 @@ class NodeUpdateCommand extends Command
 
     private function detectDuplicateFieldFlag(): ?string
     {
-        $flags = ['host', 'environment', 'public-ipv4', 'public-ipv6'];
+        $flags = ['host', 'environment', 'tld', 'public-ipv4', 'public-ipv6'];
 
         if (! $this->input instanceof ArgvInput) {
             return null;
@@ -438,6 +470,10 @@ class NodeUpdateCommand extends Command
             $fields['environment'] = (string) $this->option('environment');
         }
 
+        if ($this->option('tld') !== null) {
+            $fields['tld'] = (string) $this->option('tld');
+        }
+
         if ($this->option('public-ipv4') !== null) {
             $fields['public_ipv4'] = (string) $this->option('public-ipv4');
         }
@@ -473,6 +509,17 @@ class NodeUpdateCommand extends Command
                     'field' => 'environment',
                     'value' => $providedFields['environment'],
                     'allowed' => ['development', 'production'],
+                ],
+            ];
+        }
+
+        if (isset($providedFields['tld']) && ! $this->isValidTld($providedFields['tld'])) {
+            return [
+                'code' => 'validation_failed',
+                'message' => "Invalid value for --tld: '{$providedFields['tld']}'. TLD must be a lowercase DNS label without a leading dot.",
+                'meta' => [
+                    'field' => 'tld',
+                    'value' => $providedFields['tld'],
                 ],
             ];
         }
@@ -518,6 +565,14 @@ class NodeUpdateCommand extends Command
             return ['field' => 'host', 'role' => $role];
         }
 
+        if (isset($providedFields['tld'])) {
+            $effectiveEnvironment = $providedFields['environment'] ?? $node->environment;
+
+            if ($role !== 'app' || $effectiveEnvironment !== 'development') {
+                return ['field' => 'tld', 'role' => $role];
+            }
+        }
+
         if (isset($providedFields['public_ipv4']) && $role === 'control') {
             return ['field' => 'public_ipv4', 'role' => $role];
         }
@@ -545,6 +600,10 @@ class NodeUpdateCommand extends Command
             $changes['environment'] = $providedFields['environment'];
         }
 
+        if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {
+            $changes['tld'] = $providedFields['tld'];
+        }
+
         if (isset($providedFields['public_ipv4']) && $providedFields['public_ipv4'] !== $node->public_ipv4) {
             $changes['public_ipv4'] = $providedFields['public_ipv4'];
         }
@@ -554,6 +613,11 @@ class NodeUpdateCommand extends Command
         }
 
         return $changes;
+    }
+
+    private function isValidTld(string $tld): bool
+    {
+        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
     }
 
     /**

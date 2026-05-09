@@ -85,6 +85,26 @@ final class NodeUpdateController implements Loggable
             );
         }
 
+        if (
+            isset($providedFields['tld'])
+            && $providedFields['tld'] !== $node->tld
+            && Node::query()
+                ->where('tld', $providedFields['tld'])
+                ->where('status', 'active')
+                ->where('id', '!=', $node->id)
+                ->exists()
+        ) {
+            return $this->error(
+                code: 'node.tld_in_use',
+                message: "Development TLD '{$providedFields['tld']}' is already assigned to another node.",
+                meta: [
+                    'field' => 'tld',
+                    'value' => $providedFields['tld'],
+                ],
+                status: 422,
+            );
+        }
+
         $changes = $this->computeChanges($node, $providedFields);
         $this->activityChangedFields = array_keys($changes);
 
@@ -191,6 +211,14 @@ final class NodeUpdateController implements Loggable
             return ['field' => 'host', 'role' => $role];
         }
 
+        if (isset($providedFields['tld'])) {
+            $effectiveEnvironment = $providedFields['environment'] ?? $node->environment;
+
+            if ($role !== 'app' || $effectiveEnvironment !== 'development') {
+                return ['field' => 'tld', 'role' => $role];
+            }
+        }
+
         if (isset($providedFields['public_ipv4']) && $role === 'control') {
             return ['field' => 'public_ipv4', 'role' => $role];
         }
@@ -216,6 +244,10 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['environment']) && $providedFields['environment'] !== $node->environment) {
             $changes['environment'] = $providedFields['environment'];
+        }
+
+        if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {
+            $changes['tld'] = $providedFields['tld'];
         }
 
         if (isset($providedFields['public_ipv4']) && $providedFields['public_ipv4'] !== $node->public_ipv4) {
