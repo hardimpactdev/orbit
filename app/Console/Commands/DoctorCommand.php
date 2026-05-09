@@ -503,7 +503,7 @@ class DoctorCommand extends Command implements Loggable
      */
     private function renderDoctoringPanel(Node $target, array $families): void
     {
-        $width = 78;
+        $width = 80;
         $innerWidth = $width - 2;
         $targetName = $this->doctorHumanValue($target->name);
         $lines = [
@@ -537,7 +537,7 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorPanelLines(array $doctor): array
     {
-        $width = 78;
+        $width = 80;
         $innerWidth = $width - 2;
         $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
         $node = $this->doctorHumanValue($scope['node'] ?? null);
@@ -647,17 +647,19 @@ class DoctorCommand extends Command implements Loggable
     {
         $columns = $this->doctorIssueColumns($family);
         $widths = $this->doctorIssueColumnWidths($columns, $innerWidth);
-        $lines = [$this->doctorPanelSeparator(array_map('strtoupper', array_column($columns, 'label')), $widths)];
+        $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
+        $lines[] = $this->doctorPanelTableRow(array_map('strtoupper', array_column($columns, 'label')), $widths);
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'middle');
 
         foreach ($issues as $issue) {
             $values = array_map(
                 fn (array $column): string => $this->doctorString($this->doctorIssueColumnValue($column['key'], $issue)),
                 $columns,
             );
-            $lines[] = $this->doctorPanelCells($values, $widths);
+            $lines[] = $this->doctorPanelTableRow($values, $widths);
         }
 
-        $lines[] = $this->doctorPanelSeparator([], []);
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'bottom');
 
         return $lines;
     }
@@ -712,12 +714,21 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorIssueColumnWidths(array $columns, int $innerWidth): array
     {
-        $available = max(count($columns) * 4, $innerWidth - count($columns));
+        $columnCount = count($columns);
+        $padding = $columnCount * 2;
+        $separators = max(0, $columnCount - 1);
+        $available = max($columnCount, $innerWidth - $padding - $separators);
         $totalWeight = max(1, array_sum(array_column($columns, 'weight')));
         $widths = [];
 
-        foreach ($columns as $index => $column) {
-            $widths[] = max(8, intdiv($available * $column['weight'], $totalWeight));
+        foreach ($columns as $column) {
+            $widths[] = max(1, intdiv($available * $column['weight'], $totalWeight));
+        }
+
+        $remainder = $available - array_sum($widths);
+
+        if ($remainder > 0) {
+            $widths[count($widths) - 1] += $remainder;
         }
 
         return $widths;
@@ -759,50 +770,69 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorPanelActionTable(array $actions, int $innerWidth): array
     {
-        $lines = [$this->doctorPanelSeparator(['ACTION', 'STATUS', 'KEY', 'Summary'], [10, 10, 22, $innerWidth - 50])];
+        $widths = $this->doctorActionColumnWidths($innerWidth);
+        $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
+        $lines[] = $this->doctorPanelTableRow(['ACTION', 'STATUS', 'KEY', 'SUMMARY'], $widths);
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'middle');
 
         foreach ($actions as $action) {
-            $lines[] = $this->doctorPanelCells([
+            $lines[] = $this->doctorPanelTableRow([
                 $this->doctorString($action['mode'] ?? null),
                 $this->doctorString($action['status'] ?? null),
                 $this->doctorString($action['key'] ?? $action['code'] ?? null),
                 $this->doctorString($action['summary'] ?? null),
-            ], [10, 10, 22, $innerWidth - 50]);
+            ], $widths);
         }
 
-        $lines[] = $this->doctorPanelSeparator([], []);
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'bottom');
 
         return $lines;
     }
 
     /**
-     * @param  list<string>  $headers
+     * @return list<int>
+     */
+    private function doctorActionColumnWidths(int $innerWidth): array
+    {
+        $fixed = [8, 10, 22];
+        $padding = 4 * 2;
+        $separators = 3;
+        $remaining = max(8, $innerWidth - array_sum($fixed) - $padding - $separators);
+
+        return [...$fixed, $remaining];
+    }
+
+    /**
      * @param  list<int>  $widths
      */
-    private function doctorPanelSeparator(array $headers, array $widths): string
+    private function doctorPanelTableSeparator(array $widths, string $position): string
     {
-        if ($headers === []) {
-            return '├'.str_repeat('─', 76).'┤';
-        }
+        $join = match ($position) {
+            'top' => '┬',
+            'middle' => '┼',
+            'bottom' => '┴',
+            default => '┼',
+        };
+        $segments = array_map(static fn (int $w): string => str_repeat('─', $w + 2), $widths);
 
-        return $this->doctorPanelCells($headers, $widths);
+        return '├'.implode($join, $segments).'┤';
     }
 
     /**
      * @param  list<string>  $values
      * @param  list<int>  $widths
      */
-    private function doctorPanelCells(array $values, array $widths): string
+    private function doctorPanelTableRow(array $values, array $widths): string
     {
         $cells = [];
 
         foreach ($values as $index => $value) {
             $cellWidth = $widths[$index] ?? 10;
             $value = mb_strimwidth($value, 0, $cellWidth, '…');
-            $cells[] = ' '.str_pad($value, $cellWidth);
+            $cells[] = ' '.str_pad($value, $cellWidth).' ';
         }
 
-        return '├'.implode('│', $cells).'┤';
+        return '│'.implode('│', $cells).'│';
     }
 
     /**
