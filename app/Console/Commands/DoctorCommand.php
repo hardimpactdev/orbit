@@ -559,7 +559,7 @@ class DoctorCommand extends Command implements Loggable
                 $this->doctorFamilyLabel($family),
                 $this->doctorFamilyStatus($familyIssues, $familyActions),
                 $innerWidth,
-                $familyIssues !== [],
+                $familyIssues === [],
             );
 
             if ($familyIssues !== []) {
@@ -629,7 +629,7 @@ class DoctorCommand extends Command implements Loggable
         return '│'.str_repeat(' ', $left).$text.str_repeat(' ', $right).'│';
     }
 
-    private function doctorPanelBullet(string $label, string $status, int $innerWidth, bool $hasIssue = false): string
+    private function doctorPanelBullet(string $label, string $status, int $innerWidth, ?bool $isHealthy = null): string
     {
         $left = '●  '.str_pad($label, 14);
         $text = $left.$status;
@@ -637,8 +637,10 @@ class DoctorCommand extends Command implements Loggable
         $text = mb_strimwidth($text, 0, $padWidth, '…');
         $padded = $text.str_repeat(' ', max(0, $padWidth - mb_strlen($text))).'│';
 
-        if ($hasIssue) {
+        if ($isHealthy === false) {
             $padded = preg_replace('/^●/u', '<fg=red>●</>', $padded, 1);
+        } elseif ($isHealthy === true) {
+            $padded = preg_replace('/^●/u', '<fg=green>●</>', $padded, 1);
         }
 
         return (string) $padded;
@@ -650,6 +652,15 @@ class DoctorCommand extends Command implements Loggable
      */
     private function doctorPanelIssueTable(string $family, array $issues, int $innerWidth): array
     {
+        if ($family === 'node') {
+            $summaries = array_map(
+                fn (array $issue): string => $this->doctorString($issue['summary'] ?? null),
+                $issues,
+            );
+
+            return $this->doctorPanelListTable(count($summaries) === 1 ? 'ISSUE' : 'ISSUES', $summaries, $innerWidth);
+        }
+
         $columns = $this->doctorIssueColumns($family);
         $widths = $this->doctorIssueColumnWidths($columns, $innerWidth);
         $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
@@ -662,6 +673,29 @@ class DoctorCommand extends Command implements Loggable
                 $columns,
             );
             $lines[] = $this->doctorPanelTableRow($values, $widths);
+        }
+
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'bottom');
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<string>  $items
+     * @return list<string>
+     */
+    private function doctorPanelListTable(string $title, array $items, int $innerWidth): array
+    {
+        $contentWidth = $innerWidth - 2;
+        $widths = [$contentWidth];
+        $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
+        $lines[] = '│  '.str_pad(mb_strimwidth($title, 0, $contentWidth, '…'), $contentWidth).'│';
+        $lines[] = $this->doctorPanelTableSeparator($widths, 'middle');
+
+        foreach ($items as $item) {
+            $entry = '- '.$item;
+            $entry = mb_strimwidth($entry, 0, $contentWidth, '…');
+            $lines[] = '│  '.str_pad($entry, $contentWidth).'│';
         }
 
         $lines[] = $this->doctorPanelTableSeparator($widths, 'bottom');
