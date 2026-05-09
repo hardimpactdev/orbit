@@ -136,10 +136,6 @@ class DoctorCommand extends Command implements Loggable
             }
         } else {
             $this->activityFamilies = $families;
-
-            if (! $this->wantsJson()) {
-                $this->renderDeferredDoctoringPanel();
-            }
         }
 
         $result = $isGatewayCaller && $target instanceof Node
@@ -502,25 +498,6 @@ class DoctorCommand extends Command implements Loggable
         }
     }
 
-    private function renderDeferredDoctoringPanel(): void
-    {
-        $width = 78;
-        $innerWidth = $width - 2;
-        $lines = [
-            $this->doctorPanelRule('top', 'D O C T O R I N G', $width),
-            $this->doctorPanelEmpty($innerWidth),
-            $this->doctorPanelRule('middle', 'Querying gateway for check-up scope', $width),
-            $this->doctorPanelEmpty($innerWidth),
-            $this->doctorPanelRule('bottom', null, $width),
-        ];
-
-        foreach ($lines as $line) {
-            $this->line($line);
-        }
-
-        $this->newLine();
-    }
-
     /**
      * @param  list<string>  $families
      */
@@ -625,7 +602,7 @@ class DoctorCommand extends Command implements Loggable
             return $left.str_repeat('─', $width - 2).$right;
         }
 
-        $remaining = max(2, $width - mb_strlen($label) - 4);
+        $remaining = max(2, $width - mb_strlen($label) - 6);
         $before = intdiv($remaining, 2);
         $after = $remaining - $before;
 
