@@ -555,7 +555,12 @@ class DoctorCommand extends Command implements Loggable
         foreach ($families as $family) {
             $familyIssues = array_values(array_filter($issues, fn (array $issue): bool => ($issue['family'] ?? null) === $family));
             $familyActions = array_values(array_filter($actions, fn (array $action): bool => ($action['family'] ?? null) === $family));
-            $lines[] = $this->doctorPanelBullet($this->doctorFamilyLabel($family), $this->doctorFamilyStatus($familyIssues, $familyActions), $innerWidth);
+            $lines[] = $this->doctorPanelBullet(
+                $this->doctorFamilyLabel($family),
+                $this->doctorFamilyStatus($familyIssues, $familyActions),
+                $innerWidth,
+                $familyIssues !== [],
+            );
 
             if ($familyIssues !== []) {
                 $lines = [
@@ -624,14 +629,19 @@ class DoctorCommand extends Command implements Loggable
         return '│'.str_repeat(' ', $left).$text.str_repeat(' ', $right).'│';
     }
 
-    private function doctorPanelBullet(string $label, string $status, int $innerWidth): string
+    private function doctorPanelBullet(string $label, string $status, int $innerWidth, bool $hasIssue = false): string
     {
         $left = '●  '.str_pad($label, 14);
         $text = $left.$status;
         $padWidth = $innerWidth + 1;
         $text = mb_strimwidth($text, 0, $padWidth, '…');
+        $padded = $text.str_repeat(' ', max(0, $padWidth - mb_strlen($text))).'│';
 
-        return $text.str_repeat(' ', max(0, $padWidth - mb_strlen($text))).'│';
+        if ($hasIssue) {
+            $padded = preg_replace('/^●/u', '<fg=red>●</>', $padded, 1);
+        }
+
+        return (string) $padded;
     }
 
     /**
