@@ -122,7 +122,7 @@ describe('doctor role-aware categories', function (): void {
             ->and($output)->not->toContain('Scheduling');
     });
 
-    it('uses a single Issue column for node family issue tables', function (): void {
+    it('renders the node family issue table as a dashed list without column headers', function (): void {
         createRoleAwareLocalNode('gateway', 'local-gateway')->update(['platform' => null]);
 
         $exitCode = Artisan::call('doctor');
@@ -130,8 +130,9 @@ describe('doctor role-aware categories', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('Node')
-            ->and($output)->toContain('ISSUE')
+            ->and($output)->toMatch('/│\s+- /')
             ->and($output)->not->toContain('KEY ')
+            ->and($output)->not->toContain('| ISSUE ')
             ->and($output)->not->toContain('node.record_incomplete');
     });
 

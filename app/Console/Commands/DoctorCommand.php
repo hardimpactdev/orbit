@@ -658,7 +658,7 @@ class DoctorCommand extends Command implements Loggable
                 $issues,
             );
 
-            return $this->doctorPanelListTable(count($summaries) === 1 ? 'ISSUE' : 'ISSUES', $summaries, $innerWidth);
+            return $this->doctorPanelListTable($summaries, $innerWidth);
         }
 
         $columns = $this->doctorIssueColumns($family);
@@ -684,13 +684,11 @@ class DoctorCommand extends Command implements Loggable
      * @param  list<string>  $items
      * @return list<string>
      */
-    private function doctorPanelListTable(string $title, array $items, int $innerWidth): array
+    private function doctorPanelListTable(array $items, int $innerWidth): array
     {
         $contentWidth = $innerWidth - 2;
         $widths = [$contentWidth];
         $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
-        $lines[] = '│  '.str_pad(mb_strimwidth($title, 0, $contentWidth, '…'), $contentWidth).'│';
-        $lines[] = $this->doctorPanelTableSeparator($widths, 'middle');
 
         foreach ($items as $item) {
             $entry = '- '.$item;
