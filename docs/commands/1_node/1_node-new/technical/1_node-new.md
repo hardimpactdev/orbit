@@ -172,7 +172,7 @@ Input mode behavior is split out of the canonical command contract:
   already-provisioned convergence is reported.
 - If a compatible existing gateway is drifted or incomplete, do not reprovision
   it from `node:new`; report the drift or incomplete provisioning and point to
-  `doctor --family=node --fix`.
+  `doctor --fix --family=node --restore`.
 
 ### App Node Provisioning
 
@@ -209,7 +209,7 @@ Input mode behavior is split out of the canonical command contract:
   outside `node:new` because gateway caller authority is derived from an active
   local gateway node row. Broader drift adoption, disaster recovery, and
   adoption of observed node reality outside this explicit membership flow remain
-  owned by a future explicit recovery path or `doctor --family=node --adopt`
+  owned by a future explicit recovery path or `doctor --fix --family=node --adopt`
   where the doctor contract already allows it.
 - Apply only role bootstrap requirements. Other state families own their own
   artifacts, except node-owned bootstrap artifacts such as minimum app-node
@@ -272,7 +272,7 @@ contract.
 - Fail when SSH bootstrap cannot reach the host or loses access mid-run.
 - Report partial provisioning when gateway intent was written and a usable
   gateway exists, but host enactment did not complete. That node appears as
-  drift until provisioning is repaired by `doctor --family=node --fix`, adopted
+  drift until provisioning is repaired by `doctor --fix --family=node --restore`, adopted
   where safe, or removed.
 - First-gateway bootstrap failures that happen before gateway intent and API
   access exist cannot be handed to doctor yet. Report the failed step and the

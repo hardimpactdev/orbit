@@ -75,7 +75,7 @@ peer. Local settings and local WireGuard configuration are left untouched.
   configuration when the removed node is the local machine.
 
 Downstream family state on a removed node becomes orphaned node reality.
-Clean it up through family-specific commands or `doctor --family=<family> --fix`.
+Clean it up through family-specific commands or `doctor --fix --family=<family> --restore`.
 Stale WireGuard peers after intent removal are reported by
 `doctor --family=node`.
 

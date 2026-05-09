@@ -99,7 +99,7 @@ duplicating tool-specific secret columns.
   once that workstream item lands.
 - Retryable enactment failures should preserve gateway intent and report
   warnings or command-specific failure data that point to
-  `doctor --family=tool --fix`.
+  `doctor --fix --family=tool --restore`.
 - Destructive tool removal must require explicit destructive consent before
   intent or node artifacts are removed.
 - Credential commands must not expose generated secrets in activity logs,

@@ -88,7 +88,7 @@ final readonly class SetupWorkspace
                 'code' => 'workspace.http_probe_unhealthy',
                 'family' => 'workspace',
                 'message' => "Workspace did not become reachable: {$probe['status']}",
-                'next_command' => 'doctor --family=workspace --fix',
+                'next_command' => 'doctor --fix --family=workspace --restore',
             ];
         }
 
@@ -158,7 +158,7 @@ final readonly class SetupWorkspace
             'code' => 'workspace.fpm_enactment_failed',
             'family' => 'workspace',
             'message' => 'PHP-FPM pool configuration was not enacted. Run doctor to converge workspace artifacts.',
-            'next_command' => 'doctor --family=workspace --fix',
+            'next_command' => 'doctor --fix --family=workspace --restore',
         ];
     }
 

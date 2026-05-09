@@ -20,7 +20,7 @@ canonical name, and owns one workspace route lifecycle.
   row.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
-- During `doctor --family=workspace --adopt`, project files are adoption hints
+- During `doctor --fix --family=workspace --adopt`, project files are adoption hints
   only. `composer.json` is the only project file Orbit may inspect for PHP
   version hints, and only when the workspace is a PHP project.
 - Workspace hostnames are represented in `proxy` as workspace-owned

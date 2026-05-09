@@ -25,12 +25,12 @@ binaries, containers, and services are backend details.
 - `tool:reload` reloads configuration without a full restart only when the tool
   definition supports reload.
 - Tools observed on a node without a gateway tool row are unmanaged inventory,
-  not drift, unless explicit `doctor --family=tool --adopt` semantics are used.
+  not drift, unless explicit `doctor --fix --family=tool --adopt` semantics are used.
 - Role baseline tools are materialized as tool rows during node provisioning, so
   doctor has one gateway-owned source of truth per node.
 - Node reality import is not part of the tool command surface. If an adoption
   flow needs to adopt node reality, it must use explicit
-  `doctor --family=tool --adopt` semantics.
+  `doctor --fix --family=tool --adopt` semantics.
 - Credential-bearing managed service tools use Orbit-owned generated secrets.
   The default service username is `orbit` when the protocol has a username
   concept.

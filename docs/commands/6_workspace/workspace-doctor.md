@@ -19,7 +19,7 @@ The workspace family owns these facts:
   version, managed runtime configuration, and filesystem ownership required for
   the workspace environment;
 - workspace-owned adoption facts: selected existing workspace paths that can be
-  tied to an explicit app and workspace name during `--adopt`.
+  tied to an explicit app and workspace name during `doctor --fix --adopt`.
 - stale Orbit-owned workspace artifacts whose identity no longer maps to an
   active gateway workspace record.
 
@@ -50,7 +50,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
    gateway workspace intent.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace intent.
-6. **Adoption hints:** during `--adopt`, an explicitly selected existing
+6. **Adoption hints:** during `doctor --fix --adopt`, an explicitly selected existing
    workspace path may be inspected for compatible workspace facts. `composer.json`
    is the only project file that may provide a PHP version hint, and only for a
    PHP project.
@@ -82,7 +82,7 @@ results as workspace-family issue codes.
 
 ## Workspace Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `workspace.path_missing` | Recreate the workspace path only when gateway workspace intent has enough source information and the repair will not overwrite unrelated files. |
 | `workspace.fpm_config_missing` | Re-render and install the workspace PHP-FPM configuration from gateway workspace intent. |
@@ -91,7 +91,7 @@ results as workspace-family issue codes.
 | `workspace.runtime_config_mismatch` | Rewrite managed workspace runtime configuration to match gateway workspace intent. |
 | `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity no longer maps to active workspace intent. |
 
-`--fix` does not handle `workspace.record_incomplete`,
+`doctor --fix --restore` does not handle `workspace.record_incomplete`,
 `workspace.parent_app_invalid`, `workspace.path_unusable`,
 `workspace.path_outside_policy`, `workspace.php_version_unavailable`,
 `workspace.unregistered_path`, or `workspace.php_hint_unsupported`.
@@ -106,13 +106,13 @@ edits inherited runtime units, or changes node reachability.
 
 ## Workspace Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `workspace.unregistered_path` | Create workspace intent only when the selected scope provides an explicit app, workspace name, and path, and the observed path is compatible with `workspace:setup` adoption rules. |
 | `workspace.fpm_config_mismatch` | Update workspace runtime intent only when the observed PHP-FPM configuration proves the same app and workspace identity and the observed values are supported. |
 | `workspace.runtime_config_mismatch` | Update workspace runtime intent only when the observed runtime configuration proves the same app and workspace identity and the observed values are supported. |
 
-`--adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
+`doctor --fix --adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
 virtual hosts, adopt proxy route backend artifacts as workspace intent, infer
 database ownership, read `.php-version`, or adopt process/schedule/tool/firewall
 artifacts as workspace facts.
@@ -126,5 +126,5 @@ Required test files:
 | `tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, workspace probe-layer selection, workspace issue codes, workspace fix map, workspace adopt map, denied workspace fix/adopt cases, related-family handoff behavior, and scope filtering as it affects workspace probes. |
 | `tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior for registry intent, parent app eligibility, source path, workspace path policy, PHP runtime, PHP-FPM configuration, runtime configuration, stale Orbit-owned workspace artifacts, adoption hints, `.php-version` exclusion, and exclusion of proxy route/process/app/node/tool/firewall drift from workspace issue codes. |
 | `tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
-| `tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --family=workspace --fix` repair of safe workspace runtime drift. |
-| `tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime intent adoption. |
+| `tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --fix --family=workspace --restore` repair of safe workspace runtime drift. |
+| `tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --fix --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime intent adoption. |

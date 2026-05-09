@@ -92,7 +92,7 @@ before it reads command inputs or renders prompts.
 - `dns:resolve-tld` is not the source of truth for app-node development TLDs.
 - Gateway-owned development DNS mappings for `*.nodes.tld` are created by
   `node:new --role=app --environment=development` and repaired by
-  `doctor --family=node --fix`.
+  `doctor --fix --family=node --restore`.
 - This command must not write gateway intent, node records, app routes, proxy
   routes, Cloudflare records, or public DNS.
 

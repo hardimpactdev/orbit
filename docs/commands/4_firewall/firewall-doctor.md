@@ -33,7 +33,7 @@ The firewall probe reads gateway firewall rules and checks these layers:
    says it should exist.
 5. **Backend shape:** the observed backend rule matches action, direction,
    source, destination, port, and protocol.
-6. **Adoption scope:** during `--adopt`, explicitly selected observed backend
+6. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed backend
    rules may be inspected for compatible firewall-rule facts.
 
 Observed backend firewall rules without gateway firewall intent are unmanaged
@@ -42,7 +42,7 @@ requested an explicit adoption scope.
 
 Backend rows that cannot be represented in Orbit firewall-rule fields are
 reported as unverifiable or skipped according to the probe result. They are not
-deleted by `--fix` and are not adopted by `--adopt`.
+deleted by `doctor --fix --restore` and are not adopted by `doctor --fix --adopt`.
 
 ## Firewall Issue Codes
 
@@ -57,27 +57,28 @@ deleted by `--fix` and are not adopted by `--adopt`.
 
 ## Firewall Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `firewall_rule.rule_missing` | Recreate the backend firewall rule from gateway intent when the node is reachable and eligible. |
 | `firewall_rule.rule_mismatch` | Replace the backend firewall rule with the gateway-intended rule when the rule can be identified safely. |
 
-`--fix` does not handle `firewall_rule.record_incomplete`,
+`doctor --fix --restore` does not handle `firewall_rule.record_incomplete`,
 `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or
 `firewall_rule.rule_extra`.
 
-`--fix` re-applies or replaces only gateway-intended managed rules. It does not
-delete unmanaged backend rules, role bootstrap policy, WireGuard interface
-policy, or public-ingress policy owned by the node/proxy/app domains.
+`doctor --fix --restore` re-applies or replaces only gateway-intended managed
+rules. It does not delete unmanaged backend rules, role bootstrap policy,
+WireGuard interface policy, or public-ingress policy owned by the
+node/proxy/app domains.
 
 ## Firewall Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `firewall_rule.rule_extra` | Create a gateway firewall rule row only when the operator selected a specific node and backend rule, the node is eligible, and the backend rule can be represented in Orbit firewall-rule fields. |
 | `firewall_rule.rule_mismatch` | Update gateway intent only when the operator selected the specific rule and the observed backend rule can be represented without changing node bootstrap policy. |
 
-`--adopt` does not scan arbitrary hosts, adopt unsupported firewall backends,
+`doctor --fix --adopt` does not scan arbitrary hosts, adopt unsupported firewall backends,
 infer app/proxy ownership from ports, or adopt node bootstrap policy into the
 firewall family.
 
@@ -90,5 +91,5 @@ Required test files:
 | `tests/Feature/Doctor/FirewallFamilyDoctorContractTest.php` | Firewall-family dispatch, probe-layer selection, firewall issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects firewall probes. |
 | `tests/Unit/Services/Firewall/FirewallProbeTest.php` | In-memory firewall probe diff behavior for registry intent, node eligibility, baseline policy boundaries, missing rules, mismatched rules, extra rules in adoption scope, and exclusion of node/proxy/app drift from firewall issue codes. |
 | `tests/E2E/Read/FirewallDoctorTest.php` | Real read-only `doctor --family=firewall_rule --json` against nodes with managed firewall rules. |
-| `tests/E2E/Ephemeral/FirewallDoctorFixTest.php` | Real `doctor --family=firewall_rule --fix` repair of safe managed firewall drift. |
-| `tests/E2E/Ephemeral/FirewallDoctorAdoptTest.php` | Real `doctor --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
+| `tests/E2E/Ephemeral/FirewallDoctorFixTest.php` | Real `doctor --fix --family=firewall_rule --restore` repair of safe managed firewall drift. |
+| `tests/E2E/Ephemeral/FirewallDoctorAdoptTest.php` | Real `doctor --fix --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |

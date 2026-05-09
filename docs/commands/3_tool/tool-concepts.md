@@ -32,7 +32,7 @@ override the [Blueprint](../../BLUEPRINT.md).
 - **Role baseline tool:** Tool materialized as a tool row during node
   provisioning so doctor has one gateway-owned source of truth per node.
 - **Unmanaged inventory:** Tools observed on a node without a gateway tool
-  row. Not drift unless adopted through `doctor --family=tool --adopt`.
+  row. Not drift unless adopted through `doctor --fix --family=tool --adopt`.
 
 ## Service Surfaces
 

@@ -82,7 +82,7 @@ do not grant SSH, and do not replace WireGuard authentication.
 - **Development DNS enactor:** Internal node-family gateway service that
   converges or removes gateway-local development DNS resolver artifacts from
   the derived intent model. It is used by app-node provisioning, app-node
-  adoption/materialization, node removal, and `doctor --family=node --fix`.
+  adoption/materialization, node removal, and `doctor --fix --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
   gateway-local resolver reality for derived development DNS intent and reports
   node-family drift when the mapping is absent, points at another target, or is

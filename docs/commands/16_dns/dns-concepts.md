@@ -53,7 +53,7 @@ the DNS command contracts; it does not override the
 
 - **Gateway-owned development DNS mapping:** Node-family development DNS state
   created during app-node provisioning and repaired by
-  `doctor --family=node --fix`. DNS commands must not create, inspect, or
+  `doctor --fix --family=node --restore`. DNS commands must not create, inspect, or
   repair these mappings.
 - **App-node resolver drift:** Node-family drift where app-node resolver state
   does not match gateway-owned readiness expectations. DNS commands must not

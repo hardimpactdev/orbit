@@ -147,7 +147,7 @@ authority on app nodes or control nodes.
 - `doctor --family=node --self` verifies configured gateway trust, gateway API
   reachability, and local caller identity. See
   [`node-doctor.md`](../../../1_node/node-doctor.md).
-- `doctor --family=node --fix` may call the same trust-store repair behavior for
+- `doctor --fix --family=node --restore` may call the same trust-store repair behavior for
   `node.gateway_ca_mismatch` when the caller is authorized to receive
   gateway-owned trust material.
 - `gateway:trust` does not replace `gateway:add` for first-time onboarding

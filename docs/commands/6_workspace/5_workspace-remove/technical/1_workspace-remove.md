@@ -215,7 +215,7 @@ workspace record is gone from gateway workspace registry scope by definition.
 Any failure during Phase B (node-side artifact cleanup) is reported as
 `success` with a structured warning per affected family in
 `success.meta.warnings[]`. Each warning carries `code`, `family`, `message`,
-and `next_command` (typically `doctor --family=<family> --fix`). The exit code
+and `next_command` (typically `doctor --fix --family=<family> --restore`). The exit code
 remains `0`; the warnings are the machine-readable signal.
 
 This atomicity boundary matches the resolved
@@ -233,13 +233,13 @@ family doctor — not a removal failure.
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)
   and the affected family doctors:
   - `workspace.artifact_extra` — orphaned worktree or FPM pool
-    (`doctor --family=workspace --fix`).
+    (`doctor --fix --family=workspace --restore`).
   - `proxy.route_extra` — orphaned workspace-owned proxy route
-    (`doctor --family=proxy --fix`).
+    (`doctor --fix --family=proxy --restore`).
   - `process.runtime_unit_extra` — orphaned inherited runtime unit
-    (`doctor --family=process --fix`).
+    (`doctor --fix --family=process --restore`).
 - `workspace:remove` does not duplicate per-family drift item shapes; it
-  points operators at the affected `doctor --family=<family> --fix` via the
+  points operators at the affected `doctor --fix --family=<family> --restore` via the
   warning's `next_command`.
 
 ## Test Mapping

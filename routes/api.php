@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\DeployController;
+use App\Http\Controllers\Api\DoctorFixController;
 use App\Http\Controllers\Api\DoctorRunController;
 use App\Http\Controllers\Api\FirewallRuleDestroyController;
 use App\Http\Controllers\Api\FirewallRuleListController;
@@ -98,6 +99,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
         Route::post('/agent-ide/message', AgentIdeMessageController::class);
+        Route::post('/doctor/fix', DoctorFixController::class);
         Route::post('/doctor/run', DoctorRunController::class);
         Route::get('/deploy/history', [DeployController::class, 'history']);
         Route::get('/deploy/log/{run}', [DeployController::class, 'log']);

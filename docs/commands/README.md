@@ -109,10 +109,10 @@ then migrate docs until it passes.
   methods, handler names, or temporary implementation structure.
 - Migration mappings from old commands belong in contraction audits, not here.
 - Backend-shaped import or sync commands are not stable command contracts.
-  Migration adoption must be explicit through `doctor --adopt` or live outside
+  Migration adoption must be explicit through `doctor --fix --adopt` or live outside
   permanent command docs.
-- Upgrade work belongs in Laravel migrations, `orbit doctor --fix`, or explicit
-  `orbit doctor --adopt`. Public versioned migration commands and one-off
+- Upgrade work belongs in Laravel migrations, `orbit doctor --fix --restore`, or
+  explicit `orbit doctor --fix --adopt`. Public versioned migration commands and one-off
   upgrade helper commands are not part of the stable command surface.
 
 ## Documentation Structure

@@ -81,7 +81,7 @@ This command follows the shared
    - A symlink inside the app path that points outside, or a missing document
      root directory on the node, is detected by the `app` doctor probe at
      layer 4 (Document root) and surfaced as `app.root_outside_path` or
-     `app.root_missing` with no `--fix` mapping. Filesystem-level reality
+     `app.root_missing` with no `doctor --fix --restore` mapping. Filesystem-level reality
      is not part of `app:root` input validation.
 
 This split keeps the gateway-owned write fast and registry-shaped while the
@@ -154,7 +154,7 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 | `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway intent. |
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed during enactment. |
 
-`next_command` for each warning is `doctor --family=app --app=<app> --fix`.
+`next_command` for each warning is `doctor --fix --family=app --app=<app> --restore`.
 
 `app.enactment_failed` and other ad-hoc command-specific drift codes are
 not used; the app family already owns the precise vocabulary for FPM and
@@ -169,7 +169,7 @@ runtime configuration drift.
   `app.fpm_config_*` / `app.runtime_config_*` drift surfaced as warnings
   here.
 - Repairing drift caused by a partial success of `app:root` belongs to
-  `doctor --family=app --fix`.
+  `doctor --fix --family=app --restore`.
 - Filesystem-level document root reality (`app.root_outside_path`,
   `app.root_missing`) is doctor-owned and never duplicated as `app:root`
   input validation.

@@ -186,13 +186,13 @@ Partial WireGuard detach during removal is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale peer is
 node-family drift. JSON output reports this under `success.meta.warnings` with
 `code=node.wireguard_peer_extra` and
-`next_command=doctor --family=node --fix`.
+`next_command=doctor --fix --family=node --restore`.
 
 Partial development DNS cleanup is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale
 gateway resolver artifact is node-family drift. JSON output reports this under
 `success.meta.warnings` with `code=node.development_dns_mapping_mismatch` and
-`next_command=doctor --family=node --fix`.
+`next_command=doctor --fix --family=node --restore`.
 
 The absent-target rule is intentionally different from `node:revoke`.
 `node:revoke` validates both endpoint node identities and then makes the
@@ -206,7 +206,7 @@ already-absent node remains a validation failure.
 - A stale WireGuard peer for a removed node is reported as `extra` node identity
   reality by the node-family probe. See
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --family=node --fix` may clean stale WireGuard peers.
+- `doctor --fix --family=node --restore` may clean stale WireGuard peers.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 

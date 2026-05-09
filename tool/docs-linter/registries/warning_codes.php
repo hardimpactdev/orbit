@@ -7,7 +7,7 @@ return [
         'family' => 'node',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'doctor --family=node --fix',
+            'doctor --fix --family=node --restore',
         ],
     ],
     'workspace.http_probe_unhealthy' => [

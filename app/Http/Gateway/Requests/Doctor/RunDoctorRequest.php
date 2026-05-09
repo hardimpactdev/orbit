@@ -21,7 +21,6 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
      * @param  list<string>  $families
      */
     public function __construct(
-        public readonly string $mode = 'verify',
         public readonly array $families = [],
         public readonly ?string $node = null,
         public readonly bool $self = false,
@@ -40,7 +39,6 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         return array_filter([
-            'mode' => $this->mode,
             'families' => $this->families,
             'node' => $this->node,
             'self' => $this->self,

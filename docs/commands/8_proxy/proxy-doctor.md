@@ -49,7 +49,7 @@ The proxy probe reads gateway proxy route intent and checks these layers:
    routes skip hostname compatibility checks.
 8. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway intent are reported as extra route drift.
-9. **Adoption scope:** during `--adopt`, explicitly selected observed backend
+9. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed backend
    routes may be inspected for compatible custom-route facts.
 
 Observed backend routes without Orbit ownership markers are unmanaged node
@@ -72,7 +72,7 @@ an explicit adoption scope.
 
 ## Proxy Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `proxy.route_missing` | Recreate the backend route from gateway intent when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-intended route when the route can be identified safely. |
@@ -80,18 +80,18 @@ an explicit adoption scope.
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway intent. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`--fix` does not handle `proxy.record_incomplete`,
+`doctor --fix --restore` does not handle `proxy.record_incomplete`,
 `proxy.owner_invalid`, `proxy.node_invalid`,
 or `proxy.domain_conflict`.
 
 ## Proxy Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row only when the operator selected a specific node and backend route, the domain is not owned by another Orbit route, and the observed route can be represented as either `--upstream` or `--redirect`. |
 | `proxy.route_mismatch` | Update gateway intent only when the operator selected a custom route and the observed backend route can be represented without changing app, workspace, gateway, or tool ownership. |
 
-`--adopt` does not scan arbitrary hosts, adopt app/workspace/gateway/tool routes
+`doctor --fix --adopt` does not scan arbitrary hosts, adopt app/workspace/gateway/tool routes
 as custom routes, infer app ownership from upstream paths, or adopt service
 health into the proxy family.
 
@@ -104,5 +104,5 @@ Required test files:
 | `tests/Feature/Doctor/ProxyFamilyDoctorContractTest.php` | Proxy-family dispatch, probe-layer selection, proxy issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects proxy probes. |
 | `tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry intent, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, TLS drift, and selected extra routes in adoption scope. |
 | `tests/E2E/Read/ProxyDoctorTest.php` | Real read-only `doctor --family=proxy --json` against nodes with managed proxy routes. |
-| `tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --family=proxy --fix` repair of safe managed proxy and TLS drift. |
-| `tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --family=proxy --adopt` for compatible selected custom route adoption. |
+| `tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --fix --family=proxy --restore` repair of safe managed proxy and TLS drift. |
+| `tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --fix --family=proxy --adopt` for compatible selected custom route adoption. |

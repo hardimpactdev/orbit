@@ -70,28 +70,28 @@ The schedule probe reads gateway schedule intent and checks these layers:
 
 ## Schedule Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
-| `schedule.runtime_backend_unavailable` | No `--fix` action. Runtime backend recovery belongs to `tool` family doctor and node operations. |
+| `schedule.runtime_backend_unavailable` | No `doctor --fix --restore` action. Runtime backend recovery belongs to `tool` family doctor and node operations. |
 | `schedule.scheduler_missing` | Re-render and load the `orbit_scheduler` Supervisor program from node-level scheduler intent. |
 | `schedule.scheduler_stopped` | Start the `orbit_scheduler` Supervisor program through the runtime backend. |
-| `schedule.heartbeat_stale` | No `--fix` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
-| `schedule.registry_sync_stale` | No `--fix` action. Sync is restored when scheduler-to-gateway connectivity recovers. |
+| `schedule.heartbeat_stale` | No `doctor --fix --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler explicitly with `process:restart orbit_scheduler` or investigate the daemon. |
+| `schedule.registry_sync_stale` | No `doctor --fix --restore` action. Sync is restored when scheduler-to-gateway connectivity recovers. |
 | `schedule.lock_stuck` | Release the stale lock on the target node and record the affected run as `failed`. |
 | `schedule.run_history_hook_missing` | Recreate run-history hook material for the selected schedule. |
 | `schedule.run_history_hook_mismatch` | Replace run-history hook material with the gateway-intended hook. |
 
-`--fix` does not handle `schedule.record_incomplete`,
+`doctor --fix --restore` does not handle `schedule.record_incomplete`,
 `schedule.target_invalid`, `schedule.runtime_backend_unavailable`,
 `schedule.heartbeat_stale`, or `schedule.registry_sync_stale`.
 
 ## Schedule Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | (no codes adopt by default) | Schedules are gateway intent. There is no observed-artifact-as-intent path. Adoption candidates that an operator wants to materialize as schedules must use `schedule:add` directly. |
 
-`--adopt` does not scan arbitrary hosts or import scheduler-local state into
+`doctor --fix --adopt` does not scan arbitrary hosts or import scheduler-local state into
 gateway schedule intent.
 
 ## Test Mapping
@@ -103,4 +103,4 @@ Required test files:
 | `tests/Feature/Doctor/ScheduleFamilyDoctorContractTest.php` | Schedule-family dispatch, probe-layer selection, schedule issue codes, fix map, denied adopt cases, scope filtering, and assertion that `schedule.runtime_backend_unavailable` short-circuits downstream scheduler layer checks. |
 | `tests/Unit/Services/Schedules/ScheduleProbeTest.php` | In-memory schedule probe diff behavior for registry intent, target eligibility, node eligibility, runtime backend availability, scheduler presence, scheduler liveness, heartbeat freshness, registry sync freshness, schedule lock health, and run-history hook material. |
 | `tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
-| `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --family=schedule --fix` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
+| `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |

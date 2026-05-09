@@ -33,7 +33,6 @@ it('resolves to POST /api/doctor/run', function (): void {
 
 it('serializes doctor filters into the body', function (): void {
     $request = new RunDoctorRequest(
-        mode: 'verify',
         families: ['node'],
         node: 'app-1',
         self: true,
@@ -42,7 +41,6 @@ it('serializes doctor filters into the body', function (): void {
     );
 
     expect($request->body()->all())->toBe([
-        'mode' => 'verify',
         'families' => ['node'],
         'node' => 'app-1',
         'self' => true,

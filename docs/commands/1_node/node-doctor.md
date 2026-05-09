@@ -122,13 +122,13 @@ endpoint.
 
 ## Node Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `node.local_role_invalid` | Replace the local role setting when the verified node record makes the expected role unambiguous. |
 | `node.local_role_mismatch` | Replace the local role setting with the role from the verified active node record. |
 | `node.gateway_api_unreachable` | Restart or restore gateway runtime only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
-| `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `--adopt`. |
+| `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --fix --adopt`. |
 | `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
@@ -142,7 +142,7 @@ endpoint.
 | `node.development_dns_public_exposure` | Recreate the gateway development DNS resolver so it is reachable only through the Orbit network and not bound as a public resolver. |
 | `node.cli_php_default_mismatch` | Rewrite the node's default `php` binary link to match the gateway-owned node CLI PHP default when the target version is installed and supported. |
 
-`--fix` does not handle `node.record_incomplete`,
+`doctor --fix --restore` does not handle `node.record_incomplete`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.app_ssh_unreachable`,
 `node.local_default_invalid`, or
@@ -150,7 +150,7 @@ endpoint.
 
 `node.local_default_invalid` and `node.agent_ide_default_invalid` are
 reported only. `node:default` and `node:agent-ide` are explicit user actions;
-doctor must not silently clear or replace those preferences under `--fix`.
+doctor must not silently clear or replace those preferences under `doctor --fix --restore`.
 
 Node doctor never creates fleet membership, grants access, changes node roles,
 or edits public IPv4/IPv6 metadata. Those changes remain explicit node commands
@@ -159,7 +159,7 @@ such as `node:new`, `node:update`, `node:grant`, `node:revoke`, and
 
 ## Node Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer only when a selected active app node's non-secret identity artifact matches gateway intent and live WireGuard reality proves exactly one allowed address. Private key material is not read or adopted. |
 | `node.wireguard_peer_extra` | Attach the peer only when the selected scope names a compatible already-provisioned node identity, the registry peer public key is present in live WireGuard reality, and that live peer has exactly one unambiguous allowed address. |
@@ -167,7 +167,7 @@ such as `node:new`, `node:update`, `node:grant`, `node:revoke`, and
 | `node.app_runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
 
-`--adopt` does not handle unselected hosts, unresolved caller identities,
+`doctor --fix --adopt` does not handle unselected hosts, unresolved caller identities,
 unknown WireGuard peers, public IPv4/IPv6 metadata, or artifacts that belong to
 tools, firewall rules, apps, workspaces, processes, proxy routes, schedules, or
 deployments.
@@ -190,5 +190,5 @@ Required test files:
 | `tests/Feature/Doctor/NodesFamilyDoctorContractTest.php` | Nodes-family dispatch, probe-layer selection, node issue codes, node fix map, node adopt map, denied node fix/adopt cases, and scope filtering as it affects node probes. |
 | `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior for registry intent, access grant integrity, WireGuard identity, local caller role setting including absent/null defaulting to control, resolved local caller role matching a verified active node record, absent/null being divergent for verified gateway or app records, platform reality, SSH reachability, public IP metadata exclusion from probe/fix/adopt behavior, gateway runtime readiness, app-node bootstrap readiness, development TLD mapping readiness, `node.local_default_invalid`, `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`. |
 | `tests/E2E/Read/DoctorTest.php` | Real read-only `doctor --family=node --json` from a control node against an active fleet. |
-| `tests/E2E/Ephemeral/NodesDoctorFixTest.php` | Real `doctor --family=node --fix` repair of safe node drift. |
-| `tests/E2E/Ephemeral/NodesDoctorAdoptTest.php` | Real `doctor --family=node --adopt` for compatible node identity or host adoption. |
+| `tests/E2E/Ephemeral/NodesDoctorFixTest.php` | Real `doctor --fix --family=node --restore` repair of safe node drift. |
+| `tests/E2E/Ephemeral/NodesDoctorAdoptTest.php` | Real `doctor --fix --family=node --adopt` for compatible node identity or host adoption. |

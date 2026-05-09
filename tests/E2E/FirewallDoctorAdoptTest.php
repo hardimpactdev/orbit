@@ -53,7 +53,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan doctor --family=firewall_rule --adopt --json',
+                'cd %s && php artisan doctor --fix --family=firewall_rule --adopt --json',
                 escapeshellarg($gatewayCheckout),
             ),
             timeoutSeconds: 180,

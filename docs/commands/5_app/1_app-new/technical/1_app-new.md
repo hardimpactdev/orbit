@@ -158,7 +158,7 @@ If `--domain` is supplied:
 - **Enactment Drift:** If intent is written but registration enactment (FPM,
   runtime configuration, or proxy handoff) encounters retryable conditions, the
   command reports success and surfaces the drift in `success.meta.warnings[]`
-  with a `next_command` handoff (e.g. `doctor --family=app --fix` or
+  with a `next_command` handoff (e.g. `doctor --fix --family=app --restore` or
   `app:register [name] --domain=<host>`). Examples include node-side PHP
   version unavailable (`app.php_version_unavailable`) and pending domain
   activation (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
@@ -170,7 +170,7 @@ If `--domain` is supplied:
 - **Family:** `app` (see [`app-doctor.md`](../../app-doctor.md)).
 - **Probe:** `doctor --family=app --app=<name>` verifies registry intent and
   runtime artifacts.
-- **Convergence:** `doctor --family=app --fix` repairs missing or divergent
+- **Convergence:** `doctor --fix --family=app --restore` repairs missing or divergent
   FPM/runtime configuration.
 
 ## Activity Logging

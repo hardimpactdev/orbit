@@ -75,24 +75,24 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed');
     });
 
-    it('passes fix mode through to the doctor runner', function (): void {
+    it('restores firewall drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $appNode->id, 'name' => 'local-vite', 'source' => '10.6.0.0/24', 'port' => '5173']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
-        $response = $this->call('POST', '/api/doctor/run', [
-            'mode' => 'fix',
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'mode' => 'restore',
             'families' => ['firewall_rule'],
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.mode', 'restore')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
 
-    it('passes proxy fix mode through to the doctor runner', function (): void {
+    it('restores proxy drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         ProxyRoute::factory()->create([
@@ -104,13 +104,13 @@ describe('DoctorRunController', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $response = $this->call('POST', '/api/doctor/run', [
-            'mode' => 'fix',
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'mode' => 'restore',
             'families' => ['proxy'],
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.mode', 'restore')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
@@ -204,7 +204,7 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.issues.0.key', 'process.runtime_backend_unavailable');
     });
 
-    it('passes tool fix mode through to the doctor runner', function (): void {
+    it('restores tool drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
@@ -214,13 +214,13 @@ describe('DoctorRunController', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
 
-        $response = $this->call('POST', '/api/doctor/run', [
-            'mode' => 'fix',
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'mode' => 'restore',
             'families' => ['tool'],
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
-            ->assertJsonPath('success.data.doctor.mode', 'fix')
+            ->assertJsonPath('success.data.doctor.mode', 'restore')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
@@ -250,7 +250,7 @@ describe('DoctorRunController', function (): void {
     it('denies app-node write mode requests', function (): void {
         createDoctorRunCallerNode(['role' => 'app']);
 
-        $response = $this->call('POST', '/api/doctor/run', [
+        $response = $this->call('POST', '/api/doctor/fix', [
             'mode' => 'adopt',
             'families' => ['firewall_rule'],
         ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);

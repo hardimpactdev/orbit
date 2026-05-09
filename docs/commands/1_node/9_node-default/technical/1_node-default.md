@@ -172,7 +172,7 @@ sub-action is selected instead.
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
 - `doctor --family=node` verifies gateway node intent and node reachability,
   not local target preference.
-- `doctor --self --fix` reports an invalid local default but does not clear or
+- `doctor --fix --self --restore` reports an invalid local default but does not clear or
   replace it. Setting or clearing the local default remains an explicit
   `node:default` action. Recover from `node.local_default_invalid` by running
   `orbit node:default <valid-development-app-node>` or

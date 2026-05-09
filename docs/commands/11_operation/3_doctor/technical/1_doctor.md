@@ -4,7 +4,7 @@
 
 **Owner:** `operation`.
 
-**Effects:** `read`, `stream`; `write` when `--fix` or `--adopt` is used.
+**Effects:** `read`, `stream`; `write` when `--fix --restore` or `--fix --adopt` is used.
 
 **Prerequisites:**
 - The local caller role can be resolved according to the foundation
@@ -14,14 +14,14 @@
 - The caller can reach the Orbit gateway when the selected scope requires
   gateway intent, gateway authorization, or node reality inspection.
 - The current node identity is authorized to inspect the selected scope.
-- App-node callers using `--fix` or `--adopt` are rejected before side effects
-  unless the selected family doctor contract documents a narrow app-node
-  write-mode exception.
+- App-node callers using `--fix` are rejected before side effects unless the
+  selected family doctor contract documents a narrow app-node write-mode
+  exception.
 
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix] [--restore|--adopt] [--json]
 ```
 
 ## Input Contract
@@ -36,8 +36,9 @@ This command follows the shared
 | `self` | `--self` | Never. | `--node` is present. | `false`. | Resolves to the caller's gateway-known node identity. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
 | `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/app filters. | Gateway-known workspace name, resolved inside app scope when applicable. |
-| `fix` | `--fix` | Never. | `--adopt` is present. | `false`. | Selects fix mode. Every attempted action must be declared safe by its family doctor contract. |
-| `adopt` | `--adopt` | Never. | `--fix` is present. | `false`. | Selects adopt mode. Every attempted action must be deliberately declared adoptable by its family doctor contract. |
+| `fix` | `--fix` | Never. | Never. | `false`. | Selects resolution mode. Every attempted action must be declared safe by its family doctor contract. |
+| `restore` | `--restore` | Never. | `--adopt` is present. | `false`. | Selects bulk restore direction. Only valid with `--fix`. |
+| `adopt` | `--adopt` | Never. | `--restore` is present. | `false`. | Selects bulk adopt direction. Only valid with `--fix`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Caller Role Behavior
@@ -51,15 +52,19 @@ This command follows the shared
 | `app` | Allowed for authorized verify-mode scopes. Local app/workspace context may help resolve defaults only when a family contract defines that behavior. | Denied before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
 | `unknown` | Invalid local context. Fail before probes or side effects. | Invalid local context. Fail before probes or side effects. |
 
-No role-specific companion files are required. The generic role matrix is fully
-defined here; family contracts may only narrow app-node context behavior for the
-family they own.
+Role-specific contract details are documented in companion files:
+- [Control node](2_doctor_on-control-node.md)
+- [Gateway node](3_doctor_on-gateway-node.md)
+- [App node](4_doctor_on-app-node.md)
+
+The generic role matrix is fully defined here; family contracts may only narrow
+app-node context behavior for the family they own.
 
 ## Input Resolution
 
 1. Resolve caller role before probes or side effects.
 2. Select the output renderer.
-3. Resolve mode: `verify`, `fix`, or `adopt`.
+3. Resolve mode: `verify`, `interactive`, `restore`, or `adopt`.
 4. Resolve family filters. Omitted `--family` means all doctor-supported product
    families.
 5. Resolve node scope.
@@ -71,9 +76,10 @@ family they own.
 7. Apply gateway authorization for the resolved scope and mode.
 8. Dispatch selected family probes and optional fix/adopt actions.
 
-No input-mode-specific contracts are required. The command has no required
-fields and does not prompt for missing input. Invalid combinations fail before
-probes or side effects.
+Input-mode-specific contracts are required for `--fix` resolution:
+
+- [Interactive input mode](5.1_doctor_input-mode_interactive.md)
+- [Non-interactive input mode (bulk restore/adopt)](5.2_doctor_input-mode_non-interactive.md)
 
 ## Behavior Contract
 
@@ -90,11 +96,12 @@ probes or side effects.
 
 | Mode | Selected by | Direction | Meaning |
 | --- | --- | --- | --- |
-| `verify` | No `--fix` or `--adopt`. | Compare only. | Report where gateway intent and observed node reality differ. |
-| `fix` | `--fix`. | Gateway intent to node reality. | Re-apply gateway intent on the node when the family declares the repair safe. |
-| `adopt` | `--adopt`. | Node reality to gateway intent. | Ingest compatible observed node reality into gateway intent when the family declares adoption supported. |
+| `verify` | No `--fix`. | Compare only. | Report where gateway intent and observed node reality differ. |
+| `interactive` | `--fix` without `--restore` or `--adopt`. | Per-finding choice. | Present each finding and prompt for restore, adopt, skip, or details. |
+| `restore` | `--fix --restore`. | Gateway intent to node reality. | Re-apply gateway intent on nodes when the family declares the repair safe. |
+| `adopt` | `--fix --adopt`. | Node reality to gateway intent. | Ingest compatible observed node reality into gateway intent when the family declares adoption supported. |
 
-`--fix` is explicit repair-mode consent for family-declared safe actions. It is
+`--restore` is explicit repair-mode consent for family-declared safe actions. It is
 not permission for arbitrary destructive cleanup. Families must leave unsafe or
 ambiguous repair paths as reported issues with manual next steps.
 
@@ -106,7 +113,7 @@ It is the only doctor mode that may intentionally mutate gateway intent.
 - Resolve and validate all scope filters before probes or side effects.
 - Apply gateway-owned authorization to the resolved scope before probes or
   side effects.
-- Fail before probes when `--fix` and `--adopt` are combined.
+- Fail before probes when `--fix` and `--restore` are combined with `--adopt`.
 - Fail before probes when `--self` and `--node` are combined.
 - Fail before probes when a requested family, node, app, or workspace scope
   cannot be resolved.
@@ -117,8 +124,8 @@ It is the only doctor mode that may intentionally mutate gateway intent.
 
 - App-node CLI availability is not generic doctor write permission.
 - App-node callers may run authorized verify-mode scopes.
-- App-node callers may not initiate `--fix` or `--adopt` unless the selected
-  family doctor contract documents a narrow app-node exception.
+- App-node callers may not initiate `--fix` unless the selected family doctor
+  contract documents a narrow app-node exception.
 - App-node local context may help family-specific verify-mode scope resolution
   only when the family contract defines that behavior. It is not authorization
   to mutate gateway intent or node reality.
@@ -129,10 +136,8 @@ It is the only doctor mode that may intentionally mutate gateway intent.
   mode completes.
 - Return a drift failure when issues remain after the selected mode completes.
 - In verify mode, do not change gateway intent or node reality.
-- In fix mode, record every attempted, completed, skipped, failed, or conflicted
+- In fix modes, record every attempted, completed, skipped, failed, or conflicted
   action.
-- In adopt mode, record every attempted, completed, skipped, failed, or
-  conflicted action.
 - A family probe error prevents a healthy result unless the family contract
   defines a more specific recoverable behavior.
 
@@ -174,12 +179,12 @@ kinds.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | Mutually exclusive flags or invalid filter values are supplied. | Failure before probes |
-| Caller role not allowed | An app-node caller requests generic `--fix` or `--adopt` without a family-owned exception. | Failure before side effects |
+| Caller role not allowed | An app-node caller requests generic `--fix` without a family-owned exception. | Failure before side effects |
 | Local context invalid | The local caller role is unreadable or unsupported. | Failure before probes |
 | Gateway unavailable | The selected scope requires the gateway and the caller cannot reach it. | Failure before probes |
 | Authorization failed | The current node identity is not authorized for the selected scope or mode. | Failure before probes |
 | Scope not found | A requested family, node, app, or workspace scope cannot be resolved. | Failure before probes |
-| Mode not supported | A selected family or issue does not support the requested `--fix` or `--adopt` action. | Failure with diagnostic payload when available |
+| Mode not supported | A selected family or issue does not support the requested `--fix --restore` or `--fix --adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
 
@@ -196,7 +201,7 @@ Family doctor contracts own:
 
 - probe layers;
 - concrete issue codes and issue details;
-- fix action maps;
+- restore action maps;
 - adopt action maps;
 - family test mapping.
 
@@ -213,13 +218,15 @@ Converted family doctor contracts:
 
 ## Test Mapping
 
-Required split contract tests:
+Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, caller-role behavior, app-node write-mode denial, exit-code semantics, and family dispatch boundaries without asserting family implementation internals. |
 | `tests/Feature/Commands/Operations/DoctorJsonRendererTest.php` | JSON renderer selection, success payload, drift failure under `error.data`, error codes, summary shape, issue/action shape, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Operations/DoctorHumanRendererTest.php` | Progress tree shape, grouped human output, verify/fix/adopt headings, issue summaries, action summaries, unhealthy result text, and manual next-step prose. |
+| `tests/Feature/Commands/Operations/DoctorInteractiveInputTest.php` | Per-finding action prompts, unsupported direction omission, details loop, skip behavior, prompt cancellation, and category ordering. |
+| `tests/Feature/Commands/Operations/DoctorNonInteractiveInputTest.php` | Direction requirement, mutually exclusive flags, no prompts, bulk restore selection, bulk adopt selection, unsupported finding handling, and no-action failure. |
 | `tests/E2E/Read/DoctorTest.php` | Real read-only doctor verification from a control node against an active fleet. |
 
 Family-specific doctor test mapping lives in family doctor contracts, such as
@@ -228,13 +235,13 @@ Family-specific doctor test mapping lives in family doctor contracts, such as
 ## Activity Logging
 
 The local CLI command emits a best-effort activity entry for successful and
-failed doctor verification runs. The gateway API endpoint emits an activity
-entry for remote doctor orchestration requests.
+failed doctor runs. The gateway API endpoints emit activity entries for remote
+doctor orchestration requests.
 
 | Field | Value |
 | --- | --- |
-| Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API transport |
-| Effect | `read` for verify-mode runs; `write` for `--fix` and `--adopt` mode orchestration |
+| Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API verify transport |
+| Effect | `read` for verify-mode runs; `write` for `--fix --restore` and `--fix --adopt` mode orchestration |
 | Subject | `none` |
-| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. API transport context is added by middleware. |
-| Description | `Doctor verification run` for local CLI; derived for gateway API |
+| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. Action counts and status when in fix modes. API transport context is added by middleware. |
+| Description | `Doctor verification run` for local CLI verify mode; `Doctor resolution run` for local CLI fix modes; derived for gateway API |

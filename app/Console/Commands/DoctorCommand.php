@@ -9,6 +9,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Doctor\FixDoctorRequest;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Http\Gateway\Responses\Doctor\DoctorRunResponse;
 use App\Models\Node;
@@ -20,16 +21,15 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\table;
-
 #[Signature('doctor
     {--app= : Limit to one app}
     {--workspace= : Limit to one workspace}
     {--node= : Target node name}
     {--self : Limit to the calling node identity}
     {--family=* : Scope to one or more state families}
-    {--fix : Reconcile drift toward gateway intent}
-    {--adopt : Reconcile drift toward node reality}
+    {--fix : Enter resolution mode}
+    {--restore : Bulk restore gateway intent to nodes (requires --fix)}
+    {--adopt : Bulk adopt node reality into gateway (requires --fix)}
     {--json : Output JSON}')]
 #[Description('Check Orbit health and diagnose drift')]
 class DoctorCommand extends Command implements Loggable
@@ -65,11 +65,19 @@ class DoctorCommand extends Command implements Loggable
         $this->activityMode = $mode;
         $this->activityFamilies = $families === [] ? $runner->supportedFamilies() : $families;
 
-        if ((bool) $this->option('fix') && (bool) $this->option('adopt')) {
+        if ((bool) $this->option('restore') && (bool) $this->option('adopt')) {
             return $this->failCommand(
                 code: 'validation_failed',
-                message: '--fix and --adopt are mutually exclusive.',
-                meta: ['fields' => ['fix', 'adopt']],
+                message: '--restore and --adopt are mutually exclusive.',
+                meta: ['fields' => ['restore', 'adopt']],
+            );
+        }
+
+        if (! (bool) $this->option('fix') && ((bool) $this->option('restore') || (bool) $this->option('adopt'))) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: '--restore and --adopt require --fix.',
+                meta: ['fields' => ['fix']],
             );
         }
 
@@ -84,7 +92,7 @@ class DoctorCommand extends Command implements Loggable
         if ($mode !== 'verify' && $this->callerRole() === 'app') {
             return $this->failCommand(
                 code: 'caller_role_not_allowed',
-                message: 'App-node callers may not run doctor --fix or doctor --adopt for this scope.',
+                message: 'App-node callers may not run doctor --fix for this scope.',
                 meta: [
                     'caller_role' => 'app',
                     'mode' => $mode,
@@ -98,9 +106,13 @@ class DoctorCommand extends Command implements Loggable
             return $this->failCommand($failure->code, $failure->message, $failure->meta);
         }
 
+        if (! $this->wantsJson()) {
+            $this->renderDoctoringPanel($families === [] ? $runner->supportedFamilies() : $families);
+        }
+
         $result = $this->isGatewayCaller()
             ? $this->runLocalDoctor($runner, $mode, $families)
-            : $this->runGatewayDoctor($mode, $families);
+            : $this->runGatewayDoctor($runner, $mode, $families);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(
@@ -142,7 +154,7 @@ class DoctorCommand extends Command implements Loggable
 
     public function effect(): ActivityLogType
     {
-        if (in_array($this->activityMode, ['fix', 'adopt'], true)) {
+        if (in_array($this->activityMode, ['interactive', 'restore', 'adopt'], true)) {
             return ActivityLogType::Write;
         }
 
@@ -175,26 +187,86 @@ class DoctorCommand extends Command implements Loggable
     {
         $node = $this->localNode() ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first() ?? Node::query()->firstOrFail();
 
-        return $runner->run($node, mode: $mode, families: $families);
+        if ($mode === 'verify') {
+            return $runner->probe($node, families: $families);
+        }
+
+        if ($mode !== 'interactive') {
+            return $runner->run($node, mode: $mode, families: $families);
+        }
+
+        $probe = $runner->probe($node, families: $families);
+        $selected = $this->promptDoctorIssues($probe);
+        $actions = [];
+
+        foreach (['restore', 'adopt'] as $resolutionMode) {
+            $issues = $selected[$resolutionMode] ?? [];
+
+            if ($issues === []) {
+                continue;
+            }
+
+            $actions = [
+                ...$actions,
+                ...$runner->apply($node, $resolutionMode, $issues),
+            ];
+        }
+
+        return $runner->finalize($probe, 'interactive', $actions);
     }
 
     /**
      * @param  list<string>  $families
      * @return array<string, mixed>|GatewayApiException
      */
-    private function runGatewayDoctor(string $mode, array $families): array|GatewayApiException
+    private function runGatewayDoctor(DoctorReportRunner $runner, string $mode, array $families): array|GatewayApiException
     {
         try {
-            $dto = app(GatewayConnector::class)
-                ->send(new RunDoctorRequest(
-                    mode: $mode,
-                    families: $families,
-                    node: $this->stringOption('node'),
-                    self: (bool) $this->option('self'),
-                    app: $this->stringOption('app'),
-                    workspace: $this->stringOption('workspace'),
-                ))
+            if ($mode === 'verify') {
+                $dto = app(GatewayConnector::class)
+                    ->send($this->gatewayRunRequest($families))
+                    ->dto();
+
+                /** @var DoctorRunResponse $dto */
+                return $dto->doctor;
+            }
+
+            if ($mode !== 'interactive') {
+                $dto = app(GatewayConnector::class)
+                    ->send($this->gatewayFixRequest($mode, $families))
+                    ->dto();
+
+                /** @var DoctorRunResponse $dto */
+                return $dto->doctor;
+            }
+
+            $probeDto = app(GatewayConnector::class)
+                ->send($this->gatewayRunRequest($families))
                 ->dto();
+
+            /** @var DoctorRunResponse $probeDto */
+            $probe = $probeDto->doctor;
+            $selected = $this->promptDoctorIssues($probe);
+            $actions = [];
+
+            foreach (['restore', 'adopt'] as $resolutionMode) {
+                $issues = $selected[$resolutionMode] ?? [];
+
+                if ($issues === []) {
+                    continue;
+                }
+
+                $fixDto = app(GatewayConnector::class)
+                    ->send($this->gatewayFixRequest($resolutionMode, $families, $issues))
+                    ->dto();
+
+                /** @var DoctorRunResponse $fixDto */
+                $doctor = $fixDto->doctor;
+                $doctorActions = is_array($doctor['actions'] ?? null) ? array_values(array_filter($doctor['actions'], is_array(...))) : [];
+                $actions = [...$actions, ...$doctorActions];
+            }
+
+            return $runner->finalize($probe, 'interactive', $actions);
         } catch (GatewayApiException $e) {
             return $e;
         } catch (Throwable) {
@@ -204,9 +276,94 @@ class DoctorCommand extends Command implements Loggable
                 errorMeta: [],
             );
         }
+    }
 
-        /** @var DoctorRunResponse $dto */
-        return $dto->doctor;
+    /**
+     * @param  list<string>  $families
+     */
+    private function gatewayRunRequest(array $families): RunDoctorRequest
+    {
+        return new RunDoctorRequest(
+            families: $families,
+            node: $this->stringOption('node'),
+            self: (bool) $this->option('self'),
+            app: $this->stringOption('app'),
+            workspace: $this->stringOption('workspace'),
+        );
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @param  list<array<string, mixed>>|null  $issues
+     */
+    private function gatewayFixRequest(string $mode, array $families, ?array $issues = null): FixDoctorRequest
+    {
+        return new FixDoctorRequest(
+            mode: $mode,
+            families: $families,
+            issues: $issues,
+            node: $this->stringOption('node'),
+            self: (bool) $this->option('self'),
+            app: $this->stringOption('app'),
+            workspace: $this->stringOption('workspace'),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @return array{restore: list<array<string, mixed>>, adopt: list<array<string, mixed>>}
+     */
+    private function promptDoctorIssues(array $probe): array
+    {
+        $issues = $this->doctorList($probe, 'issues');
+        $selected = [
+            'restore' => [],
+            'adopt' => [],
+        ];
+
+        if ($issues === [] || $this->wantsJson()) {
+            return $selected;
+        }
+
+        foreach ($issues as $issue) {
+            $choices = ['skip'];
+
+            if (($issue['restorable'] ?? false) === true) {
+                $choices[] = 'restore';
+            }
+
+            if (($issue['adoptable'] ?? false) === true) {
+                $choices[] = 'adopt';
+            }
+
+            if (count($choices) === 1) {
+                continue;
+            }
+
+            $answer = $this->choice(
+                question: $this->doctorIssuePrompt($issue),
+                choices: $choices,
+                default: 'skip',
+            );
+
+            if ($answer === 'restore' || $answer === 'adopt') {
+                $selected[$answer][] = $issue;
+            }
+        }
+
+        return $selected;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function doctorIssuePrompt(array $issue): string
+    {
+        $family = $this->doctorString($issue['family'] ?? null);
+        $node = $this->doctorHumanValue($issue['node'] ?? null);
+        $key = $this->doctorString($issue['key'] ?? null);
+
+        return "Resolve {$family} issue {$key} on {$node}?";
     }
 
     private function localNode(): ?Node
@@ -244,11 +401,19 @@ class DoctorCommand extends Command implements Loggable
 
     private function mode(): string
     {
+        if (! (bool) $this->option('fix')) {
+            return 'verify';
+        }
+
+        if ((bool) $this->option('restore')) {
+            return 'restore';
+        }
+
         if ((bool) $this->option('adopt')) {
             return 'adopt';
         }
 
-        return (bool) $this->option('fix') ? 'fix' : 'verify';
+        return 'interactive';
     }
 
     /**
@@ -277,132 +442,289 @@ class DoctorCommand extends Command implements Loggable
      */
     private function renderHuman(array $doctor): void
     {
-        $this->line($this->doctorHeading($doctor));
-        $this->line('Mode: '.$this->doctorModeLabel($doctor));
-        $this->line('Scope: '.$this->doctorScopeLabel($doctor));
-        $this->newLine();
-
-        $summaryWidth = $this->renderDoctorSummary($doctor);
-        $resultWidth = max($summaryWidth, $this->doctorResultBodyWidth($doctor), 52);
-
-        $this->newLine();
-        $this->line($this->centeredDoctorDivider($resultWidth));
-        $this->newLine();
-
-        $issues = $this->doctorList($doctor, 'issues');
-        $actions = $this->doctorList($doctor, 'actions');
-
-        if ($issues === [] && $actions === []) {
-            $this->renderDoctorSuccessBox($resultWidth);
-
-            return;
-        }
-
-        if ($issues !== []) {
-            $this->renderDoctorIssues($issues, $doctor);
-        }
-
-        if ($actions !== []) {
-            if ($issues !== []) {
-                $this->newLine();
-            }
-
-            $this->renderDoctorActions($actions);
+        foreach ($this->doctorPanelLines($doctor) as $line) {
+            $this->line($line);
         }
     }
 
     /**
-     * @param  array<string, mixed>  $doctor
+     * @param  list<string>  $families
      */
-    private function doctorHeading(array $doctor): string
+    private function renderDoctoringPanel(array $families): void
     {
-        $healthy = ($doctor['healthy'] ?? false) === true;
+        $width = 78;
+        $innerWidth = $width - 2;
+        $target = $this->doctorHumanValue($this->stringOption('node') ?? $this->localNode()?->name);
+        $lines = [
+            $this->doctorPanelRule('top', 'D O C T O R I N G', $width),
+            $this->doctorPanelEmpty($innerWidth),
+            $this->doctorPanelRule('middle', "Performing check-up on {$target}", $width),
+            $this->doctorPanelEmpty($innerWidth),
+        ];
 
-        return match ($this->doctorModeLabel($doctor)) {
-            'fix' => $healthy ? 'Doctor repaired drift.' : 'Doctor could not repair all drift.',
-            'adopt' => $healthy ? 'Doctor adopted compatible reality.' : 'Doctor could not adopt all drift.',
-            default => $healthy ? 'Doctor healthy.' : 'Doctor found drift.',
+        foreach ($families as $family) {
+            $lines[] = $this->doctorPanelBullet($this->doctorFamilyLabel($family), 'Checking', $innerWidth);
+            $lines[] = $this->doctorPanelEmpty($innerWidth);
+        }
+
+        $lines[] = $this->doctorPanelRule('middle', 'S U M M A R Y', $width);
+        $lines[] = $this->doctorPanelEmpty($innerWidth);
+        $lines[] = $this->doctorPanelCentered('Gathering doctor results', $innerWidth);
+        $lines[] = $this->doctorPanelEmpty($innerWidth);
+        $lines[] = $this->doctorPanelRule('bottom', null, $width);
+
+        foreach ($lines as $line) {
+            $this->line($line);
+        }
+
+        $this->newLine();
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     * @return list<string>
+     */
+    private function doctorPanelLines(array $doctor): array
+    {
+        $width = 78;
+        $innerWidth = $width - 2;
+        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
+        $node = $this->doctorHumanValue($scope['node'] ?? null);
+        $issues = $this->doctorList($doctor, 'issues');
+        $actions = $this->doctorList($doctor, 'actions');
+        $families = $this->doctorFamiliesForPanel($doctor);
+
+        $lines = [
+            $this->doctorPanelRule('top', 'D O C T O R  R E S U L T', $width),
+            $this->doctorPanelEmpty($innerWidth),
+            $this->doctorPanelRule('middle', "Successfully performed check-up on {$node}", $width),
+            $this->doctorPanelEmpty($innerWidth),
+        ];
+
+        foreach ($families as $family) {
+            $familyIssues = array_values(array_filter($issues, fn (array $issue): bool => ($issue['family'] ?? null) === $family));
+            $familyActions = array_values(array_filter($actions, fn (array $action): bool => ($action['family'] ?? null) === $family));
+            $lines[] = $this->doctorPanelBullet($this->doctorFamilyLabel($family), $this->doctorFamilyStatus($familyIssues, $familyActions), $innerWidth);
+
+            if ($familyIssues !== []) {
+                $lines = [
+                    ...$lines,
+                    ...$this->doctorPanelIssueTable($familyIssues, $innerWidth),
+                ];
+            }
+
+            if ($familyActions !== []) {
+                $lines = [
+                    ...$lines,
+                    ...$this->doctorPanelActionTable($familyActions, $innerWidth),
+                ];
+            }
+
+            $lines[] = $this->doctorPanelEmpty($innerWidth);
+        }
+
+        $lines[] = $this->doctorPanelRule('middle', 'S U M M A R Y', $width);
+        $lines[] = $this->doctorPanelEmpty($innerWidth);
+        $lines[] = $this->doctorPanelCentered($this->doctorPanelSummary($doctor), $innerWidth);
+        $lines[] = $this->doctorPanelEmpty($innerWidth);
+        $lines[] = $this->doctorPanelCentered('Run doctor --fix manually or through an LLM to resolve issues', $innerWidth);
+        $lines[] = $this->doctorPanelEmpty($innerWidth);
+        $lines[] = $this->doctorPanelRule('bottom', null, $width);
+
+        return $lines;
+    }
+
+    private function doctorPanelRule(string $position, ?string $label, int $width): string
+    {
+        $left = match ($position) {
+            'top' => '┌',
+            'bottom' => '└',
+            default => '├',
+        };
+        $right = match ($position) {
+            'top' => '┐',
+            'bottom' => '┘',
+            default => '┤',
+        };
+
+        if ($label === null || $label === '') {
+            return $left.str_repeat('─', $width - 2).$right;
+        }
+
+        $remaining = max(2, $width - mb_strlen($label) - 4);
+        $before = intdiv($remaining, 2);
+        $after = $remaining - $before;
+
+        return $left.str_repeat('─', $before).'  '.$label.'  '.str_repeat('─', $after).$right;
+    }
+
+    private function doctorPanelEmpty(int $innerWidth): string
+    {
+        return '│'.str_repeat(' ', $innerWidth).'│';
+    }
+
+    private function doctorPanelCentered(string $text, int $innerWidth): string
+    {
+        $text = mb_strimwidth($text, 0, $innerWidth, '…');
+        $padding = $innerWidth - mb_strlen($text);
+        $left = intdiv($padding, 2);
+        $right = $padding - $left;
+
+        return '│'.str_repeat(' ', $left).$text.str_repeat(' ', $right).'│';
+    }
+
+    private function doctorPanelBullet(string $label, string $status, int $innerWidth): string
+    {
+        $left = '●  '.str_pad($label, 14);
+        $text = $left.$status;
+
+        return $this->doctorPanelText($text, $innerWidth);
+    }
+
+    private function doctorPanelText(string $text, int $innerWidth): string
+    {
+        $text = mb_strimwidth($text, 0, $innerWidth, '…');
+
+        return $text.str_repeat(' ', max(0, $innerWidth - mb_strlen($text))).'│';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return list<string>
+     */
+    private function doctorPanelIssueTable(array $issues, int $innerWidth): array
+    {
+        $lines = [$this->doctorPanelSeparator(['KEY', 'Issue'], [24, $innerWidth - 29])];
+
+        foreach ($issues as $issue) {
+            $lines[] = $this->doctorPanelCells([
+                $this->doctorString($issue['key'] ?? null),
+                $this->doctorString($issue['summary'] ?? null),
+            ], [24, $innerWidth - 29]);
+        }
+
+        $lines[] = $this->doctorPanelSeparator([], []);
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $actions
+     * @return list<string>
+     */
+    private function doctorPanelActionTable(array $actions, int $innerWidth): array
+    {
+        $lines = [$this->doctorPanelSeparator(['ACTION', 'STATUS', 'KEY', 'Summary'], [10, 10, 22, $innerWidth - 50])];
+
+        foreach ($actions as $action) {
+            $lines[] = $this->doctorPanelCells([
+                $this->doctorString($action['mode'] ?? null),
+                $this->doctorString($action['status'] ?? null),
+                $this->doctorString($action['key'] ?? $action['code'] ?? null),
+                $this->doctorString($action['summary'] ?? null),
+            ], [10, 10, 22, $innerWidth - 50]);
+        }
+
+        $lines[] = $this->doctorPanelSeparator([], []);
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<string>  $headers
+     * @param  list<int>  $widths
+     */
+    private function doctorPanelSeparator(array $headers, array $widths): string
+    {
+        if ($headers === []) {
+            return '├'.str_repeat('─', 76).'┤';
+        }
+
+        return $this->doctorPanelCells($headers, $widths);
+    }
+
+    /**
+     * @param  list<string>  $values
+     * @param  list<int>  $widths
+     */
+    private function doctorPanelCells(array $values, array $widths): string
+    {
+        $cells = [];
+
+        foreach ($values as $index => $value) {
+            $cellWidth = $widths[$index] ?? 10;
+            $value = mb_strimwidth($value, 0, $cellWidth, '…');
+            $cells[] = ' '.str_pad($value, $cellWidth);
+        }
+
+        return '├'.implode('│', $cells).'┤';
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     * @return list<string>
+     */
+    private function doctorFamiliesForPanel(array $doctor): array
+    {
+        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
+        $families = is_array($scope['families'] ?? null) ? array_values(array_filter($scope['families'], is_string(...))) : [];
+
+        return $families === [] ? ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'] : $families;
+    }
+
+    private function doctorFamilyLabel(string $family): string
+    {
+        return match ($family) {
+            'node' => 'Nodes',
+            'app' => 'Apps',
+            'workspace' => 'Workspaces',
+            'process' => 'Processes',
+            'proxy' => 'Proxy routes',
+            'firewall_rule' => 'Firewall',
+            'tool' => 'Tools',
+            'schedule' => 'Scheduling',
+            default => $family,
         };
     }
 
     /**
-     * @param  array<string, mixed>  $doctor
+     * @param  list<array<string, mixed>>  $issues
+     * @param  list<array<string, mixed>>  $actions
      */
-    private function doctorModeLabel(array $doctor): string
+    private function doctorFamilyStatus(array $issues, array $actions): string
     {
-        $mode = $doctor['mode'] ?? 'verify';
+        if ($issues !== []) {
+            return count($issues) === 1 ? '1 issue detected' : count($issues).' issues found';
+        }
 
-        return is_string($mode) && in_array($mode, ['verify', 'fix', 'adopt'], true)
-            ? $mode
-            : 'verify';
+        if ($actions !== []) {
+            return count($actions) === 1 ? '1 action completed' : count($actions).' actions completed';
+        }
+
+        return 'OK';
     }
 
     /**
      * @param  array<string, mixed>  $doctor
      */
-    private function doctorScopeLabel(array $doctor): string
-    {
-        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
-        $families = $scope['families'] ?? [];
-        $familyLabel = is_array($families) && $families !== []
-            ? implode(',', array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== '')))
-            : 'all';
-
-        return sprintf(
-            'families=%s node=%s app=%s workspace=%s self=%s',
-            $familyLabel,
-            $this->doctorHumanValue($scope['node'] ?? null),
-            $this->doctorHumanValue($scope['app'] ?? null),
-            $this->doctorHumanValue($scope['workspace'] ?? null),
-            ($scope['self'] ?? false) === true ? 'true' : 'false',
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $doctor
-     */
-    private function renderDoctorSummary(array $doctor): int
+    private function doctorPanelSummary(array $doctor): string
     {
         $summary = is_array($doctor['summary'] ?? null) ? $doctor['summary'] : [];
-        $headers = ['ISSUES', 'FIXED', 'ADOPTED', 'SKIPPED', 'CONFLICTS', 'FAILED'];
-        $rows = [[
-            (string) (int) ($summary['issues'] ?? 0),
-            (string) (int) ($summary['fixed'] ?? 0),
-            (string) (int) ($summary['adopted'] ?? 0),
-            (string) (int) ($summary['skipped'] ?? 0),
-            (string) (int) ($summary['conflicts'] ?? 0),
-            (string) (int) ($summary['failed'] ?? 0),
-        ]];
+        $issueCount = (int) ($summary['issues'] ?? 0);
 
-        $this->line('Summary');
-        table(headers: $headers, rows: $rows);
+        if ($issueCount === 0) {
+            return 'No issues detected';
+        }
 
-        return $this->doctorTableWidth($headers, $rows);
-    }
+        $issues = $this->doctorList($doctor, 'issues');
+        $categoryCount = count(array_unique(array_map(
+            fn (array $issue): string => $this->doctorString($issue['family'] ?? null),
+            $issues,
+        )));
 
-    private function centeredDoctorDivider(int $width): string
-    {
-        $label = 'D O C T O R   R E S U L T';
-        $remaining = max(2, $width - mb_strlen($label) - 2);
-        $left = intdiv($remaining, 2);
-        $right = $remaining - $left;
-
-        return str_repeat('─', $left).' '.$label.' '.str_repeat('─', $right);
-    }
-
-    private function renderDoctorSuccessBox(int $width): void
-    {
-        $message = 'Everything is healthy!';
-        $innerWidth = max(mb_strlen($message) + 10, $width - 2);
-        $padding = $innerWidth - mb_strlen($message);
-        $left = intdiv($padding, 2);
-        $right = $padding - $left;
-
-        $this->line('┌'.str_repeat('─', $innerWidth).'┐');
-        $this->line('│'.str_repeat(' ', $innerWidth).'│');
-        $this->line('│'.str_repeat(' ', $left).$message.str_repeat(' ', $right).'│');
-        $this->line('│'.str_repeat(' ', $innerWidth).'│');
-        $this->line('└'.str_repeat('─', $innerWidth).'┘');
+        return $issueCount === 1
+            ? '1 issue detected across 1 category'
+            : "{$issueCount} issues detected across {$categoryCount} categories";
     }
 
     /**
@@ -418,196 +740,6 @@ class DoctorCommand extends Command implements Loggable
         }
 
         return array_values(array_filter($items, is_array(...)));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $actions
-     */
-    private function renderDoctorActions(array $actions): void
-    {
-        $headers = ['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY'];
-        $rows = [];
-
-        foreach ($actions as $action) {
-            $rows[] = [
-                $this->doctorString($action['family'] ?? null),
-                $this->doctorHumanValue($action['node'] ?? null),
-                $this->doctorString($action['mode'] ?? null),
-                $this->doctorString($action['status'] ?? null),
-                $this->doctorString($action['key'] ?? $action['code'] ?? null),
-                $this->doctorString($action['summary'] ?? null),
-            ];
-        }
-
-        $this->line('Actions');
-        table(headers: $headers, rows: $rows);
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $issues
-     * @param  array<string, mixed>  $doctor
-     */
-    private function renderDoctorIssues(array $issues, array $doctor): void
-    {
-        $issueLabel = count($issues) === 1 ? '1 issue found' : count($issues).' issues found';
-
-        $this->line($issueLabel);
-
-        foreach ($this->groupDoctorIssues($issues, $doctor) as $family => $kinds) {
-            foreach ($kinds as $kind => $kindIssues) {
-                $headers = ['NODE', 'KEY', 'SUMMARY', 'NEXT'];
-                $rows = [];
-
-                foreach ($kindIssues as $issue) {
-                    $rows[] = [
-                        $this->doctorHumanValue($issue['node'] ?? null),
-                        $this->doctorString($issue['key'] ?? $issue['code'] ?? null),
-                        $this->doctorString($issue['summary'] ?? null),
-                        $this->doctorHumanValue($this->doctorIssueNextStep($issue)),
-                    ];
-                }
-
-                $this->line((string) $family.' / '.(string) $kind);
-                table(headers: $headers, rows: $rows);
-            }
-        }
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $issues
-     * @param  array<string, mixed>  $doctor
-     * @return array<string, array<string, list<array<string, mixed>>>>
-     */
-    private function groupDoctorIssues(array $issues, array $doctor): array
-    {
-        usort($issues, function (array $left, array $right) use ($doctor): int {
-            $familyCompare = $this->doctorFamilySortIndex($left, $doctor) <=> $this->doctorFamilySortIndex($right, $doctor);
-
-            if ($familyCompare !== 0) {
-                return $familyCompare;
-            }
-
-            return $this->doctorKindSortIndex($left) <=> $this->doctorKindSortIndex($right);
-        });
-
-        $groups = [];
-
-        foreach ($issues as $issue) {
-            $family = $this->doctorString($issue['family'] ?? null);
-            $kind = $this->doctorString($issue['kind'] ?? null);
-            $groups[$family][$kind][] = $issue;
-        }
-
-        return $groups;
-    }
-
-    /**
-     * @param  array<string, mixed>  $issue
-     * @param  array<string, mixed>  $doctor
-     */
-    private function doctorFamilySortIndex(array $issue, array $doctor): int
-    {
-        $family = $this->doctorString($issue['family'] ?? null);
-        $scope = is_array($doctor['scope'] ?? null) ? $doctor['scope'] : [];
-        $families = is_array($scope['families'] ?? null) ? array_values($scope['families']) : [];
-        $index = array_search($family, $families, true);
-
-        if ($index !== false) {
-            return (int) $index;
-        }
-
-        $fallback = ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule'];
-        $fallbackIndex = array_search($family, $fallback, true);
-
-        return $fallbackIndex === false ? 100 : (int) $fallbackIndex;
-    }
-
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function doctorKindSortIndex(array $issue): int
-    {
-        $order = ['unverifiable', 'missing', 'divergent', 'extra'];
-        $index = array_search($this->doctorString($issue['kind'] ?? null), $order, true);
-
-        return $index === false ? 100 : (int) $index;
-    }
-
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function doctorIssueNextStep(array $issue): ?string
-    {
-        $detail = $issue['detail'] ?? $issue['details'] ?? null;
-
-        if (! is_array($detail)) {
-            return null;
-        }
-
-        $next = $detail['next'] ?? $detail['next_step'] ?? null;
-
-        return is_string($next) && $next !== '' ? $next : null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $doctor
-     */
-    private function doctorResultBodyWidth(array $doctor): int
-    {
-        $width = 0;
-
-        $actionRows = [];
-
-        foreach ($this->doctorList($doctor, 'actions') as $action) {
-            $actionRows[] = [
-                $this->doctorString($action['family'] ?? null),
-                $this->doctorString($action['node'] ?? null),
-                $this->doctorString($action['mode'] ?? null),
-                $this->doctorString($action['status'] ?? null),
-                $this->doctorString($action['key'] ?? $action['code'] ?? null),
-                $this->doctorString($action['summary'] ?? null),
-            ];
-        }
-
-        if ($actionRows !== []) {
-            $width = max($width, $this->doctorTableWidth(['FAMILY', 'NODE', 'MODE', 'STATUS', 'KEY', 'SUMMARY'], $actionRows));
-        }
-
-        foreach ($this->groupDoctorIssues($this->doctorList($doctor, 'issues'), $doctor) as $kinds) {
-            foreach ($kinds as $kindIssues) {
-                $issueRows = [];
-
-                foreach ($kindIssues as $issue) {
-                    $issueRows[] = [
-                        $this->doctorHumanValue($issue['node'] ?? null),
-                        $this->doctorString($issue['key'] ?? $issue['code'] ?? null),
-                        $this->doctorString($issue['summary'] ?? null),
-                        $this->doctorHumanValue($this->doctorIssueNextStep($issue)),
-                    ];
-                }
-
-                $width = max($width, $this->doctorTableWidth(['NODE', 'KEY', 'SUMMARY', 'NEXT'], $issueRows));
-            }
-        }
-
-        return $width;
-    }
-
-    /**
-     * @param  list<string>  $headers
-     * @param  list<list<string>>  $rows
-     */
-    private function doctorTableWidth(array $headers, array $rows): int
-    {
-        $widths = array_map(mb_strlen(...), $headers);
-
-        foreach ($rows as $row) {
-            foreach ($row as $index => $value) {
-                $widths[$index] = max($widths[$index] ?? 0, mb_strlen($value));
-            }
-        }
-
-        return array_sum($widths) + count($widths) * 3 + 1;
     }
 
     private function doctorHumanValue(mixed $value): string

@@ -20,8 +20,8 @@ methods:
 | `label()` | `string` | Human-readable label: `'Nodes'`. |
 | `introspect(Node $node)` | `ProbeSnapshot` | Read physical node state. Current implementation returns an empty snapshot (stub for future probe layers). |
 | `diff(Node $node, ProbeSnapshot $snapshot)` | `list<DriftEntry>` | Compare node record against probe snapshot and return drift entries. |
-| `canReconcile()` | `bool` | Whether this family supports `--fix`. Returns `true`. |
-| `canAdopt()` | `bool` | Whether this family supports `--adopt`. Returns `true`. |
+| `canReconcile()` | `bool` | Whether this family supports `doctor --fix --restore`. Returns `true`. |
+| `canAdopt()` | `bool` | Whether this family supports `doctor --fix --adopt`. Returns `true`. |
 | `reconcile(Node $node, DriftEntry $entry)` | `void` | Apply a fix for a supported drift entry. Throws `RuntimeException` for unsupported keys. |
 | `snapshotForAdopt(Node $node)` | `ProbeSnapshot` | Read physical state for adoption. Current implementation snapshots proven active app-node missing peers, proven live WireGuard peer extras, unambiguous WireGuard address mismatches, app runtime readiness, and local platform record mismatches. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | `list<AdoptResult>` | Attempt to adopt node reality into the gateway database. |
@@ -239,7 +239,7 @@ The minimum proof set is:
 The probe must not read private keys, infer identity from public IP metadata, or
 adopt a live WireGuard peer that cannot be tied to a selected node identity.
 When this proof is unavailable, adoption remains a conflict or a
-`doctor --family=node --fix` handoff. Unknown-host materialization belongs to
+`doctor --fix --family=node --restore` handoff. Unknown-host materialization belongs to
 explicit node-membership flows such as `node:new`, because those flows provide
 the requested node name, role, host, and app-specific intent needed to create a
 record before normal node-family adoption can run. Node doctor does not invent

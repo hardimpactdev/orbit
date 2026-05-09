@@ -30,7 +30,7 @@ model.
 - Firewall reads use gateway intent by default. Live firewall reality belongs
   to `doctor --family=firewall_rule`.
 - Node reality import is not part of the firewall command surface. Adoption of
-  observed firewall reality must use explicit `doctor --family=firewall_rule --adopt`
+  observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt`
   semantics.
 
 ## Firewall Rule JSON Entity

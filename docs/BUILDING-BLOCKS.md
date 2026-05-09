@@ -175,7 +175,7 @@ listener to that address. It is not a public internet vhost and it is not an
 app-node control-plane endpoint.
 
 The gateway API ingress is a gateway-owned internal `proxy` entry. Its
-proxy/TLS artifact is repaired by `doctor --family=proxy --fix`, not by a
+proxy/TLS artifact is repaired by `doctor --fix --family=proxy --restore`, not by a
 backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity.
@@ -266,7 +266,7 @@ notifications through that adapter when an active session is available.
 
 Each state family is implemented through a probe. Families that can repair drift
 also provide a fix path for `doctor --fix`; families that can adopt node reality
-also provide an adopt path for `doctor --adopt`. Public doctor family keys use
+also provide an adopt path for `doctor --fix --adopt`. Public doctor family keys use
 the product names above. Backend-shaped implementation keys are migration
 details, not stable product vocabulary.
 

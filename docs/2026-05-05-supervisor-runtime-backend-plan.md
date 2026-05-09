@@ -122,7 +122,7 @@ probes.
 
 For each process definition, Orbit expects one runtime unit for the main app
 instance and one runtime unit for each workspace of that app.
-`doctor --family=process --fix` re-renders missing or divergent runtime units
+`doctor --fix --family=process --restore` re-renders missing or divergent runtime units
 from gateway-tracked app, workspace, and process configuration.
 
 The rendered Supervisor program name follows the global runtime-unit naming
@@ -668,7 +668,7 @@ Replace the existing E2E test mapping rows with:
 
 ```markdown
 | `tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with Supervisor-rendered process runtime units. Docker-eligible. |
-| `tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --family=process --fix` repair of missing or divergent Supervisor programs and lifecycle event notifier material. Docker-eligible. |
+| `tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --fix --family=process --restore` repair of missing or divergent Supervisor programs and lifecycle event notifier material. Docker-eligible. |
 ```
 
 Add a row:
@@ -776,7 +776,7 @@ scheduler reality belongs to `doctor --family=schedule`.
 
 Replace `Backend discovery/import is not part of the schedule command
 surface. Adoption of observed schedule artifacts must use explicit
-doctor --family=schedule --adopt semantics.` with:
+doctor --fix --family=schedule --adopt semantics.` with:
 
 ```markdown
 The schedule family does not adopt arbitrary observed processes as
@@ -949,7 +949,7 @@ Replace the existing E2E test mapping rows with:
 
 ```markdown
 | `tests/E2E/Read/ScheduleDoctorTest.php` | Real read-only `doctor --family=schedule --json` against a topology with the Orbit Scheduler running. Docker-eligible. |
-| `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --family=schedule --fix` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
+| `tests/E2E/Ephemeral/ScheduleDoctorFixTest.php` | Real `doctor --fix --family=schedule --restore` repair for `scheduler_missing`, `scheduler_stopped`, `lock_stuck`, and `run_history_hook_*` codes. Docker-eligible. |
 ```
 
 Drop the existing `ScheduleDoctorAdoptTest.php` row; the schedule family no

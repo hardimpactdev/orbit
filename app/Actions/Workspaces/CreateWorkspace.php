@@ -86,7 +86,7 @@ final readonly class CreateWorkspace
                 'code' => 'workspace.path_missing',
                 'family' => 'workspace',
                 'message' => "Workspace path '{$workspace->path}' is missing on node '{$node->name}'. SSH enactment failed after gateway intent was written.",
-                'next_command' => 'doctor --family=workspace --fix',
+                'next_command' => 'doctor --fix --family=workspace --restore',
             ];
         } else {
             try {

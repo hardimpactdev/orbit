@@ -193,7 +193,7 @@ final class DoctorWarningCoherenceRule implements CommandDocsLintRule
 
     private function nextCommandFamily(string $nextCommand): ?string
     {
-        if (preg_match('/(?:^|\s)doctor\s+.*?--family=(?<family>[a-z_]+)/', $nextCommand, $matches) !== 1) {
+        if (preg_match('/(?:^|\s)doctor(?::fix)?\s+.*?--family=(?<family>[a-z_]+)/', $nextCommand, $matches) !== 1) {
             return null;
         }
 

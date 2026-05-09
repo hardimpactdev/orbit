@@ -85,7 +85,7 @@ final readonly class RemoveApp
                     'code' => 'app.fpm_config_extra',
                     'family' => 'app',
                     'message' => 'App PHP-FPM configuration could not be removed during cleanup.',
-                    'next_command' => 'doctor --family=app --fix',
+                    'next_command' => 'doctor --fix --family=app --restore',
                 ];
             }
 
@@ -97,7 +97,7 @@ final readonly class RemoveApp
                     'code' => 'app.runtime_config_extra',
                     'family' => 'app',
                     'message' => 'Managed app runtime configuration could not be removed during cleanup.',
-                    'next_command' => 'doctor --family=app --fix',
+                    'next_command' => 'doctor --fix --family=app --restore',
                 ];
             }
         }

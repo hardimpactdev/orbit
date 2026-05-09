@@ -179,7 +179,7 @@ Emitted through the cross-cutting Loggable contract. See
 - `doctor --family=node` verifies node-owned agent IDE default configuration
   when the adapter supports a non-destructive check.
 - `node:agent-ide` is the explicit command for setting or clearing the node
-  default. `doctor --family=node --fix` does not change the adapter; it only
+  default. `doctor --fix --family=node --restore` does not change the adapter; it only
   verifies that the configured adapter is healthy and reports drift when it is
   not through `node.agent_ide_default_invalid`. Recover by running
   `orbit node:agent-ide <node> <supported-adapter>` or

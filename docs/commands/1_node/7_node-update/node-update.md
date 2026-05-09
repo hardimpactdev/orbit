@@ -65,7 +65,7 @@ directly affected by the changed metadata.
   them does not change the gateway endpoint used in WireGuard peer configs.
 - Re-enacts node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
-  [`doctor --family=node --fix`](../node-doctor.md), not `node:update`.
+  [`doctor --fix --family=node --restore`](../node-doctor.md), not `node:update`.
 - Does not change a development app node's TLD after creation. Doctor may
   repair drift back to the TLD already stored in gateway node intent, but
   intentional TLD migration requires a future explicit command contract.
@@ -81,7 +81,7 @@ reported as successful with an empty `changed` array.
 When node-side artifact re-enactment fails after the gateway intent was
 written, the command still returns success and reports the remaining
 node-family drift as a warning that points at
-[`doctor --family=node --fix`](../node-doctor.md).
+[`doctor --fix --family=node --restore`](../node-doctor.md).
 
 ## Output
 

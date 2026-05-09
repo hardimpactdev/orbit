@@ -108,7 +108,7 @@ definition. Any failure during Step 2 (dependent gateway intent) or Step 3
 (node-side artifact cleanup) is reported as `success` with a structured warning
 per affected family in `success.meta.warnings[]`. Each warning carries `code`,
 `family`, `message`, and `next_command` (typically
-`doctor --family=<family> --fix`). The exit code remains `0`; the warnings are
+`doctor --fix --family=<family> --restore`). The exit code remains `0`; the warnings are
 the machine-readable signal.
 
 Gateway-owned intent removal is the point of no return. Leftover dependent or
@@ -122,7 +122,7 @@ not a removal failure.
   app drift by [`app-doctor.md`](../../app-doctor.md). Related-family artifacts
   are detected by the affected family doctors (`proxy`, `workspace`,
   `process`, `schedule`).
-- `app:remove` does not duplicate per-family drift item shapes; it points operators at the affected `doctor --family=<family> --fix` via the warning's `next_command`.
+- `app:remove` does not duplicate per-family drift item shapes; it points operators at the affected `doctor --fix --family=<family> --restore` via the warning's `next_command`.
 
 ## Activity Logging
 

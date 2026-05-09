@@ -205,7 +205,7 @@ class ProxyRouteIntent
             'code' => 'proxy.enactment_deferred',
             'family' => 'proxy',
             'message' => 'Proxy route intent was saved, but backend/TLS enactment is deferred to proxy doctor fix mode.',
-            'next_command' => "doctor --family=proxy --fix --node={$node}",
+            'next_command' => "doctor --fix --family=proxy --restore --node={$node}",
         ];
     }
 
@@ -218,7 +218,7 @@ class ProxyRouteIntent
             'code' => 'proxy.cleanup_deferred',
             'family' => 'proxy',
             'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.',
-            'next_command' => "doctor --family=proxy --fix --node={$node}",
+            'next_command' => "doctor --fix --family=proxy --restore --node={$node}",
         ];
     }
 }

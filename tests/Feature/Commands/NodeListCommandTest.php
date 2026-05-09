@@ -377,7 +377,7 @@ describe('node:list control-caller forwarding', function (): void {
                                             'code' => 'node.record_incomplete',
                                             'message' => 'Node record for gateway-1 is missing required fields.',
                                             'family' => 'node',
-                                            'next_command' => 'doctor --family=node --fix',
+                                            'next_command' => 'doctor --fix --family=node --restore',
                                         ],
                                     ],
                                 ],

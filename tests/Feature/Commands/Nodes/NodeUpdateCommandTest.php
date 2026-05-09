@@ -313,7 +313,7 @@ describe('node:update control forwarding', function (): void {
                         'code' => 'node.artifact_enactment_failed',
                         'message' => 'Node artifact re-enactment failed after intent update.',
                         'family' => 'node',
-                        'next_command' => 'doctor --family=node --fix',
+                        'next_command' => 'doctor --fix --family=node --restore',
                     ]],
                 ],
             ],
@@ -332,7 +332,7 @@ describe('node:update control forwarding', function (): void {
                 'code' => 'node.artifact_enactment_failed',
                 'message' => 'Node artifact re-enactment failed after intent update.',
                 'family' => 'node',
-                'next_command' => 'doctor --family=node --fix',
+                'next_command' => 'doctor --fix --family=node --restore',
             ]]);
     });
 
@@ -523,7 +523,7 @@ describe('node:update safety', function (): void {
                 'code' => 'node.artifact_enactment_failed',
                 'message' => 'Node artifact re-enactment failed after intent update.',
                 'family' => 'node',
-                'next_command' => 'doctor --family=node --fix',
+                'next_command' => 'doctor --fix --family=node --restore',
             ]]);
     });
 

@@ -20,7 +20,7 @@ it('repairs managed tool configuration drift from gateway intent', function (): 
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && php artisan doctor --family=tool --fix --json',
+                'cd %s && php artisan doctor --fix --family=tool --restore --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,

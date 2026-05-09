@@ -327,7 +327,7 @@ class WorkspaceRemoveCommand extends Command
                 foreach ($warnings as $warning) {
                     $family = (string) ($warning['family'] ?? 'workspace');
                     $message = (string) ($warning['message'] ?? $warning['code'] ?? 'cleanup drift');
-                    $next = (string) ($warning['next_command'] ?? 'doctor --family='.$family.' --fix');
+                    $next = (string) ($warning['next_command'] ?? 'doctor --fix --family='.$family.' --restore');
 
                     $this->line("  - {$family}: {$message} (run `{$next}`)");
                 }

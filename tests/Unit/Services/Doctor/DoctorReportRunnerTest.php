@@ -16,7 +16,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('DoctorReportRunner', function (): void {
-    it('suppresses resolved issues when a supported fix completes', function (): void {
+    it('suppresses resolved issues when a supported restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id]);
@@ -28,7 +28,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -42,13 +42,13 @@ describe('DoctorReportRunner', function (): void {
                 'family' => 'schedule',
                 'node' => 'app-1',
                 'key' => 'schedule.scheduler_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ])
             ->and($shell->scripts[2])->toContain('[program:orbit_scheduler]');
     });
 
-    it('installs missing tools through fix mode family dispatch', function (): void {
+    it('installs missing tools through restore mode family dispatch', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'redis']);
@@ -58,7 +58,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['tool']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['tool']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -71,13 +71,13 @@ describe('DoctorReportRunner', function (): void {
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.capability_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ])
             ->and($shell->scripts[1])->toContain("docker compose -f '/opt/orbit/docker-compose.yml' pull 'redis'");
     });
 
-    it('suppresses resolved tool version issues when a safe update fix completes', function (): void {
+    it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
@@ -91,7 +91,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['tool']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['tool']);
 
         expect($report['healthy'])->toBeTrue()
             ->and($report['summary'])->toMatchArray([
@@ -104,13 +104,13 @@ describe('DoctorReportRunner', function (): void {
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.version_mismatch',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ])
             ->and($shell->scripts[1])->toContain('composer self-update');
     });
 
-    it('keeps the issue visible and records a failed action when a fix throws', function (): void {
+    it('keeps the issue visible and records a failed action when a restore throws', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $node->id]);
@@ -121,7 +121,7 @@ describe('DoctorReportRunner', function (): void {
             new RuntimeException('supervisor update failed'),
         ]));
 
-        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'fix', families: ['schedule']);
+        $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['schedule']);
 
         expect($report['healthy'])->toBeFalse()
             ->and($report['summary'])->toMatchArray([
@@ -139,7 +139,7 @@ describe('DoctorReportRunner', function (): void {
                 'family' => 'schedule',
                 'node' => 'app-1',
                 'key' => 'schedule.scheduler_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'failed',
                 'details' => [
                     'error' => 'supervisor update failed',

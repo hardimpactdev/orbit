@@ -99,7 +99,7 @@ it('reports process family warnings when supervisor is unavailable after intent 
         ->and($warnings[0])->toMatchArray([
             'code' => 'process.runtime_backend_unavailable',
             'family' => 'process',
-            'next_command' => 'doctor --family=process --fix',
+            'next_command' => 'doctor --fix --family=process --restore',
         ])
         ->and($remoteShell->scripts)->toHaveCount(1);
 });

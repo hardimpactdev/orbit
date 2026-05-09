@@ -49,7 +49,7 @@ final readonly class EnactAppRuntime
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
             'message' => "PHP {$app->php_version} FPM is not available on '{$app->node->name}'. Run doctor to converge app runtime artifacts.",
-            'next_command' => 'doctor --family=app --fix',
+            'next_command' => 'doctor --fix --family=app --restore',
         ]];
     }
 

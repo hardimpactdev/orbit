@@ -2,7 +2,7 @@
 
 [Back to Operation commands.](../README.md)
 
-Verify gateway intent against observed node reality, then optionally repair or
+Verify gateway intent against observed node reality, and optionally repair or
 adopt supported drift.
 
 `doctor` is Orbit's convergence command. It orchestrates state-family probes for
@@ -10,12 +10,12 @@ families such as `node`, `app`, `workspace`, `process`, `proxy`,
 `schedule`, `tool`, and `firewall_rule`. The global command owns scope
 resolution, mode selection, authorization, exit status, and output envelopes.
 Family doctor contracts own concrete probe facts, issue codes, and safe
-fix/adopt maps.
+restore/adopt maps.
 
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix] [--restore|--adopt] [--json]
 ```
 
 ## Examples
@@ -23,8 +23,8 @@ orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--f
 ```bash
 orbit doctor
 orbit doctor --family=node --self
-orbit doctor --family=app --app=docs --fix
-orbit doctor --family=workspace --app=docs --workspace=feature-api --json
+orbit doctor --fix --family=app --app=docs --restore
+orbit doctor --fix --family=workspace --app=docs --workspace=feature-api --adopt --json
 ```
 
 ## Arguments And Options
@@ -34,10 +34,9 @@ orbit doctor --family=workspace --app=docs --workspace=feature-api --json
 - `--self`: Limit the run to the caller's gateway-known node identity.
 - `--app`: Limit the run to one app and the family facts owned by that app.
 - `--workspace`: Limit the run to one workspace and its owned facts.
-- `--fix`: Re-apply gateway intent to node reality for family-declared safe
-  repair actions.
-- `--adopt`: Adopt compatible observed node reality into gateway intent for
-  family-declared adoption actions.
+- `--fix`: Enter resolution mode to interactively or bulk-restore drift.
+- `--restore`: Non-interactively restore all supported findings from gateway intent to node reality. Requires `--fix`.
+- `--adopt`: Non-interactively adopt all supported findings from node reality into gateway intent. Requires `--fix`.
 - `--json`: Output JSON.
 
 ## What Happens
@@ -45,35 +44,32 @@ orbit doctor --family=workspace --app=docs --workspace=feature-api --json
 `doctor` resolves a scope, authorizes that scope on the gateway, runs the
 matching family probes, and reports the final diagnostic.
 
-In verify mode, it compares only. With `--fix`, it runs family-declared safe
-repair actions from gateway intent to node reality. With `--adopt`, it runs
-family-declared adoption actions from observed node reality to gateway intent.
+In verify mode (no `--fix`), it compares only and does not mutate gateway intent or node reality.
 
-`--fix` and `--adopt` are mutually exclusive. `--fix` must not silently mutate
-gateway intent. `--adopt` may mutate gateway intent only because the operator
-selected adoption explicitly.
+With `--fix`, it enters resolution mode. Without `--restore` or `--adopt`, the command is interactive: it walks each finding and prompts for restore, adopt, skip, or details. With `--restore`, it bulk-applies gateway intent to all supported findings on nodes. With `--adopt`, it bulk-applies compatible observed node reality into gateway intent.
 
-App-node callers may run authorized verify-mode doctor checks. App-node callers
-may not initiate generic `--fix` or `--adopt` writes unless a family doctor
-contract documents a narrow app-node exception.
+`--restore` and `--adopt` are mutually exclusive. `--restore` is explicit repair-mode consent for family-declared safe actions. `--adopt` is explicit adoption-mode consent and the only doctor mode that mutates gateway intent.
+
+App-node callers may run authorized verify-mode doctor checks. App-node callers may not initiate `--fix` or `--adopt` unless a family doctor contract documents a narrow app-node write exception.
 
 ## Output
 
-Human output shows the selected mode and resolved scope before the result, then
-prints a formatted diagnostic report. Healthy output must still say what was
-checked; an empty result is not enough because unselected families and nodes may
-not have been inspected. Drift output groups issues by family and kind, and
-`--fix` or `--adopt` output includes an action table for completed, skipped,
-failed, or conflicted actions.
+Human output renders a framed check-up panel. While the command is running, the
+panel shows each selected category and its current state. The final result uses
+the same category rows, marks healthy categories as `OK`, renders issue tables
+inline below the category that owns them, and ends with a summary line. Healthy
+output must still say what was checked; an empty result is not enough because
+unselected families and nodes may not have been inspected. In `--fix` modes
+(interactive, restore, adopt), action results render inline below the owning
+category. Verify-mode runs do not render action tables.
 
 JSON output uses the shared command envelope. Healthy diagnostics are returned
 under `success.data.doctor`. Drift or probe/action failures return the same
 doctor diagnostic under `error.data.doctor`.
 
 When no drift or probe errors remain, `doctor` exits successfully. When drift
-remains, a probe fails, scope cannot be resolved, or the selected mode is not
-supported for the chosen issues, `doctor` exits failed and returns the
-diagnostic payload.
+remains, a probe fails, or scope cannot be resolved, `doctor` exits failed and
+returns the diagnostic payload.
 
 ## Family Contracts
 

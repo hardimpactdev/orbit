@@ -235,7 +235,7 @@ class FirewallRuleIntent
             'code' => 'firewall_rule.enactment_deferred',
             'family' => 'firewall_rule',
             'message' => 'Firewall rule intent was saved, but backend enactment is deferred until the firewall doctor enactor is ported.',
-            'next_command' => "doctor --family=firewall_rule --fix --node={$node}",
+            'next_command' => "doctor --fix --family=firewall_rule --restore --node={$node}",
         ];
     }
 
@@ -248,7 +248,7 @@ class FirewallRuleIntent
             'code' => 'firewall_rule.cleanup_deferred',
             'family' => 'firewall_rule',
             'message' => 'Firewall rule intent was removed, but backend cleanup is deferred until the firewall doctor enactor is ported.',
-            'next_command' => "doctor --family=firewall_rule --fix --node={$node}",
+            'next_command' => "doctor --fix --family=firewall_rule --restore --node={$node}",
         ];
     }
 }

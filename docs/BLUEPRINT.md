@@ -325,7 +325,7 @@ Each family must define:
 - how `doctor` verifies drift;
 - whether `doctor --fix` can safely re-apply gateway-tracked configuration on
   the node;
-- whether `doctor --adopt` can safely adopt observed node reality into
+- whether `doctor --fix --adopt` can safely adopt observed node reality into
   gateway-tracked configuration.
 
 Ideal Orbit has these state families.
@@ -357,10 +357,10 @@ The implementation extension shape is:
   configuration;
 - a fix path when `doctor --fix` can re-apply gateway-tracked configuration on
   the node safely;
-- an adopt path when `doctor --adopt` can adopt observed node reality safely and
+- an adopt path when `doctor --fix --adopt` can adopt observed node reality safely and
   idempotently.
 
-`doctor --adopt` is the general adoption mechanism for drift, disaster
+`doctor --fix --adopt` is the general adoption mechanism for drift, disaster
 recovery, and observed reality outside an explicit command flow. The membership
 command `node:new` is the node-family exception: it may adopt a compatible
 already-provisioned gateway or app host as part of explicitly adding that node
@@ -573,11 +573,11 @@ Workspace doctor probes render expected workspace artifacts at check time from
 gateway-tracked app and workspace configuration. Orbit does not need stored
 expected-hash columns for workspace artifacts.
 
-`doctor --family=workspace --fix` re-applies gateway-tracked workspace
+`doctor --fix --family=workspace --restore` re-applies gateway-tracked workspace
 configuration on the node. If gateway tracks a workspace and enough source
 information exists, missing workspace reality should be recreated.
 
-`doctor --family=workspace --adopt` adopts observed node reality into
+`doctor --fix --family=workspace --adopt` adopts observed node reality into
 gateway-tracked workspace configuration when the workspace family supports
 adoption.
 
@@ -594,7 +594,7 @@ probes.
 
 For each process definition, Orbit expects one runtime unit for the main app
 instance and one runtime unit for each workspace of that app.
-`doctor --family=process --fix` re-renders missing or divergent runtime units
+`doctor --fix --family=process --restore` re-renders missing or divergent runtime units
 from gateway-tracked app, workspace, and process configuration.
 
 The rendered Supervisor program name follows the global runtime-unit naming

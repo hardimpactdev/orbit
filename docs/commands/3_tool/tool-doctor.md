@@ -48,7 +48,7 @@ The tools probe reads gateway tool rows and checks these layers:
    match the tool definition when credentials are part of the tool contract.
 7. **Lifecycle state:** managed services or containers match the expected
    lifecycle state, such as `running` or `installed`.
-8. **Adoption scope:** during `--adopt`, explicitly selected observed tools may
+8. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed tools may
    be inspected for compatible tool facts.
 
 Observed node capabilities without gateway tool rows are unmanaged inventory by
@@ -78,7 +78,7 @@ depend on facts the probe could not establish.
 
 ## Tool Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `tool.capability_missing` | Install or restore the managed capability only when the tool definition declares a safe install or repair path. |
 | `tool.version_mismatch` | Update or downgrade the managed tool only when the tool definition supports the target version transition. |
@@ -88,7 +88,7 @@ depend on facts the probe could not establish.
 | `tool.credentials_mismatch` | Rewrite managed credential metadata or generated material when the tool definition declares the repair safe. |
 | `tool.lifecycle_state_mismatch` | Start, stop, or restart the managed lifecycle backend to match gateway expected state. |
 
-`--fix` does not handle `tool.record_incomplete`, `tool.node_invalid`,
+`doctor --fix --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, or
 `tool.unregistered_capability`.
 
@@ -105,14 +105,14 @@ intent to match observed node state; adoption owns those intent changes.
 
 ## Tool Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `tool.unregistered_capability` | Create a gateway tool row only when the operator selected a specific node and observed capability, the capability maps to a supported tool definition, and the tool definition declares what observed facts may become intent. |
 | `tool.version_mismatch` | Update version intent only when the observed version is supported and the operator selected the specific tool for adoption. |
 | `tool.config_mismatch` | Update config intent only when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
 
-`--adopt` does not scan arbitrary hosts for inventory, adopt unsupported
+`doctor --fix --adopt` does not scan arbitrary hosts for inventory, adopt unsupported
 packages or containers, infer app/database ownership, adopt generated process or
 schedule artifacts, or adopt firewall/proxy backend artifacts as tool facts.
 
@@ -125,5 +125,5 @@ Required test files:
 | `tests/Feature/Doctor/ToolsFamilyDoctorContractTest.php` | Tools-family dispatch, probe-layer selection, tool issue codes, tool fix map, tool adopt map, denied fix/adopt cases, and scope filtering as it affects tool probes. |
 | `tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior for registry intent, node eligibility, capability presence, version drift, configuration drift, credential drift, lifecycle state drift, adoption scopes, and exclusion of app, workspace, process, schedule, proxy route, firewall, and node drift from tool issue codes. |
 | `tests/E2E/Read/ToolsDoctorTest.php` | Real read-only `doctor --family=tool --json` against nodes with managed and observational tool rows. |
-| `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --fix` repair of safe managed tool drift. |
-| `tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --family=tool --adopt` for compatible selected observed tool adoption. |
+| `tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --fix --family=tool --restore` repair of safe managed tool drift. |
+| `tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --fix --family=tool --adopt` for compatible selected observed tool adoption. |

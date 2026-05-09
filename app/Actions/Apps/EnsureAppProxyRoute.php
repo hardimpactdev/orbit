@@ -56,7 +56,7 @@ final readonly class EnsureAppProxyRoute
             'code' => 'proxy.enactment_failed',
             'family' => 'proxy',
             'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-            'next_command' => 'doctor --family=proxy --fix',
+            'next_command' => 'doctor --fix --family=proxy --restore',
         ]];
     }
 

@@ -150,7 +150,7 @@ Role-specific behavior is defined in these companion contracts:
 
 - Invalid grants where a referenced node no longer exists are reported by
   `doctor --family=node`. See [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --family=node --fix` may clean up grants that reference removed nodes.
+- `doctor --fix --family=node --restore` may clean up grants that reference removed nodes.
 - `node:grant` does not repair drift or adopt node reality; those are doctor
   responsibilities.
 

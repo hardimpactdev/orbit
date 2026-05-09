@@ -44,7 +44,7 @@ Caddy is the current proxy backend. It is not the product model.
   to `doctor --family=proxy`.
 - Backend discovery/import is not part of the proxy command surface. Adoption
   of observed backend routes must use explicit
-  `doctor --family=proxy --adopt` semantics.
+  `doctor --fix --family=proxy --adopt` semantics.
 
 ## App And Workspace Ingress Baseline
 

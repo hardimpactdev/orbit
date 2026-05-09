@@ -94,10 +94,10 @@ When a gateway is configured:
 - If first-gateway bootstrap has created gateway intent and the gateway API is
   usable, but a later gateway readiness or local onboarding step fails, report
   the remaining mismatch as node-family drift for
-  `doctor --family=node --fix`.
+  `doctor --fix --family=node --restore`.
 - If gateway bootstrap succeeds but local control-node identity installation,
   trust storage, or gateway config storage fails, report partial local
-  onboarding as node-family drift for `doctor --family=node --fix`.
+  onboarding as node-family drift for `doctor --fix --family=node --restore`.
 
 ## Test Mapping
 

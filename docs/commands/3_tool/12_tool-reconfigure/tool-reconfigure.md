@@ -50,7 +50,7 @@ Target context is required when neither `--node`, `--app`, nor local
 7. Reports the reconfiguration result.
 
 The command does not create a tool row for an unmanaged observed tool. Use
-explicit `doctor --family=tool --adopt` semantics for supported adoption.
+explicit `doctor --fix --family=tool --adopt` semantics for supported adoption.
 
 ## Output
 

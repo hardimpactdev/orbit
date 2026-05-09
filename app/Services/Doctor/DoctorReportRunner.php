@@ -62,9 +62,34 @@ final readonly class DoctorReportRunner
      */
     public function run(Node $node, string $mode = 'verify', array $families = []): array
     {
+        $probe = $this->probe($node, $families);
+
+        if ($mode === 'verify') {
+            return $probe;
+        }
+
+        $actions = $mode === 'adopt'
+            ? $this->adoptSelectedFamilies($probe['scope']['families'] ?? [])
+            : $this->apply($node, $mode, $probe['issues'] ?? []);
+
+        if ($mode !== 'adopt') {
+            $actions = [
+                ...$actions,
+                ...$this->actionsForUnsupportedMode($mode, $probe['issues'] ?? [], $actions),
+            ];
+        }
+
+        return $this->finalize($probe, $mode, $actions);
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    public function probe(Node $node, array $families = []): array
+    {
         $selectedFamilies = $families === [] ? self::SUPPORTED_FAMILIES : $families;
         $issues = [];
-        $actions = [];
 
         foreach ($selectedFamilies as $family) {
             if ($family !== 'node') {
@@ -112,151 +137,66 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
-            if ($mode === 'adopt') {
-                $proxyNodes = Node::query()
-                    ->where('status', 'active')
-                    ->whereIn('role', ['gateway', 'app'])
-                    ->get();
+            foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
+                $snapshot = $this->proxyRouteProbe->introspect($route);
 
-                foreach ($proxyNodes as $proxyNode) {
-                    $snapshot = $this->proxyRouteProbe->snapshotForAdopt($proxyNode);
-
-                    foreach ($this->proxyRouteAdopter->adopt($proxyNode, $snapshot) as $result) {
-                        $actions[] = [
-                            'family' => $result->family,
-                            'node' => $proxyNode->name,
-                            'code' => $result->key,
-                            'key' => $result->key,
-                            'mode' => 'adopt',
-                            'status' => $result->action->value,
-                            'summary' => $result->summary,
-                            'details' => $result->detail,
-                        ];
-                    }
+                foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
+                    $issues[] = $this->proxyIssuePayload($entry, $route);
                 }
-            } else {
-                foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->get() as $route) {
-                    $snapshot = $this->proxyRouteProbe->introspect($route);
+            }
 
-                    foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
-                        $action = $this->handleProxyAction($mode, $route, $entry);
+            $scannedNodeIds = [];
 
-                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                            $actions[] = $action;
+            foreach (ProxyRoute::query()->distinct()->pluck('node_id') as $nodeId) {
+                $proxyNode = Node::query()->find($nodeId);
 
-                            continue;
-                        }
-
-                        $issue = $this->proxyIssuePayload($entry, $route);
-                        $issues[] = $issue;
-
-                        if ($action !== null) {
-                            $actions[] = $action;
-                        }
-                    }
+                if (! $proxyNode instanceof Node || $proxyNode->status !== 'active' || ! in_array($proxyNode->role, ['gateway', 'app'], true)) {
+                    continue;
                 }
 
-                $scannedNodeIds = [];
+                if (in_array($proxyNode->id, $scannedNodeIds, true)) {
+                    continue;
+                }
 
-                foreach (ProxyRoute::query()->distinct()->pluck('node_id') as $nodeId) {
-                    $proxyNode = Node::query()->find($nodeId);
+                $scannedNodeIds[] = $proxyNode->id;
 
-                    if (! $proxyNode instanceof Node || $proxyNode->status !== 'active' || ! in_array($proxyNode->role, ['gateway', 'app'], true)) {
+                $snapshot = $this->proxyRouteProbe->introspectNode($proxyNode);
+                $dbDomains = ProxyRoute::query()->where('node_id', $proxyNode->id)->pluck('domain')->all();
+
+                foreach ($snapshot->keys() as $domain) {
+                    $domain = (string) $domain;
+
+                    if (in_array($domain, $dbDomains, true)) {
                         continue;
                     }
 
-                    if (in_array($proxyNode->id, $scannedNodeIds, true)) {
-                        continue;
-                    }
+                    $entry = new DriftEntry(
+                        family: 'proxy',
+                        key: $domain,
+                        kind: DriftKind::Extra,
+                        summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+                    );
 
-                    $scannedNodeIds[] = $proxyNode->id;
-
-                    $snapshot = $this->proxyRouteProbe->introspectNode($proxyNode);
-                    $dbDomains = ProxyRoute::query()->where('node_id', $proxyNode->id)->pluck('domain')->all();
-
-                    foreach ($snapshot->keys() as $domain) {
-                        $domain = (string) $domain;
-
-                        if (in_array($domain, $dbDomains, true)) {
-                            continue;
-                        }
-
-                        $entry = new DriftEntry(
-                            family: 'proxy',
-                            key: $domain,
-                            kind: DriftKind::Extra,
-                            summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
-                        );
-
-                        $action = $this->handleProxyExtraAction($mode, $proxyNode, $entry);
-
-                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                            $actions[] = $action;
-
-                            continue;
-                        }
-
-                        $issues[] = [
-                            'family' => 'proxy',
-                            'node' => $proxyNode->name,
-                            'key' => $domain,
-                            'kind' => 'extra',
-                            'summary' => $entry->summary,
-                            'detail' => [],
-                        ];
-
-                        if ($action !== null) {
-                            $actions[] = $action;
-                        }
-                    }
+                    $issues[] = $this->annotateIssue([
+                        'family' => 'proxy',
+                        'node' => $proxyNode->name,
+                        'key' => $domain,
+                        'kind' => 'extra',
+                        'summary' => $entry->summary,
+                        'detail' => [
+                            'domain' => $domain,
+                        ],
+                    ]);
                 }
             }
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
-            if ($mode === 'adopt') {
-                $firewallNodes = Node::query()
-                    ->where('status', 'active')
-                    ->where('platform', 'ubuntu')
-                    ->whereIn('role', ['gateway', 'app'])
-                    ->get();
+            foreach (FirewallRule::query()->with('node')->get() as $rule) {
+                $snapshot = $this->firewallRuleProbe->introspect($rule);
 
-                foreach ($firewallNodes as $firewallNode) {
-                    $snapshot = $this->firewallRuleProbe->introspectNode($firewallNode);
-
-                    foreach ($this->firewallRuleProbe->adopt($firewallNode, $snapshot) as $result) {
-                        $actions[] = [
-                            'family' => $result->family,
-                            'node' => $firewallNode->name,
-                            'code' => $result->key,
-                            'key' => $result->key,
-                            'mode' => 'adopt',
-                            'status' => $result->action->value,
-                            'summary' => $result->summary,
-                            'details' => $result->detail,
-                        ];
-                    }
-                }
-            } else {
-                foreach (FirewallRule::query()->with('node')->get() as $rule) {
-                    $snapshot = $this->firewallRuleProbe->introspect($rule);
-
-                    foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
-                        $action = $this->handleFirewallAction($mode, $rule, $entry);
-
-                        if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                            $actions[] = $action;
-
-                            continue;
-                        }
-
-                        $issue = $this->firewallIssuePayload($entry, $rule);
-                        $issues[] = $issue;
-
-                        if ($action !== null) {
-                            $actions[] = $action;
-                        }
-                    }
+                foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
+                    $issues[] = $this->firewallIssuePayload($entry, $rule);
                 }
             }
         }
@@ -266,20 +206,7 @@ final readonly class DoctorReportRunner
                 $snapshot = $this->toolsProbe->introspect($tool);
 
                 foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                    $action = $this->handleToolAction($mode, $tool, $entry);
-
-                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                        $actions[] = $action;
-
-                        continue;
-                    }
-
-                    $issue = $this->toolIssuePayload($entry, $tool);
-                    $issues[] = $issue;
-
-                    if ($action !== null) {
-                        $actions[] = $action;
-                    }
+                    $issues[] = $this->toolIssuePayload($entry, $tool);
                 }
             }
         }
@@ -289,33 +216,16 @@ final readonly class DoctorReportRunner
                 $snapshot = $this->schedulesProbe->introspect($schedule);
 
                 foreach ($this->schedulesProbe->diff($schedule, $snapshot) as $entry) {
-                    $action = $this->handleScheduleAction($mode, $schedule, $entry);
-
-                    if ($action !== null && ($action['status'] ?? null) === 'completed') {
-                        $actions[] = $action;
-
-                        continue;
-                    }
-
-                    $issue = $this->scheduleIssuePayload($entry, $schedule);
-                    $issues[] = $issue;
-
-                    if ($action !== null) {
-                        $actions[] = $action;
-                    }
+                    $issues[] = $this->scheduleIssuePayload($entry, $schedule);
                 }
             }
         }
 
-        $actions = [
-            ...$actions,
-            ...$this->actionsForUnsupportedMode($mode, $issues, $actions),
-        ];
-        $summary = $this->summary($issues, $actions);
+        $summary = $this->summary('verify', $issues, []);
 
         return [
             'healthy' => $issues === [],
-            'mode' => $mode,
+            'mode' => 'verify',
             'scope' => [
                 'families' => $selectedFamilies,
                 'node' => $node->name,
@@ -325,6 +235,51 @@ final readonly class DoctorReportRunner
             ],
             'summary' => $summary,
             'issues' => $issues,
+            'actions' => [],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return list<array<string, mixed>>
+     */
+    public function apply(Node $node, string $mode, array $issues): array
+    {
+        $actions = [];
+
+        foreach ($issues as $issue) {
+            if (! $this->issueSupportsMode($issue, $mode)) {
+                continue;
+            }
+
+            $action = $this->applyIssue($node, $mode, $issue);
+
+            if ($action !== null) {
+                $actions[] = $action;
+            }
+        }
+
+        return array_map(fn (array $action): array => $this->normalizeActionMode($action, $mode), $actions);
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @param  list<array<string, mixed>>  $actions
+     * @return array<string, mixed>
+     */
+    public function finalize(array $probe, string $mode, array $actions): array
+    {
+        $issues = $probe['issues'] ?? [];
+        $issues = is_array($issues) ? array_values(array_filter($issues, is_array(...))) : [];
+        $remainingIssues = $this->remainingIssues($issues, $actions);
+        $summary = $this->summary($mode, $remainingIssues, $actions);
+
+        return [
+            ...$probe,
+            'healthy' => $summary['issues'] === 0 && $summary['failed'] === 0 && $summary['conflicts'] === 0 && $summary['skipped'] === 0,
+            'mode' => $mode,
+            'summary' => $summary,
+            'issues' => $remainingIssues,
             'actions' => $actions,
         ];
     }
@@ -336,14 +291,14 @@ final readonly class DoctorReportRunner
     {
         $app->loadMissing('node');
 
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $app->node?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => $entry->detail,
-        ];
+        ]);
     }
 
     /**
@@ -353,14 +308,14 @@ final readonly class DoctorReportRunner
     {
         $workspace->loadMissing('app.node');
 
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $workspace->app?->node?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => $entry->detail,
-        ];
+        ]);
     }
 
     /**
@@ -370,14 +325,14 @@ final readonly class DoctorReportRunner
     {
         $process->loadMissing('app.node');
 
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $process->app->node?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => $entry->detail,
-        ];
+        ]);
     }
 
     /**
@@ -385,14 +340,14 @@ final readonly class DoctorReportRunner
      */
     private function issuePayload(DriftEntry $entry, Node $node): array
     {
-        return [
+        return $this->annotateIssue([
             'family' => 'node',
             'node' => $node->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => $entry->detail,
-        ];
+        ]);
     }
 
     /**
@@ -400,14 +355,345 @@ final readonly class DoctorReportRunner
      */
     private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
     {
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $route->node->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
+            'detail' => [
+                ...($entry->detail ?? []),
+                'domain' => $route->domain,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return list<array<string, mixed>>
+     */
+    private function adoptSelectedFamilies(array $families): array
+    {
+        $actions = [];
+
+        if (in_array('proxy', $families, true)) {
+            $proxyNodes = Node::query()
+                ->where('status', 'active')
+                ->whereIn('role', ['gateway', 'app'])
+                ->get();
+
+            foreach ($proxyNodes as $proxyNode) {
+                $snapshot = $this->proxyRouteProbe->snapshotForAdopt($proxyNode);
+
+                foreach ($this->proxyRouteAdopter->adopt($proxyNode, $snapshot) as $result) {
+                    $actions[] = [
+                        'family' => $result->family,
+                        'node' => $proxyNode->name,
+                        'code' => $result->key,
+                        'key' => $result->key,
+                        'mode' => 'adopt',
+                        'status' => $result->action->value,
+                        'summary' => $result->summary,
+                        'details' => $result->detail,
+                    ];
+                }
+            }
+        }
+
+        if (in_array('firewall_rule', $families, true)) {
+            $firewallNodes = Node::query()
+                ->where('status', 'active')
+                ->where('platform', 'ubuntu')
+                ->whereIn('role', ['gateway', 'app'])
+                ->get();
+
+            foreach ($firewallNodes as $firewallNode) {
+                $snapshot = $this->firewallRuleProbe->introspectNode($firewallNode);
+
+                foreach ($this->firewallRuleProbe->adopt($firewallNode, $snapshot) as $result) {
+                    $actions[] = [
+                        'family' => $result->family,
+                        'node' => $firewallNode->name,
+                        'code' => $result->key,
+                        'key' => $result->key,
+                        'mode' => 'adopt',
+                        'status' => $result->action->value,
+                        'summary' => $result->summary,
+                        'details' => $result->detail,
+                    ];
+                }
+            }
+        }
+
+        return $actions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>|null
+     */
+    private function applyIssue(Node $node, string $mode, array $issue): ?array
+    {
+        $family = $issue['family'] ?? null;
+        $key = is_string($issue['key'] ?? null) ? $issue['key'] : null;
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
+        if ($key === null) {
+            return null;
+        }
+
+        return match ($family) {
+            'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
+            'firewall_rule' => $this->applyFirewallIssue($key, $detail),
+            'tool' => $this->applyToolIssue($key, $detail),
+            'schedule' => $this->applyScheduleIssue($key, $detail),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>|null
+     */
+    private function applyProxyIssue(Node $fallbackNode, string $mode, string $key, array $detail, array $issue): ?array
+    {
+        $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
+
+        if (($issue['kind'] ?? null) === DriftKind::Extra->value) {
+            if ($mode === 'adopt') {
+                $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
+
+                foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
+                    if ($result->key === $key) {
+                        return [
+                            'family' => $result->family,
+                            'node' => $node->name,
+                            'code' => $result->key,
+                            'key' => $result->key,
+                            'mode' => 'adopt',
+                            'status' => $result->action->value,
+                            'summary' => $result->summary,
+                            'details' => $result->detail,
+                        ];
+                    }
+                }
+
+                return null;
+            }
+
+            return $this->handleProxyExtraAction($mode, $node, new DriftEntry(
+                family: 'proxy',
+                key: $key,
+                kind: DriftKind::Extra,
+                summary: (string) ($issue['summary'] ?? "Proxy route '{$key}' exists on node but not in gateway registry."),
+            ));
+        }
+
+        $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
+
+        if ($domain === null) {
+            return null;
+        }
+
+        $route = ProxyRoute::query()
+            ->where('domain', $domain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return null;
+        }
+
+        return $this->handleProxyAction($mode, $route, $this->driftEntryFromIssue($issue));
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyFirewallIssue(string $key, array $detail): ?array
+    {
+        $ruleName = is_string($detail['rule'] ?? null) ? $detail['rule'] : null;
+
+        if ($ruleName === null) {
+            return null;
+        }
+
+        $rule = FirewallRule::query()->where('name', $ruleName)->first();
+
+        return $rule instanceof FirewallRule
+            ? $this->handleFirewallAction('restore', $rule, $this->driftEntryFromStoredParts('firewall_rule', $key, $detail))
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyToolIssue(string $key, array $detail): ?array
+    {
+        $toolName = is_string($detail['tool'] ?? null) ? $detail['tool'] : null;
+
+        if ($toolName === null) {
+            return null;
+        }
+
+        $tool = NodeTool::query()->where('name', $toolName)->first();
+
+        return $tool instanceof NodeTool
+            ? $this->handleToolAction('restore', $tool, $this->driftEntryFromStoredParts('tool', $key, $detail))
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyScheduleIssue(string $key, array $detail): ?array
+    {
+        $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
+
+        if ($scheduleKey === null) {
+            return null;
+        }
+
+        $schedule = Schedule::query()->where('schedule_key', $scheduleKey)->first();
+
+        return $schedule instanceof Schedule
+            ? $this->handleScheduleAction('restore', $schedule, $this->driftEntryFromStoredParts('schedule', $key, $detail))
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function driftEntryFromIssue(array $issue): DriftEntry
+    {
+        $kind = is_string($issue['kind'] ?? null) ? DriftKind::tryFrom($issue['kind']) : null;
+
+        return new DriftEntry(
+            family: is_string($issue['family'] ?? null) ? $issue['family'] : 'unknown',
+            key: is_string($issue['key'] ?? null) ? $issue['key'] : 'unknown',
+            kind: $kind ?? DriftKind::Unknown,
+            summary: is_string($issue['summary'] ?? null) ? $issue['summary'] : '',
+            detail: is_array($issue['detail'] ?? null) ? $issue['detail'] : [],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function driftEntryFromStoredParts(string $family, string $key, array $detail): DriftEntry
+    {
+        return new DriftEntry(
+            family: $family,
+            key: $key,
+            kind: DriftKind::Divergent,
+            summary: '',
+            detail: $detail,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function nodeFromIssue(array $issue): ?Node
+    {
+        $nodeName = is_string($issue['node'] ?? null) ? $issue['node'] : null;
+
+        if ($nodeName === null) {
+            return null;
+        }
+
+        $node = Node::query()->where('name', $nodeName)->first();
+
+        return $node instanceof Node ? $node : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>
+     */
+    private function annotateIssue(array $issue): array
+    {
+        $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
+        $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
+        $kind = is_string($issue['kind'] ?? null) ? $issue['kind'] : '';
+        $restorableKeys = [
+            'proxy.route_missing',
+            'proxy.route_mismatch',
+            'proxy.tls_missing',
+            'proxy.tls_mismatch',
+            'firewall_rule.rule_missing',
+            'firewall_rule.rule_mismatch',
+            'tool.capability_missing',
+            'tool.lifecycle_state_mismatch',
+            'tool.version_mismatch',
+            'tool.config_missing',
+            'tool.config_mismatch',
+            'tool.credentials_missing',
+            'tool.credentials_mismatch',
+            'schedule.scheduler_missing',
+            'schedule.scheduler_stopped',
+            'schedule.run_history_hook_missing',
+            'schedule.run_history_hook_mismatch',
+            'schedule.lock_stuck',
         ];
+
+        return [
+            ...$issue,
+            'restorable' => in_array($key, $restorableKeys, true) || ($family === 'proxy' && $kind === DriftKind::Extra->value),
+            'adoptable' => ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function issueSupportsMode(array $issue, string $mode): bool
+    {
+        if ($mode === 'adopt') {
+            return ($issue['adoptable'] ?? false) === true;
+        }
+
+        return ($issue['restorable'] ?? false) === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @return array<string, mixed>
+     */
+    private function normalizeActionMode(array $action, string $mode): array
+    {
+        if (($action['mode'] ?? null) === 'fix') {
+            $action['mode'] = match ($mode) {
+                'interactive', 'restore' => 'restore',
+                'adopt' => 'adopt',
+                default => $mode,
+            };
+        }
+
+        return $action;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @param  list<array<string, mixed>>  $actions
+     * @return list<array<string, mixed>>
+     */
+    private function remainingIssues(array $issues, array $actions): array
+    {
+        $resolvedKeys = array_filter(array_map(
+            fn (array $action): ?string => in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true) && is_string($action['key'] ?? null)
+                ? $action['key']
+                : null,
+            $actions,
+        ));
+
+        return array_values(array_filter(
+            $issues,
+            fn (array $issue): bool => ! in_array($issue['key'] ?? null, $resolvedKeys, true),
+        ));
     }
 
     /**
@@ -415,7 +701,7 @@ final readonly class DoctorReportRunner
      */
     private function handleProxyAction(string $mode, ProxyRoute $route, DriftEntry $entry): ?array
     {
-        if ($mode !== 'fix') {
+        if ($mode === 'verify') {
             return null;
         }
 
@@ -444,7 +730,7 @@ final readonly class DoctorReportRunner
      */
     private function handleProxyExtraAction(string $mode, Node $node, DriftEntry $entry): ?array
     {
-        if ($mode !== 'fix') {
+        if ($mode === 'verify') {
             return null;
         }
 
@@ -473,14 +759,17 @@ final readonly class DoctorReportRunner
     {
         $rule->loadMissing('node');
 
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $rule->node->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
-        ];
+            'detail' => [
+                ...($entry->detail ?? []),
+                'rule' => $rule->name,
+            ],
+        ]);
     }
 
     /**
@@ -490,14 +779,17 @@ final readonly class DoctorReportRunner
     {
         $tool->loadMissing('node');
 
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $tool->node?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
-        ];
+            'detail' => [
+                ...($entry->detail ?? []),
+                'tool' => $tool->name,
+            ],
+        ]);
     }
 
     /**
@@ -505,14 +797,17 @@ final readonly class DoctorReportRunner
      */
     private function scheduleIssuePayload(DriftEntry $entry, Schedule $schedule): array
     {
-        return [
+        return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $this->scheduleNodeName($schedule),
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
-        ];
+            'detail' => [
+                ...($entry->detail ?? []),
+                'schedule_key' => $schedule->schedule_key,
+            ],
+        ]);
     }
 
     /**
@@ -520,7 +815,7 @@ final readonly class DoctorReportRunner
      */
     private function handleFirewallAction(string $mode, FirewallRule $rule, DriftEntry $entry): ?array
     {
-        if ($mode !== 'fix') {
+        if ($mode === 'verify') {
             return null;
         }
 
@@ -549,7 +844,7 @@ final readonly class DoctorReportRunner
      */
     private function handleToolAction(string $mode, NodeTool $tool, DriftEntry $entry): ?array
     {
-        if ($mode !== 'fix') {
+        if ($mode === 'verify') {
             return null;
         }
 
@@ -578,7 +873,7 @@ final readonly class DoctorReportRunner
      */
     private function handleScheduleAction(string $mode, Schedule $schedule, DriftEntry $entry): ?array
     {
-        if ($mode !== 'fix') {
+        if ($mode === 'verify') {
             return null;
         }
 
@@ -674,11 +969,11 @@ final readonly class DoctorReportRunner
      * @param  list<array<string, mixed>>  $actions
      * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int}
      */
-    private function summary(array $issues, array $actions): array
+    private function summary(string $mode, array $issues, array $actions): array
     {
         return [
             'issues' => count($issues),
-            'fixed' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'fix' && ($action['status'] ?? null) === 'completed')),
+            'fixed' => count(array_filter($actions, fn (array $action): bool => in_array($action['mode'] ?? null, ['fix', 'restore'], true) && ($action['status'] ?? null) === 'completed')),
             'adopted' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'adopt' && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true))),
             'skipped' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'skipped')),
             'conflicts' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'conflict')),

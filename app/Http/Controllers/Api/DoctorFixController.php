@@ -1,0 +1,195 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
+use App\Models\Node;
+use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorScopeValidator;
+use App\Services\Doctor\DoctorValidationFailure;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+final class DoctorFixController implements Loggable
+{
+    private string $activityMode = 'restore';
+
+    public function __invoke(Request $request, DoctorReportRunner $runner, DoctorScopeValidator $validator): JsonResponse
+    {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return response()->json([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => 'Peer identity unknown.',
+                    'meta' => [],
+                ],
+            ], 403);
+        }
+
+        $mode = $this->mode($request);
+
+        if ($mode === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Doctor fix mode must be restore or adopt.',
+                    'meta' => ['fields' => ['mode']],
+                ],
+            ], 422);
+        }
+
+        $this->activityMode = $mode;
+
+        if ($caller->role === 'app') {
+            return response()->json([
+                'error' => [
+                    'code' => 'caller_role_not_allowed',
+                    'message' => 'App-node callers may not run doctor --fix for this scope.',
+                    'meta' => [
+                        'caller_role' => 'app',
+                        'mode' => $mode,
+                    ],
+                ],
+            ], 403);
+        }
+
+        $families = $this->families($request);
+        $failure = $validator->validate($families, $runner);
+
+        if ($failure instanceof DoctorValidationFailure) {
+            return response()->json([
+                'error' => [
+                    'code' => $failure->code,
+                    'message' => $failure->message,
+                    'meta' => $failure->meta,
+                ],
+            ], 422);
+        }
+
+        $issues = $this->issues($request);
+
+        $doctor = $issues === null
+            ? $runner->run($caller, mode: $mode, families: $families)
+            : $this->applySelectedIssues($runner, $caller, $mode, $families, $issues);
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'doctor' => $doctor,
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @param  list<array<string, mixed>>  $issues
+     * @return array<string, mixed>
+     */
+    private function applySelectedIssues(DoctorReportRunner $runner, Node $caller, string $mode, array $families, array $issues): array
+    {
+        $probe = $runner->probe($caller, $families);
+        $actions = $runner->apply($caller, $mode, $issues);
+
+        return $runner->finalize($probe, $mode, $actions);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function families(Request $request): array
+    {
+        $families = $request->input('families', []);
+
+        if (! is_array($families)) {
+            return [];
+        }
+
+        return array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
+    }
+
+    private function mode(Request $request): ?string
+    {
+        $mode = $request->input('mode');
+
+        return is_string($mode) && in_array($mode, ['restore', 'adopt'], true) ? $mode : null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>|null
+     */
+    private function issues(Request $request): ?array
+    {
+        if (! $request->has('issues')) {
+            return null;
+        }
+
+        $issues = $request->input('issues');
+
+        if (! is_array($issues)) {
+            return [];
+        }
+
+        return array_values(array_filter($issues, is_array(...)));
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return ActivityLogType::Write;
+    }
+
+    public function activityLogType(): ActivityLogType
+    {
+        return $this->effect();
+    }
+
+    public function type(): string
+    {
+        return 'api:POST /doctor/fix';
+    }
+
+    public function activityLogAction(): string
+    {
+        return $this->type();
+    }
+
+    public function subject(): ?Model
+    {
+        return null;
+    }
+
+    public function activityLogSubject(): ?Model
+    {
+        return $this->subject();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function properties(): array
+    {
+        return ['mode' => $this->activityMode];
+    }
+
+    public function activityLogProperties(): array
+    {
+        return $this->properties();
+    }
+
+    public function description(): ?string
+    {
+        return null;
+    }
+
+    public function activityLogDescription(): ?string
+    {
+        return $this->description();
+    }
+}

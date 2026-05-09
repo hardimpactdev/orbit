@@ -45,7 +45,7 @@ service instance in Orbit.
 - **Retry Safety:** If source creation fails, no app intent is written; fix the
   node-side source problem and rerun `app:new`. After gateway intent is written,
   registration enactment failures preserve that intent. Subsequent runs of
-  `app:register` or `doctor --family=app --fix` will attempt to complete
+  `app:register` or `doctor --fix --family=app --restore` will attempt to complete
   artifact convergence.
 
 ## Requirements

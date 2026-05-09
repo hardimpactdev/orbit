@@ -321,7 +321,7 @@ describe('node:list JSON renderer contract', function (): void {
                 'node' => 'incomplete-app',
                 'code' => 'node.record_incomplete',
                 'family' => 'node',
-                'next_command' => 'doctor --family=node --fix',
+                'next_command' => 'doctor --fix --family=node --restore',
             ]);
     });
 

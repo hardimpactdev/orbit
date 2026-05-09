@@ -231,8 +231,8 @@ The ideal node lifecycle is:
 
 ## Doctor Relationship
 
-The node family probe, drift kinds, and `doctor --family=node --fix` /
-`--adopt` boundaries are defined in [`node-doctor.md`](node-doctor.md).
+The node family probe, drift kinds, and `doctor --fix --family=node --restore` /
+`doctor --fix --adopt` boundaries are defined in [`node-doctor.md`](node-doctor.md).
 `node:list --doctor` is a node-family-only operator convenience that attaches a
 node-family doctor summary to the registry list. It is not a shared list-command
 convention; app and workspace list commands remain registry-only and point to

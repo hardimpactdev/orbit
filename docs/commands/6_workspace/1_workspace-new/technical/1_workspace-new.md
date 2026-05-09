@@ -55,7 +55,7 @@ until then `workspace:new` does not consult app intent for this default.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
      parent app. Project-file inspection is reserved for
-     `doctor --family=workspace --adopt` (`composer.json` only, and only
+     `doctor --fix --family=workspace --adopt` (`composer.json` only, and only
      for PHP-version hints during workspace adoption).
    - Interactive prompt or non-interactive failure if still unresolved.
 2. **Resolve Workspace Name:** Use the positional `name` argument. If
@@ -107,7 +107,7 @@ prompts, forwarding, SSH, gateway intent writes, or other side effects.
 `workspace:new` is an atomic creation + provisioning command. It does not
 support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use
-`doctor --family=workspace --adopt` instead. The command performs:
+`doctor --fix --family=workspace --adopt` instead. The command performs:
 
 1. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    `name`, `app_id`, derived hostname, `php_version` (or `null` for
@@ -139,7 +139,7 @@ register an existing path use
    `workspace.fpm_config_missing`, `workspace.fpm_config_mismatch`,
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`,
    plus `proxy` handoffs for workspace route drift). The command exits `0` and the
-   operator repairs drift via `doctor --family=workspace --fix`. This
+   operator repairs drift via `doctor --fix --family=workspace --restore`. This
    matches the `app:new`/`app:register` pattern: once intent is durable,
    enactment drift is convergence work, not a hard failure.
    Setup-time HTTP probe failures use the command-owned
@@ -181,10 +181,10 @@ register an existing path use
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
 - **Probe:** `doctor --family=workspace --workspace=<name> --app=<app>`
   verifies registry intent and runtime artifacts.
-- **Convergence:** `doctor --family=workspace --fix` repairs missing or
+- **Convergence:** `doctor --fix --family=workspace --restore` repairs missing or
   divergent FPM, runtime configuration, and source path drift surfaced by
   `workspace:new` warnings.
-- **Adoption:** `doctor --family=workspace --adopt` is the only path for
+- **Adoption:** `doctor --fix --family=workspace --adopt` is the only path for
   registering an existing workspace path under a parent app;
   `workspace:new` itself never adopts unmanaged paths.
 

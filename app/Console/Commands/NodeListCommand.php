@@ -266,7 +266,7 @@ class NodeListCommand extends Command
             $this->line("  {$node}: {$message} ({$code})");
         }
 
-        $this->line('  Run `orbit doctor --family=node --fix` to repair.');
+        $this->line('  Run `orbit doctor --fix --family=node --restore` to repair.');
     }
 
     /**

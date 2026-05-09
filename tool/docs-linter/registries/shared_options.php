@@ -68,6 +68,7 @@ $options = [
     '--reset',
     '--restart',
     '--restart-policy',
+    '--restore',
     '--retention',
     '--role',
     '--root',

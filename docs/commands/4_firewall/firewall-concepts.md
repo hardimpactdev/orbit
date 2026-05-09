@@ -38,4 +38,4 @@ the firewall command contracts and the
 - **Firewall-family boundaries:** Firewall commands own editable rule intent on
   eligible nodes. They do not edit bootstrap policy, do not create public SSH
   exceptions for app nodes, and do not import observed node reality outside
-  explicit `doctor --family=firewall_rule --adopt` semantics.
+  explicit `doctor --fix --family=firewall_rule --adopt` semantics.

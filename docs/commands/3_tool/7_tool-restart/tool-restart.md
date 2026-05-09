@@ -42,7 +42,7 @@ Target context is required when neither `--node`, `--app`, nor local
 5. Reports the resulting state.
 
 The command does not repair divergent configuration. Use
-[`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --family=tool --fix`
+[`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) or `doctor --fix --family=tool --restore`
 for configuration convergence.
 
 ## Output

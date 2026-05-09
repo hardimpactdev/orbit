@@ -115,7 +115,7 @@ it('renders warning retry hints in human output', function (): void {
         ->expectsConfirmation('Clone from a git repository?', 'no')
         ->expectsOutputToContain('Warnings:')
         ->expectsOutputToContain("Proxy route 'docs.test' was recorded, but backend enactment failed.")
-        ->expectsOutputToContain('Retry with: orbit doctor --family=proxy --fix')
+        ->expectsOutputToContain('Retry with: orbit doctor --fix --family=proxy --restore')
         ->assertExitCode(0);
 });
 

@@ -65,7 +65,7 @@ For `--role=gateway`:
    output renderer.
 4. If the gateway is compatible but drifted or incomplete after it is known to
    gateway intent, report node-family drift and point to
-   `doctor --family=node --fix`.
+   `doctor --fix --family=node --restore`.
 5. Do not reset or destructively reprovision an existing gateway from
    `node:new`.
 
@@ -82,7 +82,7 @@ and reset flows require a separate explicit contract.
 | --- | --- | --- | --- |
 | Existing active compatible gateway | Required | No by default | Converge idempotently and report already-provisioned convergence. The supplied host must be compatible with the existing gateway identity. |
 | Compatible provisioned host not yet in gateway intent | Required | No | Fail before side effects. First-gateway bootstrap or a future explicit recovery command must create missing gateway intent. |
-| Existing compatible but incomplete gateway | Required | No by default | Report node-family drift or incomplete provisioning and point to `doctor --family=node --fix`. |
+| Existing compatible but incomplete gateway | Required | No by default | Report node-family drift or incomplete provisioning and point to `doctor --fix --family=node --restore`. |
 | Existing incompatible gateway | Required | No | Fail before destructive changes. |
 
 `--json` only selects the JSON renderer and non-interactive input mode. It never
@@ -132,7 +132,7 @@ write only gateway-local Orbit-managed resolver artifacts, bind them to the
 Orbit/WireGuard-reachable resolver surface, and avoid public open-resolver
 exposure. If the node row is written but development DNS convergence fails,
 `node:new` reports partial provisioning with a node-family drift handoff to
-`doctor --family=node --fix`.
+`doctor --fix --family=node --restore`.
 
 Compatible app-node adoption may use existing non-active gateway intent only
 when node-family adoption can prove the registry peer material against live
@@ -143,7 +143,7 @@ WireGuard address through a bounded non-secret identity artifact read.
 Unknown-host adoption still requires a separate materialization path before
 `node:new` can safely attach unowned live reality to gateway intent. Without
 that proof, `node:new` reports incomplete provisioning or node drift and points
-to `doctor --family=node --fix` or `doctor --family=node --adopt`.
+to `doctor --fix --family=node --restore` or `doctor --fix --family=node --adopt`.
 
 ### App Unknown-Host Adoption Materialization
 
@@ -192,7 +192,7 @@ identity. It must not overwrite a proven but incompatible host.
   side effects.
 - Gateway reset and destructive reprovisioning are outside `node:new`.
 - Compatible but drifted or incomplete gateways are reported as node-family
-  drift for `doctor --family=node --fix`.
+  drift for `doctor --fix --family=node --restore`.
 - Control-node enrollment fails if WireGuard peer minting cannot return a peer
   address that matches the node record.
 - App-node provisioning reports partial provisioning if gateway intent is
@@ -209,6 +209,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/NodeNewCommandTest.php` | Primary owner for gateway-caller behavior: active local gateway identity requirement, gateway post-input path eligibility, gateway path matrix behavior, gateway `node_new.host` required for every gateway request, already-provisioned gateway convergence without reprovisioning, missing gateway-row materialization being outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --family=node --fix`, reset/destructive reprovisioning being outside `node:new`, control-node enrollment without SSH prompts or SSH side effects, canonical forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development app-node TLD persistence, app host local role setting written as `app` only after node identity and readiness are established, gateway TLD mapping creation, compatible app-node adoption, and incompatible node-record failures before side effects. Renderer tests own exact human prose and JSON envelope shape for these outcomes. |
+| `tests/Feature/Commands/NodeNewCommandTest.php` | Primary owner for gateway-caller behavior: active local gateway identity requirement, gateway post-input path eligibility, gateway path matrix behavior, gateway `node_new.host` required for every gateway request, already-provisioned gateway convergence without reprovisioning, missing gateway-row materialization being outside `node:new`, compatible drift/incomplete-gateway handoff to `doctor --fix --family=node --restore`, reset/destructive reprovisioning being outside `node:new`, control-node enrollment without SSH prompts or SSH side effects, canonical forbidden-input behavior for control-node enrollment, app-node provisioning over SSH, development app-node TLD persistence, app host local role setting written as `app` only after node identity and readiness are established, gateway TLD mapping creation, compatible app-node adoption, and incompatible node-record failures before side effects. Renderer tests own exact human prose and JSON envelope shape for these outcomes. |
 | `tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-node provisioning and development TLD mapping. |
 | `tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-node provisioning without development TLD mapping. |

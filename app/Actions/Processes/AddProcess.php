@@ -89,7 +89,7 @@ final readonly class AddProcess
                 'code' => 'process.runtime_unit_start_failed',
                 'family' => 'process',
                 'message' => "Process runtime units for '{$app->name}' were rendered, but no owning node was available for start.",
-                'next_command' => 'doctor --family=process --fix',
+                'next_command' => 'doctor --fix --family=process --restore',
             ]];
         }
 
@@ -104,7 +104,7 @@ final readonly class AddProcess
                     'code' => 'process.runtime_unit_start_failed',
                     'family' => 'process',
                     'message' => "Process runtime unit '{$name}' was rendered but could not be started.",
-                    'next_command' => 'doctor --family=process --fix',
+                    'next_command' => 'doctor --fix --family=process --restore',
                 ];
             }
         }

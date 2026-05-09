@@ -113,7 +113,7 @@ workspace names directly and should not reintroduce removed `branch` or
   runs setup steps with the lifecycle environment from the workspace README.
 - `workspace:remove` deletes workspace intent and then performs best-effort
   cleanup of workspace-owned artifacts. Retryable cleanup drift is reported as
-  warnings that point to `doctor --family=workspace --fix`.
+  warnings that point to `doctor --fix --family=workspace --restore`.
 - Setup/teardown step mutation commands operate on gateway-owned step policy and
   should not execute shell commands when adding, listing, or removing step
   definitions.

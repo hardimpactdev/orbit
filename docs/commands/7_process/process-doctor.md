@@ -78,9 +78,9 @@ event history.
 
 ## Process Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
-| `process.runtime_backend_unavailable` | No `--fix` action. Runtime backend installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Supervisor. |
+| `process.runtime_backend_unavailable` | No `doctor --fix --restore` action. Runtime backend installation and recovery belong to `tool` family doctor and node operations. Process doctor reports the dependency and does not attempt to install Supervisor. |
 | `process.runtime_unit_missing` | Re-render and reload the missing Supervisor program from gateway app, workspace, and process intent. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned Supervisor program whose identity no longer maps to active gateway app, workspace, and process intent. |
 | `process.runtime_unit_mismatch` | Rewrite the Supervisor program from gateway app, workspace, and process intent. |
@@ -89,7 +89,7 @@ event history.
 | `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
 | `process.event_notifier_mismatch` | Rewrite lifecycle event notifier material to match gateway intent and the current gateway event intake identity. |
 
-`--fix` does not handle `process.record_incomplete`,
+`doctor --fix --restore` does not handle `process.record_incomplete`,
 `process.owner_app_invalid`, `process.runtime_context_unresolved`, or
 `process.runtime_backend_unavailable`.
 
@@ -100,7 +100,7 @@ adopts arbitrary runtime-unit files as gateway intent.
 
 ## Process Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `process.runtime_backend_unavailable` | No adoption action. |
 | `process.runtime_unit_extra` | No adoption action. Supervisor programs are derived artifacts and must not create process intent. |
@@ -122,4 +122,4 @@ Required test files:
 | `tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family dispatch, probe-layer selection, process issue codes, process fix map, denied process adopt cases, scope filtering as it affects process probes, and assertion that `process.runtime_backend_unavailable` short-circuits downstream layer checks. |
 | `tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory process probe diff behavior for registry intent, app and workspace expansion, runtime backend availability, runtime-unit identity, missing programs, extra programs, program content drift, restart policy drift, runtime environment drift, event notifier drift, and exclusion of app, workspace, node, proxy route, schedule, tool, and firewall drift from process issue codes. |
 | `tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with Supervisor-rendered process runtime units. Docker-eligible. |
-| `tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --family=process --fix` repair of missing or divergent Supervisor programs and lifecycle event notifier material. Docker-eligible. |
+| `tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --fix --family=process --restore` repair of missing or divergent Supervisor programs and lifecycle event notifier material. Docker-eligible. |

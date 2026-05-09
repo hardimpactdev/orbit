@@ -84,14 +84,13 @@ describe('doctor command contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Doctor healthy.')
-            ->and($output)->toContain('Mode: verify')
-            ->and($output)->toContain('Scope: families=node')
-            ->and($output)->toContain('Summary')
+            ->and($output)->toContain('D O C T O R  R E S U L T')
+            ->and($output)->toContain('Successfully performed check-up on local-gateway')
+            ->and($output)->toContain('Nodes')
+            ->and($output)->toContain('OK')
+            ->and($output)->toContain('S U M M A R Y')
             ->and($output)->toContain('┌')
-            ->and($output)->toContain('ISSUES')
-            ->and($output)->toContain('D O C T O R   R E S U L T')
-            ->and($output)->toContain('Everything is healthy!');
+            ->and($output)->toContain('No issues detected');
     });
 
     it('renders remaining issues in the human doctor report', function (): void {
@@ -101,16 +100,13 @@ describe('doctor command contract', function (): void {
         $output = Artisan::output();
 
         expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Doctor found drift.')
-            ->and($output)->toContain('Mode: verify')
-            ->and($output)->toContain('Scope: families=node')
-            ->and($output)->toContain('Summary')
-            ->and($output)->toContain('D O C T O R   R E S U L T')
+            ->and($output)->toContain('D O C T O R  R E S U L T')
+            ->and($output)->toContain('Successfully performed check-up on local-gateway')
             ->and($output)->toContain('issues found')
-            ->and($output)->toContain('node / missing')
+            ->and($output)->toContain('Nodes')
             ->and($output)->toContain('┌')
             ->and($output)->toContain('node.record_incomplete')
-            ->and($output)->toContain('Node record for local-gateway is missing required fields.');
+            ->and($output)->toContain('Node record for local-gateway is missing');
     });
 
     it('renders completed repair actions in the human doctor report', function (): void {
@@ -125,32 +121,29 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Doctor repaired drift.')
-            ->and($output)->toContain('Mode: fix')
-            ->and($output)->toContain('Summary')
-            ->and($output)->toContain('D O C T O R   R E S U L T')
-            ->and($output)->toContain('Actions')
+            ->and($output)->toContain('D O C T O R  R E S U L T')
+            ->and($output)->toContain('S U M M A R Y')
+            ->and($output)->toContain('Proxy routes')
+            ->and($output)->toContain('ACTION')
             ->and($output)->toContain('┌')
-            ->and($output)->toContain('FAMILY')
-            ->and($output)->toContain('MODE')
             ->and($output)->toContain('STATUS')
             ->and($output)->toContain('proxy.route_missing')
             ->and($output)->toContain('completed');
     });
 
-    it('rejects mutually exclusive fix and adopt modes before probes', function (): void {
+    it('rejects mutually exclusive restore and adopt flags before probes', function (): void {
         createDoctorLocalNode('gateway');
 
-        $exitCode = Artisan::call('doctor', ['--fix' => true, '--adopt' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--fix' => true, '--restore' => true, '--adopt' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['fields'])->toBe(['fix', 'adopt']);
+            ->and($payload['error']['meta']['fields'])->toBe(['restore', 'adopt']);
     });
 
     it('rejects unsupported families before probes', function (): void {
@@ -174,7 +167,7 @@ describe('doctor command contract', function (): void {
             ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
             ->and($payload['error']['meta'])->toMatchArray([
                 'caller_role' => 'app',
-                'mode' => 'fix',
+                'mode' => 'interactive',
             ]);
     });
 
@@ -327,7 +320,7 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode complete supported proxy actions through family dispatch', function (): void {
+    it('lets restore mode complete supported proxy actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         ProxyRoute::factory()->create([
@@ -339,23 +332,23 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'proxy',
                 'node' => 'app-1',
                 'key' => 'proxy.route_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
 
-    it('lets fix mode complete supported proxy TLS actions through family dispatch', function (): void {
+    it('lets restore mode complete supported proxy TLS actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $route = ProxyRoute::factory()->create([
@@ -369,7 +362,7 @@ describe('doctor command contract', function (): void {
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: "1\t{$route->source_hash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t0\t1\n", nodeLevelStdout: ''));
         app()->instance(OrbitCaService::class, new DoctorProxyFakeCa);
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -378,7 +371,7 @@ describe('doctor command contract', function (): void {
                 'family' => 'proxy',
                 'node' => 'app-1',
                 'key' => 'proxy.tls_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
@@ -412,7 +405,7 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode remove extra proxy routes through family dispatch', function (): void {
+    it('lets restore mode remove extra proxy routes through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         ProxyRoute::factory()->create([
@@ -428,18 +421,18 @@ describe('doctor command contract', function (): void {
             nodeLevelStdout: "extra.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/extra.test.crt\t/etc/orbit/certs/extra.test.key\t1\t1\n",
         ));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'proxy',
                 'node' => 'app-1',
                 'key' => 'extra.test',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
@@ -457,7 +450,7 @@ describe('doctor command contract', function (): void {
             ],
         ));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--adopt' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['proxy'], '--fix' => true, '--adopt' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -497,7 +490,7 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode complete supported tool lifecycle actions through family dispatch', function (): void {
+    it('lets restore mode complete supported tool lifecycle actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
@@ -507,23 +500,23 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/caddy\t2.8.4\tstopped\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.lifecycle_state_mismatch',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
 
-    it('lets fix mode complete supported tool version actions through family dispatch', function (): void {
+    it('lets restore mode complete supported tool version actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
@@ -533,23 +526,23 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/local/bin/composer\tComposer version 2.8.0\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.version_mismatch',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
 
-    it('lets fix mode complete supported tool config actions through family dispatch', function (): void {
+    it('lets restore mode complete supported tool config actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $content = "port 6379\n";
@@ -566,7 +559,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/redis-server\t7.2.0\trunning\t0\t\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -575,12 +568,12 @@ describe('doctor command contract', function (): void {
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.config_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
 
-    it('lets fix mode complete supported tool credential actions through family dispatch', function (): void {
+    it('lets restore mode complete supported tool credential actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $secret = 'generated-password';
@@ -597,7 +590,7 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("/usr/bin/opencode-server\t\trunning\t\t\t0\t\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -606,12 +599,12 @@ describe('doctor command contract', function (): void {
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.credentials_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
 
-    it('lets fix mode install missing tools through family dispatch', function (): void {
+    it('lets restore mode install missing tools through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         NodeTool::factory()->create([
@@ -621,18 +614,18 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(perRouteStdout: '', exitCode: 1));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['tool'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.capability_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
@@ -677,25 +670,25 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode complete supported schedule scheduler actions through family dispatch', function (): void {
+    it('lets restore mode complete supported schedule scheduler actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("missing\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['schedule'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'schedule',
                 'node' => 'app-1',
                 'key' => 'schedule.scheduler_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
@@ -739,7 +732,7 @@ describe('doctor command contract', function (): void {
             ]);
     });
 
-    it('lets fix mode complete supported firewall actions through family dispatch', function (): void {
+    it('lets restore mode complete supported firewall actions through family dispatch', function (): void {
         createDoctorLocalNode('gateway')->update(['platform' => 'ubuntu']);
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create([
@@ -750,18 +743,18 @@ describe('doctor command contract', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--restore' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['doctor']['mode'])->toBe('fix')
+            ->and($payload['success']['data']['doctor']['mode'])->toBe('restore')
             ->and($payload['success']['data']['doctor']['summary']['fixed'])->toBe(1)
             ->and($payload['success']['data']['doctor']['summary']['issues'])->toBe(0)
             ->and($payload['success']['data']['doctor']['actions'][0])->toMatchArray([
                 'family' => 'firewall_rule',
                 'node' => 'app-1',
                 'key' => 'firewall_rule.rule_missing',
-                'mode' => 'fix',
+                'mode' => 'restore',
                 'status' => 'completed',
             ]);
     });
@@ -771,7 +764,7 @@ describe('doctor command contract', function (): void {
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active', 'platform' => 'ubuntu']);
         app()->instance(RemoteShell::class, new DoctorProxyRemoteShell("Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24\n"));
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--adopt' => true, '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--family' => ['firewall_rule'], '--fix' => true, '--adopt' => true, '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)

@@ -93,7 +93,7 @@ the requested gateway is already provisioned and active, and the supplied host i
 compatible with that gateway identity, Orbit converges idempotently without
 reprovisioning and reports the already-provisioned status. If the gateway is
 compatible but drifted or incomplete, `node:new` reports the drift and points to
-`doctor --family=node --fix`. Destructive gateway reset is outside `node:new`
+`doctor --fix --family=node --restore`. Destructive gateway reset is outside `node:new`
 and requires a future explicit reset contract.
 
 ## What Happens
@@ -116,7 +116,7 @@ local targeting preference.
 
 It does not configure tools, user apps, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
-and by `doctor --fix` or `doctor --adopt`.
+and by `doctor --fix --restore` or `doctor --fix --adopt`.
 
 ## Output
 

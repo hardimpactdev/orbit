@@ -21,7 +21,7 @@ The app family owns these facts:
 - production app health: production app health checks, deployment pipeline
   validity, and latest deployment status recorded as app-owned gateway history;
 - app-owned adoption facts: selected existing app paths that can be tied to an
-  explicit app name and app node during `--adopt`. During adoption,
+  explicit app name and app node during `doctor --fix --adopt`. During adoption,
   `composer.json` is the only project file Orbit may inspect for PHP-version
   hints, and only when the app path is a PHP project. Orbit must not read
   `.php-version`, `package.json`, or other project files for app adoption
@@ -94,7 +94,7 @@ probe results as app-family issue codes.
 
 ## App Fix Map
 
-| Code | `--fix` behavior |
+| Code | `doctor --fix --restore` behavior |
 | --- | --- |
 | `app.fpm_config_missing` | Re-render and install the app PHP-FPM configuration from gateway app intent. |
 | `app.fpm_config_mismatch` | Rewrite the app PHP-FPM configuration to match gateway app intent. |
@@ -105,7 +105,7 @@ probe results as app-family issue codes.
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production intent is complete. |
 | `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app intent. |
 
-`--fix` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
+`doctor --fix --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,
 `app.root_outside_path`, `app.php_version_unavailable`,
 `app.production_health_unhealthy`, `app.deployment_pipeline_invalid`,
@@ -122,13 +122,13 @@ or changes node reachability.
 
 ## App Adopt Map
 
-| Code | `--adopt` behavior |
+| Code | `doctor --fix --adopt` behavior |
 | --- | --- |
 | `app.unregistered_path` | Create app intent only when the selected scope provides an explicit app name, app node, and path, and the observed path is compatible with `app:register` adoption rules. |
 | `app.fpm_config_mismatch` | Update app runtime intent only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
 | `app.runtime_config_mismatch` | Update app runtime intent only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 
-`--adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
+`doctor --fix --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
 virtual hosts, adopt proxy route backend artifacts as app intent, infer database
 ownership, adopt deployment run outcomes, or adopt workspace/process/schedule
 artifacts as app facts.
@@ -136,7 +136,7 @@ artifacts as app facts.
 ## Deployment Health Recovery
 
 Deployment health issues are observable app health facts, not convergence drift
-that `doctor --fix` or `doctor --adopt` can resolve.
+that `doctor --fix --restore` or `doctor --fix --adopt` can resolve.
 
 - `app.latest_deployment_failed` points operators to
   [`deploy:log`](../10_deploy/6_deploy-log/deploy-log.md) for the failed run
@@ -155,5 +155,5 @@ Required test files:
 | `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, app probe-layer selection, app issue codes including deployment health issue codes, app fix map, app adopt map, denied app fix/adopt cases, related-family handoff behavior, and scope filtering as it affects app probes. |
 | `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry intent, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline intent, latest deployment status, app agent IDE defaults, stale Orbit-owned app artifacts, and exclusion of proxy route/workspace/process/schedule/node/tool/firewall drift from apps issue codes. |
 | `tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
-| `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --family=app --fix` repair of safe app runtime drift. |
-| `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --family=app --adopt` for compatible selected app path adoption and supported runtime intent adoption. |
+| `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
+| `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime intent adoption. |

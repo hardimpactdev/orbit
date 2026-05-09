@@ -197,7 +197,7 @@ Input mode behavior is split out of the canonical command contract:
 - The remaining node-side artifact drift is node-family drift owned by
   `doctor --family=node`.
 - The selected output renderer reports the warning with the recovery path
-  `doctor --family=node --fix`.
+  `doctor --fix --family=node --restore`.
 - Exit code stays at `0`. See the JSON renderer contract for the exact warning
   shape.
 - Return the updated node name, the `changed` array, and any drift warnings.
@@ -221,7 +221,7 @@ Input mode behavior is split out of the canonical command contract:
 - Treat an unchanged-value update as a failure.
 - Re-enact node-owned artifacts when intent did not change. Re-applying
   unchanged gateway-tracked configuration is owned by
-  `doctor --family=node --fix`, not `node:update`.
+  `doctor --fix --family=node --restore`, not `node:update`.
 
 No-op updates where all supplied values equal the current stored values return
 success with an empty `changed` array. The `changed` array represents the

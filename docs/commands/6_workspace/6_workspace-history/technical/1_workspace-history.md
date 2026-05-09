@@ -98,7 +98,7 @@ authorized to see through gateway-owned access policy.
 | `creation` | Initial workspace registration. |
 | `setup` | Execution of `workspace:setup` steps. |
 | `removal` | Execution of `workspace:remove` steps. |
-| `adoption` | Discovery and registration via `doctor --adopt`. |
+| `adoption` | Discovery and registration via `doctor --fix --adopt`. |
 | `php_update` | Modification of the effective PHP version. |
 
 ### Limits

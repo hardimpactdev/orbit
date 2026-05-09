@@ -95,7 +95,7 @@ Apps may only run on app nodes. Gateway and control nodes are never valid app ta
 Runtime intent for tools, processes, and workspaces is authoritative in the gateway DB and enacted on each node. The gateway knows what should exist; the node knows what's actually running. Live operations that collect runtime data use the gateway's `RemoteShell` reachability to the relevant node; registry reads do not probe nodes unless live inspection is requested.
 
 When gateway state must be repaired from observed node reality, use
-`doctor --adopt` with the relevant family and node filters. Orbit does not keep
+`doctor --fix --adopt` with the relevant family and node filters. Orbit does not keep
 a separate app-registry sync command in the target model; adoption is an
 explicit doctor mode so the direction of the change is always clear.
 

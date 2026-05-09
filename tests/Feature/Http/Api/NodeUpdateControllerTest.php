@@ -194,7 +194,7 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('success.data.changed', ['host'])
             ->assertJsonPath('success.meta.warnings.0.code', 'node.artifact_enactment_failed')
             ->assertJsonPath('success.meta.warnings.0.family', 'node')
-            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=node --fix');
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --fix --family=node --restore');
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.8');
     });

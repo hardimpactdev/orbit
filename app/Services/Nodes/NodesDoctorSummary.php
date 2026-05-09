@@ -70,7 +70,7 @@ final readonly class NodesDoctorSummary
             'code' => $entry->key,
             'message' => $entry->summary,
             'family' => 'node',
-            'next_command' => 'doctor --family=node --fix',
+            'next_command' => 'doctor --fix --family=node --restore',
         ];
     }
 }

@@ -61,7 +61,7 @@ doctor families that enact those routes.
 
 If the gateway is already configured and verified, `gateway:add` exits
 successfully as converged. Broader node drift is handled by
-[`doctor --family=node --fix`](../../1_node/node-doctor.md).
+[`doctor --fix --family=node --restore`](../../1_node/node-doctor.md).
 
 If local gateway settings already exist and only OS trust for the gateway CA is
 missing or stale, use [`gateway:trust`](../2_gateway-trust/gateway-trust.md).
