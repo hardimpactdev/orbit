@@ -628,15 +628,10 @@ class DoctorCommand extends Command implements Loggable
     {
         $left = '●  '.str_pad($label, 14);
         $text = $left.$status;
+        $padWidth = $innerWidth + 1;
+        $text = mb_strimwidth($text, 0, $padWidth, '…');
 
-        return $this->doctorPanelText($text, $innerWidth);
-    }
-
-    private function doctorPanelText(string $text, int $innerWidth): string
-    {
-        $text = mb_strimwidth($text, 0, $innerWidth, '…');
-
-        return $text.str_repeat(' ', max(0, $innerWidth - mb_strlen($text))).'│';
+        return $text.str_repeat(' ', max(0, $padWidth - mb_strlen($text))).'│';
     }
 
     /**
