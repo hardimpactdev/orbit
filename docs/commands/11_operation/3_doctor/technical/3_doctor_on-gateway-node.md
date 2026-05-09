@@ -42,12 +42,17 @@ caller role.
 
 | Target role | Categories |
 | --- | --- |
-| `gateway` (default or `--self`) | `Node`, `DNS` |
-| `control` (via `--node=<control>`) | `Node`; `DNS/TLD` only when custom TLD resolvers are configured on the target |
-| `app` (via `--node=<app-node>`) | `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| `gateway` (default or `--self`) | `Node` |
+| `control` (via `--node=<control>`) | `Node` |
+| `app` (via `--node=<app-node>`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
 A narrow `--family` filter intersects with the target role's set; families
 outside the set are rejected before probes.
+
+DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
+slice for control/app targets and a `DNS` slice for gateway targets is
+planned but not yet emitted; the row will be added when a DNS diagnostic
+source lands.
 
 ## Probe Orchestration
 
@@ -57,7 +62,7 @@ reality checks scoped to that one node:
 
 | Family | Gateway-owned probing behavior |
 | --- | --- |
-| `node` | Check the target node's gateway record, identity, WireGuard peer intent, reachability, and bootstrap reality. The `Node` row covers identity, runtime, and bootstrap facts. The `DNS` row (gateway target) covers gateway dev DNS resolver health and resolver safety. The `DNS/TLD` row (control or app target) covers custom resolvers or `nodes.tld` mapping for that target. |
+| `node` | Check the target node's gateway record, identity, WireGuard peer intent, reachability, bootstrap reality, and current DNS/TLD facts. All node-family facts render under the `Node` row today; the planned `DNS`/`DNS/TLD` slice will pull resolver-specific findings out into their own row when available. |
 | `app` | Check app intent and app-node runtime facts on the target app node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace intent and the target app node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `process` | Check process intent and process supervisor/runtime reality on the target app node. |
@@ -108,5 +113,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorOnGatewayNodeContractTest.php` | Gateway authority path, single-node scope default to `--self`, `--node=<other>` target-role rendering, rejection of `--self` + `--node`, target-role family dispatch, read-only guarantee, and no backend-name public families. |
-| `tests/E2E/Read/DoctorTest.php` | Real read-only gateway doctor verification for the gateway target. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Gateway-local execution for the node family, drift-detected exit semantics, repair-mode action rendering, mutually exclusive flag rejection, unsupported family rejection, and `--node=<other>` cross-targeting from a gateway caller. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Role-aware category set for gateway target, single-node scope default to `--self`, and rejection of out-of-role families. |
+| `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-node probe scoping, restore action suppression, action failure recording, and family dispatch through the gateway-local runner path. |

@@ -187,8 +187,5 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Doctor/NodesFamilyDoctorContractTest.php` | Nodes-family dispatch, probe-layer selection, node issue codes, node fix map, node adopt map, denied node fix/adopt cases, and scope filtering as it affects node probes. |
 | `tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior for registry intent, access grant integrity, WireGuard identity, local caller role setting including absent/null defaulting to control, resolved local caller role matching a verified active node record, absent/null being divergent for verified gateway or app records, platform reality, SSH reachability, public IP metadata exclusion from probe/fix/adopt behavior, gateway runtime readiness, app-node bootstrap readiness, development TLD mapping readiness, `node.local_default_invalid`, `node.cli_php_default_mismatch`, and `node.agent_ide_default_invalid`. |
-| `tests/E2E/Read/DoctorTest.php` | Real read-only `doctor --family=node --json` from a control node against an active fleet. |
-| `tests/E2E/Ephemeral/NodesDoctorFixTest.php` | Real `doctor --fix --family=node --restore` repair of safe node drift. |
-| `tests/E2E/Ephemeral/NodesDoctorAdoptTest.php` | Real `doctor --fix --family=node --adopt` for compatible node identity or host adoption. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Node-family dispatch through the global doctor command, drift-detected exit semantics, healthy and unhealthy human/JSON output for the node family, and rejection of unsupported node-family flag combinations. |

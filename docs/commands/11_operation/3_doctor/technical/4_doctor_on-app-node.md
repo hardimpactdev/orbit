@@ -42,12 +42,17 @@ caller role.
 
 | Target role | Categories |
 | --- | --- |
-| `app` (default or `--self`) | `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
-| `gateway` (via `--node=<gateway>`) | `Node`, `DNS` |
-| `control` (via `--node=<control>`) | `Node`; `DNS/TLD` only when custom TLD resolvers are configured on the target |
+| `app` (default or `--self`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| `gateway` (via `--node=<gateway>`) | `Node` |
+| `control` (via `--node=<control>`) | `Node` |
 
 A narrow `--family` filter intersects with the target role's set; families
 outside the set are rejected before probes.
+
+DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
+slice for control/app targets and a `DNS` slice for gateway targets is
+planned but not yet emitted; the row will be added when a DNS diagnostic
+source lands.
 
 ## Probe Orchestration
 
@@ -103,5 +108,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorOnAppNodeContractTest.php` | App-caller verify forwarding, single-node scope default to `--self`, `--node=<other>` target-role rendering, rejection of `--self` + `--node`, local context default boundaries, no direct remote probing, and no unauthorized write side effects. |
-| `tests/E2E/Read/DoctorAppNodeVerifyTest.php` | Real app-node verify smoke coverage for the local app-node target. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | App-caller `--fix` denial before side effects, gateway-forwarded verify path, and shared scope/output assertions used across caller roles. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Role-aware category set for app target, full backend-family probe set when scope is the app node itself, and per-node scoping for app/workspace/proxy probes. |

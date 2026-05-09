@@ -14,11 +14,15 @@ probe facts, issue codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's role:
 
-- `control` target: `Node`; `DNS/TLD` only when custom TLD resolvers are
-  configured on the target.
-- `gateway` target: `Node`, `DNS`.
-- `app` target: `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`,
-  `Proxy routes`, `Firewall`, `Tools`, `Scheduling`.
+- `control` target: `Node`.
+- `gateway` target: `Node`.
+- `app` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+  `Firewall`, `Tools`, `Scheduling`.
+
+A separate `DNS/TLD` row (control/app targets) and `DNS` row (gateway target)
+is planned as a slice of the `node` family. It will render once a DNS
+diagnostic source exists; until then DNS-related findings stay inside the
+`Node` row.
 
 ## Usage
 

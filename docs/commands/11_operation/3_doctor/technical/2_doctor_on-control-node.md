@@ -46,12 +46,17 @@ and probes, and the renderer shows only categories that apply to the target.
 
 | Target role | Categories |
 | --- | --- |
-| `control` (default or `--self`) | `Node`; `DNS/TLD` only when custom TLD resolvers are configured on the target |
-| `gateway` (via `--node=<gateway>`) | `Node`, `DNS` |
-| `app` (via `--node=<app-node>`) | `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| `control` (default or `--self`) | `Node` |
+| `gateway` (via `--node=<gateway>`) | `Node` |
+| `app` (via `--node=<app-node>`) | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
 A narrow `--family` filter intersects with the target role's set; families
 outside the set are rejected before probes.
+
+DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
+slice for control/app targets and a `DNS` slice for gateway targets is
+planned but not yet emitted; the row will be added when a DNS diagnostic
+source lands.
 
 ## Probe Orchestration
 
@@ -70,8 +75,6 @@ The control node owns:
 - command-line validation that can be performed before forwarding
   (mutually exclusive flags, family-key validity);
 - gateway transport and gateway-unavailable handling;
-- detection of locally-configured custom TLD resolvers when the target is
-  this control node, so the gateway can include the DNS/TLD slice;
 - human or JSON rendering of the gateway result;
 - activity logging for the local CLI invocation.
 
@@ -114,5 +117,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorOnControlNodeContractTest.php` | Control-caller forwarding, single-node scope default to `--self`, `--node=<other>` target-role rendering, rejection of `--self` + `--node`, gateway-unavailable behavior, verify request shape, streamed progress handoff, conditional DNS/TLD row when custom resolvers exist, and no direct local family probing. |
-| `tests/E2E/Read/DoctorTest.php` | Real read-only control-node doctor verification against an active fleet. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and `--node=<other>` target-role scoping for app-family probes. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Control-caller forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, app-node write-mode denial, verify request shape, and rendered panel structure. |

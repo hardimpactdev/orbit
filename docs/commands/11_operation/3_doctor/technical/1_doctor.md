@@ -68,13 +68,18 @@ The rendered category set is derived from the target node's role:
 
 | Target role | Categories |
 | --- | --- |
-| `control` | `Node`; `DNS/TLD` only when custom TLD resolvers are configured on the target |
-| `gateway` | `Node`, `DNS` |
-| `app` | `Node`, `DNS/TLD`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
+| `control` | `Node` |
+| `gateway` | `Node` |
+| `app` | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
 Families outside the target role's set are rejected before probes. A narrow
 `--family` filter intersects with the target role's set. The renderer never
 shows placeholder rows for families that are not in the target's set.
+
+A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for
+gateway targets. They will render as a slice of the `node` family once a DNS
+diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside
+the `Node` row and produces no separate row.
 
 ## Input Resolution
 
@@ -243,12 +248,10 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, caller-role behavior, app-node write-mode denial, exit-code semantics, and family dispatch boundaries without asserting family implementation internals. |
-| `tests/Feature/Commands/Operations/DoctorJsonRendererTest.php` | JSON renderer selection, success payload, drift failure under `error.data`, error codes, summary shape, issue/action shape, and `--json` forcing non-interactive mode. |
-| `tests/Feature/Commands/Operations/DoctorHumanRendererTest.php` | Progress tree shape, grouped human output, verify/fix/adopt headings, issue summaries, action summaries, unhealthy result text, and manual next-step prose. |
-| `tests/Feature/Commands/Operations/DoctorInteractiveInputTest.php` | Per-finding action prompts, unsupported direction omission, details loop, skip behavior, prompt cancellation, and category ordering. |
-| `tests/Feature/Commands/Operations/DoctorNonInteractiveInputTest.php` | Direction requirement, mutually exclusive flags, no prompts, bulk restore selection, bulk adopt selection, unsupported finding handling, and no-action failure. |
-| `tests/E2E/Read/DoctorTest.php` | Real read-only doctor verification from a control node against an active fleet. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, caller-role behavior, app-node write-mode denial, exit-code semantics, JSON success/error envelope, and family dispatch boundaries without asserting family implementation internals. |
+| `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and per-node probe scoping for app/workspace/proxy families. |
+| `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
+| `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 
 Family-specific doctor test mapping lives in family doctor contracts, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).
