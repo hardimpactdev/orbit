@@ -13,8 +13,9 @@ node.
 - The gateway owns process intent.
 - Process names are identity slugs: lowercase letters, digits, and hyphens only;
   they cannot start or end with a hyphen and are limited to 64 characters.
-- Runtime units are physical artifacts derived from app, optional workspace, and
-  process intent. They are not the product model.
+- Runtime units are the process-family product noun: app-owned runtime units
+  derived from app, optional workspace, and process intent. They are not gateway
+  state rows.
 - Each process definition renders one runtime unit for the main app
   instance and one runtime unit for each workspace of that app. Each
   rendered runtime unit is a separate Supervisor program with its own
@@ -66,6 +67,10 @@ node.
   can mean "preserve the current value." This is why `process:add` accepts the
   required `[command]` positionally, while `process:edit` uses
   `--command=<command>` as one optional edit field among several.
+
+Implementation-shape details for Supervisor, runtime backend rendering, and the
+Orbit Scheduler live in
+[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler).
 
 ## Process Caller Role Rule
 

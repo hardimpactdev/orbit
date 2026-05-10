@@ -14,7 +14,10 @@ rules, proxy routes, schedules, and deployments build on top of the node model.
 
 The stable node-family vocabulary is defined in
 [`node-concepts.md`](node-concepts.md). The node-family drift, fix, and adopt
-contract is defined in [`node-doctor.md`](node-doctor.md).
+contract is defined in [`node-doctor.md`](node-doctor.md). Implementation-shape
+details for runtime roles, transport edges, and gateway-to-app-node enactment
+live in [BUILDING-BLOCKS.md](../../BUILDING-BLOCKS.md#runtime-roles) and
+[BUILDING-BLOCKS.md#transport](../../BUILDING-BLOCKS.md#transport).
 
 ## Role Model
 

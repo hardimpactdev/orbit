@@ -51,6 +51,10 @@ canonical name, and owns one workspace route lifecycle.
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
+Implementation-shape details for runtime backends, Supervisor programs, and
+gateway-to-app-node enactment live in
+[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler)
+and [BUILDING-BLOCKS.md#transport](../../BUILDING-BLOCKS.md#transport).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a

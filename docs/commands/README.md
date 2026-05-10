@@ -10,9 +10,12 @@ Before adding or changing a command:
 
 1. Update `docs/BLUEPRINT.md` if the change affects Orbit's architecture or
    domain model.
-2. Update the relevant command contract in this directory.
-3. Confirm the command contracts remain consistent with each other.
-4. Implement code to match the contract.
+2. Update `docs/BUILDING-BLOCKS.md` if the change affects implementation
+   shape, backend boundaries, runtime backends, transport edges, or scheduler
+   mechanics.
+3. Update the relevant command contract in this directory.
+4. Confirm the command contracts remain consistent with each other.
+5. Implement code to match the contract.
 
 After changing converted command documentation, run `composer docs-lint`. Use a
 scoped path such as `composer docs-lint -- --path=docs/commands/1_node` while a

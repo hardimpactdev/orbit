@@ -311,7 +311,7 @@ class DoctorCommand extends Command implements Loggable
     {
         return new RunDoctorRequest(
             families: $families,
-            node: $target?->name ?? $this->stringOption('node'),
+            node: $target->name ?? $this->stringOption('node'),
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
@@ -328,7 +328,7 @@ class DoctorCommand extends Command implements Loggable
             mode: $mode,
             families: $families,
             issues: $issues,
-            node: $target?->name ?? $this->stringOption('node'),
+            node: $target->name ?? $this->stringOption('node'),
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
@@ -664,7 +664,7 @@ class DoctorCommand extends Command implements Loggable
         $columns = $this->doctorIssueColumns($family);
         $widths = $this->doctorIssueColumnWidths($columns, $innerWidth);
         $lines = [$this->doctorPanelTableSeparator($widths, 'top')];
-        $lines[] = $this->doctorPanelTableRow(array_map('strtoupper', array_column($columns, 'label')), $widths);
+        $lines[] = $this->doctorPanelTableRow(array_map(strtoupper(...), array_column($columns, 'label')), $widths);
         $lines[] = $this->doctorPanelTableSeparator($widths, 'middle');
 
         foreach ($issues as $issue) {

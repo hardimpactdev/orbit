@@ -137,8 +137,8 @@ It is the only doctor mode that may intentionally mutate gateway intent.
   supported.
 - Apply gateway-owned authorization to the resolved scope before probes or
   side effects.
-- Fail before probes when `--fix` and `--restore` are combined with `--adopt`.
-- Fail before probes when `--self` and `--node` are combined.
+- Fail before probes when mutually exclusive options are combined:
+  `--fix --restore --adopt` or `--self --node`.
 - Fail before probes when a requested family, node, app, or workspace scope
   cannot be resolved.
 - Fail before probes when a requested family is outside the target node's

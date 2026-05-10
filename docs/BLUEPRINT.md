@@ -709,11 +709,18 @@ through HTTP.
 
 Command documentation lives outside this blueprint, grouped by numbered domain
 directories under `docs/commands/`. Each domain directory has a `README.md` for
-domain rules and one numbered command entry per command contract. Simple
-commands may use a numbered markdown file directly. Commands with non-trivial
-caller-role behavior, input modes, output renderers, doctor relationships, test
-mapping, or unresolved ambiguity may use a numbered command directory with a
-public command page and companion technical files.
+domain rules and one numbered command directory per converted command contract.
+Converted command families do not use flat numbered command files. Each public
+command lives in a numbered command directory with a public command page,
+canonical technical contract, and renderer contracts. Companion technical files
+own caller-role behavior, input modes, output renderers, doctor relationships,
+test mapping, and other substantial command-specific contracts when those
+surfaces need separate ownership.
+
+Command docs do not keep in-repo ambiguity sidecar files. When requested
+behavior, existing docs, implementation evidence, tests, or product vocabulary
+disagree, track the unresolved question outside the project. Once decided,
+update the authoritative command docs directly.
 
 The blueprint defines the world commands operate in. The command contracts define
 the command surface.
@@ -795,11 +802,15 @@ Future work follows this order:
 
 1. Update this blueprint if the feature changes Orbit's architecture or domain
    model.
-2. Update the relevant command contract if the feature changes behavior.
-3. Add or update an ADR if the feature introduces a new architectural decision,
+2. Update `docs/BUILDING-BLOCKS.md` if the feature changes implementation
+   shape, backend boundaries, runtime backends, transport edges, or scheduler
+   mechanics.
+3. Update the relevant command contract if the feature changes behavior.
+4. Add or update an ADR if the feature introduces a new architectural decision,
    transport, backend, trust boundary, or state-family exception.
-4. Implement code to match the blueprint and command contracts.
-5. Add tests or audits that prevent the old shape from returning.
+5. Implement code to match the blueprint, building blocks, and command
+   contracts.
+6. Add tests or audits that prevent the old shape from returning.
 
 New standing node configuration must become a state family or attach to an
 existing one. It must not be a write-only side effect.

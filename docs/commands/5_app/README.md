@@ -36,7 +36,10 @@ valid app targets.
 
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
-belongs to [`app-doctor.md`](app-doctor.md).
+belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
+gateway-to-app-node enactment and runtime backends live in
+[BUILDING-BLOCKS.md#transport](../../BUILDING-BLOCKS.md#transport) and
+[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler).
 
 ## App Identity Arguments
 
