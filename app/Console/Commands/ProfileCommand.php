@@ -6,8 +6,6 @@ namespace App\Console\Commands;
 
 use App\Actions\Profile\ShowProfile;
 use App\Concerns\LogsCommandActivity;
-use App\Concerns\WithSpinner;
-use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Gateway\GatewayApiException;
@@ -38,8 +36,12 @@ use function Laravel\Prompts\datatable;
 class ProfileCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
-    use WithSpinner;
-    use WithStepTree;
+
+    private const int LINE_WIDTH = 48;
+
+    private const string DOT_STYLE = "\e[2m";
+
+    private const string RESET_STYLE = "\e[0m";
 
     private ?string $activityTarget = null;
 
@@ -730,64 +732,45 @@ class ProfileCommand extends Command implements Loggable
     {
         $request = is_array($data['request'] ?? null) ? $data['request'] : [];
         $timings = is_array($data['timings'] ?? null) ? $data['timings'] : [];
+        $responseHeaders = is_array($data['response_headers'] ?? null) ? $data['response_headers'] : [];
+        $method = is_string($request['method'] ?? null) && $request['method'] !== '' ? $request['method'] : 'GET';
         $url = is_string($request['url'] ?? null) ? $request['url'] : '';
         $status = $request['status'] ?? '-';
-        $totalMs = is_numeric($timings['total_ms'] ?? null) ? (float) $timings['total_ms'] : 0.0;
+        $totalMs = $this->timingMs($timings, 'total_ms');
+        $dnsMs = $this->timingMs($timings, 'dns_ms');
+        $connectTotalMs = $this->timingMs($timings, 'connect_ms');
+        $tlsMs = $this->timingMs($timings, 'tls_ms');
+        $waitingMs = max(0.0, $this->timingMs($timings, 'ttfb_ms') - $connectTotalMs - $tlsMs);
+        $bytes = is_numeric($request['bytes'] ?? null) ? (int) $request['bytes'] : 0;
+        $downloadSuffix = ' - '.$this->formatBytes($bytes);
 
-        $this->renderProfileProgressTree($request, $url, $totalMs);
         $this->newLine();
-        $this->line("GET {$url} {$status} in ".$this->formatMs($totalMs).'ms');
-        $this->line('DNS '.$this->formatMsValue($timings, 'dns_ms'));
-        $this->line('Connect '.$this->formatMsValue($timings, 'connect_ms'));
-        $this->line('TLS '.$this->formatMsValue($timings, 'tls_ms'));
-        $this->line('Waiting for response '.$this->formatMsValue($timings, 'ttfb_ms'));
-        $this->renderToolbarHuman(is_array($data['toolbar'] ?? null) ? $data['toolbar'] : null);
-        $this->line('Download response '.$this->formatMsValue($timings, 'download_ms'));
-        $this->line('Total '.$this->formatMs($totalMs).'ms');
-    }
+        $this->line("{$method} {$url} {$status} in ".$this->formatMs($totalMs).'ms');
+        $this->newLine();
 
-    /**
-     * @param  array<string, mixed>  $request
-     */
-    private function renderProfileProgressTree(array $request, string $url, float $totalMs): void
-    {
-        $this->runStepTree(
-            'Profiling '.($request['uri'] ?? '/'),
-            [
-                [
-                    'label' => 'Resolve target',
-                    'doneLabel' => 'Resolved target',
-                    'run' => fn (): string => '',
-                ],
-                [
-                    'label' => 'Authorize profile read',
-                    'doneLabel' => 'Authorized profile read',
-                    'run' => fn (): string => '',
-                ],
-                [
-                    'label' => 'Send request',
-                    'doneLabel' => 'Sent request',
-                    'run' => fn (): string => '',
-                ],
-                [
-                    'label' => 'Collect timing data',
-                    'doneLabel' => 'Collected timing data',
-                    'run' => fn (): string => '',
-                ],
-            ],
-            doneFooter: "Profiled {$url} in ".$this->formatMs($totalMs).'ms',
-            failFooter: 'Failed to profile request',
-        );
-    }
+        $this->dottedLine('DNS', $this->formatMs($dnsMs).'ms');
+        $this->dottedLine('Connect', $this->formatMs(max(0.0, $connectTotalMs - $dnsMs)).'ms');
+        $this->dottedLine('TLS', $this->formatMs($tlsMs).'ms');
 
-    /**
-     * @param  array<string, mixed>|null  $toolbar
-     */
-    private function renderToolbarHuman(?array $toolbar): void
-    {
-        if ($toolbar === null) {
-            return;
+        if (is_array($data['toolbar'] ?? null)) {
+            $this->renderEnrichedTimeline($waitingMs, $timings, $data['toolbar'], $responseHeaders, $downloadSuffix);
+        } else {
+            $this->dottedLine('Waiting for response', $this->formatMs($waitingMs).'ms');
+            $this->dottedLine('Download response', $this->formatMs($this->timingMs($timings, 'download_ms')).'ms', suffix: $downloadSuffix);
+            $this->dottedLine('Total', $this->formatMs($totalMs).'ms');
         }
+
+        $this->newLine();
+    }
+
+    /**
+     * @param  array<string, mixed>  $timings
+     * @param  array<string, mixed>  $toolbar
+     * @param  array<string, mixed>  $responseHeaders
+     */
+    private function renderEnrichedTimeline(float $waitingMs, array $timings, array $toolbar, array $responseHeaders, string $downloadSuffix): void
+    {
+        $this->dottedLine('Waiting for response', $this->formatMs($waitingMs).'ms');
 
         $anchors = is_array($toolbar['timing_anchors'] ?? null) ? $toolbar['timing_anchors'] : [];
         $caddyStart = $this->numericValue($anchors, 'caddy_start_ms');
@@ -795,13 +778,18 @@ class ProfileCommand extends Command implements Loggable
         $laravelStart = $this->numericValue($anchors, 'laravel_start_ms');
         $profilerEnd = $this->numericValue($anchors, 'profiler_end_ms');
         $collectedAt = $this->numericValue($anchors, 'collected_at_ms');
+        $accountedMs = 0.0;
 
         if ($caddyStart !== null && $phpStart !== null) {
-            $this->line('  Caddy in '.$this->formatMs(max(0.0, $phpStart - $caddyStart)).'ms');
+            $caddyMs = max(0.0, $phpStart - $caddyStart);
+            $accountedMs += $caddyMs;
+            $this->dottedLine('Caddy in', $this->formatMs($caddyMs).'ms', indent: 2, dim: true);
         }
 
         if ($phpStart !== null && $laravelStart !== null) {
-            $this->line('  PHP-FPM '.$this->formatMs(max(0.0, $laravelStart - $phpStart)).'ms');
+            $phpBootMs = max(0.0, $laravelStart - $phpStart);
+            $accountedMs += $phpBootMs;
+            $this->dottedLine('PHP-FPM', $this->formatMs($phpBootMs).'ms', indent: 2, dim: true);
         }
 
         $profiler = is_array($toolbar['profiler'] ?? null) ? $toolbar['profiler'] : [];
@@ -812,33 +800,55 @@ class ProfileCommand extends Command implements Loggable
                 continue;
             }
 
-            $duration = is_numeric($stage['duration_ms'] ?? null)
-                ? (float) $stage['duration_ms']
-                : null;
+            $duration = $this->stageDurationMs($stage);
 
             if ($duration === null) {
                 continue;
             }
 
-            $this->line('  '.$stage['label'].' '.$this->formatMs($duration).'ms');
+            $accountedMs += $duration;
+            $this->dottedLine($stage['label'], $this->formatMs($duration).'ms', indent: 2, dim: true);
         }
 
         if ($profilerEnd !== null && $collectedAt !== null) {
-            $this->line('  Toolbar '.$this->formatMs(max(0.0, $collectedAt - $profilerEnd)).'ms');
+            $toolbarMs = max(0.0, $collectedAt - $profilerEnd);
+            $accountedMs += $toolbarMs;
+            $this->dottedLine('Toolbar', $this->formatMs($toolbarMs).'ms', indent: 2, dim: true);
         }
 
-        $this->renderToolbarQueries(is_array($toolbar['queries'] ?? null) ? $toolbar['queries'] : []);
+        $caddyEnd = $this->headerFloat($responseHeaders, 'x-caddy-end');
+
+        if ($caddyEnd !== null && $collectedAt !== null) {
+            $caddyOutMs = max(0.0, $caddyEnd - $collectedAt);
+            $accountedMs += $caddyOutMs;
+            $this->dottedLine('Caddy out', $this->formatMs($caddyOutMs).'ms', indent: 2, dim: true);
+        }
+
+        if ($accountedMs > 0.0) {
+            $this->dottedLine('Transport', $this->formatMs(max(0.0, $waitingMs - $accountedMs)).'ms', indent: 2, dim: true);
+        }
+
+        $this->dottedLine('Download response', $this->formatMs($this->timingMs($timings, 'download_ms')).'ms', suffix: $downloadSuffix);
+        $this->dottedLine('Total', $this->formatMs($this->timingMs($timings, 'total_ms')).'ms');
+
+        $queries = is_array($toolbar['queries'] ?? null) ? $toolbar['queries'] : [];
+        $querySummary = $this->toolbarQuerySummary($queries);
+
+        if ($querySummary !== null) {
+            $this->newLine();
+            $this->line($querySummary);
+        }
     }
 
     /**
      * @param  array<string, mixed>  $queries
      */
-    private function renderToolbarQueries(array $queries): void
+    private function toolbarQuerySummary(array $queries): ?string
     {
         $count = (int) ($queries['count'] ?? 0);
 
         if ($count <= 0) {
-            return;
+            return null;
         }
 
         $parts = ["{$count} queries"];
@@ -853,7 +863,7 @@ class ProfileCommand extends Command implements Loggable
             $parts[] = "{$duplicateCount} duplicate";
         }
 
-        $this->line(implode(', ', $parts));
+        return implode(', ', $parts);
     }
 
     /**
@@ -865,18 +875,82 @@ class ProfileCommand extends Command implements Loggable
     }
 
     /**
+     * @param  array<string, mixed>  $stage
+     */
+    private function stageDurationMs(array $stage): ?float
+    {
+        if (is_numeric($stage['duration_ms'] ?? null)) {
+            return (float) $stage['duration_ms'];
+        }
+
+        if (is_numeric($stage['duration'] ?? null)) {
+            return (float) $stage['duration'];
+        }
+
+        if (is_string($stage['duration'] ?? null)) {
+            $duration = rtrim($stage['duration'], 'ms');
+
+            return is_numeric($duration) ? (float) $duration : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $headers
+     */
+    private function headerFloat(array $headers, string $name): ?float
+    {
+        $value = $headers[$name] ?? $headers[strtolower($name)] ?? $headers[mb_convert_case($name, MB_CASE_TITLE)] ?? null;
+
+        return is_numeric($value) ? (float) $value : null;
+    }
+
+    /**
      * @param  array<string, mixed>  $timings
      */
-    private function formatMsValue(array $timings, string $key): string
+    private function timingMs(array $timings, string $key): float
     {
-        $value = is_numeric($timings[$key] ?? null) ? (float) $timings[$key] : 0.0;
-
-        return $this->formatMs($value).'ms';
+        return is_numeric($timings[$key] ?? null) ? (float) $timings[$key] : 0.0;
     }
 
     private function formatMs(float $value): string
     {
         return number_format($value, 2, '.', '');
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1_048_576) {
+            return number_format($bytes / 1_048_576, 2).'MB';
+        }
+
+        if ($bytes >= 1024) {
+            return number_format($bytes / 1024, 1).'KB';
+        }
+
+        return "{$bytes}B";
+    }
+
+    private function dottedLine(string $label, string $value, int $indent = 0, bool $dim = false, string $suffix = ''): void
+    {
+        $prefix = str_repeat('  ', $indent);
+        $labelWithPrefix = "{$prefix}{$label} ";
+        $valuePart = " {$value}";
+        $dotsNeeded = max(1, self::LINE_WIDTH - mb_strlen($labelWithPrefix) - mb_strlen($valuePart));
+        $dots = str_repeat('.', $dotsNeeded);
+
+        if ($dim && $this->output->isDecorated()) {
+            $this->output->writeln(self::DOT_STYLE.$labelWithPrefix.$dots.$valuePart.self::RESET_STYLE.$suffix);
+
+            return;
+        }
+
+        $formattedDots = $this->output->isDecorated()
+            ? self::DOT_STYLE.$dots.self::RESET_STYLE
+            : $dots;
+
+        $this->output->writeln($labelWithPrefix.$formattedDots.$valuePart.$suffix);
     }
 
     /**

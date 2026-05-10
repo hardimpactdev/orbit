@@ -6,6 +6,7 @@ use App\Contracts\RequestProfiler;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
@@ -49,15 +50,20 @@ it('renders baseline profile timing in human mode', function (): void {
         }
     });
 
-    $this->artisan('profile docs')
-        ->expectsOutputToContain('┌  Profiling /')
-        ->expectsOutputToContain('●  Resolved target')
-        ->expectsOutputToContain('●  Collected timing data')
-        ->expectsOutputToContain('Profiled https://docs.test/ in 52.00ms')
-        ->expectsOutputToContain('GET https://docs.test/ 200 in 52.00ms')
-        ->expectsOutputToContain('DNS 1.00ms')
-        ->expectsOutputToContain('Total 52.00ms')
-        ->assertSuccessful();
+    $exitCode = Artisan::call('profile', [
+        'target' => 'docs',
+    ]);
+    $output = withoutAnsi(Artisan::output());
+
+    expect($exitCode)->toBe(0);
+    expect($output)->not->toContain('Profiling /');
+    expect($output)->toContain('GET https://docs.test/ 200 in 52.00ms');
+    expect($output)->toMatch('/DNS \.+ 1\.00ms/');
+    expect($output)->toMatch('/Connect \.+ 2\.00ms/');
+    expect($output)->toMatch('/TLS \.+ 7\.00ms/');
+    expect($output)->toMatch('/Waiting for response \.+ 40\.00ms/');
+    expect($output)->toMatch('/Download response \.+ 2\.00ms - 1\.2KB/');
+    expect($output)->toMatch('/Total \.+ 52\.00ms/');
 });
 
 it('renders toolbar stages and query summary in human mode', function (): void {
@@ -128,11 +134,23 @@ it('renders toolbar stages and query summary in human mode', function (): void {
         }
     });
 
-    $this->artisan('profile docs')
-        ->expectsOutputToContain('Middleware 10.50ms')
-        ->expectsOutputToContain('Controller 80.20ms')
-        ->expectsOutputToContain('View 2.30ms')
-        ->expectsOutputToContain('Toolbar 3.00ms')
-        ->expectsOutputToContain('5 queries, 1 slow, 2 duplicate')
-        ->assertSuccessful();
+    $exitCode = Artisan::call('profile', [
+        'target' => 'docs',
+    ]);
+    $output = withoutAnsi(Artisan::output());
+
+    expect($exitCode)->toBe(0);
+    expect($output)->not->toContain('Profiling /');
+    expect($output)->toMatch('/  Caddy in \.+ 1\.50ms/');
+    expect($output)->toMatch('/  PHP-FPM \.+ 10\.50ms/');
+    expect($output)->toMatch('/  Middleware \.+ 10\.50ms/');
+    expect($output)->toMatch('/  Controller \.+ 80\.20ms/');
+    expect($output)->toMatch('/  View \.+ 2\.30ms/');
+    expect($output)->toMatch('/  Toolbar \.+ 3\.00ms/');
+    expect($output)->toContain('5 queries, 1 slow, 2 duplicate');
 });
+
+function withoutAnsi(string $output): string
+{
+    return (string) preg_replace('/\e\[[0-9;]*m/', '', $output);
+}
