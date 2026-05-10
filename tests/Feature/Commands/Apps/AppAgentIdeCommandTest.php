@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
 use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
 use App\Models\App;
@@ -15,6 +17,10 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new AppAgentIdeCommandRemoteShell);
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -36,6 +42,16 @@ if (! class_exists('PruneAppActionTestAdapter')) {
         public function workspaces(array $target, string $adapter): array
         {
             return ['active-ws'];
+        }
+    }
+}
+
+if (! class_exists('AppAgentIdeCommandRemoteShell')) {
+    final class AppAgentIdeCommandRemoteShell implements RemoteShell
+    {
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }
     }
 }

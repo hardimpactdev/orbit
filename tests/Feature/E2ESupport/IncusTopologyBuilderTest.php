@@ -8,6 +8,7 @@ use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
 afterEach(function (): void {
@@ -199,6 +200,11 @@ it('records phase timings while building topology templates', function (): void 
 it('builds prepared topology templates through staged node:new snapshots', function (): void {
     $config = incusTopologyBuilderConfig();
     $commands = [];
+
+    Process::fake([
+        'wg genkey' => Process::result(output: "private-key\n"),
+        'wg pubkey' => Process::result(output: "public-key\n"),
+    ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->blankImage)->andReturn(true);

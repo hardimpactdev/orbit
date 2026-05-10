@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -12,6 +14,10 @@ use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteShell::class, new AppAgentIdeControllerRemoteShell);
+});
 
 const APP_AGENT_IDE_CALLER_WG_IP = '10.6.0.98';
 
@@ -53,6 +59,16 @@ function postAppAgentIdeJson(string $uri, array $data, array $server = []): Test
         ], $server),
         json_encode($data, JSON_THROW_ON_ERROR),
     );
+}
+
+if (! class_exists('AppAgentIdeControllerRemoteShell')) {
+    final class AppAgentIdeControllerRemoteShell implements RemoteShell
+    {
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+    }
 }
 
 describe('AppAgentIdeController', function (): void {

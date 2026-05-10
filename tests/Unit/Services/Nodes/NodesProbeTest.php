@@ -27,7 +27,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->probe = new NodesProbe;
+    $this->probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
     File::deleteDirectory(storage_path('app/orbit/node-development-dns.d'));
 });
 

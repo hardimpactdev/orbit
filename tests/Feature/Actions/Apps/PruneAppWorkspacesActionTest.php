@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +46,7 @@ beforeEach(function (): void {
     ]);
 
     app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
+    app()->instance(RemoteShell::class, new PruneAppWorkspacesActionRemoteShell);
 });
 
 it('identifies stale workspaces', function (): void {
@@ -148,5 +152,13 @@ final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
     public function workspaces(array $target, string $adapter): array
     {
         return ['active-ws'];
+    }
+}
+
+final class PruneAppWorkspacesActionRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

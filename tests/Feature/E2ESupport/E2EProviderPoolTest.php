@@ -79,7 +79,7 @@ it('discovers the incus base image by logical image label', function (): void {
         '*command -v*incus*' => Process::result(),
         '*incus info*' => Process::result(),
         '*incus network show incusbr0*' => Process::result(),
-        '*incus image info orbit-base-ubuntu-26.04*' => Process::result(),
+        '*incus image info*orbit-base-ubuntu-26.04*' => Process::result(),
     ]);
 
     $availability = (new IncusProvider(E2EConfig::fromEnvironment()))
@@ -164,7 +164,7 @@ it('releases configured incus host slots after availability-only checks', functi
         '*command -v*incus*' => Process::result(),
         '*incus info*' => Process::result(),
         '*incus network show incusbr0*' => Process::result(),
-        '*incus image info orbit-base-ubuntu-26.04*' => Process::result(),
+        '*incus image info*orbit-base-ubuntu-26.04*' => Process::result(),
     ]);
 
     try {
