@@ -26,7 +26,7 @@ docker run -d \
     --restart unless-stopped \
     -e %s \
     -e WG_DEFAULT_ADDRESS=10.6.0.x \
-    -e WG_DEFAULT_DNS=10.6.0.2 \
+    -e WG_DEFAULT_DNS=10.6.0.1 \
     -e WG_ALLOWED_IPS=10.6.0.0/24 \
     -e WG_PERSISTENT_KEEPALIVE=25 \
     -p 51820:51820/udp \
@@ -49,7 +49,7 @@ for i in $(seq 1 30); do
 done
 docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
 docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
-sqlite3 /home/orbit/.wg-easy/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24' WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = '[\"10.6.0.2\"]', default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
+sqlite3 /home/orbit/.wg-easy/wg-easy.db "UPDATE interfaces_table SET ipv4_cidr = '10.6.0.0/24' WHERE name = 'wg0'; UPDATE user_configs_table SET host = %s, default_dns = '[\"10.6.0.1\"]', default_persistent_keepalive = 25; UPDATE general_table SET setup_step = 0;" || true
 SH,
                 escapeshellarg("WG_HOST={$advertisedHost}"),
                 $this->sqliteString($advertisedHost),
@@ -77,7 +77,7 @@ SH,
             $preSharedKey = $this->sqliteString($rawPreSharedKey);
             $allowedIps = $this->sqliteString('["0.0.0.0/0", "::/0"]');
             $serverAllowedIps = $this->sqliteString('["'.$peer['address'].'/32"]');
-            $dns = $this->sqliteString('["10.6.0.2"]');
+            $dns = $this->sqliteString('["10.6.0.1"]');
 
             $statements[] = <<<SQL
 DELETE FROM clients_table WHERE name = {$name} OR public_key = {$publicKey} OR ipv4_address = {$address};

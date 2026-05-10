@@ -55,8 +55,13 @@ argument and the command does not prompt.
 - Set `kind=admin` for clients created through this command.
 - When `--config` is present, return the generated admin-client WireGuard
   configuration.
-- The generated admin-client config follows gateway VPN backend policy and may
-  route client traffic through the gateway and use gateway DNS.
+- The generated admin-client config must contain exactly one DNS endpoint: the
+  WireGuard server interface IP for the assigned peer subnet. In the standard
+  `10.6.0.0/24` topology this is `DNS = 10.6.0.1`.
+- The generated admin-client config must not use the gateway node peer IP, such
+  as `10.6.0.2`, as DNS, and must not include public fallback resolvers such as
+  `1.1.1.1`.
+- Gateway dnsmasq owns development TLD routing behind that DNS endpoint.
 
 ### Node Identity Boundary
 
@@ -70,6 +75,8 @@ argument and the command does not prompt.
 
 `vpn-client:new` must not create gateway development DNS mappings,
 caller-local DNS overrides, app routes, proxy routes, or Cloudflare records.
+The command only returns a client config that points DNS at the WireGuard
+server DNS endpoint.
 
 ## Renderer Contracts
 
@@ -100,3 +107,4 @@ identity and gateway-managed node peer drift.
 | --- | --- |
 | `tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, duplicate name failure, active node name collision, config inclusion, no node records or grants, and no DNS or proxy side effects. |
 | `tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
+| `tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |

@@ -86,7 +86,7 @@ final class WgEasyVpnBackend implements VpnBackend
             address: $client->address,
             enabled: $client->enabled,
             latestHandshakeAt: $client->latestHandshakeAt,
-            config: $includeConfig ? $this->clientConfig($client->id, $totp) : null,
+            config: $includeConfig ? $this->clientConfig($client->id, $client->address, $totp) : null,
         );
     }
 
@@ -155,7 +155,7 @@ final class WgEasyVpnBackend implements VpnBackend
         return null;
     }
 
-    private function clientConfig(string $clientId, ?string $totp): string
+    private function clientConfig(string $clientId, string $clientAddress, ?string $totp): string
     {
         $response = Http::withHeaders(['Cookie' => $this->authenticate($totp)])
             ->timeout(10)
@@ -165,7 +165,58 @@ final class WgEasyVpnBackend implements VpnBackend
             throw new RuntimeException('VPN client config could not be generated.');
         }
 
-        return $response->body();
+        return $this->withWireGuardServerDns($response->body(), $clientAddress);
+    }
+
+    private function withWireGuardServerDns(string $config, string $clientAddress): string
+    {
+        $serverAddress = $this->wireGuardServerAddress($clientAddress);
+
+        if ($serverAddress === null) {
+            return $config;
+        }
+
+        $lines = preg_split('/\r\n|\n|\r/', $config);
+
+        if ($lines === false) {
+            return $config;
+        }
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^\s*DNS\s*=/i', $line) !== 1) {
+                continue;
+            }
+
+            $lines[$index] = "DNS = {$serverAddress}";
+
+            return implode("\n", $lines);
+        }
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^\s*Address\s*=/i', $line) !== 1) {
+                continue;
+            }
+
+            array_splice($lines, $index + 1, 0, "DNS = {$serverAddress}");
+
+            return implode("\n", $lines);
+        }
+
+        return $config;
+    }
+
+    private function wireGuardServerAddress(string $clientAddress): ?string
+    {
+        $address = trim(explode('/', $clientAddress, 2)[0]);
+
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return null;
+        }
+
+        $parts = explode('.', $address);
+        $parts[3] = '1';
+
+        return implode('.', $parts);
     }
 
     private function authenticate(?string $totp = null): string

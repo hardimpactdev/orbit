@@ -35,8 +35,10 @@ not create a node record, and does not grant Orbit node access. Active Orbit
 node names are reserved and cannot be reused as VPN client names.
 
 When `--config` is supplied, the command returns the generated WireGuard config
-for the client. The admin-client config may route client traffic through the
-gateway and use gateway DNS according to the gateway VPN backend policy.
+for the client. The generated config must use the WireGuard server DNS endpoint
+as its only `DNS =` value. For the normal `10.6.0.0/24` network this is
+`DNS = 10.6.0.1`; it is not the gateway peer address, such as `10.6.0.2`, and
+it must not include public fallback resolvers.
 
 ## Output
 
