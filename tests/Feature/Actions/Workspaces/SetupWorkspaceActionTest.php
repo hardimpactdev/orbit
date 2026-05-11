@@ -90,6 +90,7 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
         ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/php')
         ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/logs')
         ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
+        ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
         ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
 });
 

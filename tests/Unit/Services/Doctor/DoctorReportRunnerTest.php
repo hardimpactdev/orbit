@@ -53,6 +53,7 @@ describe('DoctorReportRunner', function (): void {
             ])
             ->and($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature.conf')
             ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
+            ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
             ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
     });
 
