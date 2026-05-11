@@ -222,7 +222,11 @@ final class JsonRendererExampleRule implements CommandDocsLintRule
         $findings = [];
         $required = $schema['required'] ?? [];
         $optional = $schema['optional'] ?? [];
-        $allowed = array_merge($required, $optional);
+        $allowed = array_merge(
+            $required,
+            $optional,
+            $this->commandSpecificEntityFields($context->relativePath($file), $entity, $label),
+        );
 
         foreach ($required as $field => $type) {
             if (array_key_exists($field, $value)) {
@@ -269,6 +273,22 @@ final class JsonRendererExampleRule implements CommandDocsLintRule
         }
 
         return $findings;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function commandSpecificEntityFields(string $path, string $entity, string $label): array
+    {
+        if (
+            $path === 'docs/commands/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
+            && $entity === 'app'
+            && str_starts_with($label, 'success.data.apps[')
+        ) {
+            return ['workspaces' => 'array'];
+        }
+
+        return [];
     }
 
     private function matchesType(mixed $value, string $type): bool

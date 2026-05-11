@@ -79,7 +79,10 @@ arguments and does not prompt.
    renderers use this single ordering: the human renderer displays it as tables
    grouped by node, and the JSON renderer emits the same ordering as a flat
    array of list-item objects under `success.data.apps`.
-4. **Render output.** Return the filtered app list through the selected output
+4. **Attach workspaces.** Each app list item includes the app's registered
+   workspaces sorted by workspace name (ascending, case-insensitive).
+   Workspaces are registry intent rows; no live workspace probing is performed.
+5. **Render output.** Return the filtered app list through the selected output
    renderer.
 
 ### Scope Boundaries
@@ -130,7 +133,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppListCommandTest.php` | Command contract: listing all visible apps, node filtering, environment filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
+| `tests/Feature/Commands/Apps/AppListCommandTest.php` | Command contract: listing all visible apps with nested workspaces, node filtering, environment filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
 | `tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps. |
 
 Renderer-specific test mapping lives in:

@@ -40,8 +40,8 @@ filters:
 1. Connects to the gateway API.
 2. Reads app registry intent scoped to what the caller is authorized to see.
 3. Filters by node or environment when options are supplied.
-4. Returns a list of apps with their names, nodes, environments, and primary
-   URLs.
+4. Returns a list of apps with their names, nodes, environments, primary URLs,
+   and any registered workspaces.
 
 `app:list` does not:
 - SSH into app nodes.
@@ -53,10 +53,13 @@ filters:
 Both renderers use the same deterministic ordering: apps are sorted by owning
 node name and then by app name (alphabetical, case-insensitive).
 
-Human output presents that ordering as tables grouped by owning node.
+Human output presents that ordering as tables grouped by owning node. Any
+workspaces registered to an app are shown immediately below that app as
+indented child rows, using the workspace URL and lifecycle status.
 
 JSON output returns a flat list of apps in the same order under the standard
-success envelope. See the
+success envelope. Each app item includes its registered workspaces as a nested
+`workspaces` array. See the
 [JSON renderer contract](technical/6.2_app-list_output-render_json.md) for the
 exact payload shape.
 

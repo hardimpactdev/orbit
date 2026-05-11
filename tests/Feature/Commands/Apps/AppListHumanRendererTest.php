@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -28,6 +29,23 @@ describe('app:list human renderer contract', function (): void {
             ->and($output)->toContain('URL')
             ->and($output)->toContain('STATUS')
             ->and($output)->not->toContain('"success"');
+    });
+
+    it('renders workspace child rows below their parent app', function (): void {
+        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'environment' => 'development', 'domain' => null]);
+
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+
+        $exitCode = Artisan::call('app:list');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('docs')
+            ->and($output)->toContain('├─ feature-docs')
+            ->and($output)->toContain('https://feature-docs.docs.test')
+            ->and($output)->toContain('expected');
     });
 
     it('renders empty result prose', function (): void {

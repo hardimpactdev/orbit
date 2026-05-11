@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -13,7 +14,7 @@ describe('app:list JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns the canonical app entity shape', function (): void {
         Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'environment' => 'development',
@@ -23,6 +24,10 @@ describe('app:list JSON renderer contract', function (): void {
             'repository' => null,
             'php_version' => '8.5',
             'adopted' => false,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
         ]);
 
         $exitCode = Artisan::call('app:list', ['--json' => true]);
@@ -41,6 +46,13 @@ describe('app:list JSON renderer contract', function (): void {
                 'repository' => null,
                 'php_version' => '8.5',
                 'adopted' => false,
+                'workspaces' => [
+                    [
+                        'name' => 'feature-docs',
+                        'url' => 'https://feature-docs.docs.test',
+                        'lifecycle_status' => 'expected',
+                    ],
+                ],
             ]);
     });
 

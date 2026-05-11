@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -125,7 +126,7 @@ describe('AppListController', function (): void {
         createAppListCallerNode(['role' => 'gateway']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'environment' => 'development',
@@ -135,6 +136,10 @@ describe('AppListController', function (): void {
             'repository' => null,
             'php_version' => '8.5',
             'adopted' => false,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
         ]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
@@ -150,6 +155,13 @@ describe('AppListController', function (): void {
                 'repository' => null,
                 'php_version' => '8.5',
                 'adopted' => false,
+                'workspaces' => [
+                    [
+                        'name' => 'feature-docs',
+                        'url' => 'https://feature-docs.docs.test',
+                        'lifecycle_status' => 'expected',
+                    ],
+                ],
             ]);
     });
 

@@ -10,6 +10,7 @@ use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Http\Gateway\Responses\Apps\AppListResponse;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -133,7 +134,7 @@ class AppListCommand extends Command
     private function fetchLocalAppModels(?string $node, ?string $environment): Collection
     {
         return App::query()
-            ->with('node')
+            ->with(['node', 'workspaces'])
             ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
             ->get()
@@ -162,7 +163,28 @@ class AppListCommand extends Command
             'repository' => $app->repository,
             'php_version' => $app->php_version,
             'adopted' => $app->adopted,
+            'workspaces' => $this->workspacePayloads($app),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function workspacePayloads(App $app): array
+    {
+        $appHost = parse_url($app->url(), PHP_URL_HOST);
+
+        return $app->workspaces
+            ->sortBy(fn (Workspace $workspace): string => mb_strtolower($workspace->name))
+            ->map(fn (Workspace $workspace): array => [
+                'name' => $workspace->name,
+                'url' => is_string($appHost) && $appHost !== ''
+                    ? "https://{$workspace->name}.{$appHost}"
+                    : $workspace->url(),
+                'lifecycle_status' => $workspace->lifecycle_status->value,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -195,6 +217,19 @@ class AppListCommand extends Command
                 $app['url'],
                 'expected',
             ];
+
+            foreach ($app['workspaces'] ?? [] as $workspace) {
+                if (! is_array($workspace)) {
+                    continue;
+                }
+
+                $rows[] = [
+                    '├─ '.(string) ($workspace['name'] ?? ''),
+                    $app['environment'],
+                    $workspace['url'] ?? '-',
+                    $workspace['lifecycle_status'] ?? '-',
+                ];
+            }
         }
 
         $this->renderNodeTable($currentNode, $rows);

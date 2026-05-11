@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -120,7 +121,7 @@ final readonly class AppListController implements Loggable
     private function fetchApps(Node $caller, array $visibleNodeIds, ?string $node, ?string $environment): Collection
     {
         return App::query()
-            ->with('node')
+            ->with(['node', 'workspaces'])
             ->when($caller->role !== 'gateway', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
@@ -151,7 +152,28 @@ final readonly class AppListController implements Loggable
             'repository' => $app->repository,
             'php_version' => $app->php_version,
             'adopted' => $app->adopted,
+            'workspaces' => $this->workspacePayloads($app),
         ])->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function workspacePayloads(App $app): array
+    {
+        $appHost = parse_url($app->url(), PHP_URL_HOST);
+
+        return $app->workspaces
+            ->sortBy(fn (Workspace $workspace): string => mb_strtolower($workspace->name))
+            ->map(fn (Workspace $workspace): array => [
+                'name' => $workspace->name,
+                'url' => is_string($appHost) && $appHost !== ''
+                    ? "https://{$workspace->name}.{$appHost}"
+                    : $workspace->url(),
+                'lifecycle_status' => $workspace->lifecycle_status->value,
+            ])
+            ->values()
+            ->all();
     }
 
     private function authorizationFailed(string $message): JsonResponse

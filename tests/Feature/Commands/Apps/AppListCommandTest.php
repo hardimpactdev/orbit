@@ -99,6 +99,13 @@ describe('app:list base contract', function (): void {
                                 'repository' => null,
                                 'php_version' => '8.5',
                                 'adopted' => false,
+                                'workspaces' => [
+                                    [
+                                        'name' => 'feature-docs',
+                                        'url' => 'https://feature-docs.docs.test',
+                                        'lifecycle_status' => 'expected',
+                                    ],
+                                ],
                             ],
                         ],
                     ],
@@ -114,7 +121,8 @@ describe('app:list base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['apps'][0]['name'])->toBe('docs');
+            ->and($payload['success']['data']['apps'][0]['name'])->toBe('docs')
+            ->and($payload['success']['data']['apps'][0]['workspaces'][0]['name'])->toBe('feature-docs');
     });
 
     it('preserves structured gateway authorization failures', function (): void {
