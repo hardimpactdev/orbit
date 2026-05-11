@@ -137,6 +137,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/schedules/{name}', ScheduleShowController::class);
         Route::get('/workspaces', WorkspaceListController::class);
         Route::post('/workspaces', WorkspaceStoreController::class);
+        Route::post('/workspaces/setup/stream', [WorkspaceSetupController::class, 'stream']);
         Route::post('/workspaces/setup', WorkspaceSetupController::class);
         Route::get('/workspaces/history/resolve-by-path', [WorkspaceHistoryController::class, 'fromPath']);
         Route::get('/workspaces/runs/{run}/log', WorkspaceLogController::class);

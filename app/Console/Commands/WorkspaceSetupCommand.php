@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\SetupWorkspace;
+use App\Actions\Workspaces\SetupWorkspaceProgress;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
-use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\SetupWorkspaceResponse;
+use App\Http\Gateway\WorkspaceSetupGatewayStreamClient;
 use App\Models\App;
 use App\Models\Node;
-use App\Models\Process;
 use App\Models\Workspace;
-use App\Models\WorkspaceStep;
+use App\Support\Cli\RemoteProgressRenderer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -36,8 +36,11 @@ class WorkspaceSetupCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(SetupWorkspace $setupWorkspace): int
-    {
+    public function handle(
+        SetupWorkspace $setupWorkspace,
+        SetupWorkspaceProgress $setupProgress,
+        WorkspaceSetupGatewayStreamClient $setupStream,
+    ): int {
         $callerRole = $this->callerRole();
 
         if ($callerRole === 'unknown') {
@@ -63,17 +66,17 @@ class WorkspaceSetupCommand extends Command
         }
 
         if ($callerRole === 'control') {
-            return $this->forwardSetup();
+            return $this->forwardSetup($setupStream);
         }
 
         if ($callerRole === 'app') {
-            return $this->forwardSetup();
+            return $this->forwardSetup($setupStream);
         }
 
-        return $this->runLocally($setupWorkspace);
+        return $this->runLocally($setupWorkspace, $setupProgress);
     }
 
-    private function runLocally(SetupWorkspace $setupWorkspace): int
+    private function runLocally(SetupWorkspace $setupWorkspace, SetupWorkspaceProgress $setupProgress): int
     {
         try {
             [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace();
@@ -86,7 +89,7 @@ class WorkspaceSetupCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->runLocallyForHuman($setupWorkspace, $workspace, $app, $node, $isAdoption);
+            return $this->runLocallyForHuman($setupProgress, $workspace, $app, $node, $isAdoption);
         }
 
         try {
@@ -106,166 +109,23 @@ class WorkspaceSetupCommand extends Command
     }
 
     private function runLocallyForHuman(
-        SetupWorkspace $setupWorkspace,
+        SetupWorkspaceProgress $setupProgress,
         Workspace $workspace,
         App $app,
         Node $node,
         bool $isAdoption,
     ): int {
-        $wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
-        /** @var list<array<string, string>> $warnings */
-        $warnings = [];
-        /** @var array{status: string, message: string, count: int} $setupResult */
-        $setupResult = [
-            'status' => 'skipped',
-            'message' => 'No setup steps configured',
-            'count' => 0,
-        ];
-        /** @var array{success: bool, message: string, count: int, names: list<string>} $processResult */
-        $processResult = [
-            'success' => true,
-            'message' => 'No processes',
-            'count' => 0,
-            'names' => [],
-        ];
-        /** @var array{reachable: bool, status: string} $httpProbe */
-        $httpProbe = [
-            'reachable' => false,
-            'status' => 'not_run',
-        ];
-        /** @var array{code: string, message: string, meta: array<string, mixed>}|null $failure */
-        $failure = null;
-
-        $steps = [
-            [
-                'key' => 'apply_workspace_registration',
-                'label' => 'Apply and verify workspace registration',
-                'doneLabel' => 'Applied and verified workspace registration',
-                'run' => function () use ($setupWorkspace, $workspace): string {
-                    $setupWorkspace->prepareWorkspaceState($workspace);
-
-                    return $workspace->name;
-                },
-            ],
-            [
-                'key' => 'register_proxy_routes',
-                'label' => 'Register proxy routes',
-                'doneLabel' => 'Registered proxy routes',
-                'run' => function () use ($setupWorkspace, $workspace, &$warnings): string {
-                    $routeWarnings = $setupWorkspace->registerProxyRoutes($workspace);
-                    $warnings = array_merge($warnings, $routeWarnings);
-
-                    if ($routeWarnings !== []) {
-                        return 'skip:'.(string) ($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
-                    }
-
-                    return 'ready';
-                },
-            ],
-            [
-                'key' => 'install_php_fpm_artifacts',
-                'label' => 'Install PHP-FPM artifacts',
-                'doneLabel' => 'Installed PHP-FPM artifacts',
-                'run' => function () use ($setupWorkspace, $workspace, $node, &$warnings): string {
-                    $warning = $setupWorkspace->enactFpmPool($workspace, $node);
-
-                    if ($warning !== null) {
-                        $warnings[] = $warning;
-
-                        return 'skip:'.$warning['message'];
-                    }
-
-                    return 'ready';
-                },
-            ],
-        ];
-
-        if ($this->hasSetupSteps($app)) {
-            $steps[] = [
-                'key' => 'run_workspace_setup_steps',
-                'label' => 'Run workspace setup steps',
-                'doneLabel' => 'Ran workspace setup steps',
-                'run' => function () use ($setupWorkspace, $workspace, $app, $node, &$setupResult, &$failure): string {
-                    $setupResult = $setupWorkspace->runSetupSteps($workspace, $app, $node);
-
-                    if ($setupResult['status'] === 'failed') {
-                        $failure = [
-                            'code' => 'workspace.setup_step_failed',
-                            'message' => $setupResult['message'],
-                            'meta' => [
-                                'phase' => 'setup_steps',
-                                'node' => $node->name,
-                                'path' => $workspace->path,
-                            ],
-                        ];
-
-                        throw new RuntimeException($setupResult['message']);
-                    }
-
-                    return $setupResult['message'];
-                },
-            ];
-        }
-
-        if ($this->hasProcesses($app)) {
-            $steps[] = [
-                'key' => 'render_inherited_runtime_units',
-                'label' => 'Render inherited runtime units',
-                'doneLabel' => 'Rendered inherited runtime units',
-                'run' => function () use ($setupWorkspace, $workspace, $app, $node, &$processResult, &$failure): string {
-                    $processResult = $setupWorkspace->startProcesses($app, $workspace, $node);
-
-                    if (! $processResult['success']) {
-                        $failure = [
-                            'code' => 'workspace.enactment_failed',
-                            'message' => $processResult['message'],
-                            'meta' => [
-                                'phase' => 'process',
-                                'node' => $node->name,
-                            ],
-                        ];
-
-                        throw new RuntimeException($processResult['message']);
-                    }
-
-                    return $processResult['message'];
-                },
-            ];
-        }
-
-        $steps[] = [
-            'key' => 'check_workspace_readiness',
-            'label' => 'Check workspace readiness',
-            'doneLabel' => 'Checked workspace readiness',
-            'run' => function () use ($setupWorkspace, $workspace, &$warnings, &$httpProbe): string {
-                $httpProbe = $setupWorkspace->probeReadiness($workspace);
-                $setupWorkspace->markActive($workspace);
-
-                if (! $httpProbe['reachable']) {
-                    $warning = [
-                        'code' => 'workspace.http_probe_unhealthy',
-                        'family' => 'workspace',
-                        'message' => "Workspace did not become reachable: {$httpProbe['status']}",
-                        'next_command' => 'doctor --fix --family=workspace --restore',
-                    ];
-                    $warnings[] = $warning;
-
-                    return 'skip:'.$warning['message'];
-                }
-
-                return $httpProbe['status'];
-            },
-        ];
-
-        $action = $this->setupAction($isAdoption, $wasAlreadyActive);
+        $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
         $exitCode = $this->runStepTree(
-            'Setting Up Workspace',
-            $steps,
-            doneFooter: $this->setupDoneFooter($workspace->name, $action),
-            failFooter: "Failed to set up workspace '{$workspace->name}'.",
+            $plan->title(),
+            $plan->steps(),
+            doneFooter: $plan->doneFooter(),
+            failFooter: $plan->failFooter(),
         );
 
         if ($exitCode !== self::SUCCESS) {
+            $failure = $plan->failure();
+
             if ($failure !== null) {
                 return $this->failCommand($failure['code'], $failure['message'], $failure['meta']);
             }
@@ -273,30 +133,18 @@ class WorkspaceSetupCommand extends Command
             return self::FAILURE;
         }
 
-        return $this->successCommand([
-            'app' => $app->name,
-            'workspace' => $workspace->name,
-            'node' => $node->name,
-            'path' => $workspace->path,
-            'url' => $workspace->url(),
-            'action' => $action,
-            'warnings' => $warnings,
-            'setup_steps' => $setupResult,
-            'processes' => [
-                'status' => 'started',
-                'count' => $processResult['count'],
-                'names' => $processResult['names'],
-                'message' => $processResult['message'],
-            ],
-            'http_probe' => $httpProbe,
-        ]);
+        return $this->successCommand($plan->result());
     }
 
-    private function forwardSetup(): int
+    private function forwardSetup(WorkspaceSetupGatewayStreamClient $setupStream): int
     {
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
         $path = $this->stringOption('path');
+
+        if (! $this->wantsJson()) {
+            return $this->forwardSetupForHuman($setupStream, $name, $app, $path);
+        }
 
         try {
             /** @var SetupWorkspaceResponse $dto */
@@ -336,44 +184,86 @@ class WorkspaceSetupCommand extends Command
         ]);
     }
 
-    private function hasSetupSteps(App $app): bool
-    {
-        return WorkspaceStep::query()
-            ->where('app_id', $app->id)
-            ->where('phase', WorkspaceLifecyclePhase::Setup)
-            ->exists();
-    }
+    private function forwardSetupForHuman(
+        WorkspaceSetupGatewayStreamClient $setupStream,
+        ?string $name,
+        ?string $app,
+        ?string $path,
+    ): int {
+        $renderer = new RemoteProgressRenderer($this->output);
+        $completeData = [];
+        $errorData = [];
+        $footer = 'Done';
 
-    private function hasProcesses(App $app): bool
-    {
-        return Process::query()
-            ->where('app_id', $app->id)
-            ->exists();
-    }
+        $result = $setupStream->run($name, $app, $path, function (string $event, array $payload) use ($renderer, &$completeData, &$errorData, &$footer): void {
+            if ($event === 'tree') {
+                $title = is_string($payload['title'] ?? null) ? $payload['title'] : '';
+                $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
+                $renderer->tree($title, $steps);
 
-    /**
-     * @return 'set_up'|'adopted'|'converged'
-     */
-    private function setupAction(bool $isAdoption, bool $wasAlreadyActive): string
-    {
-        if ($isAdoption) {
-            return 'adopted';
+                return;
+            }
+
+            if ($event === 'step') {
+                $renderer->step(
+                    is_string($payload['key'] ?? null) ? $payload['key'] : '',
+                    is_string($payload['status'] ?? null) ? $payload['status'] : '',
+                    is_string($payload['message'] ?? null) ? $payload['message'] : null,
+                );
+
+                return;
+            }
+
+            if ($event === 'complete') {
+                $completeData = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+                if (is_string($completeData['footer'] ?? null)) {
+                    $footer = $completeData['footer'];
+                }
+
+                return;
+            }
+
+            if ($event === 'error') {
+                $errorData = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+                if (is_string($errorData['footer'] ?? null)) {
+                    $footer = $errorData['footer'];
+                }
+            }
+        });
+
+        if ($result instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $result->errorCode() ?? 'gateway_unavailable',
+                message: $result->getMessage() !== ''
+                    ? $result->getMessage()
+                    : 'Gateway connection is required to set up a workspace.',
+                meta: $result->errorMeta(),
+            );
         }
 
-        if ($wasAlreadyActive) {
-            return 'converged';
+        $renderer->finish($footer, $result === self::SUCCESS);
+
+        if ($result !== self::SUCCESS) {
+            return $this->failCommand(
+                code: is_string($errorData['code'] ?? null) ? $errorData['code'] : 'workspace.enactment_failed',
+                message: is_string($errorData['message'] ?? null) ? $errorData['message'] : 'Workspace setup failed.',
+                meta: is_array($errorData['meta'] ?? null) ? $errorData['meta'] : [],
+            );
         }
 
-        return 'set_up';
-    }
+        $resultData = is_array($completeData['result'] ?? null) ? $completeData['result'] : [];
 
-    private function setupDoneFooter(string $workspace, string $action): string
-    {
-        return match ($action) {
-            'adopted' => "Workspace '{$workspace}' adopted",
-            'converged' => "Workspace '{$workspace}' converged",
-            default => "Workspace '{$workspace}' set up",
-        };
+        if ($resultData === []) {
+            return $this->failCommand(
+                code: 'gateway_stream_invalid',
+                message: 'Gateway stream completed without workspace setup result data.',
+                meta: [],
+            );
+        }
+
+        return $this->successCommand($resultData);
     }
 
     /**

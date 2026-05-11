@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceRequest;
+use App\Http\Gateway\WorkspaceSetupGatewayStreamClient;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -210,6 +211,35 @@ it('forwards control callers to gateway', function (): void {
     expect($payload['success']['data']['action'])->toBe('set_up');
 });
 
+it('streams progress for forwarded human setup calls', function (): void {
+    DB::table('nodes')->update(['is_local' => false]);
+    DB::table('nodes')->insert([
+        [
+            'name' => 'control',
+            'role' => 'control',
+            'host' => 'control',
+            'ssh_user' => 'nckrtl',
+            'orbit_path' => '/home/nckrtl/orbit',
+            'status' => 'active',
+            'is_local' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    app()->instance(WorkspaceSetupGatewayStreamClient::class, new WorkspaceSetupTestStreamClient);
+
+    $this->artisan('workspace:setup', [
+        'name' => 'feature-a',
+        '--app' => 'demo',
+    ])
+        ->expectsOutputToContain('┌  Setting Up Workspace')
+        ->expectsOutputToContain('●  Applied and verified workspace registration')
+        ->expectsOutputToContain("└  Workspace 'feature-a' converged")
+        ->expectsOutputToContain("Workspace 'feature-a' is already converged on node 'app-1'. No changes were needed.")
+        ->assertSuccessful();
+});
+
 it('resolves workspace by cwd for gateway callers', function (): void {
     $workspacePath = sys_get_temp_dir().'/orbit-test-workspace-'.uniqid();
     mkdir($workspacePath, 0755, true);
@@ -305,5 +335,50 @@ final class WorkspaceSetupTestShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class WorkspaceSetupTestStreamClient extends WorkspaceSetupGatewayStreamClient
+{
+    public function run(?string $name, ?string $app, ?string $path, callable $onEvent): int
+    {
+        $onEvent('tree', [
+            'title' => 'Setting Up Workspace',
+            'steps' => [
+                [
+                    'key' => 'apply_workspace_registration',
+                    'label' => 'Apply and verify workspace registration',
+                    'doneLabel' => 'Applied and verified workspace registration',
+                ],
+            ],
+        ]);
+        $onEvent('step', [
+            'key' => 'apply_workspace_registration',
+            'status' => 'start',
+        ]);
+        $onEvent('step', [
+            'key' => 'apply_workspace_registration',
+            'status' => 'done',
+            'message' => 'feature-a',
+        ]);
+        $onEvent('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'footer' => "Workspace 'feature-a' converged",
+                'result' => [
+                    'app' => 'demo',
+                    'workspace' => 'feature-a',
+                    'node' => 'app-1',
+                    'url' => 'https://feature-a.demo.beast',
+                    'action' => 'converged',
+                    'warnings' => [],
+                    'setup_steps' => ['status' => 'skipped', 'count' => 0, 'message' => 'No setup steps configured'],
+                    'processes' => ['status' => 'started', 'count' => 0, 'names' => [], 'message' => 'No processes'],
+                    'http_probe' => ['reachable' => true, 'status' => '200'],
+                ],
+            ],
+        ]);
+
+        return 0;
     }
 }

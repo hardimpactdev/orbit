@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Workspaces\SetupWorkspace;
+use App\Actions\Workspaces\SetupWorkspaceProgress;
 use App\Contracts\Loggable;
+use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class WorkspaceSetupController implements Loggable
 {
@@ -103,6 +107,83 @@ final class WorkspaceSetupController implements Loggable
                 'meta' => $meta,
             ],
         ], 200);
+    }
+
+    public function stream(
+        Request $request,
+        SetupWorkspaceProgress $setupProgress,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
+        }
+
+        $validator = validator($request->all(), [
+            'name' => ['nullable', 'string'],
+            'app' => ['nullable', 'string'],
+            'path' => ['nullable', 'string', 'starts_with:/'],
+        ]);
+
+        if ($validator->fails()) {
+            $errors = $validator->errors();
+            $field = $errors->keys()[0] ?? 'unknown';
+
+            return $this->error('validation_failed', $errors->first(), ['field' => $field], 422);
+        }
+
+        $validated = $validator->validated();
+
+        $name = $validated['name'] ?? null;
+        $appName = $validated['app'] ?? null;
+        $path = $validated['path'] ?? null;
+
+        try {
+            [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace($name, $appName, $path);
+        } catch (\RuntimeException $e) {
+            $field = str_contains($e->getMessage(), 'App') ? 'app' : 'workspace';
+
+            return $this->error(
+                $field === 'app' ? 'validation_failed' : 'workspace.not_found',
+                $e->getMessage(),
+                ['field' => $field],
+                422,
+            );
+        }
+
+        $this->activitySubject = $workspace;
+
+        return $streams->make(function ($emitter) use ($setupProgress, $workspace, $app, $node, $isAdoption): void {
+            $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
+            $exitCode = $plan->runForReporter(app(ProgressReporter::class));
+
+            if ($exitCode !== 0) {
+                $failure = $plan->failure() ?? [
+                    'code' => 'workspace.enactment_failed',
+                    'message' => 'Workspace setup failed.',
+                    'meta' => [
+                        'phase' => 'artifacts',
+                        'node' => $node->name,
+                    ],
+                ];
+
+                $emitter->error($failure['message'], 1, [
+                    'code' => $failure['code'],
+                    'message' => $failure['message'],
+                    'meta' => $failure['meta'],
+                    'footer' => $plan->failFooter(),
+                ]);
+
+                return;
+            }
+
+            $emitter->complete(0, [
+                'footer' => $plan->doneFooter(),
+                'result' => $plan->result(),
+            ]);
+        });
     }
 
     /**
