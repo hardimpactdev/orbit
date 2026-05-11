@@ -26,6 +26,19 @@ beforeEach(function (): void {
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
             'is_local' => true,
+            'tld' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'name' => 'app-1',
+            'role' => 'app',
+            'host' => 'app-1',
+            'ssh_user' => 'nckrtl',
+            'orbit_path' => '/home/nckrtl/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'tld' => 'beast',
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -35,7 +48,7 @@ beforeEach(function (): void {
         [
             'name' => 'demo',
             'domain' => 'demo.beast',
-            'node_id' => 1,
+            'node_id' => 2,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
             'environment' => 'development',
@@ -243,7 +256,33 @@ it('renders human output without json', function (): void {
         'name' => 'feature-a',
         '--app' => 'demo',
     ])
-        ->expectsOutputToContain("Workspace 'feature-a' for app 'demo' is ready.")
+        ->expectsOutputToContain("Workspace 'feature-a' is set up under app 'demo' on node 'app-1'.")
+        ->expectsOutputToContain('URL: https://feature-a.demo.beast')
+        ->assertSuccessful();
+});
+
+it('renders the documented progress tree and final tree state for human output', function (): void {
+    Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-tree',
+        'path' => '/home/nckrtl/apps/demo/feature-tree',
+        'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+    ]);
+
+    app()->instance(RemoteShell::class, new WorkspaceSetupTestShell);
+
+    $this->artisan('workspace:setup', [
+        'name' => 'feature-tree',
+        '--app' => 'demo',
+    ])
+        ->expectsOutputToContain('┌  Setting Up Workspace')
+        ->expectsOutputToContain('○  Apply and verify workspace registration')
+        ->expectsOutputToContain('●  Applied and verified workspace registration')
+        ->expectsOutputToContain('●  Registered proxy routes')
+        ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
+        ->expectsOutputToContain('●  Checked workspace readiness')
+        ->expectsOutputToContain("└  Workspace 'feature-tree' converged")
+        ->expectsOutputToContain("Workspace 'feature-tree' is already converged on node 'app-1'. No changes were needed.")
         ->assertSuccessful();
 });
 
