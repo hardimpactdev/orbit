@@ -116,7 +116,11 @@ final class RemoteProgressRenderer
 
         $color = $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED;
         $this->tree->updateFooter($this->output, $this->tree->footerLine($footer, $color));
-        $this->tree->showCursor($this->output);
+
+        if ($this->output->isDecorated()) {
+            $this->tree->showCursor($this->output);
+        }
+
         $this->output->writeln('');
     }
 

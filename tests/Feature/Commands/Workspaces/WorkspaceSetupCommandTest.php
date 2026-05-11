@@ -237,6 +237,7 @@ it('streams progress for forwarded human setup calls', function (): void {
         ->expectsOutputToContain('●  Applied and verified workspace registration')
         ->expectsOutputToContain("└  Workspace 'feature-a' converged")
         ->expectsOutputToContain("Workspace 'feature-a' is already converged on node 'app-1'. No changes were needed.")
+        ->doesntExpectOutputToContain("\e[?25h")
         ->assertSuccessful();
 });
 
