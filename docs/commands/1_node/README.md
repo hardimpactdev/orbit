@@ -85,7 +85,7 @@ directly.
                       | control node |
                       +------+-------+
                              |
-                             | HTTP over WireGuard
+                             | HTTPS over WireGuard
                              v
 +-----------+   SSH   +------+-------+   SSH   +-----------+
 | app node  | <------ |   gateway    | ------> | app node  |
@@ -150,10 +150,10 @@ Node transport has different rules before and after bootstrap:
 
 - Initial provisioning of gateway and app hosts uses SSH because the target host
   does not yet have enough Orbit identity, certificates, network trust, or
-  gateway registration to participate in Orbit HTTP calls.
-- CLI callers use HTTP to communicate with the gateway after local gateway
-  configuration. This lets control nodes and app-node CLI clients operate
-  without owning fleet state.
+  gateway registration to participate in Orbit HTTPS calls.
+- CLI callers use HTTPS over WireGuard to communicate with the gateway after
+  local gateway configuration. This lets control nodes and app-node CLI clients
+  operate without owning fleet state.
 - Gateway VPN administration is the exception: `vpn-client:*` and
   `vpn-web-ui:*` commands run on the gateway host, so a control node initiating
   them needs SSH access to the gateway over Orbit/WireGuard.
