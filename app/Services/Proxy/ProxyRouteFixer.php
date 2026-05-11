@@ -27,7 +27,7 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
-        if ($route->owner_type !== 'custom' || ! in_array($route->kind, ['proxy', 'redirect'], true)) {
+        if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
             return null;
         }
 

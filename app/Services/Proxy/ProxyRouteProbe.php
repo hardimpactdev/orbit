@@ -470,7 +470,15 @@ BASH;
     private function expectsOrbitTls(ProxyRoute $route): bool
     {
         $config = is_array($route->config) ? $route->config : [];
-        $managedBy = $config['tls']['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit';
+        $tls = $config['tls'] ?? null;
+
+        if ($tls === 'internal') {
+            return false;
+        }
+
+        $managedBy = is_array($tls)
+            ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit')
+            : ($config['tls_managed_by'] ?? 'orbit');
 
         return $managedBy === 'orbit';
     }

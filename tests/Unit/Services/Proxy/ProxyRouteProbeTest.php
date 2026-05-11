@@ -309,6 +309,45 @@ describe('proxy backend and TLS reality', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
             ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
     });
+
+    it('skips TLS drift for internal TLS app and workspace routes', function (string $ownerType, string $kind): void {
+        $node = Node::factory()->create(['role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create(['node_id' => $node->id]);
+        $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $ownerType === 'workspace' ? $workspace->id : null,
+            'domain' => "{$kind}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => $kind,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'document_root' => '/home/orbit/apps/docs/public',
+                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                'tls' => 'internal',
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            $route->domain => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => false,
+                'key_exists' => false,
+                'cert_path' => '',
+                'key_path' => '',
+            ],
+        ]);
+
+        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+    })->with([
+        'app route' => ['app', 'app'],
+        'workspace route' => ['workspace', 'workspace'],
+    ]);
 });
 
 describe('proxy node-level introspection', function (): void {

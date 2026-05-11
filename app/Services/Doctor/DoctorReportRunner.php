@@ -26,6 +26,7 @@ use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
+use App\Services\Workspaces\WorkspacesFixer;
 use App\Services\Workspaces\WorkspacesProbe;
 
 final readonly class DoctorReportRunner
@@ -52,6 +53,7 @@ final readonly class DoctorReportRunner
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
+        private WorkspacesFixer $workspacesFixer,
     ) {}
 
     /**
@@ -325,7 +327,11 @@ final readonly class DoctorReportRunner
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
-            'detail' => $entry->detail,
+            'detail' => [
+                ...($entry->detail ?? []),
+                'workspace' => $workspace->name,
+                'app' => $workspace->app?->name,
+            ],
         ]);
     }
 
@@ -439,12 +445,45 @@ final readonly class DoctorReportRunner
         }
 
         return match ($family) {
+            'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($key, $detail),
             'tool' => $this->applyToolIssue($key, $detail),
             'schedule' => $this->applyScheduleIssue($key, $detail),
             default => null,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function applyWorkspaceIssue(Node $node, string $key, array $detail): ?array
+    {
+        $workspaceName = is_string($detail['workspace'] ?? null) ? $detail['workspace'] : null;
+
+        if ($workspaceName === null) {
+            return null;
+        }
+
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+        $workspace = Workspace::query()
+            ->with('app.node')
+            ->where('name', $workspaceName)
+            ->whereHas('app', function ($query) use ($node, $appName): void {
+                $query->where('node_id', $node->id);
+
+                if ($appName !== null) {
+                    $query->where('name', $appName);
+                }
+            })
+            ->first();
+
+        if (! $workspace instanceof Workspace) {
+            return null;
+        }
+
+        return $this->handleWorkspaceAction($workspace, $this->driftEntryFromStoredParts('workspace', $key, $detail));
     }
 
     /**
@@ -620,6 +659,8 @@ final readonly class DoctorReportRunner
             'proxy.route_mismatch',
             'proxy.tls_missing',
             'proxy.tls_mismatch',
+            'workspace.fpm_config_missing',
+            'workspace.fpm_config_mismatch',
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
             'tool.capability_missing',
@@ -804,6 +845,31 @@ final readonly class DoctorReportRunner
                 'schedule_key' => $schedule->schedule_key,
             ],
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): ?array
+    {
+        try {
+            return $this->workspacesFixer->fix($workspace, $entry);
+        } catch (\Throwable $e) {
+            $workspace->loadMissing('app.node');
+
+            return [
+                'family' => $entry->family,
+                'node' => $workspace->app?->node?->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
     }
 
     /**

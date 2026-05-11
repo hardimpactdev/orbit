@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Schedule;
+use App\Models\Workspace;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -16,6 +17,44 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('DoctorReportRunner', function (): void {
+    it('restores workspace PHP-FPM pool mismatches from gateway intent', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+        ]);
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature',
+            'path' => '/home/orbit/apps/docs/feature',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\t0\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['summary'])->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'workspace',
+                'node' => 'app-1',
+                'key' => 'workspace.fpm_config_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature.conf')
+            ->and($shell->scripts[1])->toContain("sudo systemctl reload 'php8.5-fpm'");
+    });
+
     it('suppresses resolved issues when a supported restore completes', function (): void {
         $gateway = Node::factory()->create(['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active']);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);

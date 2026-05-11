@@ -12,6 +12,7 @@ final readonly class ProxyRouteRenderer
     public function render(ProxyRoute $route): string
     {
         return match ($route->kind) {
+            'app', 'workspace' => $this->renderPhpFastCgi($route),
             'proxy' => $this->renderProxy($route),
             'redirect' => $this->renderRedirect($route),
             default => throw new RuntimeException("Proxy route kind '{$route->kind}' is not renderable by the custom proxy route renderer."),
@@ -59,6 +60,49 @@ CADDY;
 {$route->domain} {
     {$tls}
     redir {$target}{uri} {$code}
+}
+
+CADDY;
+    }
+
+    private function renderPhpFastCgi(ProxyRoute $route): string
+    {
+        $route->loadMissing('app');
+
+        $config = is_array($route->config) ? $route->config : [];
+        $documentRoot = $config['document_root'] ?? null;
+        $phpSocket = $config['php_socket'] ?? null;
+        $tls = $config['tls'] ?? 'internal';
+
+        if (! is_string($documentRoot) || $documentRoot === '') {
+            throw new RuntimeException("Proxy route '{$route->domain}' is missing a document root.");
+        }
+
+        if (! is_string($phpSocket) || $phpSocket === '') {
+            throw new RuntimeException("Proxy route '{$route->domain}' is missing a PHP socket.");
+        }
+
+        if (! is_string($tls) || $tls === '') {
+            throw new RuntimeException("Proxy route '{$route->domain}' is missing TLS intent.");
+        }
+
+        $pathBlocking = $route->app?->document_root === '.'
+            ? 'import path_blocking_project_root'
+            : 'import path_blocking_public_root';
+
+        return <<<CADDY
+{$route->domain} {
+    tls {$tls}
+    root * {$documentRoot}
+    encode gzip
+
+    import security_headers
+    import profiling_headers
+    {$pathBlocking}
+    import security_txt
+    import cache_headers
+    php_fastcgi unix/{$phpSocket}
+    file_server
 }
 
 CADDY;

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Doctor\FixDoctorRequest;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\LocalGatewaySettings;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
@@ -202,6 +204,62 @@ describe('doctor command contract', function (): void {
             ->and($payload['success']['data']['doctor']['healthy'])->toBeTrue();
     });
 
+    it('uses the local default node for control caller doctor fix requests', function (): void {
+        createDoctorLocalNode('control');
+        Node::factory()->create([
+            'name' => 'beast',
+            'role' => 'app',
+            'environment' => 'development',
+            'status' => 'active',
+        ]);
+        LocalNodeDefault::query()->create(['default_node_name' => 'beast']);
+
+        LocalGatewaySettings::current()->fill([
+            'gateway_url' => 'https://10.6.0.1',
+            'ca_pem_path' => '/dev/null',
+        ])->save();
+
+        $mock = MockClient::global([
+            FixDoctorRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'doctor' => [
+                            'healthy' => true,
+                            'mode' => 'restore',
+                            'scope' => ['families' => ['workspace'], 'node' => 'beast', 'self' => false, 'app' => null, 'workspace' => null],
+                            'summary' => ['issues' => 0, 'fixed' => 1, 'adopted' => 0, 'skipped' => 0, 'conflicts' => 0],
+                            'issues' => [],
+                            'actions' => [[
+                                'family' => 'workspace',
+                                'node' => 'beast',
+                                'key' => 'workspace.fpm_config_mismatch',
+                                'mode' => 'restore',
+                                'status' => 'completed',
+                                'summary' => 'Re-applied workspace PHP-FPM pool.',
+                            ]],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $exitCode = Artisan::call('doctor', [
+            '--family' => ['workspace'],
+            '--fix' => true,
+            '--restore' => true,
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['doctor']['scope']['node'])->toBe('beast');
+
+        $mock->assertSent(fn (FixDoctorRequest $request): bool => $request->node === 'beast'
+            && $request->self === false
+            && $request->families === ['workspace']
+            && $request->mode === 'restore');
+    });
+
     it('reports app family drift through the global doctor payload', function (): void {
         createDoctorLocalNode('gateway');
         $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
@@ -345,6 +403,27 @@ describe('doctor command contract', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ]);
+    });
+
+    it('names the affected proxy route in interactive doctor prompts', function (): void {
+        createDoctorLocalNode('gateway');
+        $appNode = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+        ]);
+        app()->instance(RemoteShell::class, new DoctorProxyRemoteShell(
+            perRouteStdout: "1\t".str_repeat('b', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            nodeLevelStdout: '',
+        ));
+
+        $this->artisan('doctor --node=app-1 --family=proxy --fix')
+            ->expectsQuestion('Resolve proxy issue proxy.route_mismatch for vite.docs.test on app-1?', 'restore')
+            ->assertExitCode(0);
     });
 
     it('lets restore mode complete supported proxy TLS actions through family dispatch', function (): void {

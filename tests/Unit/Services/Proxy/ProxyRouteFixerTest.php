@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
@@ -81,6 +82,47 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->toContain('else')
             ->and($shell->scripts[0])->toContain("sudo chmod 0600 '/etc/orbit/certs/vite.docs.test.key'")
             ->and($shell->scripts[0])->toContain('sudo systemctl reload caddy');
+    });
+
+    it('re-applies app proxy routes from gateway intent', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'document_root' => '/home/orbit/apps/docs/public',
+                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                'tls' => 'internal',
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'app-1',
+            'key' => 'proxy.route_mismatch',
+            'status' => 'completed',
+        ])
+            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($shell->scripts[0])->toContain('tls internal')
+            ->and($shell->scripts[0])->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->and($route->refresh()->source_hash)->toBe((new ProxyRouteRenderer)->sourceHash($route));
     });
 });
 

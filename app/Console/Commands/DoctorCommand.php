@@ -12,6 +12,7 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Doctor\FixDoctorRequest;
 use App\Http\Gateway\Requests\Doctor\RunDoctorRequest;
 use App\Http\Gateway\Responses\Doctor\DoctorRunResponse;
+use App\Models\LocalNodeDefault;
 use App\Models\Node;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
@@ -311,7 +312,7 @@ class DoctorCommand extends Command implements Loggable
     {
         return new RunDoctorRequest(
             families: $families,
-            node: $target->name ?? $this->stringOption('node'),
+            node: $this->gatewayTargetNodeName($target),
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
@@ -328,7 +329,7 @@ class DoctorCommand extends Command implements Loggable
             mode: $mode,
             families: $families,
             issues: $issues,
-            node: $target->name ?? $this->stringOption('node'),
+            node: $this->gatewayTargetNodeName($target),
             self: $this->shouldForwardSelf($target),
             app: $this->stringOption('app'),
             workspace: $this->stringOption('workspace'),
@@ -341,8 +342,23 @@ class DoctorCommand extends Command implements Loggable
             return true;
         }
 
-        // No --node and no local Node row: ask the gateway to resolve the caller.
-        return $target === null && $this->stringOption('node') === null;
+        // No explicit or default target: ask the gateway to resolve the caller.
+        return $target === null && $this->gatewayTargetNodeName($target) === null;
+    }
+
+    private function gatewayTargetNodeName(?Node $target): ?string
+    {
+        if ($target instanceof Node) {
+            return $target->name;
+        }
+
+        $explicitNode = $this->stringOption('node');
+
+        if ($explicitNode !== null) {
+            return $explicitNode;
+        }
+
+        return $this->shouldUseLocalDefaultNode() ? $this->localDefaultNodeName() : null;
     }
 
     /**
@@ -398,8 +414,31 @@ class DoctorCommand extends Command implements Loggable
         $family = $this->doctorString($issue['family'] ?? null);
         $node = $this->doctorHumanValue($issue['node'] ?? null);
         $key = $this->doctorString($issue['key'] ?? null);
+        $subject = $this->doctorIssueSubject($issue);
+
+        if ($subject !== '') {
+            return "Resolve {$family} issue {$key} for {$subject} on {$node}?";
+        }
 
         return "Resolve {$family} issue {$key} on {$node}?";
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function doctorIssueSubject(array $issue): string
+    {
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
+        foreach (['domain', 'route', 'workspace', 'app', 'process', 'tool', 'rule', 'schedule_key', 'schedule'] as $key) {
+            $value = $detail[$key] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     private function localNode(): ?Node
@@ -422,9 +461,33 @@ class DoctorCommand extends Command implements Loggable
             return $node instanceof Node ? $node : null;
         }
 
+        if ($this->shouldUseLocalDefaultNode()) {
+            $defaultName = $this->localDefaultNodeName();
+
+            if ($defaultName !== null) {
+                $node = Node::query()->where('name', $defaultName)->first();
+
+                return $node instanceof Node ? $node : null;
+            }
+        }
+
         return $this->localNode()
             ?? Node::query()->where('role', 'gateway')->where('status', 'active')->first()
             ?? Node::query()->first();
+    }
+
+    private function shouldUseLocalDefaultNode(): bool
+    {
+        return ! (bool) $this->option('self')
+            && $this->stringOption('node') === null
+            && $this->callerRole() === 'control';
+    }
+
+    private function localDefaultNodeName(): ?string
+    {
+        $name = LocalNodeDefault::query()->value('default_node_name');
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     private function isGatewayCaller(): bool
