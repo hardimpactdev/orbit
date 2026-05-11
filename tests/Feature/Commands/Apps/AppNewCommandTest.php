@@ -211,7 +211,8 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
         ->and($remoteShell->scripts[2])->toContain('[orbit-docs]')
         ->and($remoteShell->scripts[2])->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
-        ->and($remoteShell->scripts[2])->toContain('sudo systemctl reload');
+        ->and($remoteShell->scripts[2])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
+        ->and($remoteShell->scripts[2])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
 });
 
 it('records and enacts an app-owned proxy route after app intent is durable', function (): void {

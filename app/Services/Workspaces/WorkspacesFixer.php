@@ -8,12 +8,14 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Php\PhpFpmServiceReloader;
 
 final readonly class WorkspacesFixer
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private WorkspaceFpmPoolRenderer $fpmPoolRenderer,
+        private PhpFpmServiceReloader $fpmServiceReloader,
     ) {}
 
     /**
@@ -59,18 +61,19 @@ final readonly class WorkspacesFixer
     {
         return sprintf(
             <<<'SH'
+set -e
 sudo install -d -m 0755 %s %s %s
 cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null
 %s
 ORBIT_FPM_POOL
-sudo systemctl reload %s || sudo systemctl reload php-fpm
+%s
 SH,
             escapeshellarg(dirname($path)),
             escapeshellarg(dirname($this->fpmPoolRenderer->socketPath($workspace))),
             escapeshellarg(dirname($this->fpmPoolRenderer->logPath($workspace))),
             escapeshellarg($path),
             $content,
-            escapeshellarg($service),
+            $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
     }
 }

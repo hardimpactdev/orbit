@@ -7,6 +7,7 @@ namespace App\Actions\Apps;
 use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Services\Apps\AppFpmPoolRenderer;
+use App\Services\Php\PhpFpmServiceReloader;
 use RuntimeException;
 
 final readonly class EnactAppRuntime
@@ -16,6 +17,7 @@ final readonly class EnactAppRuntime
         private EnsureAppProxyRoute $ensureAppProxyRoute,
         private EnsureAppProcessRuntimeUnits $ensureAppProcessRuntimeUnits,
         private AppFpmPoolRenderer $fpmPoolRenderer,
+        private PhpFpmServiceReloader $fpmServiceReloader,
     ) {}
 
     /**
@@ -67,18 +69,19 @@ final readonly class EnactAppRuntime
 
         return sprintf(
             <<<'SH'
+set -e
 sudo mkdir -p %s %s %s
 cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null
 %s
 ORBIT_FPM_POOL
-sudo systemctl reload %s || sudo systemctl reload php-fpm
+%s
 SH,
             escapeshellarg(dirname($poolPath)),
             escapeshellarg(dirname($this->fpmPoolRenderer->socketPath($app))),
             escapeshellarg(dirname($this->fpmPoolRenderer->logPath($app))),
             escapeshellarg($poolPath),
             $content,
-            escapeshellarg($service),
+            $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
     }
 }

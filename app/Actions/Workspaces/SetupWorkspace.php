@@ -13,6 +13,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Php\PhpFpmServiceReloader;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
@@ -27,6 +28,7 @@ final readonly class SetupWorkspace
         private RemoteShell $remoteShell,
         private EnsureWorkspaceProxyRoute $proxyRoute,
         private WorkspaceFpmPoolRenderer $fpmRenderer,
+        private PhpFpmServiceReloader $fpmServiceReloader,
         private WorkspaceSetupStepRunner $stepRunner,
         private WorkspaceReadinessProbe $readinessProbe,
         private RuntimeBackendProbe $runtimeBackendProbe,
@@ -149,11 +151,20 @@ final readonly class SetupWorkspace
         $service = $this->fpmRenderer->service($workspace);
 
         $script = sprintf(
-            "sudo mkdir -p %s && cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null && sudo systemctl reload %s\n%s\nORBIT_FPM_POOL",
+            <<<'SH'
+set -e
+sudo install -d -m 0755 %s %s %s
+cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null
+%s
+ORBIT_FPM_POOL
+%s
+SH,
             escapeshellarg(dirname($path)),
+            escapeshellarg(dirname($this->fpmRenderer->socketPath($workspace))),
+            escapeshellarg(dirname($this->fpmRenderer->logPath($workspace))),
             escapeshellarg($path),
-            escapeshellarg($service),
             $content,
+            $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
 
         $result = $this->remoteShell->run($node, $script);

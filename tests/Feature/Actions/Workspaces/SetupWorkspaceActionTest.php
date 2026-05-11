@@ -71,6 +71,28 @@ it('sets up a workspace and marks it active', function (): void {
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
 });
 
+it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restart', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    expect($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
+        ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/php')
+        ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/logs')
+        ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
+        ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
+});
+
 it('reports converged for already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
@@ -223,8 +245,15 @@ it('throws when setup step fails', function (): void {
 
 final class SetupWorkspaceActionTestShell implements RemoteShell
 {
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
