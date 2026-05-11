@@ -43,7 +43,7 @@ describe('app:list human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('docs')
-            ->and($output)->toContain('├─ feature-docs')
+            ->and($output)->toContain('└─ feature-docs')
             ->and($output)->toContain('https://feature-docs.docs.test')
             ->and($output)->toContain('expected');
     });

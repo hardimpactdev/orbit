@@ -218,13 +218,14 @@ class AppListCommand extends Command
                 'expected',
             ];
 
-            foreach ($app['workspaces'] ?? [] as $workspace) {
-                if (! is_array($workspace)) {
-                    continue;
-                }
+            $workspaces = is_array($app['workspaces'] ?? null)
+                ? array_values(array_filter($app['workspaces'], is_array(...)))
+                : [];
+            $lastWorkspaceIndex = array_key_last($workspaces);
 
+            foreach ($workspaces as $index => $workspace) {
                 $rows[] = [
-                    '├─ '.(string) ($workspace['name'] ?? ''),
+                    ($index === $lastWorkspaceIndex ? '└─ ' : '├─ ').(string) ($workspace['name'] ?? ''),
                     $app['environment'],
                     $workspace['url'] ?? '-',
                     $workspace['lifecycle_status'] ?? '-',
