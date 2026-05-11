@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
@@ -43,11 +44,13 @@ it('renders and enacts supervisor programs for app process definitions', functio
         new RemoteShellResult(exitCode: 0, stdout: '/usr/bin/supervisorctl', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
+    $certificates = new ProcessRuntimeRecordingSiteCertificateInstaller;
 
     $warnings = (new EnsureAppProcessRuntimeUnits(
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
         runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
+        siteCertificateInstaller: $certificates,
     ))->handle($app);
 
     $program = base64_decode((string) str($remoteShell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
@@ -61,6 +64,9 @@ it('renders and enacts supervisor programs for app process definitions', functio
         ->and($program)->toContain("command=/bin/bash -lc 'npm run dev -- --host=0.0.0.0'")
         ->and($program)->toContain('autorestart=unexpected')
         ->and($program)->toContain('APP_URL="https://docs.test"')
+        ->and($program)->toContain('VITE_DEV_SERVER_KEY="/home/orbit/.config/orbit/certs/docs.test.key"')
+        ->and($program)->toContain('VITE_DEV_SERVER_CERT="/home/orbit/.config/orbit/certs/docs.test.crt"')
+        ->and($certificates->hosts)->toBe(['docs.test'])
         ->and($remoteShell->scripts[1])->toContain('sudo supervisorctl update');
 });
 
@@ -95,6 +101,7 @@ it('reports process family warnings when supervisor is unavailable after intent 
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
         runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
+        siteCertificateInstaller: new ProcessRuntimeRecordingSiteCertificateInstaller,
     ))->handle($app);
 
     expect($warnings)->toHaveCount(1)
@@ -126,6 +133,7 @@ it('does not probe supervisor when an app has no process definitions', function 
         remoteShell: $remoteShell,
         renderer: new SupervisorProgramRenderer,
         runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
+        siteCertificateInstaller: new ProcessRuntimeRecordingSiteCertificateInstaller,
     ))->handle($app);
 
     expect($warnings)->toBe([])
@@ -156,5 +164,28 @@ final class ProcessRuntimeRecordingRemoteShell implements RemoteShell
             stderr: '',
             durationMs: 1,
         );
+    }
+}
+
+final class ProcessRuntimeRecordingSiteCertificateInstaller implements SiteCertificateInstaller
+{
+    /**
+     * @var list<string>
+     */
+    public array $hosts = [];
+
+    public function ensureFor(Node $node, string $host): array
+    {
+        $this->hosts[] = $host;
+
+        return $this->expectedPathsFor($node, $host);
+    }
+
+    public function expectedPathsFor(Node $node, string $host): array
+    {
+        return [
+            'cert' => "/home/{$node->ssh_user}/.config/orbit/certs/{$host}.crt",
+            'key' => "/home/{$node->ssh_user}/.config/orbit/certs/{$host}.key",
+        ];
     }
 }

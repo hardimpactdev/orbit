@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -49,6 +50,7 @@ beforeEach(function (): void {
     ]);
 
     app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
+    app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
 });
 
 it('sets up a workspace and marks it active', function (): void {
@@ -142,7 +144,9 @@ it('starts configured app processes for the workspace after rendering runtime un
     $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
 
     $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
@@ -151,6 +155,7 @@ it('starts configured app processes for the workspace after rendering runtime un
         'count' => 1,
         'names' => ['vite'],
     ])
+        ->and($certificates->hosts)->toBe(['feature-a.demo.beast'])
         ->and(collect($shell->scripts)->contains(
             fn (string $script): bool => str_contains($script, '/etc/supervisor/conf.d/orbit_demo_feature-a_vite.conf')
         ))->toBeTrue()
@@ -327,5 +332,28 @@ final class SetupWorkspaceActionFailingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'step failed', durationMs: 1);
+    }
+}
+
+final class SetupWorkspaceActionTestCertificateInstaller implements SiteCertificateInstaller
+{
+    /**
+     * @var list<string>
+     */
+    public array $hosts = [];
+
+    public function ensureFor(Node $node, string $host): array
+    {
+        $this->hosts[] = $host;
+
+        return $this->expectedPathsFor($node, $host);
+    }
+
+    public function expectedPathsFor(Node $node, string $host): array
+    {
+        return [
+            'cert' => "/home/gateway/.config/orbit/certs/{$host}.crt",
+            'key' => "/home/gateway/.config/orbit/certs/{$host}.key",
+        ];
     }
 }

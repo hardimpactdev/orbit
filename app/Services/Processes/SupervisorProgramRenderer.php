@@ -32,6 +32,18 @@ final readonly class SupervisorProgramRenderer
         return $this->renderer->configPath($this->definition($app, $process, $workspace));
     }
 
+    public function host(App $app, ?Workspace $workspace = null): string
+    {
+        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (is_string($host) && $host !== '') {
+            return $host;
+        }
+
+        return preg_replace('#^https?://#', '', $url) ?: $app->name;
+    }
+
     public function definition(App $app, Process $process, ?Workspace $workspace = null): SupervisorProgramDefinition
     {
         $app->loadMissing('node');
@@ -73,8 +85,7 @@ final readonly class SupervisorProgramRenderer
     {
         $path = "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin";
         $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
-        $host = preg_replace('#^https?://#', '', $url) ?: $app->name;
-        $tlsBase = "{$home}/.config/orbit/tls/{$host}";
+        $tlsBase = "{$home}/.config/orbit/certs/{$this->host($app, $workspace)}";
 
         return [
             'PATH' => $path,

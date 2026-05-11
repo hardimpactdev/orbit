@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
@@ -21,6 +22,7 @@ use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use RuntimeException;
+use Throwable;
 
 final readonly class SetupWorkspace
 {
@@ -33,6 +35,7 @@ final readonly class SetupWorkspace
         private WorkspaceReadinessProbe $readinessProbe,
         private RuntimeBackendProbe $runtimeBackendProbe,
         private SupervisorProgramRenderer $supervisorRenderer,
+        private SiteCertificateInstaller $siteCertificateInstaller,
     ) {}
 
     /**
@@ -277,6 +280,19 @@ SH,
             return [
                 'success' => false,
                 'message' => "Supervisor is not available on '{$node->name}'. Run doctor to converge process runtime units.",
+                'count' => 0,
+                'names' => [],
+            ];
+        }
+
+        $host = $this->supervisorRenderer->host($app, $workspace);
+
+        try {
+            $this->siteCertificateInstaller->ensureFor($node, $host);
+        } catch (Throwable) {
+            return [
+                'success' => false,
+                'message' => "Failed to install process TLS certificate for '{$host}'. Run doctor to converge process runtime units.",
                 'count' => 0,
                 'names' => [],
             ];

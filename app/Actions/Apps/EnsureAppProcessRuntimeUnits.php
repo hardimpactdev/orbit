@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Models\App;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Processes\SupervisorProgramRenderer;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use RuntimeException;
+use Throwable;
 
 final readonly class EnsureAppProcessRuntimeUnits
 {
@@ -18,6 +20,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         private RemoteShell $remoteShell,
         private SupervisorProgramRenderer $renderer,
         private RuntimeBackendProbe $runtimeBackendProbe,
+        private SiteCertificateInstaller $siteCertificateInstaller,
     ) {}
 
     /**
@@ -48,12 +51,20 @@ final readonly class EnsureAppProcessRuntimeUnits
 
         $warnings = [];
 
-        foreach ($app->processes as $process) {
-            if (! $process instanceof Process) {
+        foreach ($this->runtimeContexts($app) as $workspace) {
+            $tlsWarning = $this->ensureSiteCertificate($app, $workspace);
+
+            if ($tlsWarning !== null) {
+                $warnings[] = $tlsWarning;
+
                 continue;
             }
 
-            foreach ($this->runtimeContexts($app) as $workspace) {
+            foreach ($app->processes as $process) {
+                if (! $process instanceof Process) {
+                    continue;
+                }
+
                 $programName = $this->renderer->programName($app, $process, $workspace);
                 $result = $this->remoteShell->run($app->node, $this->renderInstallScript($app, $process, $workspace));
 
@@ -69,6 +80,31 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
 
         return $warnings;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function ensureSiteCertificate(App $app, ?Workspace $workspace): ?array
+    {
+        if ($app->node === null) {
+            throw new RuntimeException("App '{$app->name}' has no owning node.");
+        }
+
+        $host = $this->renderer->host($app, $workspace);
+
+        try {
+            $this->siteCertificateInstaller->ensureFor($app->node, $host);
+
+            return null;
+        } catch (Throwable) {
+            return [
+                'code' => 'process.tls_certificate_missing',
+                'family' => 'process',
+                'message' => "Process TLS certificate for '{$host}' was not installed. Run doctor to converge process runtime units.",
+                'next_command' => 'doctor --fix --family=process --restore',
+            ];
+        }
     }
 
     /**
