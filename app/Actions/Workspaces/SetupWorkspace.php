@@ -297,6 +297,18 @@ SH,
                 ];
             }
 
+            $programName = $this->supervisorRenderer->programName($app, $process, $workspace);
+            $startResult = $this->remoteShell->run($node, $this->startProcessScript($programName));
+
+            if (! $startResult->successful()) {
+                return [
+                    'success' => false,
+                    'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",
+                    'count' => 0,
+                    'names' => [],
+                ];
+            }
+
             $names[] = $process->name;
         }
 
@@ -306,6 +318,13 @@ SH,
             'count' => count($appProcesses),
             'names' => $names,
         ];
+    }
+
+    private function startProcessScript(string $programName): string
+    {
+        $escapedProgramName = escapeshellarg($programName);
+
+        return "sudo supervisorctl start {$escapedProgramName} || sudo supervisorctl restart {$escapedProgramName}";
     }
 
     /**

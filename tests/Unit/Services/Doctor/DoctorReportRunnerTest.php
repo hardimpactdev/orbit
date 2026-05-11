@@ -86,7 +86,7 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[2])->toContain('[program:orbit_scheduler]');
+            ->and(base64_decode((string) str($shell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]');
     });
 
     it('installs missing tools through restore mode family dispatch', function (): void {

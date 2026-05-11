@@ -50,15 +50,17 @@ it('renders and enacts supervisor programs for app process definitions', functio
         runtimeBackendProbe: new RuntimeBackendProbe($remoteShell),
     ))->handle($app);
 
+    $program = base64_decode((string) str($remoteShell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
     expect($warnings)->toBe([])
         ->and($remoteShell->scripts)->toHaveCount(2)
         ->and($remoteShell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1')
         ->and($remoteShell->scripts[1])->toContain('/etc/supervisor/conf.d/orbit_docs_main_vite.conf')
-        ->and($remoteShell->scripts[1])->toContain('[program:orbit_docs_main_vite]')
-        ->and($remoteShell->scripts[1])->toContain('directory=/home/orbit/apps/docs')
-        ->and($remoteShell->scripts[1])->toContain("command=/bin/bash -lc 'npm run dev -- --host=0.0.0.0'")
-        ->and($remoteShell->scripts[1])->toContain('autorestart=unexpected')
-        ->and($remoteShell->scripts[1])->toContain('APP_URL="https://docs.test"')
+        ->and($program)->toContain('[program:orbit_docs_main_vite]')
+        ->and($program)->toContain('directory=/home/orbit/apps/docs')
+        ->and($program)->toContain("command=/bin/bash -lc 'npm run dev -- --host=0.0.0.0'")
+        ->and($program)->toContain('autorestart=unexpected')
+        ->and($program)->toContain('APP_URL="https://docs.test"')
         ->and($remoteShell->scripts[1])->toContain('sudo supervisorctl update');
 });
 

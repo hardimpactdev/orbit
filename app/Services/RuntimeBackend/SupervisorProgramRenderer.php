@@ -46,14 +46,12 @@ final readonly class SupervisorProgramRenderer
         return sprintf(
             <<<'SH'
 sudo mkdir -p /etc/supervisor/conf.d
-cat <<'ORBIT_SUPERVISOR_PROGRAM' | sudo tee %s >/dev/null
-%s
-ORBIT_SUPERVISOR_PROGRAM
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo supervisorctl reread
 sudo supervisorctl update %s
 SH,
+            escapeshellarg(base64_encode($this->render($program))),
             escapeshellarg($this->configPath($program)),
-            $this->render($program),
             escapeshellarg($program->name),
         );
     }

@@ -45,13 +45,15 @@ it('renders install scripts for supervisor program definitions', function (): vo
     );
 
     $script = (new SupervisorProgramRenderer)->renderInstallScript($program);
+    $content = base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($script)
         ->toContain('sudo mkdir -p /etc/supervisor/conf.d')
         ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_scheduler.conf' >/dev/null")
-        ->toContain('[program:orbit_scheduler]')
-        ->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler'")
-        ->toContain("sudo supervisorctl update 'orbit_scheduler'");
+        ->toContain("sudo supervisorctl update 'orbit_scheduler'")
+        ->and($content)->toBe((new SupervisorProgramRenderer)->render($program))
+        ->and($content)->toContain('[program:orbit_scheduler]')
+        ->and($content)->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler'");
 });
 
 it('rejects unsafe supervisor program names', function (): void {

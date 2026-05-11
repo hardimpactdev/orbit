@@ -37,7 +37,7 @@ describe('SchedulesFixer', function (): void {
             'key' => 'schedule.scheduler_missing',
             'mode' => 'fix',
             'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain('[program:orbit_scheduler]')
+        ])->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))->toContain('[program:orbit_scheduler]')
             ->and($shell->scripts[0])->toContain("sudo supervisorctl update 'orbit_scheduler'");
     });
 

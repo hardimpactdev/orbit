@@ -9,6 +9,7 @@ use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
@@ -119,6 +120,41 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
     expect($caddySite)->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
         ->and($route?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite));
+});
+
+it('starts configured app processes for the workspace after rendering runtime units', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    OrbitProcess::query()->create([
+        'app_id' => 1,
+        'name' => 'vite',
+        'command' => 'npm run dev -- --host=0.0.0.0',
+        'restart_policy' => 'always',
+        'crash_notification' => 'none',
+        'sort_order' => 1,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    expect($result['processes'])->toMatchArray([
+        'status' => 'started',
+        'count' => 1,
+        'names' => ['vite'],
+    ])
+        ->and(collect($shell->scripts)->contains(
+            fn (string $script): bool => str_contains($script, '/etc/supervisor/conf.d/orbit_demo_feature-a_vite.conf')
+        ))->toBeTrue()
+        ->and($shell->scripts)->toContain("sudo supervisorctl start 'orbit_demo_feature-a_vite' || sudo supervisorctl restart 'orbit_demo_feature-a_vite'");
 });
 
 it('reports converged for already-active workspace', function (): void {

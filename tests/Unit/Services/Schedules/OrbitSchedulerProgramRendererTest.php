@@ -32,12 +32,13 @@ it('renders install scripts for the orbit scheduler supervisor program', functio
     ]);
 
     $script = (new OrbitSchedulerProgramRenderer)->installScript($node, sleepSeconds: 60);
+    $program = base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($script)
         ->toContain("sudo tee '/etc/supervisor/conf.d/orbit_scheduler.conf' >/dev/null")
-        ->toContain('[program:orbit_scheduler]')
-        ->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler --sleep-seconds=60'")
-        ->toContain('autostart=true')
-        ->toContain('stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log')
-        ->toContain("sudo supervisorctl update 'orbit_scheduler'");
+        ->toContain("sudo supervisorctl update 'orbit_scheduler'")
+        ->and($program)->toContain('[program:orbit_scheduler]')
+        ->and($program)->toContain("command=/bin/bash -lc 'php artisan orbit-scheduler --sleep-seconds=60'")
+        ->and($program)->toContain('autostart=true')
+        ->and($program)->toContain('stdout_logfile=/home/orbit/.config/orbit/logs/orbit_scheduler.log');
 });
