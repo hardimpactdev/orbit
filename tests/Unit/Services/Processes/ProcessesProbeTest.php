@@ -60,7 +60,7 @@ describe('runtime backend availability', function (): void {
             'runtime_backend_exit_code' => 0,
             'runtime_backend_output' => 'supervisor OK',
         ]);
-        expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1');
+        expect($shell->scripts[0])->toBe('command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1');
         expect($shell->scripts[1])->toContain('ORBIT_PROCESS_UNITS');
         expect($shell->scripts[1])->toContain('ORBIT_PROCESS_EVENT_NOTIFIER');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();

@@ -7,19 +7,19 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 
-it('reports the runtime backend as available when supervisorctl status succeeds', function (): void {
+it('reports the runtime backend as available when supervisorctl responds', function (): void {
     $node = new Node(['name' => 'app-1', 'role' => 'app']);
     $remoteShell = new RuntimeBackendProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "orbit_worker RUNNING\n", stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: "4.2.5\n", stderr: '', durationMs: 1),
     );
 
     $result = (new RuntimeBackendProbe($remoteShell))->check($node);
 
     expect($result->available)->toBeTrue()
         ->and($result->exitCode)->toBe(0)
-        ->and($result->output)->toBe('orbit_worker RUNNING')
+        ->and($result->output)->toBe('4.2.5')
         ->and($remoteShell->scripts)->toBe([
-            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1',
+            'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1',
         ])
         ->and($remoteShell->options[0]['timeout'])->toBe(15);
 });

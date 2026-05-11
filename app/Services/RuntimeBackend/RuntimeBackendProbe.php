@@ -32,6 +32,6 @@ final readonly class RuntimeBackendProbe
 
     private function script(): string
     {
-        return 'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl status >/dev/null 2>&1';
+        return 'command -v supervisorctl >/dev/null 2>&1 && sudo supervisorctl version >/dev/null 2>&1';
     }
 }
