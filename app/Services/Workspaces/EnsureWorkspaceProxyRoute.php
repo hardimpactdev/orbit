@@ -15,6 +15,7 @@ final readonly class EnsureWorkspaceProxyRoute
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private WorkspaceFpmPoolRenderer $fpmPoolRenderer,
     ) {}
 
     /**
@@ -139,11 +140,6 @@ SH,
 
     private function socketPath(Workspace $workspace): string
     {
-        $workspace->loadMissing('app.node');
-
-        $user = $workspace->app?->node?->user ?: ($workspace->app?->node?->ssh_user ?: 'orbit');
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-
-        return "{$home}/.config/orbit/php/{$workspace->app?->name}-{$workspace->name}.sock";
+        return $this->fpmPoolRenderer->socketPath($workspace);
     }
 }

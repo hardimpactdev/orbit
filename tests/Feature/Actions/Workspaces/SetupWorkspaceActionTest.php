@@ -94,6 +94,25 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
         ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
 });
 
+it('registers workspace proxy routes against the rendered workspace PHP-FPM socket', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $shell = new SetupWorkspaceActionTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+    expect($shell->scripts[0])->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+        ->and($workspace->proxyRoutes()->first()?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock');
+});
+
 it('reports converged for already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
