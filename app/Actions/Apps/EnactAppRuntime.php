@@ -71,16 +71,14 @@ final readonly class EnactAppRuntime
             <<<'SH'
 set -e
 sudo mkdir -p %s %s %s
-cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null
-%s
-ORBIT_FPM_POOL
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
 SH,
             escapeshellarg(dirname($poolPath)),
             escapeshellarg(dirname($this->fpmPoolRenderer->socketPath($app))),
             escapeshellarg(dirname($this->fpmPoolRenderer->logPath($app))),
+            escapeshellarg(base64_encode($content)),
             escapeshellarg($poolPath),
-            $content,
             $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
     }

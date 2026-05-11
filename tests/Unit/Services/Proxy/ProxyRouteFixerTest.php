@@ -38,6 +38,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action)->toMatchArray([
             'family' => 'proxy',
@@ -46,8 +47,9 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'completed',
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/vite.docs.test.caddy')
-            ->and($shell->scripts[0])->toContain('reverse_proxy http://127.0.0.1:5173')
+            ->and($caddySite)->toContain('reverse_proxy http://127.0.0.1:5173')
             ->and($shell->scripts[0])->toContain('sudo systemctl reload caddy')
+            ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
 
@@ -112,6 +114,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Divergent,
             summary: 'mismatch',
         ));
+        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
         expect($action)->toMatchArray([
             'family' => 'proxy',
@@ -120,8 +123,9 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'completed',
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
-            ->and($shell->scripts[0])->toContain('tls internal')
-            ->and($shell->scripts[0])->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->and($caddySite)->toContain('tls internal')
+            ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe((new ProxyRouteRenderer)->sourceHash($route));
     });
 });

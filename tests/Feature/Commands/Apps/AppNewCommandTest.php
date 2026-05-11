@@ -203,14 +203,15 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
     ]);
 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $fpmPool = base64_decode((string) str($remoteShell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($exitCode)->toBe(0)
         ->and($payload['success']['meta']['warnings'])->toBe([])
         ->and($remoteShell->scripts[1])->toContain('/usr/sbin/php-fpm8.5')
         ->and($remoteShell->scripts[1])->toContain('php-fpm8.5')
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs.conf')
-        ->and($remoteShell->scripts[2])->toContain('[orbit-docs]')
-        ->and($remoteShell->scripts[2])->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
+        ->and($fpmPool)->toContain('[orbit-docs]')
+        ->and($fpmPool)->toContain('listen = /home/orbit/.config/orbit/php/docs.sock')
         ->and($remoteShell->scripts[2])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
         ->and($remoteShell->scripts[2])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
         ->and($remoteShell->scripts[2])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
@@ -246,6 +247,7 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
     ]);
 
     $route = ProxyRoute::query()->where('domain', 'docs.test')->first();
+    $caddySite = base64_decode((string) str($remoteShell->scripts[3])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($exitCode)->toBe(0)
         ->and($route)->not->toBeNull()
@@ -258,10 +260,11 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
             'tls' => 'internal',
         ])
         ->and($remoteShell->scripts[3])->toContain('/etc/caddy/sites/docs.test.caddy')
-        ->and($remoteShell->scripts[3])->toContain('docs.test {')
-        ->and($remoteShell->scripts[3])->toContain('tls internal')
-        ->and($remoteShell->scripts[3])->toContain('root * /home/orbit/apps/docs/public')
-        ->and($remoteShell->scripts[3])->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+        ->and($caddySite)->toContain('docs.test {')
+        ->and($caddySite)->toContain('tls internal')
+        ->and($caddySite)->toContain('root * /home/orbit/apps/docs/public')
+        ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+        ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))
         ->and($remoteShell->scripts[3])->toContain('sudo systemctl reload caddy');
 });
 

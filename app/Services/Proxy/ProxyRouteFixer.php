@@ -93,13 +93,11 @@ final readonly class ProxyRouteFixer
         return sprintf(
             <<<'SH'
 sudo install -d -m 0755 /etc/caddy/sites
-cat <<'ORBIT_CADDY_SITE' | sudo tee %s >/dev/null
-%s
-ORBIT_CADDY_SITE
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
 sudo systemctl reload caddy
 SH,
+            escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
-            $content,
         );
     }
 

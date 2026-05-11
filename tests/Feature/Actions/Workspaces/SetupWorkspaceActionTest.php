@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Workspaces\WorkspaceFpmPoolRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -86,9 +87,12 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
+    $fpmPool = base64_decode((string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+
     expect($shell->scripts[1])->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')
         ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/php')
         ->and($shell->scripts[1])->toContain('/home/gateway/.config/orbit/logs')
+        ->and($fpmPool)->toBe(app(WorkspaceFpmPoolRenderer::class)->content($workspace))
         ->and($shell->scripts[1])->toContain("PHP_FPM_SERVICE='php8.5-fpm'")
         ->and($shell->scripts[1])->toContain('sudo rm -f "$ORBIT_STALE_POOL"')
         ->and($shell->scripts[1])->toContain('sudo systemctl restart "$PHP_FPM_SERVICE"');
@@ -109,8 +113,12 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    expect($shell->scripts[0])->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
-        ->and($workspace->proxyRoutes()->first()?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock');
+    $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $route = $workspace->proxyRoutes()->first();
+
+    expect($caddySite)->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+        ->and($route?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+        ->and($route?->source_hash)->toBe(hash('sha256', $caddySite));
 });
 
 it('reports converged for already-active workspace', function (): void {

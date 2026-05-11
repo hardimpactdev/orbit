@@ -154,16 +154,14 @@ final readonly class SetupWorkspace
             <<<'SH'
 set -e
 sudo install -d -m 0755 %s %s %s
-cat <<'ORBIT_FPM_POOL' | sudo tee %s >/dev/null
-%s
-ORBIT_FPM_POOL
+printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
 SH,
             escapeshellarg(dirname($path)),
             escapeshellarg(dirname($this->fpmRenderer->socketPath($workspace))),
             escapeshellarg(dirname($this->fpmRenderer->logPath($workspace))),
+            escapeshellarg(base64_encode($content)),
             escapeshellarg($path),
-            $content,
             $this->fpmServiceReloader->reloadOrRestartScript($service),
         );
 
