@@ -58,7 +58,7 @@ final readonly class SetupWorkspace
         $warnings = [];
 
         // Phase 2: Proxy Routing
-        $routeWarnings = $this->proxyRoute->handle($workspace);
+        $routeWarnings = $this->registerProxyRoutes($workspace);
         $warnings = array_merge($warnings, $routeWarnings);
 
         // Phase 3: Artifact Enactment (FPM pool)
@@ -81,7 +81,7 @@ final readonly class SetupWorkspace
         }
 
         // Phase 6: HTTP Probe
-        $probe = $this->readinessProbe->probe($workspace);
+        $probe = $this->probeReadiness($workspace);
 
         if (! $probe['reachable']) {
             $warnings[] = [
@@ -124,7 +124,7 @@ final readonly class SetupWorkspace
         ];
     }
 
-    private function prepareWorkspaceState(Workspace $workspace): void
+    public function prepareWorkspaceState(Workspace $workspace): void
     {
         $workspace->update([
             'lifecycle_status' => WorkspaceLifecycleStatus::SettingUp,
@@ -132,9 +132,17 @@ final readonly class SetupWorkspace
     }
 
     /**
+     * @return list<array<string, string>>
+     */
+    public function registerProxyRoutes(Workspace $workspace): array
+    {
+        return $this->proxyRoute->handle($workspace);
+    }
+
+    /**
      * @return array{code: string, family: string, message: string, next_command: string}|null
      */
-    private function enactFpmPool(Workspace $workspace, Node $node): ?array
+    public function enactFpmPool(Workspace $workspace, Node $node): ?array
     {
         $content = $this->fpmRenderer->content($workspace);
         $path = $this->fpmRenderer->path($workspace);
@@ -165,7 +173,7 @@ final readonly class SetupWorkspace
     /**
      * @return array{status: string, message: string, count: int}
      */
-    private function runSetupSteps(Workspace $workspace, App $app, Node $node): array
+    public function runSetupSteps(Workspace $workspace, App $app, Node $node): array
     {
         $steps = WorkspaceStep::query()
             ->where('app_id', $app->id)
@@ -243,7 +251,7 @@ final readonly class SetupWorkspace
     /**
      * @return array{success: bool, message: string, count: int, names: list<string>}
      */
-    private function startProcesses(App $app, Workspace $workspace, Node $node): array
+    public function startProcesses(App $app, Workspace $workspace, Node $node): array
     {
         $appProcesses = Process::query()
             ->where('app_id', $app->id)
@@ -291,7 +299,15 @@ final readonly class SetupWorkspace
         ];
     }
 
-    private function markActive(Workspace $workspace): void
+    /**
+     * @return array{reachable: bool, status: string}
+     */
+    public function probeReadiness(Workspace $workspace): array
+    {
+        return $this->readinessProbe->probe($workspace);
+    }
+
+    public function markActive(Workspace $workspace): void
     {
         $workspace->update(['lifecycle_status' => WorkspaceLifecycleStatus::Active]);
     }

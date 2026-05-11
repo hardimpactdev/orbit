@@ -192,8 +192,5 @@ register an existing path use
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandContractTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, drift-warning emission shape, and shared exit-status behavior. |
-| `tests/Feature/Actions/Workspaces/CreateWorkspaceActionTest.php` | Internal action contract: identity write, worktree provisioning dispatch, setup-pipeline orchestration, and warning aggregation. |
-| `tests/Unit/Services/Workspaces/ResolveParentAppFromCwdTest.php` | CWD inference precedence: explicit `--app` > `.orbit/config` marker > gateway path-ownership lookup; rejection of project-file content reading as a parent-app signal. |
-| `tests/E2E/Ephemeral/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. Docker-eligible. |
-| `tests/E2E/Ephemeral/WorkspaceNewDriftWarningTest.php` | Real-environment success-with-warning path when the SSH-side enactment fails after the gateway workspace row is written. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, worktree provisioning dispatch, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
+| `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |

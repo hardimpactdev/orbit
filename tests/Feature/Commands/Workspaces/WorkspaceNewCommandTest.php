@@ -23,6 +23,19 @@ beforeEach(function (): void {
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
             'is_local' => true,
+            'tld' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'name' => 'app-1',
+            'role' => 'app',
+            'host' => 'app-1',
+            'ssh_user' => 'nckrtl',
+            'orbit_path' => '/home/nckrtl/orbit',
+            'status' => 'active',
+            'is_local' => false,
+            'tld' => 'beast',
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -32,7 +45,7 @@ beforeEach(function (): void {
         [
             'name' => 'demo',
             'domain' => 'demo.beast',
-            'node_id' => 1,
+            'node_id' => 2,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
             'environment' => 'development',
@@ -88,6 +101,29 @@ it('runs remote worktree provisioning before setup', function (): void {
     expect(implode("\n---\n", $shell->scripts))
         ->toContain('git -C "$app_path" worktree add --detach "$workspace_path" "$base_ref"')
         ->toContain("base_ref='feature/source'");
+});
+
+it('returns warning payloads when worktree provisioning fails after intent is durable', function (): void {
+    app()->instance(RemoteShell::class, new WorkspaceNewSequencedTestShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 2, stdout: '', stderr: 'worktree failed', durationMs: 1),
+    ]));
+
+    $exitCode = Artisan::call('workspace:new', [
+        'name' => 'feature-warning',
+        '--app' => 'demo',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true);
+    $warning = $payload['success']['meta']['warnings'][0];
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['workspace']['name'])->toBe('feature-warning');
+    expect($warning['code'])->toBe('workspace.path_missing');
+    expect($warning['family'])->toBe('workspace');
+    expect($warning['message'])->toContain("Workspace path '/home/nckrtl/apps/demo/feature-warning' is missing on node 'app-1'.");
+    expect($warning['next_command'])->toBe('doctor --fix --family=workspace --restore');
 });
 
 it('rejects app-node callers', function (): void {
@@ -211,8 +247,25 @@ it('renders human output without json', function (): void {
         'name' => 'feature-human',
         '--app' => 'demo',
     ])
-        ->expectsOutputToContain("Workspace 'feature-human' created for app 'demo'.")
-        ->expectsOutputToContain('/home/nckrtl/apps/demo/feature-human')
+        ->expectsOutputToContain("Workspace 'feature-human' created on app 'demo' (node 'app-1').")
+        ->expectsOutputToContain('URL: https://feature-human.demo.beast')
+        ->assertSuccessful();
+});
+
+it('renders the documented progress tree and final tree state for human output', function (): void {
+    $this->artisan('workspace:new', [
+        'name' => 'feature-tree',
+        '--app' => 'demo',
+    ])
+        ->expectsOutputToContain('┌  Creating Workspace')
+        ->expectsOutputToContain('○  Provision worktree on app-1')
+        ->expectsOutputToContain('●  Provisioned worktree on app-1')
+        ->expectsOutputToContain('●  Registered proxy routes')
+        ->expectsOutputToContain('●  Installed PHP-FPM artifacts')
+        ->expectsOutputToContain('●  Rendered inherited runtime units')
+        ->expectsOutputToContain("└  Workspace 'feature-tree' created")
+        ->expectsOutputToContain("Workspace 'feature-tree' created on app 'demo' (node 'app-1').")
+        ->expectsOutputToContain('URL: https://feature-tree.demo.beast')
         ->assertSuccessful();
 });
 
@@ -240,5 +293,20 @@ final class WorkspaceNewTestShell implements RemoteShell
         $this->scripts[] = $script;
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class WorkspaceNewSequencedTestShell implements RemoteShell
+{
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

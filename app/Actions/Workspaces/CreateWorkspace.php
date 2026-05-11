@@ -30,48 +30,11 @@ final readonly class CreateWorkspace
      */
     public function handle(App $app, string $name, string $base = 'main', ?string $phpVersion = null): array
     {
-        $app->loadMissing('node');
+        $node = $this->resolveAppNode($app);
+        $this->ensureSupportedPhpVersion($phpVersion);
+        $this->ensureNodeReachable($node);
 
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new WorkspaceCreateFailed(
-                'workspace.parent_app_invalid',
-                "App '{$app->name}' does not have an owning app node.",
-                ['field' => 'app', 'app' => $app->name],
-            );
-        }
-
-        if ($phpVersion !== null && ! in_array($phpVersion, self::SUPPORTED_PHP_VERSIONS, true)) {
-            throw new WorkspaceCreateFailed(
-                'validation_failed',
-                'Unsupported PHP version.',
-                ['field' => 'php_version', 'reason' => 'unsupported_php_version'],
-            );
-        }
-
-        $preflight = $this->remoteShell->run($node, 'true', ['timeout' => 30]);
-
-        if (! $preflight->successful()) {
-            throw new WorkspaceCreateFailed(
-                'workspace.ssh_failure',
-                "Gateway could not reach app node '{$node->name}' before creating workspace intent.",
-                [
-                    'node' => $node->name,
-                    'reason' => trim($preflight->output()) ?: 'ssh preflight failed',
-                ],
-            );
-        }
-
-        $workspace = Workspace::create([
-            'app_id' => $app->id,
-            'name' => $name,
-            'path' => $this->workspacePath($app, $name),
-            'php_version' => $phpVersion,
-            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
-        ]);
-
-        $workspace->setRelation('app', $app);
+        $workspace = $this->createIntent($app, $name, $phpVersion);
 
         $warnings = [];
         $httpProbe = [
@@ -79,15 +42,10 @@ final readonly class CreateWorkspace
             'status' => 'not_run',
         ];
 
-        $worktree = $this->remoteShell->run($node, $this->worktreeScript($app, $workspace, $base), ['timeout' => 300]);
+        $worktreeWarning = $this->provisionWorktree($app, $workspace, $node, $base);
 
-        if (! $worktree->successful()) {
-            $warnings[] = [
-                'code' => 'workspace.path_missing',
-                'family' => 'workspace',
-                'message' => "Workspace path '{$workspace->path}' is missing on node '{$node->name}'. SSH enactment failed after gateway intent was written.",
-                'next_command' => 'doctor --fix --family=workspace --restore',
-            ];
+        if ($worktreeWarning !== null) {
+            $warnings[] = $worktreeWarning;
         } else {
             try {
                 $setup = $this->setupWorkspace->handle($app, $workspace, $node);
@@ -106,6 +64,102 @@ final readonly class CreateWorkspace
             }
         }
 
+        return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
+    }
+
+    public function resolveAppNode(App $app): Node
+    {
+        $app->loadMissing('node');
+
+        $node = $app->node;
+
+        if (! $node instanceof Node) {
+            throw new WorkspaceCreateFailed(
+                'workspace.parent_app_invalid',
+                "App '{$app->name}' does not have an owning app node.",
+                ['field' => 'app', 'app' => $app->name],
+            );
+        }
+
+        return $node;
+    }
+
+    public function ensureSupportedPhpVersion(?string $phpVersion): void
+    {
+        if ($phpVersion === null || in_array($phpVersion, self::SUPPORTED_PHP_VERSIONS, true)) {
+            return;
+        }
+
+        throw new WorkspaceCreateFailed(
+            'validation_failed',
+            'Unsupported PHP version.',
+            ['field' => 'php_version', 'reason' => 'unsupported_php_version'],
+        );
+    }
+
+    public function ensureNodeReachable(Node $node): void
+    {
+        $preflight = $this->remoteShell->run($node, 'true', ['timeout' => 30]);
+
+        if ($preflight->successful()) {
+            return;
+        }
+
+        throw new WorkspaceCreateFailed(
+            'workspace.ssh_failure',
+            "Gateway could not reach app node '{$node->name}' before creating workspace intent.",
+            [
+                'node' => $node->name,
+                'reason' => trim($preflight->output()) ?: 'ssh preflight failed',
+            ],
+        );
+    }
+
+    public function createIntent(App $app, string $name, ?string $phpVersion): Workspace
+    {
+        $workspace = Workspace::create([
+            'app_id' => $app->id,
+            'name' => $name,
+            'path' => $this->workspacePath($app, $name),
+            'php_version' => $phpVersion,
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+        ]);
+
+        $workspace->setRelation('app', $app);
+
+        return $workspace;
+    }
+
+    /**
+     * @return array{code: string, family: string, message: string, next_command: string}|null
+     */
+    public function provisionWorktree(App $app, Workspace $workspace, Node $node, string $base): ?array
+    {
+        $worktree = $this->remoteShell->run($node, $this->worktreeScript($app, $workspace, $base), ['timeout' => 300]);
+
+        if ($worktree->successful()) {
+            return null;
+        }
+
+        return [
+            'code' => 'workspace.path_missing',
+            'family' => 'workspace',
+            'message' => "Workspace path '{$workspace->path}' is missing on node '{$node->name}'. SSH enactment failed after gateway intent was written.",
+            'next_command' => 'doctor --fix --family=workspace --restore',
+        ];
+    }
+
+    /**
+     * @param  array{reachable: bool, status: string}  $httpProbe
+     * @param  list<array<string, string>>  $warnings
+     * @return array{
+     *     result: array{action: 'created'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
+     * }
+     */
+    public function result(Workspace $workspace, App $app, Node $node, string $base, array $httpProbe, array $warnings): array
+    {
         $workspace->refresh();
         $workspace->setRelation('app', $app);
 
