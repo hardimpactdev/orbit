@@ -16,8 +16,10 @@ supports the Cloudflare command contracts; it does not override the
 - **Provider administration:** Gateway-admin workflow that reads or mutates
   Cloudflare provider state through the gateway. Control callers must go through
   the gateway; app-node callers are denied before prompts or side effects.
-- **Cloudflare API token:** External provider secret stored on the gateway and
-  used only by the gateway when calling the Cloudflare API.
+- **Cloudflare API token:** External provider secret stored on the gateway as
+  `CLOUDFLARE_API_TOKEN` and used only by the gateway when calling the
+  Cloudflare API. `CLOUDFLARE_API_EMAIL` is optional compatibility for
+  Cloudflare global API key authentication.
 - **Real Cloudflare-backed domain:** Public domain that belongs to a
   Cloudflare zone visible to the gateway token. Development TLDs and
   caller-local DNS overrides are not Cloudflare targets.
