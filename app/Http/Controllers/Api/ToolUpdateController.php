@@ -7,21 +7,29 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
+use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolUpdater;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ToolUpdateController implements Loggable
 {
     use ResolvesVisibleToolNodes;
+    use StreamsToolActionProgress;
 
     private ?Node $activitySubject = null;
 
-    public function __invoke(Request $request, string $tool, ToolUpdater $updater): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        string $tool,
+        ToolUpdater $updater,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -45,12 +53,26 @@ final class ToolUpdateController implements Loggable
         $app = $target['app'];
         $version = $this->requestString($request, 'version');
 
-        $result = $updater->update(
+        $operation = fn (): array|ToolRegistryFailure => $updater->update(
             tool: $tool,
             node: $node,
             app: $app,
             expectedVersion: $version,
         );
+
+        if ($this->wantsEventStream($request)) {
+            return $this->streamToolAction(
+                streams: $streams,
+                title: 'Updating Tool',
+                doneFooter: 'Tool updated',
+                failFooter: 'Tool update failed',
+                operation: $operation,
+                data: fn (array $result): array => ['tool' => $result],
+                exitCode: fn (): int => 0,
+            );
+        }
+
+        $result = $operation();
 
         if ($result instanceof ToolRegistryFailure) {
             return $this->failureResponse($result);

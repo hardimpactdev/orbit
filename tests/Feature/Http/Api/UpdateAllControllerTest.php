@@ -177,7 +177,17 @@ it('streams progress events for gateway-owned update targets', function (): void
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
 
-    $response = $this->call('POST', '/api/update/all/stream', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/update/all',
+        [],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+        ],
+    );
 
     $response->assertOk();
     $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');

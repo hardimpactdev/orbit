@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ReconfigureToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolReconfigureResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Services\Tools\ToolReconfigurer;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -25,12 +28,53 @@ use Throwable;
 #[Description('Reconfigure a managed tool')]
 class ToolReconfigureCommand extends Command
 {
-    public function handle(ToolReconfigurer $reconfigurer): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolReconfigurer $reconfigurer,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = (string) $this->argument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
         $password = $this->stringOption('password');
+
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Reconfiguring Tool',
+                    doneFooter: 'Tool reconfigured',
+                    failFooter: 'Tool reconfigure failed',
+                    operation: fn (): array|ToolRegistryFailure => $reconfigurer->reconfigure($tool, node: $node, app: $app, password: $password),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'reconfigure',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                        'password' => $password,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to reconfigure tools.',
+                    defaultFooter: 'Tool reconfigure failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Reconfigured {$result['name']} on {$result['node']}.");
+
+            return self::SUCCESS;
+        }
 
         $result = $this->isGatewayCaller()
             ? $reconfigurer->reconfigure($tool, node: $node, app: $app, password: $password)
@@ -54,13 +98,7 @@ class ToolReconfigureCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Reconfigured {$result['name']} on {$result['node']}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
     /**

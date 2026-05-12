@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
@@ -63,9 +64,12 @@ beforeEach(function (): void {
     };
 
     app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
+    fakeGatewayCaRootThroughLaravelHttp();
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
+
     if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
         File::deleteDirectory($this->tempStorage);
     }

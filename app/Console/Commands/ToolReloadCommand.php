@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ReloadToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -29,8 +32,15 @@ use function Laravel\Prompts\select;
 #[Description('Reload a managed tool')]
 class ToolReloadCommand extends Command
 {
-    public function handle(ToolLifecycleManager $lifecycle, ToolRegistry $registry, ToolCatalog $catalog): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolLifecycleManager $lifecycle,
+        ToolRegistry $registry,
+        ToolCatalog $catalog,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = $this->stringArgument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
@@ -52,6 +62,41 @@ class ToolReloadCommand extends Command
 
             $tool = $selection['tool'];
             $node = $selection['node'];
+        }
+
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Reloading Tool',
+                    doneFooter: 'Tool reloaded',
+                    failFooter: 'Tool reload failed',
+                    operation: fn (): array|ToolRegistryFailure => $lifecycle->reload($tool, node: $node, app: $app),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'reload',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to reload tools.',
+                    defaultFooter: 'Tool reload failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Reloaded {$result['name']} on {$result['node']}.");
+
+            return self::SUCCESS;
         }
 
         $result = $this->isGatewayCaller()
@@ -76,13 +121,7 @@ class ToolReloadCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Reloaded {$result['name']} on {$result['node']}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
     /**

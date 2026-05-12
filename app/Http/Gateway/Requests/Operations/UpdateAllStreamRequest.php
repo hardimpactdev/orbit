@@ -13,7 +13,7 @@ final class UpdateAllStreamRequest extends GatewayStreamRequest
 
     public function resolveEndpoint(): string
     {
-        return '/api/update/all/stream';
+        return '/api/update/all';
     }
 
     /**

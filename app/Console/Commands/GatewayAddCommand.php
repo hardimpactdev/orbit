@@ -10,6 +10,8 @@ use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Exceptions\PromptAborted;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
@@ -23,7 +25,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 #[Signature('gateway:add
@@ -421,12 +422,11 @@ class GatewayAddCommand extends Command implements Loggable
     private function verifyGatewayApi(string $gatewayIp, string $pemPath): array
     {
         try {
-            $response = Http::baseUrl("https://{$gatewayIp}")
-                ->withOptions(['allow_redirects' => false, 'verify' => $pemPath])
-                ->acceptJson()
-                ->timeout(10)
-                ->get('/api/me');
-        } catch (ConnectionException) {
+            $response = (new GatewayConnector(
+                baseUrl: "https://{$gatewayIp}",
+                caPemPath: $pemPath,
+            ))->send(new ShowGatewayIdentityRequest);
+        } catch (\Throwable) {
             return [
                 'code' => 'gateway_unavailable',
                 'message' => "Gateway at {$gatewayIp} is unreachable.",
@@ -434,7 +434,9 @@ class GatewayAddCommand extends Command implements Loggable
             ];
         }
 
-        if ($response->status() === 403) {
+        $status = $response->status();
+
+        if ($status === 403) {
             return [
                 'code' => 'node.identity_unknown',
                 'message' => "This peer is not registered on the gateway at {$gatewayIp}. Ask your admin to run `orbit node:new --role=control <name>` on the gateway first, then retry.",
@@ -445,14 +447,14 @@ class GatewayAddCommand extends Command implements Loggable
         if (! $response->successful()) {
             return [
                 'code' => 'gateway_unavailable',
-                'message' => "Gateway at {$gatewayIp} returned HTTP {$response->status()} for /api/me.",
-                'meta' => ['gateway_ip' => $gatewayIp, 'status' => $response->status()],
+                'message' => "Gateway at {$gatewayIp} returned HTTP {$status} for /api/me.",
+                'meta' => ['gateway_ip' => $gatewayIp, 'status' => $status],
             ];
         }
 
-        $payload = (array) ($response->json('success.data') ?? $response->json('data') ?? $response->json() ?? []);
-        $self = is_array($payload['self'] ?? null) ? $payload['self'] : ($payload['node'] ?? null);
-        $gateway = is_array($payload['gateway'] ?? null) ? $payload['gateway'] : null;
+        $identity = $response->dto();
+        $self = $identity->self;
+        $gateway = $identity->gateway;
 
         if (! is_array($self)) {
             return [

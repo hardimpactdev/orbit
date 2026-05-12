@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\RestartToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -24,11 +27,51 @@ use Throwable;
 #[Description('Restart a managed tool')]
 class ToolRestartCommand extends Command
 {
-    public function handle(ToolLifecycleManager $lifecycle): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolLifecycleManager $lifecycle,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = (string) $this->argument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
+
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Restarting Tool',
+                    doneFooter: 'Tool restarted',
+                    failFooter: 'Tool restart failed',
+                    operation: fn (): array|ToolRegistryFailure => $lifecycle->restart($tool, node: $node, app: $app),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'restart',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to restart tools.',
+                    defaultFooter: 'Tool restart failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Restarted {$result['name']} on {$result['node']}.");
+
+            return self::SUCCESS;
+        }
 
         $result = $this->isGatewayCaller()
             ? $lifecycle->restart($tool, node: $node, app: $app)
@@ -52,13 +95,7 @@ class ToolRestartCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Restarted {$result['name']} on {$result['node']}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
     /**

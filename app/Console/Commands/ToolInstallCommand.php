@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\InstallToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolInstallResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -26,8 +29,13 @@ use Throwable;
 #[Description('Install a managed tool')]
 class ToolInstallCommand extends Command
 {
-    public function handle(ToolInstaller $installer): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolInstaller $installer,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = (string) $this->argument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
@@ -40,6 +48,50 @@ class ToolInstallCommand extends Command
                 message: "Invalid --status value '{$status}'. Valid values: installed, running.",
                 meta: ['field' => 'status'],
             );
+        }
+
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Installing Tool',
+                    doneFooter: 'Tool installed',
+                    failFooter: 'Tool install failed',
+                    operation: fn (): array|ToolRegistryFailure => $installer->install(
+                        tool: $tool,
+                        node: $node,
+                        app: $app,
+                        expectedVersion: $version,
+                        expectedState: $status,
+                    ),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'install',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                        'status' => $status,
+                        'version' => $version,
+                        'config' => [],
+                    ],
+                    unavailableMessage: 'Gateway connection is required to install tools.',
+                    defaultFooter: 'Tool install failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Installed {$result['name']} on {$result['node']} ({$result['state']}).");
+
+            return self::SUCCESS;
         }
 
         $result = $this->isGatewayCaller()
@@ -70,13 +122,7 @@ class ToolInstallCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Installed {$result['name']} on {$result['node']} ({$result['state']}).");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
     /**

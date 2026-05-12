@@ -7,20 +7,27 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
+use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
 use App\Services\Tools\ToolUpdater;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ToolUpdateBulkController implements Loggable
 {
     use ResolvesVisibleToolNodes;
+    use StreamsToolActionProgress;
 
     private ?Node $activitySubject = null;
 
-    public function __invoke(Request $request, ToolUpdater $updater): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        ToolUpdater $updater,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -37,7 +44,21 @@ final class ToolUpdateBulkController implements Loggable
         $node = $this->requestString($request, 'node');
         $app = $this->requestString($request, 'app');
 
-        $result = $updater->updateAll(node: $node, app: $app);
+        $operation = fn (): array => $updater->updateAll(node: $node, app: $app);
+
+        if ($this->wantsEventStream($request)) {
+            return $this->streamToolAction(
+                streams: $streams,
+                title: 'Updating Tool',
+                doneFooter: 'Tool update completed',
+                failFooter: 'Tool update failed',
+                operation: $operation,
+                data: fn (array $result): array => $result,
+                exitCode: fn (array $result): int => $result['failed'] === [] ? 0 : 1,
+            );
+        }
+
+        $result = $operation();
 
         $this->activitySubject = $caller;
 

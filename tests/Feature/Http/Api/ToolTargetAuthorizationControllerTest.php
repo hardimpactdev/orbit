@@ -106,6 +106,39 @@ describe('tool API target authorization', function (): void {
             ->assertJsonPath('success.data.credentials.node', 'visible-node')
             ->assertJsonPath('success.data.credentials.fields.password', 'visible-secret');
     });
+
+    it('streams tool mutation progress from the canonical endpoint', function (): void {
+        $caller = createToolTargetAuthCaller();
+        $visibleNode = Node::factory()->create(['name' => 'visible-node', 'role' => 'app', 'status' => 'active']);
+        grantToolTargetAuthAccess($caller, $visibleNode);
+
+        app()->instance(RemoteShell::class, new ToolTargetAuthorizationRecordingShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/redis/install',
+            ['node' => 'visible-node'],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+            ],
+        );
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
+        $content = $response->streamedContent();
+
+        expect($content)->toContain('event: tree')
+            ->and($content)->toContain('"title":"Installing Tool"')
+            ->and($content)->toContain('"key":"resolve-target"')
+            ->and($content)->toContain('"key":"read-intent"')
+            ->and($content)->toContain('"key":"run-action"')
+            ->and($content)->toContain('event: complete')
+            ->and($content)->toContain('"name":"redis"')
+            ->and($content)->not->toContain('/stream');
+    });
 });
 
 final class ToolTargetAuthorizationRecordingShell implements RemoteShell

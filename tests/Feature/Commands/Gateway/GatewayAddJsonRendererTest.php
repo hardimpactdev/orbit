@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
@@ -62,9 +63,12 @@ beforeEach(function (): void {
     };
 
     app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
+    fakeGatewayIdentity();
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
+
     if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
         File::deleteDirectory($this->tempStorage);
     }
@@ -272,11 +276,12 @@ it('emits local_context_invalid for unknown role', function (): void {
 });
 
 it('emits node.identity_unknown for 403 response', function (): void {
+    fakeGatewayIdentity('', 403);
+
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
-        'https://10.6.0.2/api/me' => Http::response('', 403),
     ]);
 
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
@@ -286,11 +291,12 @@ it('emits node.identity_unknown for 403 response', function (): void {
 });
 
 it('emits gateway_unavailable for non-success api response', function (): void {
+    fakeGatewayIdentity('', 500);
+
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
-        'https://10.6.0.2/api/me' => Http::response('', 500),
     ]);
 
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
@@ -301,9 +307,7 @@ it('emits gateway_unavailable for non-success api response', function (): void {
 });
 
 it('emits gateway_unavailable for unreachable ca endpoint', function (): void {
-    Http::fake([
-        'http://10.6.0.2/api/ca/root' => Http::response('', 503),
-    ]);
+    fakeGatewayIdentity(rootCaBody: '', rootCaStatus: 503);
 
     $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
 

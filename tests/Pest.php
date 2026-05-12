@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 use Tests\TestCase;
 
 require_once __DIR__.'/E2E/Support/Pest.php';
@@ -54,3 +59,105 @@ pest()->extend(TestCase::class)
 | global functions to help you to reduce the number of lines of code in your test files.
 |
 */
+
+/**
+ * @param  array<string, mixed>|string|null  $body
+ * @param  array<string, mixed>|string|null  $rootCaBody
+ */
+function fakeGatewayIdentity(
+    array|string|null $body = null,
+    int $status = 200,
+    array|string|null $rootCaBody = null,
+    int $rootCaStatus = 200,
+): MockClient {
+    MockClient::destroyGlobal();
+
+    return MockClient::global([
+        ShowGatewayIdentityRequest::class => MockResponse::make(
+            $body ?? gatewayIdentityEnvelope(),
+            $status,
+        ),
+        'http://10.6.0.2/api/ca/root' => MockResponse::make(
+            $rootCaBody ?? gatewayCaEnvelope(),
+            $rootCaStatus,
+        ),
+    ]);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function gatewayCaEnvelope(string $pem = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'root_ca' => $pem,
+            ],
+        ],
+    ];
+}
+
+function fakeGatewayCaRootThroughLaravelHttp(): MockClient
+{
+    MockClient::destroyGlobal();
+
+    return MockClient::global([
+        'http://10.6.0.2/api/ca/root' => function (PendingRequest $request): MockResponse {
+            $response = Http::timeout(10)
+                ->withOptions(['allow_redirects' => false])
+                ->acceptJson()
+                ->get($request->getUrl());
+
+            return MockResponse::make(
+                $response->body(),
+                $response->status(),
+                $response->headers(),
+            );
+        },
+        'https://10.6.0.2/api/ca/root' => function (PendingRequest $request): MockResponse {
+            $response = Http::timeout(10)
+                ->withOptions(['allow_redirects' => false])
+                ->withoutVerifying()
+                ->acceptJson()
+                ->get($request->getUrl());
+
+            return MockResponse::make(
+                $response->body(),
+                $response->status(),
+                $response->headers(),
+            );
+        },
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $self
+ * @param  array<string, mixed>  $gateway
+ * @return array<string, mixed>
+ */
+function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
+{
+    return [
+        'success' => [
+            'data' => [
+                'self' => [
+                    'name' => 'control-1',
+                    'role' => 'control',
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.8'],
+                    ...$self,
+                ],
+                'gateway' => [
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'platform' => 'unknown',
+                    'addresses' => ['wireguard' => '10.6.0.2'],
+                    ...$gateway,
+                ],
+            ],
+        ],
+    ];
+}

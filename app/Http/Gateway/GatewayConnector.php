@@ -16,6 +16,9 @@ final class GatewayConnector extends Connector
 
     public function __construct(
         private readonly string $clientName = 'cli',
+        private readonly ?string $baseUrl = null,
+        private readonly string|bool|null $caPemPath = null,
+        private readonly int $timeout = 900,
     ) {}
 
     public static function forScheduler(): self
@@ -25,7 +28,7 @@ final class GatewayConnector extends Connector
 
     public function resolveBaseUrl(): string
     {
-        return LocalGatewaySettings::current()->gateway_url ?? '';
+        return $this->baseUrl ?? LocalGatewaySettings::current()->gateway_url ?? '';
     }
 
     /**
@@ -49,12 +52,10 @@ final class GatewayConnector extends Connector
      */
     protected function defaultConfig(): array
     {
-        $settings = LocalGatewaySettings::current();
-
         return [
-            'verify' => $settings->ca_pem_path,
+            'verify' => $this->caPemPath ?? LocalGatewaySettings::current()->ca_pem_path,
             'allow_redirects' => false,
-            'timeout' => 900,
+            'timeout' => $this->timeout,
             'connect_timeout' => 10,
         ];
     }

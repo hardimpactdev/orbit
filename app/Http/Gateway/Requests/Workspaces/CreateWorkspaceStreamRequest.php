@@ -24,7 +24,7 @@ final class CreateWorkspaceStreamRequest extends GatewayStreamRequest implements
 
     public function resolveEndpoint(): string
     {
-        return '/api/workspaces/stream';
+        return '/api/workspaces';
     }
 
     /**

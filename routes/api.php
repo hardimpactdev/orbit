@@ -145,9 +145,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/schedules/{name}', ScheduleDestroyController::class);
         Route::get('/schedules/{name}', ScheduleShowController::class);
         Route::get('/workspaces', WorkspaceListController::class);
-        Route::post('/workspaces/stream', [WorkspaceStoreController::class, 'stream']);
         Route::post('/workspaces', WorkspaceStoreController::class);
-        Route::post('/workspaces/setup/stream', [WorkspaceSetupController::class, 'stream']);
         Route::post('/workspaces/setup', WorkspaceSetupController::class);
         Route::get('/workspaces/history/resolve-by-path', [WorkspaceHistoryController::class, 'fromPath']);
         Route::get('/workspaces/runs/{run}/log', WorkspaceLogController::class);
@@ -180,7 +178,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/tools/{tool}/start', ToolStartController::class);
         Route::post('/tools/{tool}/stop', ToolStopController::class);
         Route::get('/tools/{tool}', ToolShowController::class);
-        Route::post('/update/all/stream', [UpdateAllController::class, 'stream']);
         Route::post('/update/all', UpdateAllController::class);
         Route::get('/vpn/clients', VpnClientListController::class);
         Route::post('/vpn/clients', VpnClientCreateController::class);

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\WithSpinner;
+use App\Concerns\WithStepTree;
 use App\Data\Php\PhpRuntimeFailure;
 use App\Data\Php\PhpRuntimeOperation;
 use App\Http\Gateway\GatewayApiException;
@@ -28,6 +30,9 @@ use Throwable;
 #[Description('Select PHP runtime intent for an app, workspace, or node CLI default')]
 class PhpUseCommand extends Command
 {
+    use WithSpinner;
+    use WithStepTree;
+
     public function handle(PhpRuntimeManager $php): int
     {
         $callerRole = $this->callerRole();
@@ -38,16 +43,11 @@ class PhpUseCommand extends Command
             ]));
         }
 
-        $result = $callerRole === 'gateway'
-            ? $php->use(
-                version: $this->stringArgument('version'),
-                app: $this->stringOption('app'),
-                workspace: $this->stringOption('workspace'),
-                node: $this->stringOption('node'),
-                inherit: (bool) $this->option('inherit'),
-                cli: (bool) $this->option('cli'),
-            )
-            : $this->forwardToGateway();
+        if (! $this->wantsJson()) {
+            return $this->handleHuman($php, $callerRole);
+        }
+
+        $result = $this->runPhpUseOperation($php, $callerRole);
 
         if ($result instanceof GatewayApiException) {
             return $this->failCommand(new PhpRuntimeFailure(
@@ -61,13 +61,81 @@ class PhpUseCommand extends Command
             return $this->failCommand($result->failure);
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($result->payload, $result->meta);
+        return $this->jsonSuccess($result->payload, $result->meta);
+    }
+
+    private function handleHuman(PhpRuntimeManager $php, string $callerRole): int
+    {
+        $result = null;
+        $failure = null;
+
+        $operation = function () use ($php, $callerRole, &$result, &$failure): string {
+            $result = $this->runPhpUseOperation($php, $callerRole);
+
+            if ($result instanceof GatewayApiException) {
+                $failure = new PhpRuntimeFailure(
+                    code: $result->errorCode() ?? 'gateway_unavailable',
+                    message: $result->getMessage() !== '' ? $result->getMessage() : 'Gateway connection is required to change PHP runtime selection.',
+                    meta: $result->errorMeta(),
+                );
+
+                return "fail:{$failure->message}";
+            }
+
+            if ($result->failed()) {
+                $failure = $result->failure;
+
+                return "fail:{$failure?->message}";
+            }
+
+            return 'change verified';
+        };
+
+        $exitCode = $this->runStepTree($this->progressTitle(), [
+            [
+                'label' => 'Resolve target',
+                'doneLabel' => 'Resolved target',
+                'run' => fn (): string => 'target resolved',
+            ],
+            [
+                'label' => 'Validate version',
+                'doneLabel' => 'Validated version',
+                'run' => fn (): string => $this->option('inherit') === true ? 'inheritance selected' : 'version selected',
+            ],
+            [
+                'label' => $this->applyStepLabel(),
+                'doneLabel' => $this->applyStepDoneLabel(),
+                'run' => $operation,
+            ],
+        ], doneFooter: $this->progressDoneFooter(), failFooter: 'PHP runtime update failed');
+
+        if ($exitCode !== self::SUCCESS) {
+            return $this->failCommand($failure);
+        }
+
+        if (! $result instanceof PhpRuntimeOperation) {
+            return self::FAILURE;
         }
 
         $this->renderHuman($result->payload['result'] ?? []);
 
         return self::SUCCESS;
+    }
+
+    private function runPhpUseOperation(PhpRuntimeManager $php, string $callerRole): PhpRuntimeOperation|GatewayApiException
+    {
+        if ($callerRole !== 'gateway') {
+            return $this->forwardToGateway();
+        }
+
+        return $php->use(
+            version: $this->stringArgument('version'),
+            app: $this->stringOption('app'),
+            workspace: $this->stringOption('workspace'),
+            node: $this->stringOption('node'),
+            inherit: (bool) $this->option('inherit'),
+            cli: (bool) $this->option('cli'),
+        );
     }
 
     private function forwardToGateway(): PhpRuntimeOperation|GatewayApiException
@@ -114,6 +182,50 @@ class PhpUseCommand extends Command
         }
 
         $this->line("Successfully updated {$target} to PHP {$version}.");
+    }
+
+    private function progressTitle(): string
+    {
+        if ($this->option('inherit') === true) {
+            return 'Restoring workspace PHP inheritance';
+        }
+
+        $version = $this->stringArgument('version') ?? '(unknown)';
+
+        if ($this->option('cli') === true) {
+            return "Updating CLI PHP runtime to PHP {$version}";
+        }
+
+        return "Updating PHP runtime to PHP {$version}";
+    }
+
+    private function applyStepLabel(): string
+    {
+        return $this->option('cli') === true
+            ? 'Apply and verify CLI change'
+            : 'Apply and verify PHP change';
+    }
+
+    private function applyStepDoneLabel(): string
+    {
+        return $this->option('cli') === true
+            ? 'Applied and verified CLI change'
+            : 'Applied and verified PHP change';
+    }
+
+    private function progressDoneFooter(): string
+    {
+        if ($this->option('inherit') === true) {
+            return 'Successfully restored workspace PHP inheritance';
+        }
+
+        $version = $this->stringArgument('version') ?? '(unknown)';
+
+        if ($this->option('cli') === true) {
+            return "Successfully updated CLI PHP runtime to PHP {$version}";
+        }
+
+        return "Successfully updated PHP runtime to PHP {$version}";
     }
 
     private function callerRole(): string

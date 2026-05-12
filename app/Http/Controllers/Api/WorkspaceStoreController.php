@@ -27,8 +27,15 @@ final class WorkspaceStoreController implements Loggable
         private readonly CreateWorkspace $createWorkspace,
     ) {}
 
-    public function __invoke(Request $request): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        CreateWorkspaceProgress $createProgress,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($request, $createProgress, $streams);
+        }
+
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -118,7 +125,7 @@ final class WorkspaceStoreController implements Loggable
         ], 201);
     }
 
-    public function stream(
+    private function stream(
         Request $request,
         CreateWorkspaceProgress $createProgress,
         ProgressEventStreamResponseFactory $streams,
@@ -231,6 +238,11 @@ final class WorkspaceStoreController implements Loggable
                 'result' => $result,
             ]);
         });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse

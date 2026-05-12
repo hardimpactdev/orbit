@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\RemoveToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolRemover;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -25,8 +28,13 @@ use Throwable;
 #[Description('Remove a managed tool')]
 class ToolRemoveCommand extends Command
 {
-    public function handle(ToolRemover $remover): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolRemover $remover,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = (string) $this->argument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
@@ -37,6 +45,41 @@ class ToolRemoveCommand extends Command
                 message: 'Use --force to remove this tool.',
                 meta: ['field' => 'force'],
             );
+        }
+
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Removing Tool',
+                    doneFooter: 'Tool removed',
+                    failFooter: 'Tool remove failed',
+                    operation: fn (): array|ToolRegistryFailure => $remover->remove($tool, node: $node, app: $app),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'remove',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to remove tools.',
+                    defaultFooter: 'Tool remove failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Removed {$result['name']} from {$result['node']}.");
+
+            return self::SUCCESS;
         }
 
         $result = $this->isGatewayCaller()
@@ -61,13 +104,7 @@ class ToolRemoveCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Removed {$result['name']} from {$result['node']}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
     /**

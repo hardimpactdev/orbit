@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
@@ -62,9 +63,12 @@ beforeEach(function (): void {
     };
 
     app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
+    fakeGatewayIdentity();
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
+
     if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
         File::deleteDirectory($this->tempStorage);
     }
@@ -231,11 +235,12 @@ it('shows local context error prose', function (): void {
 });
 
 it('shows unregistered peer prose', function (): void {
+    fakeGatewayIdentity('', 403);
+
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
-        'https://10.6.0.2/api/me' => Http::response('', 403),
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
@@ -244,9 +249,7 @@ it('shows unregistered peer prose', function (): void {
 });
 
 it('shows gateway unavailable prose', function (): void {
-    Http::fake([
-        'http://10.6.0.2/api/ca/root' => Http::response('', 503),
-    ]);
+    fakeGatewayIdentity(rootCaBody: '', rootCaStatus: 503);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
         ->expectsOutputToContain('Could not fetch the gateway CA from 10.6.0.2.')

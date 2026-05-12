@@ -27,8 +27,15 @@ final class WorkspaceSetupController implements Loggable
         private readonly SetupWorkspace $setupWorkspace,
     ) {}
 
-    public function __invoke(Request $request): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        SetupWorkspaceProgress $setupProgress,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($request, $setupProgress, $streams);
+        }
+
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -110,7 +117,7 @@ final class WorkspaceSetupController implements Loggable
         ], 200);
     }
 
-    public function stream(
+    private function stream(
         Request $request,
         SetupWorkspaceProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
@@ -186,6 +193,11 @@ final class WorkspaceSetupController implements Loggable
                 'result' => $plan->result(),
             ]);
         });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
     /**

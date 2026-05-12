@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
@@ -15,7 +16,6 @@ use Illuminate\Process\Factory;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -102,30 +102,15 @@ describe('node:new', function (): void {
 
         app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
 
-        $this->fakeGatewayApiVerification = function (int $status = 200, ?array $payload = null): void {
-            Http::fake([
-                'https://10.6.0.2/api/me' => Http::response($payload ?? [
-                    'success' => [
-                        'data' => [
-                            'self' => [
-                                'name' => 'mini',
-                                'role' => 'control',
-                                'status' => 'active',
-                                'platform' => 'unknown',
-                                'addresses' => ['wireguard' => '10.6.0.3'],
-                            ],
-                            'gateway' => [
-                                'name' => 'gateway-1',
-                                'role' => 'gateway',
-                                'status' => 'active',
-                                'platform' => 'unknown',
-                                'addresses' => ['wireguard' => '10.6.0.2'],
-                            ],
-                        ],
-                    ],
-                ], $status),
-            ]);
-        };
+        $this->fakeGatewayApiVerification = fn (int $status = 200, ?array $payload = null): MockClient => fakeGatewayIdentity(
+            $payload ?? gatewayIdentityEnvelope(
+                self: [
+                    'name' => 'mini',
+                    'addresses' => ['wireguard' => '10.6.0.3'],
+                ],
+            ),
+            $status,
+        );
 
         $this->fakeFirstGatewayProcesses = function (
             string $bootstrapOutput,
@@ -229,7 +214,7 @@ describe('node:new', function (): void {
         $bootstrapInput = null;
 
         ($this->fakeFirstGatewayProcesses)($mockCaCert, $bootstrapInput);
-        ($this->fakeGatewayApiVerification)();
+        $identityMock = ($this->fakeGatewayApiVerification)();
 
         $exitCode = Artisan::call('node:new', [
             'name' => 'gateway-1',
@@ -370,8 +355,7 @@ describe('node:new', function (): void {
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
             && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
 
-        Http::assertSent(fn ($request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://10.6.0.2/api/me');
+        $identityMock->assertSent(ShowGatewayIdentityRequest::class);
     });
 
     it('converges an already bootstrapped first gateway without duplicating trust install', function (): void {

@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\RunsToolActionProgress;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\UpdateToolRequest;
 use App\Http\Gateway\Requests\Tools\UpdateToolsBulkRequest;
 use App\Http\Gateway\Responses\Tools\ToolUpdateBulkResponse;
 use App\Http\Gateway\Responses\Tools\ToolUpdateResponse;
+use App\Http\Gateway\ToolActionGatewayStreamClient;
 use App\Models\Node;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolUpdater;
+use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -27,22 +30,70 @@ use Throwable;
 #[Description('Update a managed tool')]
 class ToolUpdateCommand extends Command
 {
-    public function handle(ToolUpdater $updater): int
-    {
+    use RunsToolActionProgress;
+
+    public function handle(
+        ToolUpdater $updater,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+    ): int {
         $tool = $this->stringArgument('tool');
         $node = $this->stringOption('node');
         $app = $this->stringOption('app');
         $version = $this->stringOption('expected-version');
 
         if ($tool !== null) {
-            return $this->handleSingleTool($updater, $tool, $node, $app, $version);
+            return $this->handleSingleTool($updater, $progress, $stream, $tool, $node, $app, $version);
         }
 
-        return $this->handleBulkUpdate($updater, $node, $app);
+        return $this->handleBulkUpdate($updater, $progress, $stream, $node, $app);
     }
 
-    private function handleSingleTool(ToolUpdater $updater, string $tool, ?string $node, ?string $app, ?string $version): int
-    {
+    private function handleSingleTool(
+        ToolUpdater $updater,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+        string $tool,
+        ?string $node,
+        ?string $app,
+        ?string $version,
+    ): int {
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Updating Tool',
+                    doneFooter: 'Tool updated',
+                    failFooter: 'Tool update failed',
+                    operation: fn (): array|ToolRegistryFailure => $updater->update($tool, node: $node, app: $app, expectedVersion: $version),
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'update',
+                    tool: $tool,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                        'version' => $version,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to update tools.',
+                    defaultFooter: 'Tool update failed',
+                );
+
+            if (! $progressResult['ok']) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            $result = $this->unwrapToolActionData($progressResult['data']);
+            $this->line("Updated {$result['name']} on {$result['node']}.");
+
+            return self::SUCCESS;
+        }
+
         $result = $this->isGatewayCaller()
             ? $updater->update($tool, node: $node, app: $app, expectedVersion: $version)
             : $this->updateViaGateway($tool, node: $node, app: $app, version: $version);
@@ -65,17 +116,49 @@ class ToolUpdateCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess(['tool' => $result]);
-        }
-
-        $this->line("Updated {$result['name']} on {$result['node']}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess(['tool' => $result]);
     }
 
-    private function handleBulkUpdate(ToolUpdater $updater, ?string $node, ?string $app): int
-    {
+    private function handleBulkUpdate(
+        ToolUpdater $updater,
+        ToolActionProgressRunner $progress,
+        ToolActionGatewayStreamClient $stream,
+        ?string $node,
+        ?string $app,
+    ): int {
+        if (! $this->wantsJson()) {
+            $progressResult = $this->isGatewayCaller()
+                ? $this->runLocalToolActionProgress(
+                    progress: $progress,
+                    title: 'Updating Tool',
+                    doneFooter: 'Tool update completed',
+                    failFooter: 'Tool update failed',
+                    operation: fn (): array => $updater->updateAll(node: $node, app: $app),
+                    successful: fn (array $result): bool => $result['failed'] === [],
+                )
+                : $this->runGatewayToolActionProgress(
+                    stream: $stream,
+                    action: 'update-all',
+                    tool: null,
+                    payload: [
+                        'app' => $app,
+                        'node' => $node,
+                    ],
+                    unavailableMessage: 'Gateway connection is required to update tools.',
+                    defaultFooter: 'Tool update failed',
+                );
+
+            if (! $progressResult['ok'] && $progressResult['data'] === []) {
+                return $this->failCommand(
+                    code: $progressResult['code'],
+                    message: $progressResult['message'],
+                    meta: $progressResult['meta'],
+                );
+            }
+
+            return $this->renderBulkUpdateResult($progressResult['data']);
+        }
+
         $result = $this->isGatewayCaller()
             ? $updater->updateAll(node: $node, app: $app)
             : $this->updateBulkViaGateway(node: $node, app: $app);
@@ -90,25 +173,45 @@ class ToolUpdateCommand extends Command
             );
         }
 
-        if ($this->wantsJson()) {
-            $exitCode = $result['failed'] !== [] ? self::FAILURE : self::SUCCESS;
+        $exitCode = $result['failed'] !== [] ? self::FAILURE : self::SUCCESS;
 
-            return $this->jsonSuccess($result, $exitCode);
-        }
+        return $this->jsonSuccess($result, $exitCode);
+    }
 
-        foreach ($result['updated'] as $item) {
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function renderBulkUpdateResult(array $result): int
+    {
+        $updated = is_array($result['updated'] ?? null) ? $result['updated'] : [];
+        $skipped = is_array($result['skipped'] ?? null) ? $result['skipped'] : [];
+        $failed = is_array($result['failed'] ?? null) ? $result['failed'] : [];
+
+        foreach ($updated as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
             $this->line("Updated {$item['tool']} on {$item['node']}.");
         }
 
-        foreach ($result['skipped'] as $item) {
+        foreach ($skipped as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
             $this->line("Skipped {$item['tool']} on {$item['node']}: {$item['reason']}");
         }
 
-        foreach ($result['failed'] as $item) {
+        foreach ($failed as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
             $this->error("Failed {$item['tool']} on {$item['node']}: {$item['error']}");
         }
 
-        return $result['failed'] !== [] ? self::FAILURE : self::SUCCESS;
+        return $failed !== [] ? self::FAILURE : self::SUCCESS;
     }
 
     /**

@@ -53,6 +53,26 @@ describe('tool:install command contract', function (): void {
             ->and($shell->scripts[0])->toContain('up -d');
     });
 
+    it('renders the documented human progress tree', function (): void {
+        createToolInstallLocalNode('gateway');
+        Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        app()->instance(RemoteShell::class, new ToolInstallRecordingShell);
+
+        $exitCode = Artisan::call('tool:install', ['tool' => 'redis', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Installing Tool')
+            ->and($output)->toContain('○  Resolve target')
+            ->and($output)->toContain('○  Read gateway tool intent')
+            ->and($output)->toContain('○  Run command action')
+            ->and($output)->toContain('●  Resolved target')
+            ->and($output)->toContain('●  Read gateway tool intent')
+            ->and($output)->toContain('●  Ran command action')
+            ->and($output)->toContain('└  Tool installed')
+            ->and($output)->toContain('Installed redis on app-1 (installed).');
+    });
+
     it('rejects tools without an install action', function (): void {
         createToolInstallLocalNode('gateway');
         Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);

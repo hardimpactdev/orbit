@@ -7,21 +7,29 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
+use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolRemover;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ToolRemoveController implements Loggable
 {
     use ResolvesVisibleToolNodes;
+    use StreamsToolActionProgress;
 
     private ?Node $activitySubject = null;
 
-    public function __invoke(Request $request, string $tool, ToolRemover $remover): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        string $tool,
+        ToolRemover $remover,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -52,7 +60,21 @@ final class ToolRemoveController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
-        $result = $remover->remove($tool, node: $node, app: $app);
+        $operation = fn (): array|ToolRegistryFailure => $remover->remove($tool, node: $node, app: $app);
+
+        if ($this->wantsEventStream($request)) {
+            return $this->streamToolAction(
+                streams: $streams,
+                title: 'Removing Tool',
+                doneFooter: 'Tool removed',
+                failFooter: 'Tool remove failed',
+                operation: $operation,
+                data: fn (array $result): array => ['tool' => $result],
+                exitCode: fn (): int => 0,
+            );
+        }
+
+        $result = $operation();
 
         if ($result instanceof ToolRegistryFailure) {
             return $this->failureResponse($result);

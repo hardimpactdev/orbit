@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayCaRootRequest;
 use RuntimeException;
+use Saloon\Http\Response;
 
 final readonly class FetchGatewayRootCa
 {
@@ -22,9 +23,10 @@ final readonly class FetchGatewayRootCa
             );
         }
 
-        $rootCa = $response->json('success.data.root_ca')
-            ?? $response->json('data.root_ca')
-            ?? $response->body();
+        $decoded = $this->decodeJsonBody($response);
+        $rootCa = is_array($decoded)
+            ? $decoded['success']['data']['root_ca'] ?? $decoded['data']['root_ca'] ?? null
+            : $response->body();
 
         if (! is_string($rootCa) || $rootCa === '' || str_starts_with($rootCa, '{')) {
             if (is_string($rootCa) && str_starts_with($rootCa, '{')) {
@@ -55,10 +57,11 @@ final readonly class FetchGatewayRootCa
 
     private function fetchRootCa(string $gatewayIp): Response
     {
-        $response = Http::timeout(self::TIMEOUT)
-            ->withOptions(['allow_redirects' => false])
-            ->acceptJson()
-            ->get("http://{$gatewayIp}/api/ca/root");
+        $response = (new GatewayConnector(
+            baseUrl: "http://{$gatewayIp}",
+            caPemPath: false,
+            timeout: self::TIMEOUT,
+        ))->send(new ShowGatewayCaRootRequest);
 
         if (! in_array($response->status(), [301, 302, 307, 308], true)) {
             return $response;
@@ -70,11 +73,11 @@ final readonly class FetchGatewayRootCa
             return $response;
         }
 
-        return Http::timeout(self::TIMEOUT)
-            ->withOptions(['allow_redirects' => false])
-            ->withoutVerifying()
-            ->acceptJson()
-            ->get($location);
+        return (new GatewayConnector(
+            baseUrl: "https://{$gatewayIp}",
+            caPemPath: false,
+            timeout: self::TIMEOUT,
+        ))->send(new ShowGatewayCaRootRequest);
     }
 
     private function isSameGatewayCaLocation(string $location, string $gatewayIp): bool
@@ -84,5 +87,20 @@ final readonly class FetchGatewayRootCa
         return ($parts['scheme'] ?? null) === 'https'
             && ($parts['host'] ?? null) === $gatewayIp
             && ($parts['path'] ?? null) === '/api/ca/root';
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeJsonBody(Response $response): ?array
+    {
+        try {
+            /** @var array<string, mixed> $decoded */
+            $decoded = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        return is_array($decoded) ? $decoded : null;
     }
 }

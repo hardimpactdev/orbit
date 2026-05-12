@@ -56,6 +56,31 @@ describe('tool:start command contract', function (): void {
             ->and($shell->scripts[0])->toContain('systemctl start caddy');
     });
 
+    it('renders the documented human progress tree', function (): void {
+        createToolStartLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'stopped',
+        ]);
+        app()->instance(RemoteShell::class, new ToolStartRecordingShell);
+
+        $exitCode = Artisan::call('tool:start', ['tool' => 'caddy', '--node' => 'app-1']);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('┌  Starting Tool')
+            ->and($output)->toContain('○  Resolve target')
+            ->and($output)->toContain('○  Read gateway tool intent')
+            ->and($output)->toContain('○  Run command action')
+            ->and($output)->toContain('●  Resolved target')
+            ->and($output)->toContain('●  Read gateway tool intent')
+            ->and($output)->toContain('●  Ran command action')
+            ->and($output)->toContain('└  Tool started')
+            ->and($output)->toContain('Started caddy on app-1.');
+    });
+
     it('rejects tools without a start action before changing intent', function (): void {
         createToolStartLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);

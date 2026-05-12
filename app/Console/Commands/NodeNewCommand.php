@@ -8,6 +8,7 @@ use App\Data\Nodes\NodeIdentityArtifact;
 use App\Enums\AdoptAction;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Http\Gateway\Requests\Nodes\CreateNodeRequest;
 use App\Http\Gateway\Responses\Nodes\NodeCreateResponse;
 use App\Models\LocalGatewaySettings;
@@ -28,10 +29,8 @@ use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Throwable;
@@ -1550,12 +1549,11 @@ class NodeNewCommand extends Command
     private function verifyGatewayApi(string $gatewayIp, string $pemPath): array
     {
         try {
-            $response = Http::baseUrl("https://{$gatewayIp}")
-                ->withOptions(['allow_redirects' => false, 'verify' => $pemPath])
-                ->acceptJson()
-                ->timeout(10)
-                ->get('/api/me');
-        } catch (ConnectionException) {
+            $response = (new GatewayConnector(
+                baseUrl: "https://{$gatewayIp}",
+                caPemPath: $pemPath,
+            ))->send(new ShowGatewayIdentityRequest);
+        } catch (Throwable) {
             return [
                 'code' => 'gateway_unavailable',
                 'message' => "Gateway at {$gatewayIp} is unreachable.",
@@ -1566,19 +1564,21 @@ class NodeNewCommand extends Command
             ];
         }
 
+        $status = $response->status();
+
         if (! $response->successful()) {
             return [
                 'code' => 'node.gateway_api_error',
-                'message' => "Gateway at {$gatewayIp} returned HTTP {$response->status()} for /api/me.",
+                'message' => "Gateway at {$gatewayIp} returned HTTP {$status} for /api/me.",
                 'meta' => [
                     'gateway_ip' => $gatewayIp,
-                    'status' => $response->status(),
+                    'status' => $status,
                     'endpoint' => '/api/me',
                 ],
             ];
         }
 
-        $self = $response->json('success.data.self');
+        $self = $response->dto()->self;
 
         if (! is_array($self)) {
             return [

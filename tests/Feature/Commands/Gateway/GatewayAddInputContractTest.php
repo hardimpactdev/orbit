@@ -11,6 +11,7 @@ use App\Services\WireGuard\WireGuardGatewayAddressResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Saloon\Http\Faking\MockClient;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
@@ -60,9 +61,12 @@ beforeEach(function (): void {
     };
 
     app()->instance(TrustStoreInstaller::class, $this->fakeInstaller);
+    fakeGatewayIdentity();
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
+
     if (isset($this->tempStorage) && File::isDirectory($this->tempStorage)) {
         File::deleteDirectory($this->tempStorage);
     }
@@ -247,11 +251,12 @@ it('does not create local node registry mirror rows', function (): void {
 });
 
 it('fails when gateway returns 403 for unregistered peer', function (): void {
+    fakeGatewayIdentity('', 403);
+
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
-        'https://10.6.0.2/api/me' => Http::response('', 403),
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
@@ -259,11 +264,12 @@ it('fails when gateway returns 403 for unregistered peer', function (): void {
 });
 
 it('fails when gateway api returns non-success status', function (): void {
+    fakeGatewayIdentity('', 500);
+
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
             'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
         ]),
-        'https://10.6.0.2/api/me' => Http::response('', 500),
     ]);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
@@ -271,18 +277,14 @@ it('fails when gateway api returns non-success status', function (): void {
 });
 
 it('fails when gateway ca endpoint is unreachable', function (): void {
-    Http::fake([
-        'http://10.6.0.2/api/ca/root' => Http::response('', 503),
-    ]);
+    fakeGatewayIdentity(rootCaBody: '', rootCaStatus: 503);
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
         ->assertFailed();
 });
 
 it('fails when gateway returns invalid ca material', function (): void {
-    Http::fake([
-        'http://10.6.0.2/api/ca/root' => Http::response('not a certificate'),
-    ]);
+    fakeGatewayIdentity(rootCaBody: 'not a certificate');
 
     $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
         ->assertFailed();

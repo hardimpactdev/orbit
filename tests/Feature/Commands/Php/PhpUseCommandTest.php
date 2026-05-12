@@ -47,6 +47,28 @@ describe('php:use command contract', function (): void {
             ->and($payload['success']['meta']['warnings'])->toBe([]);
     });
 
+    it('renders the documented human progress tree', function (): void {
+        createPhpLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        createPhpTool($node, ['versions' => ['8.5', '8.4']]);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+
+        $this->artisan('php:use', [
+            'version' => '8.5',
+            '--app' => 'docs',
+        ])
+            ->expectsOutputToContain('┌  Updating PHP runtime to PHP 8.5')
+            ->expectsOutputToContain('○  Resolve target')
+            ->expectsOutputToContain('○  Validate version')
+            ->expectsOutputToContain('○  Apply and verify PHP change')
+            ->expectsOutputToContain('●  Resolved target')
+            ->expectsOutputToContain('●  Validated version')
+            ->expectsOutputToContain('●  Applied and verified PHP change')
+            ->expectsOutputToContain('└  Successfully updated PHP runtime to PHP 8.5')
+            ->expectsOutputToContain('Successfully updated app to PHP 8.5.')
+            ->assertSuccessful();
+    });
+
     it('updates workspace override and can restore workspace inheritance', function (): void {
         createPhpLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);

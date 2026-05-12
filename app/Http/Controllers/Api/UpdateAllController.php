@@ -21,8 +21,15 @@ final class UpdateAllController implements Loggable
 {
     private ?Node $activitySubject = null;
 
-    public function __invoke(Request $request, OrbitUpdater $updater): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        OrbitUpdater $updater,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
+        if ($this->wantsEventStream($request)) {
+            return $this->stream($request, $updater, $streams);
+        }
+
         $authorized = $this->authorizeCaller($request);
 
         if ($authorized instanceof JsonResponse) {
@@ -56,7 +63,7 @@ final class UpdateAllController implements Loggable
         ]);
     }
 
-    public function stream(Request $request, OrbitUpdater $updater, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
+    private function stream(Request $request, OrbitUpdater $updater, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
     {
         $authorized = $this->authorizeCaller($request);
 
@@ -93,6 +100,11 @@ final class UpdateAllController implements Loggable
                 'summary' => $result['summary'],
             ]);
         });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
     private function authorizeCaller(Request $request): ?JsonResponse
