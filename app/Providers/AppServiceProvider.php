@@ -23,12 +23,29 @@ use App\Services\CurlRequestProfiler;
 use App\Services\Dns\LocalResolver;
 use App\Services\RemoteShell\SshRemoteShell;
 use App\Services\RemoteShell\SshRemoteShellStream;
+use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
+use App\Tools\CaddyTool;
+use App\Tools\ComposerTool;
+use App\Tools\DnsTool;
+use App\Tools\DockerTool;
+use App\Tools\GhTool;
+use App\Tools\MailpitTool;
+use App\Tools\MysqlTool;
+use App\Tools\OpenCodeServerTool;
+use App\Tools\PhpCliTool;
+use App\Tools\PhpTool;
+use App\Tools\PolyscopeServerTool;
+use App\Tools\PostgresTool;
+use App\Tools\RedisTool;
+use App\Tools\ReverbTool;
+use App\Tools\SupervisorTool;
+use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -54,6 +71,24 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
+        $this->app->singleton(ToolDefinitionRegistry::class, fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
+            $app->make(CaddyTool::class),
+            $app->make(SupervisorTool::class),
+            $app->make(DockerTool::class),
+            $app->make(VitePlusTool::class),
+            $app->make(PhpCliTool::class),
+            $app->make(GhTool::class),
+            $app->make(ComposerTool::class),
+            $app->make(DnsTool::class),
+            $app->make(PhpTool::class),
+            $app->make(PostgresTool::class),
+            $app->make(MysqlTool::class),
+            $app->make(RedisTool::class),
+            $app->make(MailpitTool::class),
+            $app->make(ReverbTool::class),
+            $app->make(PolyscopeServerTool::class),
+            $app->make(OpenCodeServerTool::class),
+        ]));
 
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);

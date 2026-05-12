@@ -34,6 +34,9 @@ completed remotely, `tool:install polyscope-server` may report a manual
 `polyscope-server login` recovery step, but that login state is not exposed as
 `tool:credentials`.
 
+`tool:update polyscope-server` runs Polyscope Server's standalone updater and
+then restarts the Orbit-managed user systemd service.
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the managed user service, expected lifecycle

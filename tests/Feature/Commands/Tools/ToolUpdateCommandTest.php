@@ -58,6 +58,55 @@ describe('tool:update command contract', function (): void {
             ->and($shell->scripts[0])->toContain('up -d');
     });
 
+    it('updates polyscope-server through its standalone updater', function (): void {
+        createToolUpdateLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'polyscope-server',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolUpdateRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:update', ['tool' => 'polyscope-server', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool'])->toMatchArray([
+                'name' => 'polyscope-server',
+                'node' => 'app-1',
+            ])
+            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts[0])->toContain('"${home}/.local/bin/polyscope-server" update')
+            ->and($shell->scripts[0])->toContain('systemctl --user restart polyscope-server');
+    });
+
+    it('updates opencode-server through its native upgrade command', function (): void {
+        createToolUpdateLocalNode('gateway');
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'expected_state' => 'running',
+        ]);
+        $shell = new ToolUpdateRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $exitCode = Artisan::call('tool:update', ['tool' => 'opencode-server', '--node' => 'app-1', '--json' => true]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($payload['success']['data']['tool'])->toMatchArray([
+                'name' => 'opencode-server',
+                'node' => 'app-1',
+            ])
+            ->and($shell->scripts)->toHaveCount(1)
+            ->and($shell->scripts[0])->toContain('"${home}/.opencode/bin/opencode" upgrade')
+            ->and($shell->scripts[0])->toContain('systemctl --user restart opencode-server')
+            ->and($shell->scripts[0])->not->toContain('https://opencode.ai/install');
+    });
+
     it('rejects tools without an update action', function (): void {
         createToolUpdateLocalNode('gateway');
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);

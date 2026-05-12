@@ -62,6 +62,9 @@ password.
 OpenCode Server is an agent IDE server capability. Password reset is owned by
 `tool:reconfigure opencode-server --password=<password>`.
 
+`tool:update opencode-server` runs OpenCode's native `opencode upgrade` command
+through the Orbit-managed binary and then restarts the user systemd service.
+
 ## Doctor Relationship
 
 `doctor --family=tool` verifies the managed user service, expected lifecycle
