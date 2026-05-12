@@ -57,7 +57,7 @@ it('sets up a workspace and marks it active', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -79,7 +79,7 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -105,7 +105,7 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -128,7 +128,7 @@ it('starts configured app processes for the workspace after rendering runtime un
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -166,7 +166,7 @@ it('reports converged for already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
@@ -183,7 +183,7 @@ it('reports adopted for new workspace with adoption flag', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -200,7 +200,7 @@ it('skips setup steps when none are configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -218,7 +218,7 @@ it('runs setup steps when configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -251,7 +251,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -286,7 +286,7 @@ it('throws when setup step fails', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 

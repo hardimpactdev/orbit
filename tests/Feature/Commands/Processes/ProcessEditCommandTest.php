@@ -45,7 +45,7 @@ describe('process:edit base contract', function (): void {
         createProcessEditLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/workspaces/feature-docs']);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs']);
         Process::factory()->create(['app_id' => $app->id, 'name' => 'vite', 'command' => 'npm run dev', 'sort_order' => 1]);
 
         $remoteShell = new ProcessEditRemoteShell([

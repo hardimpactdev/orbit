@@ -26,7 +26,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
 | `--app` | `text` | No local context or default. | CWD-inferred parent app | Valid parent app slug. |
-| `--base` | `text` | Optional. | `main` | Source git ref used to create the worktree. |
+| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic worktrees create branch `<workspace>` from this ref; Polyscope passes it as `base_branch` to the Polyscope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 
@@ -109,13 +109,25 @@ support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use
 `doctor --fix --family=workspace --adopt` instead. The command performs:
 
-1. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
-   `name`, `app_id`, derived hostname, `php_version` (or `null` for
-   inheritance), and lifecycle fields. Workspace identity uniqueness is
-   enforced at this step.
-2. **Worktree Provisioning (Remote):** The gateway connects to the parent
-   app's owning app node over SSH via `RemoteShell` and creates a git
-   worktree at the derived workspace path using the requested `--base` ref.
+1. **Workspace Source Provisioning:** Resolve the parent app's effective
+   agent IDE adapter from app -> node -> default, then create the source
+   through the selected source driver.
+   - With no effective adapter, create a generic Git worktree on the parent
+     app node at `<app path>/.worktrees/<name>` by creating branch `<name>`
+     from the requested `--base` ref.
+   - With effective adapter `polyscope`, create the workspace through the
+     Polyscope SDK using the app node's Polyscope server identity, the parent
+     app's Polyscope repository id, `branch=<name>`, and
+     `base_branch=<base>`.
+   - Any adapter without a dedicated workspace source driver currently falls
+     back to the generic worktree source driver.
+2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
+   the source-driver-returned `name` and physical `path`, `app_id`, derived
+   hostname, `php_version` (or `null` for inheritance), adapter metadata, and
+   lifecycle fields. For Polyscope, store `agent_ide=polyscope` and the
+   Polyscope workspace id in `agent_ide_workspace_id`; generic worktrees store
+   both values as `null`. Workspace identity uniqueness is enforced before any
+   side effects and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace
@@ -123,11 +135,11 @@ register an existing path use
      `proxy` family.
    - **PHP-FPM:** render and install the workspace-specific FPM pool config
      on the app node.
-   - **Inherited runtime units:** render and (re)install Supervisor
-     programs derived from the parent app's process definitions.
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
+   - **Inherited runtime units:** render and (re)install Supervisor
+     programs derived from the parent app's process definitions.
    - **HTTP probe:** perform the same setup-time HTTP probe as
      `workspace:setup`. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
@@ -166,6 +178,11 @@ register an existing path use
   (`error.code=workspace.parent_app_invalid`).
 - **SSH failure (pre-intent)** — gateway cannot reach the app node *before*
   the gateway workspace row is written (`error.code=workspace.ssh_failure`).
+- **Workspace source failure (pre-intent)** — the selected workspace source
+  driver cannot create the physical source path or external IDE workspace
+  before the gateway row is written (`error.code=workspace.source_create_failed`
+  for generic worktrees or `workspace.agent_ide_create_failed` for adapter
+  failures). No workspace intent row is retained.
 - **Hard enactment failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
@@ -192,5 +209,5 @@ register an existing path use
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, worktree provisioning dispatch, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, generic worktree provisioning dispatch, Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
 | `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |

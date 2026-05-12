@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When local workspace context cannot resolve it. | Local workspace context when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug. |
-| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | **Absolute path on the owning app node.** A relative or non-absolute value fails before side effects with `error.code=validation_failed`, `error.meta.field=path`. The path must exist on the app node and be inside the parent app's workspace policy. |
+| `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | **Absolute path on the owning app node.** A relative or non-absolute value fails before side effects with `error.code=validation_failed`, `error.meta.field=path`. The path must exist on the app node and satisfy the parent app's workspace source policy. Generic worktree paths must live under `<app path>/.worktrees/`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
 ## Caller Role Behavior
@@ -63,7 +63,9 @@ See also:
      app node.
 4. **Validate Eligibility**:
    - Target app node must be reachable.
-   - Path must be within the parent app's workspace policy.
+   - Path must satisfy the parent app's workspace source policy. Generic
+     worktree paths must live under `<app path>/.worktrees/`; adapter-owned
+     paths are represented by `workspace:new` through stored adapter metadata.
    - Path must exist on the app node (created by `workspace:new` or manual
      provisioning before adoption).
    - Adoption is based on explicit command input and gateway path policy only.
@@ -139,8 +141,9 @@ letting `result.action` describe what this run did, mirroring the
 - **Validation Failures**: Invalid workspace name or non-absolute `--path`.
   Reported as `error.code=validation_failed` with `error.meta.field` naming
   the offending input. Fails before side effects.
-- **Path Outside Policy**: The resolved workspace path is outside the parent
-  app's workspace policy (`error.code=workspace.path_outside_policy`).
+- **Path Outside Policy**: The resolved generic workspace path is outside the
+  parent app's `.worktrees/` policy
+  (`error.code=workspace.path_outside_policy`).
   Fails before side effects.
 - **Authorization Failed**: The caller is not authorized to manage the
   target workspace or parent app

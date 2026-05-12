@@ -36,11 +36,11 @@ it('resolves to GET /api/workspaces/steps/{phase}', function (): void {
 it('serializes path lookups when no app is provided', function (): void {
     $request = new ListWorkspaceStepsRequest(
         phase: WorkspaceLifecyclePhase::Teardown,
-        path: '/srv/docs/workspaces/feature-docs',
+        path: '/srv/docs/.worktrees/feature-docs',
     );
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/steps/teardown');
-    expect($request->query()->all())->toBe(['path' => '/srv/docs/workspaces/feature-docs']);
+    expect($request->query()->all())->toBe(['path' => '/srv/docs/.worktrees/feature-docs']);
 });
 
 it('returns a WorkspaceStepListResponse DTO', function (): void {

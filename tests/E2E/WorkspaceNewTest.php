@@ -78,7 +78,7 @@ it('creates and sets up a workspace from a control caller through the gateway ap
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev, withGatewayApi: true);
     $workspaceName = 'e2e-ws-new-'.strtolower(bin2hex(random_bytes(3)));
-    $workspacePath = "/home/orbit/apps/docs/{$workspaceName}";
+    $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
         $topology->withCurrentCheckout(roles: ['control', 'gateway']);

@@ -254,7 +254,7 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
     Workspace::factory()->create([
         'name' => 'feature-docs',
         'app_id' => $app->id,
-        'path' => '/srv/docs/workspaces/feature-docs',
+        'path' => '/srv/docs/.worktrees/feature-docs',
         'agent_ide' => 'polyscope',
     ]);
 
@@ -263,7 +263,7 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
 
     $response = postAgentIdeMessageJson([
         'message' => 'Ship the docs',
-        'path' => '/srv/docs/workspaces/feature-docs/nested',
+        'path' => '/srv/docs/.worktrees/feature-docs/nested',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
     $response->assertOk()

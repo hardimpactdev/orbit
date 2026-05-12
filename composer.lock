@@ -4,8 +4,67 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1f7c99f9e84e67a50e11e31a849385b1",
+    "content-hash": "bc79b4f49d33beb08bd0be33282bfc9a",
     "packages": [
+        {
+            "name": "beyondcode/polyscope",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/beyondcode/polyscope-laravel.git",
+                "reference": "6e0f232c2852aeb05c43394d149dbb44b88ff115"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/beyondcode/polyscope-laravel/zipball/6e0f232c2852aeb05c43394d149dbb44b88ff115",
+                "reference": "6e0f232c2852aeb05c43394d149dbb44b88ff115",
+                "shasum": ""
+            },
+            "require": {
+                "ext-json": "*",
+                "guzzlehttp/guzzle": "^7.8",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "illuminate/support": "^10.0|^11.0|^12.0",
+                "mockery/mockery": "^1.6",
+                "phpstan/phpstan": "^1.11",
+                "phpunit/phpunit": "^10.5"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Polyscope\\Laravel\\PolyscopeServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Polyscope\\Laravel\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Marcel Pociot"
+                }
+            ],
+            "description": "Laravel SDK for the Polyscope API.",
+            "keywords": [
+                "laravel",
+                "polyscope",
+                "sdk"
+            ],
+            "support": {
+                "issues": "https://github.com/beyondcode/polyscope/issues",
+                "source": "https://github.com/beyondcode/polyscope"
+            },
+            "time": "2026-03-20T12:08:28+00:00"
+        },
         {
             "name": "brick/math",
             "version": "0.14.8",

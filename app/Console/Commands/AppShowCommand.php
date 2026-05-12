@@ -10,6 +10,7 @@ use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Http\Gateway\Responses\Apps\AppShowResponse;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Apps\AppAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -264,11 +265,7 @@ class AppShowCommand extends Command
                 'name' => $app->node?->name,
                 'host' => $app->node?->host,
             ],
-            'agent_ide' => [
-                'adapter' => null,
-                'inherited_from' => 'default',
-                'workspace_discovery' => null,
-            ],
+            'agent_ide' => $this->agentIdePayload($app),
             'workspaces' => [],
             'processes' => [],
             'routes' => [
@@ -290,6 +287,26 @@ class AppShowCommand extends Command
         $host = parse_url($app->url(), PHP_URL_HOST);
 
         return is_string($host) && $host !== '' ? $host : null;
+    }
+
+    /**
+     * @return array{adapter: string|null, inherited_from: string, workspace_discovery: string|null}
+     */
+    private function agentIdePayload(App $app): array
+    {
+        $agentIde = app(AppAgentIdeDefaults::class)->payloadFor($app);
+        $effectiveAdapter = $agentIde['effective_adapter'];
+
+        return [
+            'adapter' => $effectiveAdapter,
+            'inherited_from' => $agentIde['source'],
+            'workspace_discovery' => $effectiveAdapter === null ? null : $this->workspaceDiscovery($effectiveAdapter),
+        ];
+    }
+
+    private function workspaceDiscovery(string $adapter): string
+    {
+        return in_array($adapter, ['opencode', 'polyscope'], true) ? 'available' : 'unsupported';
     }
 
     /**

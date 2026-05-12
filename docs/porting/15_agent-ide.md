@@ -22,11 +22,10 @@ Abstraction seed: `docs/abstractions/15_agent-ide.md`.
     prompt endpoint. Covered by HTTP-faked command tests and Docker feature
     E2E `tests/E2E/AgentIdeMessageTest.php`.
   - [-] Polyscope live message transport is intentionally deferred. Polyscope
-    remains a core descriptor/default value for node/app/workspace intent, but
-    the clean repo has no Polyscope SDK dependency and no current first-party
-    HTTP contract equivalent to OpenCode's prompt endpoint. The old repo used
-    `polyscope/laravel` SDK calls; reintroducing that package is a separate
-    product/dependency decision, not a command-port blocker.
+    remains a core descriptor/default value for node/app/workspace intent.
+    Workspace creation is reintroduced for `workspace:new` through the
+    Polyscope SDK, but message delivery still needs a first-party HTTP contract
+    equivalent to OpenCode's prompt endpoint before it can be marked complete.
   - [x] Docker feature E2E:
     `composer test:e2e:docker -- --filter='sends a workspace message through the managed OpenCode transport'`.
 

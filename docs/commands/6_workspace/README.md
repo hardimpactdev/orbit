@@ -48,6 +48,29 @@ canonical name, and owns one workspace route lifecycle.
   `workspace:history` and `workspace:log` read that history; doctor verifies
   current workspace reality.
 
+## Workspace Source Drivers
+
+Workspace source creation is driver-owned. `workspace:new` resolves the parent
+app's effective agent IDE adapter from app intent, then node defaults, then no
+adapter. The selected source driver creates the source directory and returns
+the physical path that Orbit stores on the gateway workspace record.
+
+- **Generic worktree driver:** used when no effective adapter exists, and as
+  the fallback for adapters without a dedicated workspace source driver. It
+  creates a Git worktree at `<app path>/.worktrees/<workspace>` using branch
+  `<workspace>` from the requested `--base` ref. Generic worktree rows store
+  `agent_ide.adapter=null` and `agent_ide.workspace_id=null`.
+- **Polyscope driver:** used when the effective adapter is `polyscope`. It
+  creates the workspace through the Polyscope SDK using the app node's
+  Polyscope server identity and the parent app's Polyscope repository id.
+  Orbit stores the Polyscope-returned path and workspace id. Polyscope paths
+  are allowed to live outside the parent app path, for example under
+  `~/.polyscope/clones/...`.
+
+No workspace command may derive a physical path as `<app path>/<workspace>`.
+Setup, runtime rendering, doctor checks, and teardown use the path stored on
+the workspace row.
+
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
@@ -74,10 +97,14 @@ than inside it.
   "name": "feature-docs",
   "app": "docs",
   "node": "app-1",
-  "path": "/home/orbit/apps/docs/workspaces/feature-docs",
+  "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
   "php_version": "8.5",
   "php_inherited": true,
+  "agent_ide": {
+    "adapter": null,
+    "workspace_id": null
+  },
   "adopted": false,
   "lifecycle_status": "expected"
 }
@@ -92,12 +119,13 @@ than inside it.
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for intent, observed node versions, and framework metadata. |
 | `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
+| `agent_ide` | object | Adapter metadata captured for the workspace source. `agent_ide.adapter` is `null` for generic worktrees; `agent_ide.workspace_id` stores the adapter-side workspace id when one exists. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry intent lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
-whose value is inapplicable; the current canonical workspace entity has no
-nullable structural fields.
+whose value is inapplicable, such as generic worktrees without an adapter-side
+workspace id.
 
 ## Terminology
 

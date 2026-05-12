@@ -48,7 +48,7 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature-api',
-        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-api',
         'php_version' => null,
     ]);
 
@@ -96,20 +96,20 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
         ->and($remoteShell->scripts)->toHaveCount(4)
         ->and($remoteShell->scripts[0])->toContain('orbit_docs_feature-api_queue')
         ->and($remoteShell->scripts[1])->toBe('php artisan migrate:rollback --force')
-        ->and($remoteShell->options[1]['cwd'])->toBe('/home/orbit/apps/docs/workspaces/feature-api')
+        ->and($remoteShell->options[1]['cwd'])->toBe('/home/orbit/apps/docs/.worktrees/feature-api')
         ->and($remoteShell->options[1]['timeout'])->toBe(123)
         ->and($remoteShell->options[1]['env'])->toMatchArray([
             'ORBIT_APP' => 'docs',
             'ORBIT_APP_PATH' => '/home/orbit/apps/docs',
             'ORBIT_WORKSPACE_NAME' => 'feature-api',
-            'ORBIT_WORKSPACE_PATH' => '/home/orbit/apps/docs/workspaces/feature-api',
+            'ORBIT_WORKSPACE_PATH' => '/home/orbit/apps/docs/.worktrees/feature-api',
             'ORBIT_URL' => 'https://feature-api.docs.test',
             'ORBIT_PHP_VERSION' => '8.5',
             'VITE_APP_URL' => 'https://feature-api.docs.test',
             'VITE_VALET_HOST' => 'feature-api.docs.test',
         ])
         ->and($remoteShell->scripts[2])->toContain('/etc/php/8.5/fpm/pool.d/orbit-docs-feature-api.conf')
-        ->and($remoteShell->scripts[3])->toContain("rm -rf '/home/orbit/apps/docs/workspaces/feature-api'")
+        ->and($remoteShell->scripts[3])->toContain("rm -rf '/home/orbit/apps/docs/.worktrees/feature-api'")
         ->and($payload['success']['data'])->toMatchArray([
             'name' => 'feature-api',
             'app' => 'docs',
@@ -147,7 +147,7 @@ it('renders the documented human progress tree while removing a workspace', func
     Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature-api',
-        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-api',
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
@@ -191,7 +191,7 @@ it('renders decorated progress tree glyphs and colors while removing a workspace
     Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature-api',
-        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-api',
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([
@@ -380,7 +380,7 @@ it('continues workspace teardown after a failed step and reports the failed step
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature-api',
-        'path' => '/home/orbit/apps/docs/workspaces/feature-api',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-api',
     ]);
     $failedStep = WorkspaceStep::factory()->create([
         'app_id' => $app->id,

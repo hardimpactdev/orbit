@@ -12,6 +12,7 @@ use App\Contracts\RequestProfiler;
 use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\ToolLogGatewayStream;
 use App\Contracts\UpdateAllGatewayStream;
+use App\Contracts\WorkspaceSourceDrivers;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\ToolLogGatewayStreamClient;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
@@ -25,6 +26,7 @@ use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstaller;
+use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
 use Illuminate\Support\ServiceProvider;
@@ -51,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(ToolLogGatewayStream::class, ToolLogGatewayStreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);
+        $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
 
         $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);

@@ -11,7 +11,7 @@ it('reports workspace source drift from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::ControlGatewayDev)
         ->withCurrentCheckout(roles: ['gateway']);
     $workspaceName = 'e2e-ws-doc-'.strtolower(bin2hex(random_bytes(3)));
-    $workspacePath = "/home/orbit/apps/docs/{$workspaceName}";
+    $workspacePath = "/home/orbit/apps/docs/.worktrees/{$workspaceName}";
 
     try {
         workspacesDoctorSeedGatewayIntent($topology, $workspaceName, $workspacePath);

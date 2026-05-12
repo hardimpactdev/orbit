@@ -113,7 +113,7 @@ class WorkspaceShowPayload
 
     private function workspaceDiscovery(string $adapter): string
     {
-        return $adapter === 'opencode' ? 'available' : 'unsupported';
+        return in_array($adapter, ['opencode', 'polyscope'], true) ? 'available' : 'unsupported';
     }
 
     private function fpmPool(Workspace $workspace): string

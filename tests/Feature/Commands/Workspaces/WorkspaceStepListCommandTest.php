@@ -138,7 +138,7 @@ describe('workspace step list commands', function (): void {
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature-docs',
-            'path' => '/tmp/orbit-workspace-step-list/docs/workspaces/feature-docs',
+            'path' => '/tmp/orbit-workspace-step-list/docs/.worktrees/feature-docs',
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,

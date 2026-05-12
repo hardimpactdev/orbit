@@ -315,6 +315,10 @@ class WorkspaceSetupCommand extends Command
             ->where('name', $workspaceName)
             ->first();
 
+        if (! $this->pathAllowedForWorkspace($app, $path, $existing)) {
+            throw new RuntimeException("Path {$path} is outside the parent app workspace policy.");
+        }
+
         if ($existing instanceof Workspace) {
             $existing->update(['path' => $path]);
             $existing->load(['app', 'app.node']);
@@ -332,6 +336,17 @@ class WorkspaceSetupCommand extends Command
         $workspace->load('app.node');
 
         return [$workspace, $app, $node, true];
+    }
+
+    private function pathAllowedForWorkspace(App $app, string $path, ?Workspace $workspace): bool
+    {
+        if ($workspace instanceof Workspace && $workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
+            return true;
+        }
+
+        $appPath = rtrim($app->path, '/');
+
+        return str_starts_with($path, "{$appPath}/.worktrees/");
     }
 
     /**
@@ -458,6 +473,10 @@ class WorkspaceSetupCommand extends Command
 
     private function resolveErrorCode(string $message): string
     {
+        if (str_contains($message, 'outside the parent app workspace policy')) {
+            return 'workspace.path_outside_policy';
+        }
+
         if (str_starts_with($message, 'Path ')) {
             return 'validation_failed';
         }

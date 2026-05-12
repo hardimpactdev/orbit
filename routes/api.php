@@ -136,6 +136,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/schedules/{name}', ScheduleDestroyController::class);
         Route::get('/schedules/{name}', ScheduleShowController::class);
         Route::get('/workspaces', WorkspaceListController::class);
+        Route::post('/workspaces/stream', [WorkspaceStoreController::class, 'stream']);
         Route::post('/workspaces', WorkspaceStoreController::class);
         Route::post('/workspaces/setup/stream', [WorkspaceSetupController::class, 'stream']);
         Route::post('/workspaces/setup', WorkspaceSetupController::class);

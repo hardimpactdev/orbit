@@ -14,7 +14,7 @@ The workspace family owns these facts:
 - gateway-owned workspace records: name, parent app, workspace path, derived
   hostname, PHP version override or inheritance, and lifecycle status;
 - workspace source location: the managed workspace path exists on the parent
-  app's node and is inside the workspace location allowed by the parent app;
+  app's node and is allowed by the workspace source driver that created it;
 - workspace runtime artifacts: workspace PHP-FPM configuration, effective PHP
   version, managed runtime configuration, and filesystem ownership required for
   the workspace environment;
@@ -43,8 +43,10 @@ The workspaces probe reads gateway workspace records and checks these layers:
    record that can own workspaces. App runtime health is not diagnosed here;
    app drift is reported by the app family.
 3. **Source path:** the workspace path exists on the parent app's node, is
-   usable as the workspace source directory, and stays inside the parent app's
-   workspace policy.
+   usable as the workspace source directory, and satisfies source-driver path
+   policy. Generic worktrees must stay inside `<app path>/.worktrees/...`.
+   Adapter-owned sources such as Polyscope may live outside the parent app
+   path when the workspace row records the owning adapter metadata.
 4. **PHP runtime:** the effective workspace PHP version can serve the workspace
    runtime on the owning app node, and the workspace PHP-FPM endpoint matches
    gateway workspace intent.
@@ -70,7 +72,7 @@ results as workspace-family issue codes.
 | `workspace.parent_app_invalid` | The workspace record points at a missing app, unauthorized app, or app that cannot own workspaces. |
 | `workspace.path_missing` | The configured workspace path does not exist on the parent app's node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | The configured workspace path resolves outside the parent app's workspace policy. |
+| `workspace.path_outside_policy` | A generic workspace path resolves outside the parent app's workspace policy. Adapter-owned paths are checked against their adapter metadata instead of the generic app-root policy. |
 | `workspace.php_version_unavailable` | The effective workspace PHP version cannot serve the workspace runtime on the owning app node. |
 | `workspace.fpm_config_missing` | The workspace PHP-FPM configuration or endpoint is absent. |
 | `workspace.fpm_config_mismatch` | The workspace PHP-FPM configuration or endpoint differs from gateway workspace intent. |

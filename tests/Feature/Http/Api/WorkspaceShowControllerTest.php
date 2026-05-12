@@ -57,7 +57,7 @@ describe('WorkspaceShowController', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'path' => '/home/orbit/apps/docs/workspaces/feature-docs',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         ]);
 
         Process::query()->create([
@@ -125,10 +125,10 @@ describe('WorkspaceShowController', function (): void {
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'path' => '/srv/docs/workspaces/feature-docs',
+            'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
 
-        $response = $this->call('GET', '/api/workspaces/resolve-by-path?path=/srv/docs/workspaces/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')

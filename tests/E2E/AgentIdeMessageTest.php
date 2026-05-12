@@ -69,7 +69,7 @@ $app = \App\Models\App::query()->updateOrCreate(
 \App\Models\Workspace::query()->updateOrCreate(
     ['app_id' => $app->id, 'name' => 'feature-docs'],
     [
-        'path' => '/srv/docs/workspaces/feature-docs',
+        'path' => '/srv/docs/.worktrees/feature-docs',
         'php_version' => null,
         'agent_ide' => 'opencode',
         'agent_ide_workspace_id' => 'sess_e2e',
@@ -146,7 +146,7 @@ it('sends a workspace message through the managed OpenCode transport', function 
                 'providerID' => null,
                 'modelID' => null,
                 'text' => 'Ship the docs',
-                'directory' => '/srv/docs/workspaces/feature-docs',
+                'directory' => '/srv/docs/.worktrees/feature-docs',
             ]);
     } finally {
         $topology->ssh(

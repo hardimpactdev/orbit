@@ -14,6 +14,8 @@ final readonly class CreateWorkspaceResponse
         public ?string $url,
         public ?string $phpVersion,
         public bool $phpInherited,
+        /** @var array<string, mixed> */
+        public array $agentIde,
         public bool $adopted,
         public string $lifecycleStatus,
         public string $base,

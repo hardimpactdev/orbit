@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\CreateWorkspace;
-use App\Actions\Workspaces\SetupWorkspace;
+use App\Actions\Workspaces\CreateWorkspaceProgress;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\WorkspaceCreateFailed;
@@ -13,9 +13,11 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\CreateWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\CreateWorkspaceResponse;
+use App\Http\Gateway\WorkspaceNewGatewayStreamClient;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Support\Cli\RemoteProgressRenderer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -36,8 +38,11 @@ class WorkspaceNewCommand extends Command
     use WithSpinner;
     use WithStepTree;
 
-    public function handle(CreateWorkspace $createWorkspace, SetupWorkspace $setupWorkspace): int
-    {
+    public function handle(
+        CreateWorkspace $createWorkspace,
+        CreateWorkspaceProgress $createProgress,
+        WorkspaceNewGatewayStreamClient $createStream,
+    ): int {
         $callerRole = $this->callerRole();
 
         if ($callerRole === 'app') {
@@ -108,15 +113,15 @@ class WorkspaceNewCommand extends Command
         $phpVersion = $this->stringOption('php-version');
 
         if ($callerRole === 'control') {
-            return $this->forwardCreate($name, $app, $base, $phpVersion);
+            return $this->forwardCreate($createStream, $name, $app, $base, $phpVersion);
         }
 
-        return $this->createLocally($createWorkspace, $setupWorkspace, $name, $app, $base, $phpVersion);
+        return $this->createLocally($createWorkspace, $createProgress, $name, $app, $base, $phpVersion);
     }
 
     private function createLocally(
         CreateWorkspace $createWorkspace,
-        SetupWorkspace $setupWorkspace,
+        CreateWorkspaceProgress $createProgress,
         string $name,
         string $app,
         string $base,
@@ -159,7 +164,7 @@ class WorkspaceNewCommand extends Command
         }
 
         if (! $this->wantsJson()) {
-            return $this->createLocallyForHuman($createWorkspace, $setupWorkspace, $appModel, $name, $base, $phpVersion);
+            return $this->createLocallyForHuman($createWorkspace, $createProgress, $appModel, $name, $base, $phpVersion);
         }
 
         try {
@@ -177,21 +182,12 @@ class WorkspaceNewCommand extends Command
 
     private function createLocallyForHuman(
         CreateWorkspace $createWorkspace,
-        SetupWorkspace $setupWorkspace,
+        CreateWorkspaceProgress $createProgress,
         App $app,
         string $name,
         string $base,
         ?string $phpVersion,
     ): int {
-        $workspace = null;
-        /** @var list<array<string, string>> $warnings */
-        $warnings = [];
-        /** @var array{reachable: bool, status: string} $httpProbe */
-        $httpProbe = ['reachable' => false, 'status' => 'not_run'];
-        /** @var WorkspaceCreateFailed|null $failure */
-        $failure = null;
-        $worktreeProvisioned = false;
-
         try {
             $node = $createWorkspace->resolveAppNode($app);
         } catch (WorkspaceCreateFailed $exception) {
@@ -202,182 +198,31 @@ class WorkspaceNewCommand extends Command
             );
         }
 
+        $plan = $createProgress->for($app, $node, $name, $base, $phpVersion);
         $exitCode = $this->runStepTree(
-            'Creating Workspace',
-            [
-                [
-                    'key' => 'provision_worktree',
-                    'label' => "Provision worktree on {$node->name}",
-                    'doneLabel' => "Provisioned worktree on {$node->name}",
-                    'run' => function () use ($createWorkspace, $app, $node, $name, $base, $phpVersion, &$workspace, &$warnings, &$failure, &$worktreeProvisioned): string {
-                        try {
-                            $createWorkspace->ensureNodeReachable($node);
-                            $workspace = $createWorkspace->createIntent($app, $name, $phpVersion);
-                            $warning = $createWorkspace->provisionWorktree($app, $workspace, $node, $base);
-                        } catch (WorkspaceCreateFailed $exception) {
-                            $failure = $exception;
-
-                            throw $exception;
-                        }
-
-                        if ($warning !== null) {
-                            $warnings[] = $warning;
-
-                            return 'skip:'.$warning['message'];
-                        }
-
-                        $worktreeProvisioned = true;
-
-                        return $workspace->path;
-                    },
-                ],
-                [
-                    'key' => 'register_proxy_routes',
-                    'label' => 'Register proxy routes',
-                    'doneLabel' => 'Registered proxy routes',
-                    'run' => function () use ($setupWorkspace, &$workspace, &$warnings, &$worktreeProvisioned): string {
-                        if (! $workspace instanceof Workspace || ! $worktreeProvisioned) {
-                            return 'skip:Workspace worktree was not provisioned.';
-                        }
-
-                        $setupWorkspace->prepareWorkspaceState($workspace);
-                        $routeWarnings = $setupWorkspace->registerProxyRoutes($workspace);
-                        $warnings = array_merge($warnings, $routeWarnings);
-
-                        if ($routeWarnings !== []) {
-                            return 'skip:'.(string) ($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
-                        }
-
-                        return 'ready';
-                    },
-                ],
-                [
-                    'key' => 'install_php_fpm_artifacts',
-                    'label' => 'Install PHP-FPM artifacts',
-                    'doneLabel' => 'Installed PHP-FPM artifacts',
-                    'run' => function () use ($setupWorkspace, $node, &$workspace, &$warnings, &$worktreeProvisioned): string {
-                        if (! $workspace instanceof Workspace || ! $worktreeProvisioned) {
-                            return 'skip:Workspace worktree was not provisioned.';
-                        }
-
-                        $warning = $setupWorkspace->enactFpmPool($workspace, $node);
-
-                        if ($warning !== null) {
-                            $warnings[] = $warning;
-
-                            return 'skip:'.$warning['message'];
-                        }
-
-                        return 'ready';
-                    },
-                ],
-                [
-                    'key' => 'run_workspace_setup_steps',
-                    'label' => 'Run workspace setup steps',
-                    'doneLabel' => 'Ran workspace setup steps',
-                    'run' => function () use ($setupWorkspace, $app, $node, &$workspace, &$failure, &$worktreeProvisioned): string {
-                        if (! $workspace instanceof Workspace || ! $worktreeProvisioned) {
-                            return 'skip:Workspace worktree was not provisioned.';
-                        }
-
-                        $setupResult = $setupWorkspace->runSetupSteps($workspace, $app, $node);
-
-                        if ($setupResult['status'] === 'failed') {
-                            $failure = new WorkspaceCreateFailed(
-                                'workspace.enactment_failed',
-                                "Workspace enactment on node '{$node->name}' stopped before Orbit could classify remaining drift.",
-                                [
-                                    'step' => 'setup_pipeline',
-                                    'node' => $node->name,
-                                    'reason' => $setupResult['message'],
-                                ],
-                            );
-
-                            throw $failure;
-                        }
-
-                        return $setupResult['message'];
-                    },
-                ],
-                [
-                    'key' => 'render_inherited_runtime_units',
-                    'label' => 'Render inherited runtime units',
-                    'doneLabel' => 'Rendered inherited runtime units',
-                    'run' => function () use ($setupWorkspace, $app, $node, &$workspace, &$failure, &$worktreeProvisioned): string {
-                        if (! $workspace instanceof Workspace || ! $worktreeProvisioned) {
-                            return 'skip:Workspace worktree was not provisioned.';
-                        }
-
-                        $processResult = $setupWorkspace->startProcesses($app, $workspace, $node);
-
-                        if (! $processResult['success']) {
-                            $failure = new WorkspaceCreateFailed(
-                                'workspace.enactment_failed',
-                                "Workspace enactment on node '{$node->name}' stopped before Orbit could classify remaining drift.",
-                                [
-                                    'step' => 'processes',
-                                    'node' => $node->name,
-                                    'reason' => $processResult['message'],
-                                ],
-                            );
-
-                            throw $failure;
-                        }
-
-                        if ($processResult['count'] === 0) {
-                            return 'No inherited runtime units';
-                        }
-
-                        return implode(', ', $processResult['names']);
-                    },
-                ],
-                [
-                    'key' => 'check_workspace_readiness',
-                    'label' => 'Check workspace readiness',
-                    'doneLabel' => 'Checked workspace readiness',
-                    'run' => function () use ($setupWorkspace, &$workspace, &$warnings, &$httpProbe, &$worktreeProvisioned): string {
-                        if (! $workspace instanceof Workspace || ! $worktreeProvisioned) {
-                            return 'skip:Workspace worktree was not provisioned.';
-                        }
-
-                        $httpProbe = $setupWorkspace->probeReadiness($workspace);
-
-                        if (! $httpProbe['reachable']) {
-                            $warning = [
-                                'code' => 'workspace.http_probe_unhealthy',
-                                'family' => 'workspace',
-                                'message' => "Workspace did not become reachable: {$httpProbe['status']}",
-                                'next_command' => 'doctor --fix --family=workspace --restore',
-                            ];
-                            $warnings[] = $warning;
-                            $setupWorkspace->markActive($workspace);
-
-                            return 'skip:'.$warning['message'];
-                        }
-
-                        $setupWorkspace->markActive($workspace);
-
-                        return (string) $httpProbe['status'];
-                    },
-                ],
-            ],
-            doneFooter: "Workspace '{$name}' created",
-            failFooter: "Failed to create workspace '{$name}'.",
+            $plan->title(),
+            $plan->steps(),
+            doneFooter: $plan->doneFooter(),
+            failFooter: $plan->failFooter(),
         );
 
-        if ($exitCode !== self::SUCCESS || $failure instanceof WorkspaceCreateFailed) {
-            if ($failure instanceof WorkspaceCreateFailed) {
+        if ($exitCode !== self::SUCCESS) {
+            $failure = $plan->failure();
+
+            if ($failure !== null) {
                 return $this->failCommand(
-                    code: $failure->errorCode,
-                    message: $failure->getMessage(),
-                    meta: $failure->meta,
+                    code: $failure['code'],
+                    message: $failure['message'],
+                    meta: $failure['meta'],
                 );
             }
 
             return self::FAILURE;
         }
 
-        if (! $workspace instanceof Workspace) {
+        $result = $plan->result();
+
+        if (($result['workspace'] ?? []) === []) {
             return $this->failCommand(
                 code: 'workspace.enactment_failed',
                 message: "Workspace '{$name}' was not created.",
@@ -385,11 +230,20 @@ class WorkspaceNewCommand extends Command
             );
         }
 
-        return $this->respondSuccess($createWorkspace->result($workspace, $app, $node, $base, $httpProbe, $warnings));
+        return $this->respondSuccess($result);
     }
 
-    private function forwardCreate(string $name, string $app, string $base, ?string $phpVersion): int
-    {
+    private function forwardCreate(
+        WorkspaceNewGatewayStreamClient $createStream,
+        string $name,
+        string $app,
+        string $base,
+        ?string $phpVersion,
+    ): int {
+        if (! $this->wantsJson()) {
+            return $this->forwardCreateForHuman($createStream, $name, $app, $base, $phpVersion);
+        }
+
         try {
             /** @var CreateWorkspaceResponse $dto */
             $dto = app(GatewayConnector::class)
@@ -422,6 +276,7 @@ class WorkspaceNewCommand extends Command
                 'url' => $dto->url,
                 'php_version' => $dto->phpVersion,
                 'php_inherited' => $dto->phpInherited,
+                'agent_ide' => $dto->agentIde,
                 'adopted' => $dto->adopted,
                 'lifecycle_status' => $dto->lifecycleStatus,
             ],
@@ -432,6 +287,89 @@ class WorkspaceNewCommand extends Command
                 'warnings' => $dto->warnings,
             ],
         ]);
+    }
+
+    private function forwardCreateForHuman(
+        WorkspaceNewGatewayStreamClient $createStream,
+        string $name,
+        string $app,
+        string $base,
+        ?string $phpVersion,
+    ): int {
+        $renderer = new RemoteProgressRenderer($this->output);
+        $completeData = [];
+        $errorData = [];
+        $footer = 'Done';
+
+        $result = $createStream->run($name, $app, $base, $phpVersion, function (string $event, array $payload) use ($renderer, &$completeData, &$errorData, &$footer): void {
+            if ($event === 'tree') {
+                $title = is_string($payload['title'] ?? null) ? $payload['title'] : '';
+                $steps = is_array($payload['steps'] ?? null) ? $payload['steps'] : [];
+                $renderer->tree($title, $steps);
+
+                return;
+            }
+
+            if ($event === 'step') {
+                $renderer->step(
+                    is_string($payload['key'] ?? null) ? $payload['key'] : '',
+                    is_string($payload['status'] ?? null) ? $payload['status'] : '',
+                    is_string($payload['message'] ?? null) ? $payload['message'] : null,
+                );
+
+                return;
+            }
+
+            if ($event === 'complete') {
+                $completeData = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+                if (is_string($completeData['footer'] ?? null)) {
+                    $footer = $completeData['footer'];
+                }
+
+                return;
+            }
+
+            if ($event === 'error') {
+                $errorData = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+
+                if (is_string($errorData['footer'] ?? null)) {
+                    $footer = $errorData['footer'];
+                }
+            }
+        });
+
+        if ($result instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $result->errorCode() ?? 'gateway_unavailable',
+                message: $result->getMessage() !== ''
+                    ? $result->getMessage()
+                    : 'Gateway connection is required to create a workspace.',
+                meta: $result->errorMeta(),
+            );
+        }
+
+        $renderer->finish($footer, $result === self::SUCCESS);
+
+        if ($result !== self::SUCCESS) {
+            return $this->failCommand(
+                code: is_string($errorData['code'] ?? null) ? $errorData['code'] : 'workspace.enactment_failed',
+                message: is_string($errorData['message'] ?? null) ? $errorData['message'] : 'Workspace creation failed.',
+                meta: is_array($errorData['meta'] ?? null) ? $errorData['meta'] : [],
+            );
+        }
+
+        $resultData = is_array($completeData['result'] ?? null) ? $completeData['result'] : [];
+
+        if ($resultData === []) {
+            return $this->failCommand(
+                code: 'gateway_stream_invalid',
+                message: 'Gateway stream completed without workspace creation result data.',
+                meta: [],
+            );
+        }
+
+        return $this->respondSuccess($resultData);
     }
 
     private function resolveName(): ?string

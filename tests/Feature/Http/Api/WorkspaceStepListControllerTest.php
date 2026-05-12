@@ -66,10 +66,10 @@ describe('WorkspaceStepListController', function (): void {
         $node = Node::factory()->create(['role' => 'app']);
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-        Workspace::factory()->create(['app_id' => $app->id, 'path' => '/srv/docs/workspaces/feature-docs']);
+        Workspace::factory()->create(['app_id' => $app->id, 'path' => '/srv/docs/.worktrees/feature-docs']);
         WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown, 'command' => 'dropdb docs']);
 
-        $response = $this->call('GET', '/api/workspaces/steps/teardown?path=/srv/docs/workspaces/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/workspaces/steps/teardown?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.steps.0.command', 'dropdb docs');

@@ -33,9 +33,15 @@ final readonly class AppAgentIdeDefaults
         $action = $currentAdapter === $normalizedAdapter ? 'converged' : 'set';
 
         if ($action === 'set') {
-            $app->agent_ide_config = $normalizedAdapter === null
-                ? null
-                : ['adapter' => $normalizedAdapter];
+            $config = is_array($app->agent_ide_config) ? $app->agent_ide_config : [];
+
+            if ($normalizedAdapter === null) {
+                unset($config['adapter']);
+            } else {
+                $config['adapter'] = $normalizedAdapter;
+            }
+
+            $app->agent_ide_config = $config === [] ? null : $config;
             $app->save();
             $app->refresh();
             $app->loadMissing('node');

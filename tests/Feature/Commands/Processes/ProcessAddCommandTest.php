@@ -47,7 +47,7 @@ describe('process:add base contract', function (): void {
         createProcessAddLocalNode('gateway');
         $node = Node::factory()->create(['role' => 'app', 'name' => 'app-1', 'user' => 'orbit']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/workspaces/feature-docs']);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs']);
 
         $remoteShell = new ProcessAddRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'supervisor OK', stderr: '', durationMs: 1),

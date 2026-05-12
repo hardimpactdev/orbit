@@ -85,11 +85,11 @@ describe('WorkspaceHistoryController', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'path' => '/srv/docs/workspaces/feature-docs',
+            'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id, 'started_at' => '2026-05-02 10:00:00']);
 
-        $response = $this->call('GET', '/api/workspaces/history/resolve-by-path?path=/srv/docs/workspaces/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/workspaces/history/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.runs.0.workspace', 'feature-docs');

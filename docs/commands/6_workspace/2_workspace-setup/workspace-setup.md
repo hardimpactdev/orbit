@@ -16,7 +16,7 @@ runs configured setup steps.
 orbit workspace:setup feature-a --app=my-app
 
 # Adopt an existing path as a workspace
-orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/feature-a
+orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/feature-a
 
 # Re-converge an already-managed workspace (idempotent no-op refresh)
 orbit workspace:setup feature-a
@@ -30,7 +30,9 @@ orbit workspace:setup feature-a
   parent app, the local app context, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning app node.
   Defaults to the caller's current directory resolved to an absolute path on
-  that node. A relative or non-absolute value fails before side effects.
+  that node. Generic worktree paths must live under the parent app's
+  `.worktrees/` directory. A relative or non-absolute value fails before side
+  effects.
 - `--json`: Output JSON.
 
 ## Behavior Summary

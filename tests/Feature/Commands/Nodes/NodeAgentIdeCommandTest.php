@@ -132,6 +132,61 @@ describe('node:agent-ide command', function (): void {
             ->and(DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'))->toBeNull();
     });
 
+    it('preserves adapter-specific node config when changing the node default', function (): void {
+        setupNodeAgentIdeGatewayCaller();
+        DB::table('nodes')->insert(nodeAgentIdeRow([
+            'agent_ide_config' => json_encode([
+                'adapter' => 'opencode',
+                'polyscope' => [
+                    'server_id' => 'server-123',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]));
+
+        $exitCode = Artisan::call('node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'polyscope',
+            '--json' => true,
+        ]);
+
+        $config = json_decode((string) DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+        expect($config)->toBe([
+            'adapter' => 'polyscope',
+            'polyscope' => [
+                'server_id' => 'server-123',
+            ],
+        ]);
+    });
+
+    it('preserves adapter-specific node config when clearing the node default', function (): void {
+        setupNodeAgentIdeGatewayCaller();
+        DB::table('nodes')->insert(nodeAgentIdeRow([
+            'agent_ide_config' => json_encode([
+                'adapter' => 'polyscope',
+                'polyscope' => [
+                    'server_id' => 'server-123',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]));
+
+        $exitCode = Artisan::call('node:agent-ide', [
+            'name' => 'app-1',
+            'agent_ide' => 'none',
+            '--json' => true,
+        ]);
+
+        $config = json_decode((string) DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0);
+        expect($config)->toBe([
+            'polyscope' => [
+                'server_id' => 'server-123',
+            ],
+        ]);
+    });
+
     it('returns converged when the requested adapter already matches', function (): void {
         setupNodeAgentIdeGatewayCaller();
         DB::table('nodes')->insert(nodeAgentIdeRow([

@@ -214,8 +214,8 @@ describe('doctor role-aware categories', function (): void {
         $appB = Node::factory()->create(['name' => 'app-b', 'role' => 'app', 'status' => 'active']);
         $apA = App::factory()->create(['name' => 'docs-a', 'node_id' => $appA->id, 'path' => '/home/orbit/apps/docs-a']);
         $apB = App::factory()->create(['name' => 'docs-b', 'node_id' => $appB->id, 'path' => '/home/orbit/apps/docs-b']);
-        Workspace::factory()->create(['app_id' => $apA->id, 'name' => 'feature', 'path' => '/home/orbit/apps/docs/workspaces/feature']);
-        Workspace::factory()->create(['app_id' => $apB->id, 'name' => 'feature', 'path' => '/home/orbit/apps/docs/workspaces/feature']);
+        Workspace::factory()->create(['app_id' => $apA->id, 'name' => 'feature', 'path' => '/home/orbit/apps/docs-a/.worktrees/feature']);
+        Workspace::factory()->create(['app_id' => $apB->id, 'name' => 'feature', 'path' => '/home/orbit/apps/docs-b/.worktrees/feature']);
         app()->instance(RemoteShell::class, new RoleAwareDoctorRemoteShell("feature\t0\t0\t1\t0\t0\n"));
 
         $exitCode = Artisan::call('doctor', ['--node' => 'app-a', '--family' => ['workspace'], '--json' => true]);

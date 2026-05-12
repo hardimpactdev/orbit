@@ -38,10 +38,10 @@ it('serializes app filter when provided', function (): void {
 });
 
 it('resolves path lookups to the path endpoint', function (): void {
-    $request = new ShowWorkspaceRequest(path: '/srv/docs/workspaces/feature-docs');
+    $request = new ShowWorkspaceRequest(path: '/srv/docs/.worktrees/feature-docs');
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/resolve-by-path');
-    expect($request->query()->all())->toBe(['path' => '/srv/docs/workspaces/feature-docs']);
+    expect($request->query()->all())->toBe(['path' => '/srv/docs/.worktrees/feature-docs']);
 });
 
 it('returns a WorkspaceShowResponse DTO with workspace details', function (): void {

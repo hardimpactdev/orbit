@@ -46,7 +46,7 @@ describe('source path reality', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'feature',
-                'path' => "{$app->path}/workspaces/feature",
+                'path' => "{$app->path}/.worktrees/feature",
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\n");
 
@@ -108,6 +108,36 @@ describe('source path reality', function (): void {
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects generic workspace paths outside the app worktrees directory', function (): void {
+        $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature',
+                'path' => '/home/orbit/apps/docs/feature',
+            ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('allows agent IDE workspace paths outside the parent app path', function (): void {
+        $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature',
+                'path' => '/home/orbit/.polyscope/clones/docs/feature',
+                'agent_ide' => 'polyscope',
+                'agent_ide_workspace_id' => 'poly-123',
+            ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 });
 
@@ -308,7 +338,7 @@ function workspaceFor(App $app, array $overrides = []): Workspace
         ->for($app, 'app')
         ->create([
             'name' => $name,
-            'path' => "{$app->path}/workspaces/{$name}",
+            'path' => "{$app->path}/.worktrees/{$name}",
             ...$overrides,
         ]);
 }

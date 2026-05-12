@@ -44,7 +44,7 @@ $app = \App\Models\App::query()->create([
 $workspace = \App\Models\Workspace::query()->create([
     'app_id' => $app->id,
     'name' => 'feature-docs',
-    'path' => '/srv/docs/workspaces/feature-docs',
+    'path' => '/srv/docs/.worktrees/feature-docs',
     'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
 ]);
 

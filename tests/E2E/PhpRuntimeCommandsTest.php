@@ -43,7 +43,7 @@ $app = \App\Models\App::query()->create([
 \App\Models\Workspace::query()->create([
     'app_id' => $app->id,
     'name' => 'feature-docs',
-    'path' => '/home/orbit/apps/docs/workspaces/feature-docs',
+    'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
     'php_version' => null,
     'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
 ]);

@@ -58,10 +58,11 @@ final class WorkspaceSetupController implements Loggable
         try {
             [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace($name, $appName, $path);
         } catch (\RuntimeException $e) {
-            $field = str_contains($e->getMessage(), 'App') ? 'app' : 'workspace';
+            $field = $this->resolveErrorField($e->getMessage());
+            $code = $this->resolveErrorCode($e->getMessage(), $field);
 
             return $this->error(
-                $field === 'app' ? 'validation_failed' : 'workspace.not_found',
+                $code,
                 $e->getMessage(),
                 ['field' => $field],
                 422,
@@ -143,10 +144,11 @@ final class WorkspaceSetupController implements Loggable
         try {
             [$workspace, $app, $node, $isAdoption] = $this->resolveWorkspace($name, $appName, $path);
         } catch (\RuntimeException $e) {
-            $field = str_contains($e->getMessage(), 'App') ? 'app' : 'workspace';
+            $field = $this->resolveErrorField($e->getMessage());
+            $code = $this->resolveErrorCode($e->getMessage(), $field);
 
             return $this->error(
-                $field === 'app' ? 'validation_failed' : 'workspace.not_found',
+                $code,
                 $e->getMessage(),
                 ['field' => $field],
                 422,
@@ -231,6 +233,10 @@ final class WorkspaceSetupController implements Loggable
             ->where('name', $workspaceName)
             ->first();
 
+        if (! $this->pathAllowedForWorkspace($app, $path, $existing)) {
+            throw new \RuntimeException("Path {$path} is outside the parent app workspace policy.");
+        }
+
         if ($existing instanceof Workspace) {
             $existing->update(['path' => $path]);
 
@@ -245,6 +251,39 @@ final class WorkspaceSetupController implements Loggable
         ]);
 
         return [$workspace, $app, $node, true];
+    }
+
+    private function pathAllowedForWorkspace(App $app, string $path, ?Workspace $workspace): bool
+    {
+        if ($workspace instanceof Workspace && $workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
+            return true;
+        }
+
+        $appPath = rtrim($app->path, '/');
+
+        return str_starts_with($path, "{$appPath}/.worktrees/");
+    }
+
+    private function resolveErrorField(string $message): string
+    {
+        if (str_contains($message, 'App')) {
+            return 'app';
+        }
+
+        if (str_starts_with($message, 'Path ')) {
+            return 'path';
+        }
+
+        return 'workspace';
+    }
+
+    private function resolveErrorCode(string $message, string $field): string
+    {
+        if (str_contains($message, 'outside the parent app workspace policy')) {
+            return 'workspace.path_outside_policy';
+        }
+
+        return $field === 'app' ? 'validation_failed' : 'workspace.not_found';
     }
 
     /**

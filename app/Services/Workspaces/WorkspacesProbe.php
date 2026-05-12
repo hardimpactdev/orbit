@@ -278,13 +278,13 @@ BASH;
             return [];
         }
 
-        if ($this->pathEscapesParentApp($workspace)) {
+        if ($this->violatesGenericWorktreePolicy($workspace)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'workspace.path_outside_policy',
                     kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} path is outside the parent app path.",
+                    summary: "Workspace {$workspace->name} path is outside the generic worktree policy.",
                     detail: [
                         'path' => $workspace->path,
                         'app_path' => $workspace->app?->path,
@@ -330,9 +330,13 @@ BASH;
         return [];
     }
 
-    private function pathEscapesParentApp(Workspace $workspace): bool
+    private function violatesGenericWorktreePolicy(Workspace $workspace): bool
     {
         $workspace->loadMissing('app');
+
+        if ($workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
+            return false;
+        }
 
         if (! $workspace->app instanceof App || $workspace->app->path === '') {
             return false;
@@ -341,7 +345,7 @@ BASH;
         $appPath = $this->normalizePath($workspace->app->path);
         $workspacePath = $this->normalizePath($workspace->path);
 
-        return $workspacePath !== $appPath && ! str_starts_with($workspacePath, "{$appPath}/");
+        return ! str_starts_with($workspacePath, "{$appPath}/.worktrees/");
     }
 
     private function normalizePath(string $path): string

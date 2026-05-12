@@ -123,6 +123,68 @@ it('reports converged when the app-level adapter already matches', function (): 
         ->and($payload['success']['data']['agent_ide']['effective_adapter'])->toBe('opencode');
 });
 
+it('preserves adapter-specific app config when setting an app adapter', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => [
+            'polyscope' => [
+                'repository_id' => 'repo-123',
+            ],
+        ],
+    ]);
+
+    $exitCode = Artisan::call('app:agent-ide', [
+        'app' => 'docs',
+        'agent_ide' => 'polyscope',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+    expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe([
+        'polyscope' => [
+            'repository_id' => 'repo-123',
+        ],
+        'adapter' => 'polyscope',
+    ]);
+});
+
+it('preserves adapter-specific app config when clearing to inheritance', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+        'is_local' => true,
+    ]);
+
+    App::factory()->create([
+        'name' => 'docs',
+        'agent_ide_config' => [
+            'adapter' => 'polyscope',
+            'polyscope' => [
+                'repository_id' => 'repo-123',
+            ],
+        ],
+    ]);
+
+    $exitCode = Artisan::call('app:agent-ide', [
+        'app' => 'docs',
+        'agent_ide' => 'inherit',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+    expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe([
+        'polyscope' => [
+            'repository_id' => 'repo-123',
+        ],
+    ]);
+});
+
 it('clears the app override and inherits the owning node default', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',

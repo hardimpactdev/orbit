@@ -68,7 +68,7 @@ it('sets up a workspace for a gateway caller', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -99,7 +99,7 @@ it('converges an already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
@@ -131,6 +131,20 @@ it('rejects non-absolute path', function (): void {
 
     expect($exitCode)->toBe(1);
     expect($payload['error']['code'])->toBe('validation_failed');
+    expect($payload['error']['meta']['field'])->toBe('path');
+});
+
+it('rejects generic workspace paths outside the app worktrees directory', function (): void {
+    $exitCode = Artisan::call('workspace:setup', [
+        '--path' => '/home/nckrtl/apps/demo/feature-a',
+        '--app' => 'demo',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(1);
+    expect($payload['error']['code'])->toBe('workspace.path_outside_policy');
     expect($payload['error']['meta']['field'])->toBe('path');
 });
 
@@ -276,7 +290,7 @@ it('renders human output without json', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
@@ -296,7 +310,7 @@ it('renders the documented progress tree and final tree state for human output',
     Workspace::create([
         'app_id' => 1,
         'name' => 'feature-tree',
-        'path' => '/home/nckrtl/apps/demo/feature-tree',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-tree',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 

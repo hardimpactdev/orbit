@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\WorkspaceSourceDrivers;
+use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
@@ -19,6 +21,7 @@ final readonly class CreateWorkspace
     public function __construct(
         private RemoteShell $remoteShell,
         private SetupWorkspace $setupWorkspace,
+        private WorkspaceSourceDrivers $sourceDrivers,
     ) {}
 
     /**
@@ -34,7 +37,8 @@ final readonly class CreateWorkspace
         $this->ensureSupportedPhpVersion($phpVersion);
         $this->ensureNodeReachable($node);
 
-        $workspace = $this->createIntent($app, $name, $phpVersion);
+        $provisionResult = $this->provisionWorkspaceSource($app, $node, $name, $base);
+        $workspace = $this->createIntent($app, $phpVersion, $provisionResult);
 
         $warnings = [];
         $httpProbe = [
@@ -42,26 +46,20 @@ final readonly class CreateWorkspace
             'status' => 'not_run',
         ];
 
-        $worktreeWarning = $this->provisionWorktree($app, $workspace, $node, $base);
-
-        if ($worktreeWarning !== null) {
-            $warnings[] = $worktreeWarning;
-        } else {
-            try {
-                $setup = $this->setupWorkspace->handle($app, $workspace, $node);
-                $warnings = array_merge($warnings, $setup['warnings']);
-                $httpProbe = $setup['http_probe'];
-            } catch (RuntimeException $exception) {
-                throw new WorkspaceCreateFailed(
-                    'workspace.enactment_failed',
-                    "Workspace enactment on node '{$node->name}' stopped before Orbit could classify remaining drift.",
-                    [
-                        'step' => 'setup_pipeline',
-                        'node' => $node->name,
-                        'reason' => $exception->getMessage(),
-                    ],
-                );
-            }
+        try {
+            $setup = $this->setupWorkspace->handle($app, $workspace, $node);
+            $warnings = array_merge($warnings, $setup['warnings']);
+            $httpProbe = $setup['http_probe'];
+        } catch (RuntimeException $exception) {
+            throw new WorkspaceCreateFailed(
+                'workspace.enactment_failed',
+                "Workspace enactment on node '{$node->name}' stopped before Orbit could classify remaining drift.",
+                [
+                    'step' => 'setup_pipeline',
+                    'node' => $node->name,
+                    'reason' => $exception->getMessage(),
+                ],
+            );
         }
 
         return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
@@ -115,13 +113,15 @@ final readonly class CreateWorkspace
         );
     }
 
-    public function createIntent(App $app, string $name, ?string $phpVersion): Workspace
+    public function createIntent(App $app, ?string $phpVersion, WorkspaceProvisionResult $provisionResult): Workspace
     {
         $workspace = Workspace::create([
             'app_id' => $app->id,
-            'name' => $name,
-            'path' => $this->workspacePath($app, $name),
+            'name' => $provisionResult->name,
+            'path' => $provisionResult->path,
             'php_version' => $phpVersion,
+            'agent_ide' => $provisionResult->agentIde,
+            'agent_ide_workspace_id' => $provisionResult->agentIdeWorkspaceId,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
@@ -130,23 +130,22 @@ final readonly class CreateWorkspace
         return $workspace;
     }
 
-    /**
-     * @return array{code: string, family: string, message: string, next_command: string}|null
-     */
-    public function provisionWorktree(App $app, Workspace $workspace, Node $node, string $base): ?array
+    public function effectiveAgentIde(App $app): ?string
     {
-        $worktree = $this->remoteShell->run($node, $this->worktreeScript($app, $workspace, $base), ['timeout' => 300]);
+        return $this->sourceDrivers->effectiveAdapter($app);
+    }
 
-        if ($worktree->successful()) {
-            return null;
-        }
+    public function provisionWorkspaceSource(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
+    {
+        return $this->sourceDrivers->resolve($app)->create($app, $node, $name, $base);
+    }
 
-        return [
-            'code' => 'workspace.path_missing',
-            'family' => 'workspace',
-            'message' => "Workspace path '{$workspace->path}' is missing on node '{$node->name}'. SSH enactment failed after gateway intent was written.",
-            'next_command' => 'doctor --fix --family=workspace --restore',
-        ];
+    /**
+     * @return array{label: string, done_label: string}
+     */
+    public function sourceProgressLabels(App $app, Node $node): array
+    {
+        return $this->sourceDrivers->progressLabels($app, $node);
     }
 
     /**
@@ -175,34 +174,6 @@ final readonly class CreateWorkspace
         ];
     }
 
-    private function workspacePath(App $app, string $workspaceName): string
-    {
-        return rtrim($app->path, '/').'/'.$workspaceName;
-    }
-
-    private function worktreeScript(App $app, Workspace $workspace, string $base): string
-    {
-        return sprintf(
-            <<<'SH'
-set -Eeuo pipefail
-app_path=%s
-workspace_path=%s
-base_ref=%s
-
-if [ -e "$workspace_path" ]; then
-    echo "workspace path already exists: $workspace_path" >&2
-    exit 2
-fi
-
-mkdir -p "$(dirname "$workspace_path")"
-git -C "$app_path" worktree add --detach "$workspace_path" "$base_ref"
-SH,
-            escapeshellarg($app->path),
-            escapeshellarg($workspace->path),
-            escapeshellarg($base),
-        );
-    }
-
     /**
      * @return array<string, mixed>
      */
@@ -216,6 +187,10 @@ SH,
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
+            'agent_ide' => [
+                'adapter' => $workspace->agent_ide,
+                'workspace_id' => $workspace->agent_ide_workspace_id,
+            ],
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];

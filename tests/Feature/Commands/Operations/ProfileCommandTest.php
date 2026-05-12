@@ -690,7 +690,7 @@ it('infers a workspace target from the gateway caller cwd inside a workspace pat
     Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature',
-        'path' => '/srv/docs/workspaces/feature',
+        'path' => '/srv/docs/.worktrees/feature',
     ]);
 
     app()->instance(RequestProfiler::class, new class implements RequestProfiler
@@ -727,7 +727,7 @@ it('infers a workspace target from the gateway caller cwd inside a workspace pat
     });
 
     $exitCode = Artisan::call('profile', [
-        'target' => '/srv/docs/workspaces/feature',
+        'target' => '/srv/docs/.worktrees/feature',
         '--json' => true,
     ]);
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);

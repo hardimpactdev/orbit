@@ -49,10 +49,10 @@ it('serializes filters when provided', function (): void {
 });
 
 it('resolves path lookups to the path endpoint', function (): void {
-    $request = new ShowWorkspaceHistoryRequest(path: '/srv/docs/workspaces/feature-docs');
+    $request = new ShowWorkspaceHistoryRequest(path: '/srv/docs/.worktrees/feature-docs');
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/history/resolve-by-path');
-    expect($request->query()->all())->toBe(['path' => '/srv/docs/workspaces/feature-docs']);
+    expect($request->query()->all())->toBe(['path' => '/srv/docs/.worktrees/feature-docs']);
 });
 
 it('returns a WorkspaceHistoryResponse DTO with runs and pagination', function (): void {

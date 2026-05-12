@@ -28,7 +28,7 @@ describe('DoctorReportRunner', function (): void {
         Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
-            'path' => '/home/orbit/apps/docs/feature',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\t0\n", stderr: '', durationMs: 1),

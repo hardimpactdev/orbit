@@ -30,7 +30,7 @@ orbit workspace:remove feature-api
 ### Remove the current workspace (CWD resolution)
 
 ```bash
-cd ~/sites/my-app/workspaces/feature-docs
+cd ~/sites/my-app/.worktrees/feature-docs
 orbit workspace:remove
 ```
 

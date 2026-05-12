@@ -47,7 +47,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'feature-a');
     $response->assertJsonPath('success.data.workspace.app', 'demo');
-    $response->assertJsonPath('success.data.workspace.path', '/home/nckrtl/apps/demo/feature-a');
+    $response->assertJsonPath('success.data.workspace.path', '/home/nckrtl/apps/demo/.worktrees/feature-a');
     $response->assertJsonPath('success.data.workspace.lifecycle_status', 'active');
     $response->assertJsonPath('success.data.result.action', 'created');
     $response->assertJsonPath('success.meta.base', 'main');
@@ -102,7 +102,7 @@ it('rejects duplicate workspace names per app', function (): void {
     Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
     ]);
 

@@ -252,7 +252,7 @@ describe('supervisor program reality', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'feature-docs',
-                'path' => "{$app->path}/workspaces/feature-docs",
+                'path' => "{$app->path}/.worktrees/feature-docs",
             ]);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -390,7 +390,7 @@ describe('registry intent', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'feature-docs',
-                'path' => "{$app->path}/workspaces/feature-docs",
+                'path' => "{$app->path}/.worktrees/feature-docs",
             ]);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -497,7 +497,7 @@ describe('runtime context expansion', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'Feature_App',
-                'path' => "{$app->path}/workspaces/feature",
+                'path' => "{$app->path}/.worktrees/feature",
             ]);
         $process = processFor($app, ['name' => 'vite']);
 

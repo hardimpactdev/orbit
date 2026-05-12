@@ -32,7 +32,7 @@ it('stores workspace registry intent and derives canonical fields', function ():
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
         'name' => 'feature-docs',
-        'path' => '/home/orbit/apps/docs/workspaces/feature-docs',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         'php_version' => null,
         'agent_ide' => 'opencode',
         'agent_ide_workspace_id' => 'oc_123',
