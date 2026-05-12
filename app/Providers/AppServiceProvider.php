@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Contracts\OpenCodeClientFactory;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
@@ -18,6 +19,7 @@ use App\Http\Gateway\ToolLogGatewayStreamClient;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Services\ActivityLogCorrelation;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
+use App\Services\AgentIde\SdkOpenCodeClientFactory;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
 use App\Services\CurlRequestProfiler;
 use App\Services\Dns\LocalResolver;
@@ -64,6 +66,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
+        $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
         $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
         $this->app->bind(RemoteShell::class, SshRemoteShell::class);
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);

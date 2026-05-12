@@ -1,12 +1,8 @@
 # Orbit Blueprint
 
-This document defines Orbit's ideal target state after the current gateway,
-workspace, process, certificate, and proxy-routing plans land. It is the
-architecture and product contract for future work.
-
-When this blueprint conflicts with older dated design notes, this blueprint is
-the target. Dated notes explain how Orbit got here; this file defines where
-Orbit is going.
+This document defines Orbit's architecture and product contract. It captures
+what Orbit is, the problem it solves, its purpose, and the principles that
+shape it.
 
 ## Purpose
 
@@ -328,7 +324,7 @@ Each family must define:
 - whether `doctor --fix --adopt` can safely adopt observed node reality into
   gateway-tracked configuration.
 
-Ideal Orbit has these state families.
+Orbit has these state families.
 
 | Family | Owns | Current backend examples |
 | --- | --- | --- |
@@ -341,9 +337,9 @@ Ideal Orbit has these state families.
 | `tool` | Expected and managed node tools | package managers, binaries, runtime backend, Docker |
 | `firewall_rule` | Expected node network policy | UFW |
 
-The blueprint names only current ideal concepts. Legacy or backend-shaped names
-belong in migration plans and contraction audits, not in the permanent product
-model.
+This document names only current product concepts. Legacy or backend-shaped
+names belong in migration plans and contraction audits, not in the permanent
+product model.
 
 Provider and adapter integrations may be implemented in core or in installed
 Orbit extensions. This includes DNS/CDN providers and agent IDE adapters,
@@ -654,8 +650,8 @@ replace process, workspace, or app commands.
 `agent-ide:message` sends a message to the effective active agent IDE session
 for an app or workspace. It is a communication command, not a workspace mutation.
 
-Workspace-specific process overrides are not part of the ideal model. A process
-definition belongs to the app and is inherited by workspaces.
+Workspace-specific process overrides do not exist. A process definition belongs
+to the app and is inherited by workspaces.
 
 ### Schedules
 
@@ -774,22 +770,22 @@ Control nodes may eventually gain local app-runtime capability. In that model, a
 Mac or Ubuntu control node could act as a full local development environment
 while still participating in the gateway-controlled fleet.
 
-This is not part of the current blueprint. The current target is stricter:
+This is not part of Orbit's model. Orbit is stricter:
 
 - control nodes are CLI callers;
 - app nodes are Ubuntu workload hosts;
 - the gateway owns fleet state;
 - all control-to-app orchestration flows through the gateway.
 
-Current abstractions should avoid needlessly blocking a future local-runtime role,
-but no command, state family, or service should implement local app-node behavior
+Abstractions should avoid needlessly blocking a future local-runtime role, but
+no command, state family, or service should implement local app-node behavior
 speculatively.
 
 ### Multiple Orbit Networks Per Client
 
 A control node may eventually participate in multiple Orbit WireGuard networks.
-The current blueprint assumes one active Orbit network, so `gateway:add` can
-derive the gateway client IP from that network.
+Orbit assumes one active Orbit network, so `gateway:add` derives the gateway
+client IP from that network.
 
 Multi-network support will need an explicit network selection model before
 gateway selection, granting, or command routing can target a specific gateway without
@@ -821,7 +817,7 @@ adapter code.
 
 ## Explicit Non-Goals
 
-These are not part of the ideal model:
+These are not part of Orbit's model:
 
 - a control-plane daemon that mutates fleet intent, exposes inbound RPC, or
   contains independent Orbit business logic outside narrow gateway-client

@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.3",
         "beyondcode/polyscope": "^1.0",
+        "hardimpactdev/opencode-sdk-laravel": "^0.0.7",
         "laravel/framework": "^13.0",
         "laravel/tinker": "^3.0",
         "saloonphp/saloon": "^4.0",

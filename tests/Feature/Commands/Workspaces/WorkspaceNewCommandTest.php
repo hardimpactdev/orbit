@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\OpenCodeClientFactory;
 use App\Contracts\RemoteShell;
 use App\Contracts\WorkspaceSourceDriver;
 use App\Contracts\WorkspaceSourceDrivers;
@@ -12,9 +13,15 @@ use App\Http\Gateway\WorkspaceNewGatewayStreamClient;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use HardImpact\OpenCode\OpenCode;
+use HardImpact\OpenCode\Requests\Projects\GetCurrentProject;
+use HardImpact\OpenCode\Requests\Projects\UpdateProject;
+use HardImpact\OpenCode\Requests\Sessions\CreateSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
@@ -157,6 +164,55 @@ it('creates a Polyscope workspace when the source driver resolves Polyscope', fu
     expect($workspace->path)->toBe('/home/nckrtl/.polyscope/clones/demo/feature-poly');
     expect($workspace->agent_ide)->toBe('polyscope');
     expect($workspace->agent_ide_workspace_id)->toBe('poly-workspace-123');
+});
+
+it('creates an OpenCode workspace when the source driver resolves OpenCode', function (): void {
+    $node = Node::query()->where('name', 'app-1')->firstOrFail();
+    $node->forceFill(['agent_ide_config' => ['adapter' => 'opencode']])->save();
+
+    $mock = new MockClient([
+        MockResponse::make(workspaceNewOpenCodeProjectPayload(sandboxes: [])),
+        MockResponse::make(workspaceNewOpenCodeProjectPayload(sandboxes: ['/home/nckrtl/apps/demo/.worktrees/feature-open'])),
+        MockResponse::make(workspaceNewOpenCodeSessionPayload()),
+    ]);
+    $client = new OpenCode('http://opencode.test');
+    $client->withMockClient($mock);
+
+    app()->instance(OpenCodeClientFactory::class, new WorkspaceNewOpenCodeClientFactory($client));
+
+    $shell = new WorkspaceNewTestShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $exitCode = Artisan::call('workspace:new', [
+        'name' => 'feature-open',
+        '--app' => 'demo',
+        '--base' => 'feature/source',
+        '--json' => true,
+    ]);
+
+    $payload = json_decode(Artisan::output(), true);
+
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['workspace']['path'])->toBe('/home/nckrtl/apps/demo/.worktrees/feature-open');
+    expect($payload['success']['data']['workspace']['agent_ide'])->toBe([
+        'adapter' => 'opencode',
+        'workspace_id' => 'sess_feature_open',
+    ]);
+    expect(implode("\n---\n", $shell->scripts))
+        ->toContain('git -C "$app_path" worktree add "$relative_path" -b "$workspace_name" "$base_ref"')
+        ->toContain("workspace_name='feature-open'")
+        ->toContain("base_ref='feature/source'");
+
+    $mock->assertSentCount(1, GetCurrentProject::class);
+    $mock->assertSentCount(1, UpdateProject::class);
+    $mock->assertSentCount(1, CreateSession::class);
+
+    $workspace = Workspace::query()
+        ->where('name', 'feature-open')
+        ->firstOrFail();
+
+    expect($workspace->agent_ide)->toBe('opencode');
+    expect($workspace->agent_ide_workspace_id)->toBe('sess_feature_open');
 });
 
 it('fails before writing intent when source provisioning fails', function (): void {
@@ -517,5 +573,44 @@ final class WorkspaceNewPolyscopeDriverFake implements WorkspaceSourceDriver
             agentIde: 'polyscope',
             agentIdeWorkspaceId: $this->workspaceId,
         );
+    }
+}
+
+/**
+ * @param  list<string>  $sandboxes
+ * @return array<string, mixed>
+ */
+function workspaceNewOpenCodeProjectPayload(array $sandboxes): array
+{
+    return [
+        'id' => 'proj_demo',
+        'worktree' => '/home/nckrtl/apps/demo',
+        'vcs' => 'git',
+        'time' => ['created' => 1, 'updated' => 1],
+        'sandboxes' => $sandboxes,
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function workspaceNewOpenCodeSessionPayload(): array
+{
+    return [
+        'id' => 'sess_feature_open',
+        'title' => 'feature-open',
+        'directory' => '/home/nckrtl/apps/demo/.worktrees/feature-open',
+    ];
+}
+
+final readonly class WorkspaceNewOpenCodeClientFactory implements OpenCodeClientFactory
+{
+    public function __construct(
+        private OpenCode $client,
+    ) {}
+
+    public function forApp(App $app): OpenCode
+    {
+        return $this->client;
     }
 }

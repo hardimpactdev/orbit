@@ -16,6 +16,7 @@ final readonly class WorkspaceSourceDriverResolver implements WorkspaceSourceDri
     public function __construct(
         private AppAgentIdeDefaults $agentIdeDefaults,
         private WorktreeWorkspaceDriver $worktreeDriver,
+        private OpenCodeWorkspaceDriver $openCodeDriver,
         private PolyscopeWorkspaceDriver $polyscopeDriver,
     ) {}
 
@@ -23,7 +24,8 @@ final readonly class WorkspaceSourceDriverResolver implements WorkspaceSourceDri
     {
         return match ($this->effectiveAdapter($app)) {
             'polyscope' => $this->polyscopeDriver,
-            'opencode', null => $this->worktreeDriver,
+            'opencode' => $this->openCodeDriver,
+            null => $this->worktreeDriver,
             default => throw new WorkspaceCreateFailed(
                 'workspace.agent_ide_driver_missing',
                 'The effective agent IDE adapter does not have a workspace source driver.',
@@ -49,6 +51,13 @@ final readonly class WorkspaceSourceDriverResolver implements WorkspaceSourceDri
             return [
                 'label' => "Provision Polyscope workspace on {$node->name}",
                 'done_label' => "Provisioned Polyscope workspace on {$node->name}",
+            ];
+        }
+
+        if ($this->effectiveAdapter($app) === 'opencode') {
+            return [
+                'label' => "Provision OpenCode workspace on {$node->name}",
+                'done_label' => "Provisioned OpenCode workspace on {$node->name}",
             ];
         }
 

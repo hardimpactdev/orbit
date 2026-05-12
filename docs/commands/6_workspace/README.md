@@ -55,11 +55,16 @@ app's effective agent IDE adapter from app intent, then node defaults, then no
 adapter. The selected source driver creates the source directory and returns
 the physical path that Orbit stores on the gateway workspace record.
 
-- **Generic worktree driver:** used when no effective adapter exists, and as
-  the fallback for adapters without a dedicated workspace source driver. It
+- **Generic worktree driver:** used when no effective adapter exists. It
   creates a Git worktree at `<app path>/.worktrees/<workspace>` using branch
   `<workspace>` from the requested `--base` ref. Generic worktree rows store
   `agent_ide.adapter=null` and `agent_ide.workspace_id=null`.
+- **OpenCode driver:** used when the effective adapter is `opencode`. It
+  creates the same Git worktree shape as the generic driver, then resolves or
+  creates the parent OpenCode project through the OpenCode API and registers
+  the worktree path as an OpenCode project sandbox. Orbit stores
+  `agent_ide.adapter=opencode` and the best-effort OpenCode session id when
+  session creation succeeds.
 - **Polyscope driver:** used when the effective adapter is `polyscope`. It
   creates the workspace through the Polyscope SDK using the app node's
   Polyscope server identity and the parent app's Polyscope repository id.

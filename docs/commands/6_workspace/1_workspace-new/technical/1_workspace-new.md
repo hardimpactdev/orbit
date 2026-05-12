@@ -26,7 +26,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
 | `--app` | `text` | No local context or default. | CWD-inferred parent app | Valid parent app slug. |
-| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic worktrees create branch `<workspace>` from this ref; Polyscope passes it as `base_branch` to the Polyscope API. |
+| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; Polyscope passes it as `base_branch` to the Polyscope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 
@@ -115,19 +115,27 @@ register an existing path use
    - With no effective adapter, create a generic Git worktree on the parent
      app node at `<app path>/.worktrees/<name>` by creating branch `<name>`
      from the requested `--base` ref.
+   - With effective adapter `opencode`, create the same Git worktree on the
+     parent app node at `<app path>/.worktrees/<name>` by creating branch
+     `<name>` from the requested `--base` ref, resolve or create the parent
+     OpenCode project via the OpenCode API, register the worktree path as an
+     OpenCode project sandbox, and best-effort create an OpenCode session
+     titled `<name>` for that worktree.
    - With effective adapter `polyscope`, create the workspace through the
      Polyscope SDK using the app node's Polyscope server identity, the parent
      app's Polyscope repository id, `branch=<name>`, and
      `base_branch=<base>`.
-   - Any adapter without a dedicated workspace source driver currently falls
-     back to the generic worktree source driver.
+   - Any effective adapter without a dedicated workspace source driver fails
+     before side effects with `error.code=workspace.agent_ide_driver_missing`.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    the source-driver-returned `name` and physical `path`, `app_id`, derived
    hostname, `php_version` (or `null` for inheritance), adapter metadata, and
-   lifecycle fields. For Polyscope, store `agent_ide=polyscope` and the
-   Polyscope workspace id in `agent_ide_workspace_id`; generic worktrees store
-   both values as `null`. Workspace identity uniqueness is enforced before any
-   side effects and again at this step.
+   lifecycle fields. For OpenCode, store `agent_ide=opencode` and the
+   best-effort session id in `agent_ide_workspace_id` when OpenCode returns
+   one. For Polyscope, store `agent_ide=polyscope` and the Polyscope workspace
+   id in `agent_ide_workspace_id`; generic worktrees store both values as
+   `null`. Workspace identity uniqueness is enforced before any side effects
+   and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace
@@ -209,5 +217,5 @@ register an existing path use
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, generic worktree provisioning dispatch, Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, generic worktree provisioning dispatch, OpenCode and Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
 | `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |

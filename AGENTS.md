@@ -9,14 +9,6 @@ preserved at `../orbit-old-may` and is reference material only.
 - Entry point: `php artisan`; installed as `orbit` through the local symlink on
   managed machines.
 - Database: SQLite at the normal Laravel path.
-- Current implemented commands:
-  - `node:register`
-  - `node:list`
-  - `update`
-  - `update:all`
-- `update:all` is the first registry-backed cross-node workflow. It updates the
-  local checkout first, then updates active non-local nodes from the `nodes`
-  registry over SSH.
 
 ## Reference Material
 
@@ -49,19 +41,16 @@ Useful old-reference locations:
 - `../orbit-old-may/docs/superpowers/**`
 - `../orbit-old-may/TESTING.md`
 
-## Development Rules
+## Development and debugging Rules
 
+- Always make sure that the documentation at docs/ describe the correct behavior. If the docs are lacking or contradicting with is requested. Flag it first before proceeding.
+- When the documentation is aligned, proceed with checking wether there is a corresponding test in place. If not first create a (failing) test. Or create/adjust the test that mirrors the correct behavior.
+- From the failing test work on the implementation/fix. Always make sure the docs, tests, and code are aligned and do not drift
+- When an issue is reported about orbit running against live nodes. Make sure to verify the fix against those running nodes.
 - Prefer small, working vertical slices over porting large legacy areas.
-- Do not re-solve Orbit-specific problems from scratch before checking how
-  `../orbit-old-may` solved them.
 - Keep the command surface contract-first. Use `.agents/skills/command-designer`
   when designing or changing command behavior.
-- Current code is implementation evidence, not permanent product authority.
-  Current `docs/` contracts are the product authority for broad command and
-  domain behavior.
-- Do not reintroduce broad legacy abstractions until the clean codebase has a
-  concrete need for them.
-- Do not use destructive git commands unless explicitly asked.
+
 
 ## PHP And Laravel
 

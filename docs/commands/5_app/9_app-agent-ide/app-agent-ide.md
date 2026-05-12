@@ -68,6 +68,9 @@ does not prune workspaces for those apps.
 
 - Create workspaces.
 - Create an agent IDE session.
+- Create or enable adapter-side app projects. For OpenCode, project resolution
+  and sandbox registration are owned by `workspace:new` when the effective
+  workspace source driver is `opencode`.
 - Grant node access or alter node transport.
 - SSH into the target node (except as part of workspace removal side effects).
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
