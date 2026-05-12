@@ -14,8 +14,9 @@ use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-
-use function Laravel\Prompts\table;
+use Symfony\Component\Console\Helper\Table;
+use Symfony\Component\Console\Helper\TableSeparator;
+use Symfony\Component\Console\Helper\TableStyle;
 
 #[Signature('deploy:step-list
     {app? : Production app name or domain}
@@ -69,18 +70,48 @@ class DeployStepListCommand extends Command
             return self::SUCCESS;
         }
 
-        table(
-            headers: ['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'],
-            rows: array_map(fn (array $step): array => [
+        (new Table($this->output))
+            ->setHeaders(['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'])
+            ->setRows($this->deployStepTableRows($result['steps']))
+            ->setStyle($this->deployStepTableStyle())
+            ->render();
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $steps
+     * @return array<int, array<int, mixed>|TableSeparator>
+     */
+    private function deployStepTableRows(array $steps): array
+    {
+        $rows = [];
+
+        foreach ($steps as $index => $step) {
+            if ($index > 0) {
+                $rows[] = new TableSeparator;
+            }
+
+            $rows[] = [
                 $step['id'],
                 $step['order'],
                 $step['title'],
                 $this->formatCommandForTable((string) $step['command']),
                 "{$step['timeout_seconds']}s",
-            ], $result['steps']),
-        );
+            ];
+        }
 
-        return self::SUCCESS;
+        return $rows;
+    }
+
+    private function deployStepTableStyle(): TableStyle
+    {
+        return (new TableStyle)
+            ->setHorizontalBorderChars('─')
+            ->setVerticalBorderChars('│', '│')
+            ->setCellHeaderFormat('<fg=gray>%s</>')
+            ->setCellRowFormat('<fg=default>%s</>')
+            ->setCrossingChars('┼', '<fg=gray>┌', '┬', '┐', '┤', '┘</>', '┴', '└', '├');
     }
 
     private function formatCommandForTable(string $command): string

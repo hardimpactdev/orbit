@@ -212,16 +212,28 @@ it('renders deployment step commands inside the table', function (): void {
         'timeout_seconds' => 300,
     ]);
 
+    DeployStep::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Reload PHP-FPM',
+        'command' => 'sudo -n systemctl reload php8.5-fpm',
+        'sort_order' => 2,
+        'timeout_seconds' => 120,
+    ]);
+
     $exit = Artisan::call('deploy:step-list', [
         'app' => 'docs',
     ]);
     $output = Artisan::output();
+    $firstStepOffset = strpos($output, 'Install PHP dependencies');
+    $secondStepOffset = strpos($output, 'Reload PHP-FPM');
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('Install PHP dependencies')
+        ->and($output)->toContain('Reload PHP-FPM')
         ->and($output)->toContain('COMMAND')
         ->and($output)->toContain('sudo -n -H -u "{{ app_user }}" bash -lc \'cd "{{ release_path }}" &&')
         ->and($output)->toContain('composer install --no-dev --optimize-autoloader --no-interaction\'')
+        ->and(substr($output, $firstStepOffset, $secondStepOffset - $firstStepOffset))->toContain('├')
         ->and($output)->not->toContain('Commands:');
 });
 
