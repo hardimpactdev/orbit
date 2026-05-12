@@ -70,27 +70,49 @@ class DeployStepListCommand extends Command
         }
 
         table(
-            headers: ['ID', 'ORDER', 'TITLE', 'TIMEOUT'],
+            headers: ['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'],
             rows: array_map(fn (array $step): array => [
                 $step['id'],
                 $step['order'],
                 $step['title'],
+                $this->formatCommandForTable((string) $step['command']),
                 "{$step['timeout_seconds']}s",
             ], $result['steps']),
         );
 
-        $this->newLine();
-        $this->line('Commands:');
+        return self::SUCCESS;
+    }
 
-        foreach ($result['steps'] as $step) {
-            $this->newLine();
-            $this->line("[{$step['order']}] {$step['title']}");
+    private function formatCommandForTable(string $command): string
+    {
+        $lines = preg_split("/\r\n|\n|\r/", $command) ?: [];
 
-            foreach (preg_split("/\r\n|\n|\r/", (string) $step['command']) ?: [] as $line) {
-                $this->line('  '.$line);
-            }
+        $displayLines = [];
+
+        foreach ($lines as $line) {
+            array_push($displayLines, ...$this->splitShellAndOperators($line));
         }
 
-        return self::SUCCESS;
+        return implode(PHP_EOL, $displayLines);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function splitShellAndOperators(string $line): array
+    {
+        $segments = explode(' && ', $line);
+
+        if (count($segments) === 1) {
+            return [$line];
+        }
+
+        return array_map(
+            fn (string $segment, int $index): string => $index === array_key_last($segments)
+                ? $segment
+                : "{$segment} &&",
+            $segments,
+            array_keys($segments),
+        );
     }
 }

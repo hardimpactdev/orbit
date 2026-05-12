@@ -201,16 +201,13 @@ SH,
         ->and($logPayload['success']['meta']['lines'])->toBe(20);
 });
 
-it('renders multiline deployment steps as readable command blocks', function (): void {
+it('renders deployment step commands inside the table', function (): void {
     $app = deployCommandCreateApp();
 
     DeployStep::query()->create([
         'app_id' => $app->id,
-        'title' => 'Run migrations',
-        'command' => <<<'SH'
-cd {{ release_path }}
-php artisan migrate --force
-SH,
+        'title' => 'Install PHP dependencies',
+        'command' => 'sudo -n -H -u "{{ app_user }}" bash -lc \'cd "{{ release_path }}" && composer install --no-dev --optimize-autoloader --no-interaction\'',
         'sort_order' => 1,
         'timeout_seconds' => 300,
     ]);
@@ -221,12 +218,11 @@ SH,
     $output = Artisan::output();
 
     expect($exit)->toBe(0)
-        ->and($output)->toContain('Run migrations')
-        ->and($output)->toContain('Commands:')
-        ->and($output)->toContain('[1] Run migrations')
-        ->and($output)->toContain('  cd {{ release_path }}')
-        ->and($output)->toContain('  php artisan migrate --force')
-        ->and($output)->not->toContain('COMMAND');
+        ->and($output)->toContain('Install PHP dependencies')
+        ->and($output)->toContain('COMMAND')
+        ->and($output)->toContain('sudo -n -H -u "{{ app_user }}" bash -lc \'cd "{{ release_path }}" &&')
+        ->and($output)->toContain('composer install --no-dev --optimize-autoloader --no-interaction\'')
+        ->and($output)->not->toContain('Commands:');
 });
 
 it('fails before side effects for non-production apps', function (): void {

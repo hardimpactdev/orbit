@@ -32,7 +32,9 @@ does not inspect node state, execute steps, or read deployment run history.
 
 ## Output
 
-Human output renders an ordered step table followed by readable command blocks.
+Human output renders an ordered step table with the command body in the table.
+Multiline scripts keep their stored line breaks, and shell chains joined with
+`&&` are split across display lines for readability.
 
 JSON output returns deploy step entities with app and count metadata.
 
