@@ -15,8 +15,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use HardImpact\OpenCode\OpenCode;
 use HardImpact\OpenCode\Requests\Projects\GetCurrentProject;
-use HardImpact\OpenCode\Requests\Projects\UpdateProject;
 use HardImpact\OpenCode\Requests\Sessions\CreateSession;
+use HardImpact\OpenCode\Requests\Workspaces\CreateWorkspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -172,7 +172,8 @@ it('creates an OpenCode workspace when the source driver resolves OpenCode', fun
 
     $mock = new MockClient([
         MockResponse::make(workspaceNewOpenCodeProjectPayload(sandboxes: [])),
-        MockResponse::make(workspaceNewOpenCodeProjectPayload(sandboxes: ['/home/nckrtl/apps/demo/.worktrees/feature-open'])),
+        MockResponse::make([]),
+        MockResponse::make(workspaceNewOpenCodeWorkspacePayload()),
         MockResponse::make(workspaceNewOpenCodeSessionPayload()),
     ]);
     $client = new OpenCode('http://opencode.test');
@@ -199,12 +200,12 @@ it('creates an OpenCode workspace when the source driver resolves OpenCode', fun
         'workspace_id' => 'sess_feature_open',
     ]);
     expect(implode("\n---\n", $shell->scripts))
-        ->toContain('git -C "$app_path" worktree add "$relative_path" -b "$workspace_name" "$base_ref"')
-        ->toContain("workspace_name='feature-open'")
-        ->toContain("base_ref='feature/source'");
+        ->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
+        ->toContain('git -C "$workspace_path" reset --hard "$base_ref"')
+        ->toContain('update workspace set name = :name, branch = :branch where id = :id');
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, UpdateProject::class);
+    $mock->assertSentCount(1, CreateWorkspace::class);
     $mock->assertSentCount(1, CreateSession::class);
 
     $workspace = Workspace::query()
@@ -434,9 +435,13 @@ final class WorkspaceNewTestShell implements RemoteShell
     /** @var list<string> */
     public array $scripts = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
@@ -594,12 +599,29 @@ function workspaceNewOpenCodeProjectPayload(array $sandboxes): array
 /**
  * @return array<string, mixed>
  */
+function workspaceNewOpenCodeWorkspacePayload(): array
+{
+    return [
+        'id' => 'wrk_feature_open',
+        'type' => 'worktree',
+        'name' => 'feature-open',
+        'branch' => 'opencode/feature-open',
+        'directory' => '/home/nckrtl/apps/demo/.worktrees/feature-open',
+        'extra' => null,
+        'projectID' => 'proj_demo',
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
 function workspaceNewOpenCodeSessionPayload(): array
 {
     return [
         'id' => 'sess_feature_open',
         'title' => 'feature-open',
         'directory' => '/home/nckrtl/apps/demo/.worktrees/feature-open',
+        'workspaceID' => 'wrk_feature_open',
     ];
 }
 

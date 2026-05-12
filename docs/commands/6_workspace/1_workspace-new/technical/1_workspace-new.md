@@ -115,12 +115,11 @@ register an existing path use
    - With no effective adapter, create a generic Git worktree on the parent
      app node at `<app path>/.worktrees/<name>` by creating branch `<name>`
      from the requested `--base` ref.
-   - With effective adapter `opencode`, create the same Git worktree on the
-     parent app node at `<app path>/.worktrees/<name>` by creating branch
-     `<name>` from the requested `--base` ref, resolve or create the parent
-     OpenCode project via the OpenCode API, register the worktree path as an
-     OpenCode project sandbox, and best-effort create an OpenCode session
-     titled `<name>` for that worktree.
+   - With effective adapter `opencode`, resolve the parent OpenCode project
+     through the OpenCode API, ask OpenCode to create a UI-visible workspace,
+     align the returned workspace worktree to branch `<name>` from the
+     requested `--base` ref, and best-effort create an OpenCode session titled
+     `<name>` attached to that OpenCode workspace id.
    - With effective adapter `polyscope`, create the workspace through the
      Polyscope SDK using the app node's Polyscope server identity, the parent
      app's Polyscope repository id, `branch=<name>`, and

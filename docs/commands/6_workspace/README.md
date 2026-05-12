@@ -60,11 +60,11 @@ the physical path that Orbit stores on the gateway workspace record.
   `<workspace>` from the requested `--base` ref. Generic worktree rows store
   `agent_ide.adapter=null` and `agent_ide.workspace_id=null`.
 - **OpenCode driver:** used when the effective adapter is `opencode`. It
-  creates the same Git worktree shape as the generic driver, then resolves or
-  creates the parent OpenCode project through the OpenCode API and registers
-  the worktree path as an OpenCode project sandbox. Orbit stores
-  `agent_ide.adapter=opencode` and the best-effort OpenCode session id when
-  session creation succeeds.
+  resolves the parent OpenCode project, asks OpenCode to create a UI-visible
+  workspace, then aligns the returned workspace worktree to branch
+  `<workspace>` from the requested `--base` ref. Orbit stores
+  `agent_ide.adapter=opencode`, the returned workspace path, and the
+  best-effort OpenCode session id when session creation succeeds.
 - **Polyscope driver:** used when the effective adapter is `polyscope`. It
   creates the workspace through the Polyscope SDK using the app node's
   Polyscope server identity and the parent app's Polyscope repository id.

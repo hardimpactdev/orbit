@@ -60,7 +60,7 @@ final readonly class SupervisorProgramRenderer
             user: $user,
             restartPolicy: $process->restart_policy->toSupervisor(),
             stdoutLogFile: $logPath,
-            environment: $this->environment($app, $home, $workspace),
+            environment: $this->environment($app, $process, $home, $workspace),
         );
     }
 
@@ -81,7 +81,7 @@ final readonly class SupervisorProgramRenderer
     /**
      * @return array<string, string>
      */
-    private function environment(App $app, string $home, ?Workspace $workspace): array
+    private function environment(App $app, Process $process, string $home, ?Workspace $workspace): array
     {
         $path = "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin";
         $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
@@ -92,6 +92,7 @@ final readonly class SupervisorProgramRenderer
             'HOME' => $home,
             'APP_URL' => $url,
             'VITE_APP_URL' => $url,
+            'VITE_VALET_HOST' => $this->host($app, $workspace),
             'VITE_DEV_SERVER_KEY' => "{$tlsBase}.key",
             'VITE_DEV_SERVER_CERT' => "{$tlsBase}.crt",
         ];

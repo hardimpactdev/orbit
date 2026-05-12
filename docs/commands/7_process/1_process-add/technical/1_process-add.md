@@ -90,9 +90,10 @@ requested durable intent exists.
   adapter command with the same bind behavior.
 - Runtime units generated from the process definition receive Orbit URL and TLS
   environment fields, including `APP_URL`, `VITE_APP_URL`,
-  `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT`.
-- Runtime units do not receive `VITE_VALET_HOST`; that compatibility field is
-  limited to app/workspace setup paths.
+  `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT`.
+- `VITE_VALET_HOST` is included for Laravel Vite and Vite Plus compatibility
+  because those toolchains may use the host while deriving TLS and hot-file URLs
+  for long-running development servers.
 
 ## Renderer Contracts
 

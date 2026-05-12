@@ -104,13 +104,15 @@ workspace setup and teardown step environment. Runtime units do not receive
 | `HOME` | Runtime user's home directory | Lets tools find home-relative config and caches. |
 | `APP_URL` | Resolved app or workspace HTTPS URL | Gives Laravel/runtime code the canonical public URL. |
 | `VITE_APP_URL` | Resolved app or workspace HTTPS URL | Keeps Vite-aware processes aligned with the runtime URL. |
+| `VITE_VALET_HOST` | Resolved app or workspace host without scheme | Keeps Laravel Vite and Vite Plus TLS / hot-file detection compatible with Orbit-managed HTTPS names. |
 | `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 | `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 
-`VITE_VALET_HOST` is intentionally not part of long-running process runtime
-units. It belongs to app/workspace setup compatibility paths, while process
-units receive Orbit-owned URL and certificate fields that are stable across
-frontend toolchains.
+`VITE_VALET_HOST` is exposed for the same compatibility reason as workspace
+setup: existing Laravel Vite and Vite Plus configurations use it while deriving
+development-server TLS and hot-file URLs. Orbit still supplies canonical
+`APP_URL`, `VITE_APP_URL`, and certificate paths so newer app configs can key
+off Orbit-owned fields directly.
 
 ## Development Server Runtime
 
@@ -126,9 +128,9 @@ npm run dev -- --host=0.0.0.0
 
 Equivalent package-manager or framework adapter commands are valid when they
 produce the same non-loopback bind behavior. Orbit supplies `APP_URL`,
-`VITE_APP_URL`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process
-can serve the app/workspace URL over Orbit-managed HTTPS and keep browser HMR
-connected through the network path.
+`VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
+`VITE_DEV_SERVER_CERT` so the process can serve the app/workspace URL over
+Orbit-managed HTTPS and keep browser HMR connected through the network path.
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by
 their respective families. The process family owns the stored command, runtime

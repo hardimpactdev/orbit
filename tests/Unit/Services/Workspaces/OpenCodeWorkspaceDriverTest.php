@@ -9,21 +9,22 @@ use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Workspaces\OpenCodeWorkspaceDriver;
-use App\Services\Workspaces\WorktreeWorkspaceDriver;
 use HardImpact\OpenCode\OpenCode;
 use HardImpact\OpenCode\Requests\Projects\GetCurrentProject;
-use HardImpact\OpenCode\Requests\Projects\UpdateProject;
 use HardImpact\OpenCode\Requests\Sessions\CreateSession;
+use HardImpact\OpenCode\Requests\Workspaces\CreateWorkspace;
+use HardImpact\OpenCode\Requests\Workspaces\RemoveWorkspace;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('creates a git worktree and registers it as an OpenCode sandbox', function (): void {
+it('creates an OpenCode workspace and aligns it to the requested branch', function (): void {
     $mock = new MockClient([
         MockResponse::make(openCodeProjectPayload(sandboxes: [])),
-        MockResponse::make(openCodeProjectPayload(sandboxes: ['/srv/demo/.worktrees/feature-a'])),
+        MockResponse::make([]),
+        MockResponse::make(openCodeWorkspacePayload()),
         MockResponse::make(openCodeSessionPayload()),
     ]);
 
@@ -35,32 +36,68 @@ it('creates a git worktree and registers it as an OpenCode sandbox', function ()
         ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
         ->and($result->agentIde)->toBe('opencode')
         ->and($result->agentIdeWorkspaceId)->toBe('sess_feature_a')
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toContain("workspace_name='feature-a'")
-        ->and($shell->scripts[0])->toContain("base_ref='main'");
+        ->and($shell->scripts)->toHaveCount(2)
+        ->and($shell->options[0]['env'])->toMatchArray([
+            'ORBIT_WORKSPACE_PATH' => '/srv/demo/.worktrees/feature-a',
+            'ORBIT_WORKSPACE_NAME' => 'feature-a',
+            'ORBIT_WORKSPACE_BASE' => 'main',
+        ])
+        ->and($shell->options[1]['env'])->toMatchArray([
+            'ORBIT_OPENCODE_WORKSPACE_ID' => 'wrk_feature_a',
+            'ORBIT_WORKSPACE_NAME' => 'feature-a',
+        ])
+        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
+        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" reset --hard "$base_ref"')
+        ->and($shell->scripts[1])->toContain('update workspace set name = :name, branch = :branch where id = :id');
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, UpdateProject::class);
+    $mock->assertSentCount(1, CreateWorkspace::class);
     $mock->assertSentCount(1, CreateSession::class);
 });
 
-it('cleans up the git worktree when OpenCode sandbox registration fails', function (): void {
+it('cleans up the OpenCode workspace when branch alignment fails', function (): void {
     $mock = new MockClient([
         MockResponse::make(openCodeProjectPayload(sandboxes: [])),
-        MockResponse::make(['message' => 'nope'], 500),
+        MockResponse::make([]),
+        MockResponse::make(openCodeWorkspacePayload()),
+        MockResponse::make(openCodeWorkspacePayload()),
+    ]);
+
+    $driver = openCodeWorkspaceDriver($mock, $shell = new OpenCodeWorkspaceDriverTestShell([
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'reset failed', durationMs: 1),
+    ]));
+
+    expect(fn () => $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main'))
+        ->toThrow(WorkspaceCreateFailed::class, 'OpenCode could not create the workspace.');
+
+    expect($shell->scripts)->toHaveCount(1);
+
+    $mock->assertSentCount(1, GetCurrentProject::class);
+    $mock->assertSentCount(1, CreateWorkspace::class);
+    $mock->assertSentCount(1, RemoveWorkspace::class);
+    $mock->assertSentCount(0, CreateSession::class);
+});
+
+it('recovers when OpenCode creates a workspace but returns a timeout response', function (): void {
+    $mock = new MockClient([
+        MockResponse::make(openCodeProjectPayload(sandboxes: [])),
+        MockResponse::make([]),
+        MockResponse::make(['name' => 'UnknownError'], 500),
+        MockResponse::make([openCodeWorkspacePayload()]),
+        MockResponse::make(openCodeSessionPayload()),
     ]);
 
     $driver = openCodeWorkspaceDriver($mock, $shell = new OpenCodeWorkspaceDriverTestShell);
 
-    expect(fn () => $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main'))
-        ->toThrow(WorkspaceCreateFailed::class, 'OpenCode could not register the workspace.');
+    $result = $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main');
 
-    expect($shell->scripts)->toHaveCount(2)
-        ->and($shell->scripts[1])->toContain("git worktree remove '/srv/demo/.worktrees/feature-a' --force");
+    expect($result->name)->toBe('feature-a')
+        ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
+        ->and($shell->scripts)->toHaveCount(2);
 
     $mock->assertSentCount(1, GetCurrentProject::class);
-    $mock->assertSentCount(1, UpdateProject::class);
-    $mock->assertSentCount(0, CreateSession::class);
+    $mock->assertSentCount(1, CreateWorkspace::class);
+    $mock->assertSentCount(1, CreateSession::class);
 });
 
 function openCodeWorkspaceDriver(MockClient $mock, OpenCodeWorkspaceDriverTestShell $shell): OpenCodeWorkspaceDriver
@@ -69,7 +106,6 @@ function openCodeWorkspaceDriver(MockClient $mock, OpenCodeWorkspaceDriverTestSh
     $client->withMockClient($mock);
 
     return new OpenCodeWorkspaceDriver(
-        worktreeDriver: new WorktreeWorkspaceDriver($shell),
         clientFactory: new OpenCodeWorkspaceDriverTestClientFactory($client),
         remoteShell: $shell,
     );
@@ -109,12 +145,29 @@ function openCodeProjectPayload(array $sandboxes): array
 /**
  * @return array<string, mixed>
  */
+function openCodeWorkspacePayload(): array
+{
+    return [
+        'id' => 'wrk_feature_a',
+        'type' => 'worktree',
+        'name' => 'feature-a',
+        'branch' => 'opencode/feature-a',
+        'directory' => '/srv/demo/.worktrees/feature-a',
+        'extra' => null,
+        'projectID' => 'proj_demo',
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
 function openCodeSessionPayload(): array
 {
     return [
         'id' => 'sess_feature_a',
         'title' => 'feature-a',
         'directory' => '/srv/demo/.worktrees/feature-a',
+        'workspaceID' => 'wrk_feature_a',
     ];
 }
 
@@ -123,11 +176,22 @@ final class OpenCodeWorkspaceDriverTestShell implements RemoteShell
     /** @var list<string> */
     public array $scripts = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private array $results = [],
+    ) {}
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
 

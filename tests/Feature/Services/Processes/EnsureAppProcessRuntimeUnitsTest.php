@@ -64,6 +64,7 @@ it('renders and enacts supervisor programs for app process definitions', functio
         ->and($program)->toContain("command=/bin/bash -lc 'npm run dev -- --host=0.0.0.0'")
         ->and($program)->toContain('autorestart=unexpected')
         ->and($program)->toContain('APP_URL="https://docs.test"')
+        ->and($program)->toContain('VITE_VALET_HOST="docs.test"')
         ->and($program)->toContain('VITE_DEV_SERVER_KEY="/home/orbit/.config/orbit/certs/docs.test.key"')
         ->and($program)->toContain('VITE_DEV_SERVER_CERT="/home/orbit/.config/orbit/certs/docs.test.crt"')
         ->and($certificates->hosts)->toBe(['docs.test'])
