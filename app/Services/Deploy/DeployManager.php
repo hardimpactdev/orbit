@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Deploy;
 
+use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
@@ -11,6 +12,7 @@ use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -98,7 +100,7 @@ final readonly class DeployManager
     /**
      * @return array{run: array<string, mixed>, output?: array{stdout: string, stderr: string}, meta: array<string, mixed>}
      */
-    public function run(string $app, bool $detach = false): array
+    public function run(string $app, bool $detach = false, ?ProgressReporter $progress = null): array
     {
         $model = $this->productionApp($app)->loadMissing('node');
         $steps = DeployStep::query()
@@ -114,7 +116,12 @@ final readonly class DeployManager
             );
         }
 
+        $progress?->tree('Running Deployment', $this->progressSteps($steps, $detach));
+        $progress?->stepStart('resolve-app');
+        $progress?->stepDone('resolve-app', $model->name);
+
         $startedAt = now();
+        $progress?->stepStart('create-run');
         $run = DeploymentRun::query()->create([
             'app_id' => $model->id,
             'status' => 'running',
@@ -123,6 +130,7 @@ final readonly class DeployManager
         ]);
         $context = $this->runContext($model, $run, $startedAt);
         $run->forceFill(['context' => $context])->save();
+        $progress?->stepDone('create-run', "#{$run->id}");
 
         $model->forceFill([
             'latest_deployment_status' => 'running',
@@ -147,6 +155,7 @@ final readonly class DeployManager
         foreach ($steps as $step) {
             $stepStartedAt = now();
             $command = $this->renderCommand($step->command, $context);
+            $progress?->stepStart($this->progressKey($step));
             $result = $this->remoteShell->run($model->node ?? throw new GatewayApiException(
                 message: "App '{$model->name}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
@@ -177,14 +186,18 @@ final readonly class DeployManager
             ]);
 
             if (! $result->successful()) {
+                $progress?->stepFail($this->progressKey($step), "exit {$result->exitCode}");
                 $status = 'failed';
                 $exitCode = $result->exitCode;
 
                 break;
             }
+
+            $progress?->stepDone($this->progressKey($step), $this->formatDurationMs($result->durationMs));
         }
 
         $finishedAt = now();
+        $progress?->stepStart('record-result');
         $run->forceFill([
             'status' => $status,
             'exit_code' => $exitCode,
@@ -194,6 +207,7 @@ final readonly class DeployManager
 
         $model->forceFill(['latest_deployment_status' => $status])->save();
         $run->load('steps');
+        $progress?->stepDone('record-result', $status);
 
         $payload = [
             'run' => $this->runEntity($run),
@@ -226,6 +240,60 @@ final readonly class DeployManager
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  Collection<int, DeployStep>  $steps
+     * @return list<array{key: string, label: string, doneLabel?: string}>
+     */
+    private function progressSteps(Collection $steps, bool $detach): array
+    {
+        $progressSteps = [
+            [
+                'key' => 'resolve-app',
+                'label' => 'Resolve production app',
+                'doneLabel' => 'Resolved production app',
+            ],
+            [
+                'key' => 'create-run',
+                'label' => 'Create deployment run',
+                'doneLabel' => 'Created deployment run',
+            ],
+        ];
+
+        if ($detach) {
+            return $progressSteps;
+        }
+
+        foreach ($steps as $step) {
+            $progressSteps[] = [
+                'key' => $this->progressKey($step),
+                'label' => $step->title,
+                'doneLabel' => $step->title,
+            ];
+        }
+
+        $progressSteps[] = [
+            'key' => 'record-result',
+            'label' => 'Record deployment result',
+            'doneLabel' => 'Recorded deployment result',
+        ];
+
+        return $progressSteps;
+    }
+
+    private function progressKey(DeployStep $step): string
+    {
+        return "deploy-step-{$step->id}";
+    }
+
+    private function formatDurationMs(int $durationMs): string
+    {
+        if ($durationMs < 1000) {
+            return "{$durationMs}ms";
+        }
+
+        return number_format($durationMs / 1000, 1).'s';
     }
 
     /**

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\ProgressReporter;
 use App\Http\Gateway\GatewayApiException;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
+use App\Support\Streaming\ProgressEventStreamEmitter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final readonly class DeployController
 {
@@ -125,7 +129,7 @@ final readonly class DeployController
         }
     }
 
-    public function run(Request $request): JsonResponse
+    public function run(Request $request, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
     {
         $caller = $this->caller($request);
 
@@ -149,18 +153,62 @@ final readonly class DeployController
             return $authorized;
         }
 
+        $detach = $request->boolean('detach');
+
+        if ($this->wantsEventStream($request)) {
+            return $this->streamRun($streams, $app, $detach);
+        }
+
         try {
-            $result = $this->deploy->run($app, $request->boolean('detach'));
-            $data = ['run' => $result['run']];
+            $result = $this->deploy->run($app, $detach);
 
-            if (isset($result['output'])) {
-                $data['output'] = $result['output'];
-            }
-
-            return $this->success($data, $result['meta']);
+            return $this->success($this->runData($result), $result['meta']);
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
         }
+    }
+
+    private function streamRun(ProgressEventStreamResponseFactory $streams, string $app, bool $detach): StreamedResponse
+    {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($app, $detach): void {
+            try {
+                $result = $this->deploy->run($app, $detach, app(ProgressReporter::class));
+                $data = $this->runData($result);
+                $data['footer'] = ($result['run']['status'] ?? null) === 'running'
+                    ? 'Deployment started'
+                    : 'Deployment completed';
+
+                $events->complete(0, $data);
+            } catch (GatewayApiException $exception) {
+                $events->error($exception->getMessage(), 1, [
+                    'code' => $exception->errorCode() ?? 'deploy.execution_failed',
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->errorMeta(),
+                    'data' => $exception->errorData(),
+                    'footer' => 'Deployment failed',
+                ]);
+            }
+        });
+    }
+
+    private function wantsEventStream(Request $request): bool
+    {
+        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
+    }
+
+    /**
+     * @param  array{run: array<string, mixed>, output?: array{stdout: string, stderr: string}, meta: array<string, mixed>}  $result
+     * @return array<string, mixed>
+     */
+    private function runData(array $result): array
+    {
+        $data = ['run' => $result['run']];
+
+        if (isset($result['output'])) {
+            $data['output'] = $result['output'];
+        }
+
+        return $data;
     }
 
     public function history(Request $request): JsonResponse

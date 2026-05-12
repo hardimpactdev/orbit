@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\GatewayStreamTransport;
+use App\Http\Gateway\Requests\Operations\UpdateAllStreamRequest;
 use App\Http\Gateway\UpdateAllGatewayStreamClient;
 use App\Models\LocalGatewaySettings;
-use GuzzleHttp\Client;
-use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -27,13 +31,14 @@ it('consumes gateway update events without waiting for large buffered reads', fu
         .'data: {"exit_code":0,"data":{"updates":[],"summary":{"total":0,"completed":0,"failed":0}}}'
         ."\n\n",
     );
-    $handler = HandlerStack::create(new MockHandler([
-        new Response(200, ['Content-Type' => 'text/event-stream'], $body),
-    ]));
-    $client = new Client(['handler' => $handler]);
+    $mock = new MockClient([
+        UpdateAllStreamRequest::class => new OneByteOnlyUpdateAllStreamResponse($body),
+    ]);
+    $connector = new GatewayConnector;
+    $connector->withMockClient($mock);
     $events = [];
 
-    $exitCode = (new UpdateAllGatewayStreamClient($client))->run(
+    $exitCode = (new UpdateAllGatewayStreamClient(new GatewayStreamTransport($connector)))->run(
         function (string $event, array $payload) use (&$events): void {
             $events[] = [$event, $payload];
         },
@@ -42,7 +47,25 @@ it('consumes gateway update events without waiting for large buffered reads', fu
     expect($exitCode)->toBe(0);
     expect(array_column($events, 0))->toBe(['tree', 'complete']);
     expect($body->largestReadLength)->toBe(1);
+    $mock->assertSent(UpdateAllStreamRequest::class);
 });
+
+final class OneByteOnlyUpdateAllStreamResponse extends MockResponse
+{
+    public function __construct(
+        private readonly StreamInterface $stream,
+    ) {
+        parent::__construct('', 200, ['Content-Type' => 'text/event-stream']);
+    }
+
+    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
+    {
+        return $responseFactory
+            ->createResponse(200)
+            ->withHeader('Content-Type', 'text/event-stream')
+            ->withBody($this->stream);
+    }
+}
 
 final class OneByteOnlyUpdateAllStream implements StreamInterface
 {
@@ -69,7 +92,7 @@ final class OneByteOnlyUpdateAllStream implements StreamInterface
         return null;
     }
 
-    public function getSize(): ?int
+    public function getSize(): int
     {
         return strlen($this->contents);
     }

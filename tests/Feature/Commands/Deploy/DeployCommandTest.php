@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Deploy\AddDeployStepRequest;
 use App\Http\Gateway\Requests\Deploy\ListDeployHistoryRequest;
+use App\Http\Gateway\Requests\Deploy\RunDeployStreamRequest;
 use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
@@ -14,10 +15,15 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Route;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
+});
 
 final class FakeDeployRemoteShell implements RemoteShell
 {
@@ -199,6 +205,142 @@ SH,
             'stderr' => '',
         ])
         ->and($logPayload['success']['meta']['lines'])->toBe(20);
+});
+
+it('renders a progress tree while running deployment steps', function (): void {
+    $app = deployCommandCreateApp();
+    $shell = new FakeDeployRemoteShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    DeployStep::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Install dependencies',
+        'command' => 'composer install --no-interaction',
+        'sort_order' => 1,
+        'timeout_seconds' => 120,
+    ]);
+
+    DeployStep::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Run migrations',
+        'command' => 'php artisan migrate --force',
+        'sort_order' => 2,
+        'timeout_seconds' => 120,
+    ]);
+
+    $this->artisan('deploy:run', [
+        'app' => 'docs',
+    ])
+        ->expectsOutputToContain('┌  Running Deployment')
+        ->expectsOutputToContain('○  Create deployment run')
+        ->expectsOutputToContain('○  Install dependencies')
+        ->expectsOutputToContain('○  Run migrations')
+        ->expectsOutputToContain('●  Created deployment run')
+        ->expectsOutputToContain('●  Install dependencies')
+        ->expectsOutputToContain('●  Run migrations')
+        ->expectsOutputToContain('└  Deployment completed')
+        ->expectsOutputToContain('Deployment completed for docs (run #')
+        ->assertSuccessful();
+});
+
+it('streams deploy run progress through the gateway for control callers', function (): void {
+    Node::factory()->create([
+        'name' => 'control-1',
+        'role' => 'control',
+        'is_local' => true,
+    ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    $stream = [
+        [
+            'event' => 'tree',
+            'data' => [
+                'title' => 'Running Deployment',
+                'steps' => [
+                    [
+                        'key' => 'resolve-app',
+                        'label' => 'Resolve production app',
+                        'doneLabel' => 'Resolved production app',
+                    ],
+                    [
+                        'key' => 'create-run',
+                        'label' => 'Create deployment run',
+                        'doneLabel' => 'Created deployment run',
+                    ],
+                    [
+                        'key' => 'deploy-step-123',
+                        'label' => 'Install dependencies',
+                        'doneLabel' => 'Install dependencies',
+                    ],
+                    [
+                        'key' => 'record-result',
+                        'label' => 'Record deployment result',
+                        'doneLabel' => 'Recorded deployment result',
+                    ],
+                ],
+            ],
+        ],
+        ['event' => 'step', 'data' => ['key' => 'resolve-app', 'status' => 'start']],
+        ['event' => 'step', 'data' => ['key' => 'resolve-app', 'status' => 'done', 'message' => 'docs']],
+        ['event' => 'step', 'data' => ['key' => 'create-run', 'status' => 'start']],
+        ['event' => 'step', 'data' => ['key' => 'create-run', 'status' => 'done', 'message' => '#123']],
+        ['event' => 'step', 'data' => ['key' => 'deploy-step-123', 'status' => 'start']],
+        ['event' => 'step', 'data' => ['key' => 'deploy-step-123', 'status' => 'done', 'message' => '25ms']],
+        ['event' => 'step', 'data' => ['key' => 'record-result', 'status' => 'start']],
+        ['event' => 'step', 'data' => ['key' => 'record-result', 'status' => 'done', 'message' => 'completed']],
+        [
+            'event' => 'complete',
+            'data' => [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Deployment completed',
+                    'run' => [
+                        'id' => 123,
+                        'app' => 'docs',
+                        'status' => 'completed',
+                        'exit_code' => 0,
+                        'steps' => [],
+                    ],
+                ],
+            ],
+        ],
+    ];
+    $streamBody = collect($stream)
+        ->map(fn (array $frame): string => "event: {$frame['event']}\n".'data: '.json_encode($frame['data'], JSON_THROW_ON_ERROR)."\n\n")
+        ->implode('');
+    $mockClient = MockClient::global([
+        RunDeployStreamRequest::class => MockResponse::make($streamBody, 200, ['Content-Type' => 'text/event-stream']),
+    ]);
+
+    $this->artisan('deploy:run', [
+        'app' => 'docs',
+    ])
+        ->expectsOutputToContain('┌  Running Deployment')
+        ->expectsOutputToContain('○  Resolve production app')
+        ->expectsOutputToContain('○  Install dependencies')
+        ->expectsOutputToContain('●  Resolved production app')
+        ->expectsOutputToContain('●  Install dependencies')
+        ->expectsOutputToContain('└  Deployment completed')
+        ->expectsOutputToContain('Deployment completed for docs (run #123).')
+        ->assertSuccessful();
+
+    $mockClient->assertSent(RunDeployStreamRequest::class);
+});
+
+it('uses one deploy run API route for json and streamed responses', function (): void {
+    $routes = collect(Route::getRoutes())
+        ->filter(fn ($route): bool => in_array('POST', $route->methods(), true))
+        ->map(fn ($route): string => $route->uri())
+        ->filter(fn (string $uri): bool => in_array($uri, ['api/deploy/run', 'api/deploy/run/stream'], true))
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($routes)->toBe(['api/deploy/run']);
 });
 
 it('renders deployment step commands inside the table', function (): void {

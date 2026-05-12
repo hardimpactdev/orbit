@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Gateway;
 
-use App\Http\Gateway\Requests\Workspaces\SetupWorkspaceStreamRequest;
+use App\Http\Gateway\Requests\Deploy\RunDeployStreamRequest;
 
-class WorkspaceSetupGatewayStreamClient
+class DeployRunGatewayStreamClient
 {
     public function __construct(
         private readonly ?GatewayStreamTransport $streams = null,
@@ -15,12 +15,12 @@ class WorkspaceSetupGatewayStreamClient
     /**
      * @param  callable(string, array<string, mixed>): void  $onEvent
      */
-    public function run(?string $name, ?string $app, ?string $path, callable $onEvent): int|GatewayApiException
+    public function run(string $app, bool $detach, callable $onEvent): int|GatewayApiException
     {
         return ($this->streams ?? app(GatewayStreamTransport::class))->events(
-            request: new SetupWorkspaceStreamRequest($name, $app, $path),
+            request: new RunDeployStreamRequest($app, $detach),
             onEvent: $onEvent,
-            unavailableMessage: 'Gateway connection is required to set up a workspace.',
+            unavailableMessage: 'Gateway connection is required to run deployments.',
         );
     }
 }
