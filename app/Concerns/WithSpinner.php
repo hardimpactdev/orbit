@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Concerns;
 
+use App\Support\Cli\SpinnerTreeRenderer;
+
 trait WithSpinner
 {
     /** @var list<string> Pre-colored spinner frames: ○/◉ alternation in cyan */
-    public static array $spinnerFrames = [
-        "\e[36m○\e[39m",
-        "\e[36m◉\e[39m",
-    ];
+    public static array $spinnerFrames = SpinnerTreeRenderer::SPINNER_FRAMES;
 
     private static int $spinnerInterval = 300_000; // microseconds between frames
 

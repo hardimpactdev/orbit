@@ -99,6 +99,12 @@ final readonly class LifecycleSummaryRenderer
      */
     public function spinnerLine(string $frame, string $label, int $labelWidth): string
     {
-        return "  {$frame}  ".SpinnerTreeRenderer::ACCENT.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
+        $line = "  {$frame}  ".SpinnerTreeRenderer::ACCENT.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
+
+        if ($this->styled) {
+            return $line;
+        }
+
+        return preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', '', $line) ?? $line;
     }
 }

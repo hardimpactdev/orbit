@@ -17,6 +17,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private PolyscopeWorkspaceBranchAligner $branchAligner,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
@@ -58,6 +59,20 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
                 'Polyscope did not return a workspace path.',
                 ['adapter' => 'polyscope', 'node' => $node->name, 'app' => $app->name],
             );
+        }
+
+        if ($workspace->branch !== $name) {
+            try {
+                $this->branchAligner->align($node, $workspace->id, $workspace->path, $name);
+            } catch (WorkspaceCreateFailed $exception) {
+                try {
+                    $client->deleteWorkspace($workspace->id);
+                } catch (Throwable) {
+                    // Best-effort cleanup after a post-create alignment failure.
+                }
+
+                throw $exception;
+            }
         }
 
         return new WorkspaceProvisionResult(

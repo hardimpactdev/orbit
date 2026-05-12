@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support\Cli;
 
-use App\Concerns\WithSpinner;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class RemoteProgressRenderer
@@ -24,6 +23,8 @@ final class RemoteProgressRenderer
     private ?string $activeKey = null;
 
     private int $frame = 0;
+
+    private ?int $spinnerPid = null;
 
     public function __construct(
         private readonly OutputInterface $output,
@@ -76,15 +77,11 @@ final class RemoteProgressRenderer
 
         match ($status) {
             'start' => $this->startStep($key),
-            'done' => $this->writeLine($index, $this->summary->success($doneLabel, $this->labelWidth, (string) ($message ?? ''))),
-            'fail' => $this->writeLine($index, $this->summary->failure($doneLabel, $this->labelWidth, (string) ($message ?? 'failed'))),
-            'skip' => $this->writeLine($index, $this->summary->skipped($doneLabel, $this->labelWidth, (string) ($message ?? 'skipped'))),
+            'done' => $this->completeStep($index, $key, $this->summary->success($doneLabel, $this->labelWidth, (string) ($message ?? ''))),
+            'fail' => $this->completeStep($index, $key, $this->summary->failure($doneLabel, $this->labelWidth, (string) ($message ?? 'failed'))),
+            'skip' => $this->completeStep($index, $key, $this->summary->skipped($doneLabel, $this->labelWidth, (string) ($message ?? 'skipped'))),
             default => null,
         };
-
-        if (in_array($status, ['done', 'fail', 'skip'], true) && $this->activeKey === $key) {
-            $this->activeKey = null;
-        }
     }
 
     public function tick(): void
@@ -93,7 +90,6 @@ final class RemoteProgressRenderer
             return;
         }
 
-        $this->frame++;
         $index = $this->indexByKey[$this->activeKey] ?? null;
 
         if ($index === null) {
@@ -101,11 +97,12 @@ final class RemoteProgressRenderer
         }
 
         $step = $this->steps[$index];
-        $frames = WithSpinner::$spinnerFrames;
+        $frames = SpinnerTreeRenderer::spinnerFrames();
         $this->writeLine(
             $index,
             $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth),
         );
+        $this->frame++;
     }
 
     public function finish(string $footer, bool $success = true): void
@@ -113,6 +110,8 @@ final class RemoteProgressRenderer
         if ($this->tree === null) {
             return;
         }
+
+        $this->stopSpinnerProcess();
 
         $color = $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED;
         $this->tree->updateFooter($this->output, $this->tree->footerLine($footer, $color));
@@ -126,14 +125,76 @@ final class RemoteProgressRenderer
 
     private function startStep(string $key): void
     {
+        $this->stopSpinnerProcess();
+
         $this->activeKey = $key;
         $this->frame = 0;
         $this->tick();
+        $this->startSpinnerProcess();
+    }
+
+    private function completeStep(int $index, string $key, string $content): void
+    {
+        if ($this->activeKey === $key) {
+            $this->activeKey = null;
+            $this->stopSpinnerProcess();
+        }
+
+        $this->writeLine($index, $content);
     }
 
     private function writeLine(int $index, string $content): void
     {
         $this->tree?->updateLine($this->output, $index, count($this->steps), $content);
+    }
+
+    private function startSpinnerProcess(): void
+    {
+        if (
+            ! $this->output->isDecorated()
+            || ! function_exists('pcntl_fork')
+            || ! function_exists('posix_kill')
+        ) {
+            return;
+        }
+
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            return;
+        }
+
+        if ($pid === 0) {
+            // @phpstan-ignore-next-line Intentional child-process spinner loop.
+            while (true) {
+                usleep(300_000);
+                $this->tick();
+            }
+        }
+
+        $this->spinnerPid = $pid;
+    }
+
+    private function stopSpinnerProcess(): void
+    {
+        if ($this->spinnerPid === null || ! function_exists('posix_kill')) {
+            $this->spinnerPid = null;
+
+            return;
+        }
+
+        posix_kill($this->spinnerPid, SIGTERM);
+
+        if (function_exists('pcntl_waitpid')) {
+            pcntl_waitpid($this->spinnerPid, $status);
+        }
+
+        $this->spinnerPid = null;
+    }
+
+    public function __destruct()
+    {
+        $this->stopSpinnerProcess();
     }
 
     /**

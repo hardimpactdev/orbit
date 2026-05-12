@@ -14,6 +14,12 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final readonly class SpinnerTreeRenderer
 {
+    /** @var list<string> Pre-colored spinner frames: ○/◉ alternation in cyan */
+    public const array SPINNER_FRAMES = [
+        "\e[36m○\e[39m",
+        "\e[36m◉\e[39m",
+    ];
+
     public const string DIM = "\e[38;5;242m";
 
     public const string ACCENT = "\e[97m";
@@ -29,6 +35,14 @@ final readonly class SpinnerTreeRenderer
     public function __construct(
         private bool $styled = true,
     ) {}
+
+    /**
+     * @return list<string>
+     */
+    public static function spinnerFrames(): array
+    {
+        return self::SPINNER_FRAMES;
+    }
 
     /**
      * Render the initial tree frame: header line, idle rows, and footer line.
