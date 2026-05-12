@@ -229,6 +229,7 @@ Source: [Deploy Concepts](commands/10_deploy/deploy-concepts.md).
 - **Deployment step timeout**
 - **Retention metadata**
 - **Deployment run**
+- **Deployment run context**
 - **Deployment run status**
 - **Deployment step execution**
 - **Detached deployment run**

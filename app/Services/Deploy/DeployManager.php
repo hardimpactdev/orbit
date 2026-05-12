@@ -11,7 +11,10 @@ use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
 use App\Models\Node;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final readonly class DeployManager
 {
@@ -118,6 +121,8 @@ final readonly class DeployManager
             'exit_code' => null,
             'started_at' => $startedAt,
         ]);
+        $context = $this->runContext($model, $run, $startedAt);
+        $run->forceFill(['context' => $context])->save();
 
         $model->forceFill([
             'latest_deployment_status' => 'running',
@@ -141,13 +146,16 @@ final readonly class DeployManager
 
         foreach ($steps as $step) {
             $stepStartedAt = now();
+            $command = $this->renderCommand($step->command, $context);
             $result = $this->remoteShell->run($model->node ?? throw new GatewayApiException(
                 message: "App '{$model->name}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
                 errorMeta: ['app' => $model->name],
-            ), $step->command, [
+            ), $command, [
                 'cwd' => $model->path,
                 'timeout' => $step->timeout_seconds,
+                'strict' => true,
+                'env' => $this->environment($context),
             ]);
             $stepFinishedAt = now();
             $stepStatus = $result->successful() ? 'completed' : 'failed';
@@ -158,7 +166,7 @@ final readonly class DeployManager
                 'deployment_run_id' => $run->id,
                 'deploy_step_id' => $step->id,
                 'title' => $step->title,
-                'command' => $step->command,
+                'command' => $command,
                 'status' => $stepStatus,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
@@ -376,6 +384,7 @@ final readonly class DeployManager
             'exit_code' => $run->exit_code,
             'started_at' => $run->started_at?->toJSON(),
             'finished_at' => $run->finished_at?->toJSON(),
+            'context' => $run->context ?? [],
             'steps' => $run->steps
                 ->map(fn (DeploymentRunStep $step): array => [
                     'id' => $step->id,
@@ -435,5 +444,89 @@ final readonly class DeployManager
         }
 
         return implode("\n", array_slice($parts, -$lines))."\n";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runContext(App $app, DeploymentRun $run, Carbon $startedAt): array
+    {
+        $app->loadMissing('node');
+
+        $appPath = rtrim($app->path, '/');
+        $release = $startedAt->copy()->utc()->format('Ymd_His').'_'.$run->id;
+        $appUser = $this->appUser($app);
+
+        return [
+            'app_name' => $app->name,
+            'app_path' => $appPath,
+            'app_user' => $appUser,
+            'domain' => $app->domain,
+            'repository' => $app->repository,
+            'release' => $release,
+            'release_name' => $release,
+            'releases_path' => "{$appPath}/releases",
+            'release_path' => "{$appPath}/releases/{$release}",
+            'live_path' => "{$appPath}/live",
+            'env_path' => "{$appPath}/.env",
+            'storage_path' => "{$appPath}/storage",
+            'database_path' => "{$appPath}/database/database.sqlite",
+            'app' => [
+                'name' => $app->name,
+                'path' => $appPath,
+                'user' => $appUser,
+                'domain' => $app->domain,
+                'repository' => $app->repository,
+            ],
+            'node' => [
+                'name' => $app->node?->name,
+                'host' => $app->node?->host,
+                'user' => $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit'),
+            ],
+        ];
+    }
+
+    private function appUser(App $app): string
+    {
+        if (preg_match('#^/home/([^/]+)/#', $app->path, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit');
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function renderCommand(string $command, array $context): string
+    {
+        return preg_replace_callback('/{{\s*([A-Za-z0-9_.-]+)\s*}}/', function (array $matches) use ($context): string {
+            $value = Arr::get($context, $matches[1]);
+
+            if (is_scalar($value) || $value === null) {
+                return (string) $value;
+            }
+
+            return $matches[0];
+        }, $command) ?? $command;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, string>
+     */
+    private function environment(array $context): array
+    {
+        $environment = [];
+
+        foreach ($context as $key => $value) {
+            if (! is_scalar($value) && $value !== null) {
+                continue;
+            }
+
+            $environment['ORBIT_DEPLOY_'.Str::upper((string) $key)] = (string) $value;
+        }
+
+        return $environment;
     }
 }

@@ -21,6 +21,7 @@ final readonly class SshRemoteShell implements RemoteShell
      *     input?: string,
      *     throw?: bool,
      *     env?: array<string, string>,
+     *     strict?: bool,
      * }  $options
      */
     #[\Override]
@@ -56,10 +57,14 @@ final readonly class SshRemoteShell implements RemoteShell
     }
 
     /**
-     * @param  array{cwd?: string, env?: array<string, string>}  $options
+     * @param  array{cwd?: string, env?: array<string, string>, strict?: bool}  $options
      */
     private function composeScript(string $script, array $options): string
     {
+        if ((bool) ($options['strict'] ?? false)) {
+            return $this->composeStrictScript($script, $options);
+        }
+
         $prefix = '';
 
         if (isset($options['env']) && is_array($options['env'])) {
@@ -79,6 +84,28 @@ final readonly class SshRemoteShell implements RemoteShell
         }
 
         return $prefix.$script;
+    }
+
+    /**
+     * @param  array{cwd?: string, env?: array<string, string>}  $options
+     */
+    private function composeStrictScript(string $script, array $options): string
+    {
+        $lines = ['set -e'];
+
+        if (isset($options['env']) && is_array($options['env'])) {
+            foreach ($options['env'] as $key => $value) {
+                $lines[] = sprintf('export %s=%s', $key, escapeshellarg($value));
+            }
+        }
+
+        if (isset($options['cwd']) && $options['cwd'] !== '') {
+            $lines[] = 'cd '.escapeshellarg($options['cwd']);
+        }
+
+        $lines[] = $script;
+
+        return implode(PHP_EOL, $lines);
     }
 
     private function command(Node $node, string $script): string

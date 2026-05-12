@@ -52,13 +52,30 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Fails before side effects when the production app has no deployment steps.
 - Creates a durable deployment run with `status=running` before executing the
   first step.
+- Generates and stores a deployment run context before executing the first
+  step. The context includes scalar values for `release`, `app_path`,
+  `releases_path`, `release_path`, `live_path`, `env_path`, `storage_path`,
+  `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
+  nested app and node metadata for placeholder resolution.
 - Executes each configured step on the app's owning node through the gateway.
 - Executes each step from the gateway-tracked app source path.
+- Renders `{{ key }}` placeholders against the deployment run context before
+  execution. Dot notation may address nested context values such as
+  `{{ app.name }}`.
+- Exports scalar context values as `ORBIT_DEPLOY_*` environment variables for
+  each step.
+- Executes every step script in a fresh shell with `set -e` applied by Orbit.
+  Shell state such as `cd`, local variables, and exported values inside a step
+  persist only until that step exits; separate deployment steps must use run
+  context placeholders or environment variables instead of relying on shell
+  state from previous steps.
 - Exposes deploy-step metadata, including `retention`, to the step execution
   context. Orbit does not apply global deployment retention outside the step
   that declares it.
 - Enforces the step timeout stored on the deploy-step definition.
 - Captures stdout, stderr, exit code, and timing for every executed step.
+- Stores the rendered command on each deployment run step so deploy logs show
+  the script that actually executed for that run.
 - Stops at the first failed step and does not execute later steps.
 - Updates the run status and the app's latest deployment status to
   `completed`, `failed`, or `cancelled`.

@@ -5,7 +5,7 @@
 List deployment pipeline steps for a production app.
 
 Use `deploy:step-list` to inspect the ordered deployment policy stored on the
-gateway.
+gateway, including multiline step scripts.
 
 ## Usage
 
@@ -32,7 +32,7 @@ does not inspect node state, execute steps, or read deployment run history.
 
 ## Output
 
-Human output renders an ordered step table.
+Human output renders an ordered step table followed by readable command blocks.
 
 JSON output returns deploy step entities with app and count metadata.
 

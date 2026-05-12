@@ -129,7 +129,11 @@ it('runs deployment steps and stores history and logs', function (): void {
     DeployStep::query()->create([
         'app_id' => $app->id,
         'title' => 'Deploy marker',
-        'command' => 'printf deployed',
+        'command' => <<<'SH'
+printf '{{ release }}'
+printf '{{ release_path }}'
+printf '{{ app_user }}'
+SH,
         'sort_order' => 1,
         'timeout_seconds' => 120,
     ]);
@@ -146,13 +150,15 @@ it('runs deployment steps and stores history and logs', function (): void {
             'stdout' => "deployed\n",
             'stderr' => '',
         ])
-        ->and($shell->runs[0]['script'])->toBe('printf deployed')
+        ->and($shell->runs[0]['script'])->not->toContain('{{')
         ->and($shell->runs[0]['options']['cwd'])->toBe('/srv/docs')
         ->and($shell->runs[0]['options']['timeout'])->toBe(120)
+        ->and($shell->runs[0]['options']['strict'])->toBeTrue()
         ->and(App::query()->findOrFail($app->id)->latest_deployment_status)->toBe('completed');
 
     $run = DeploymentRun::query()->sole();
     $step = DeploymentRunStep::query()->sole();
+    $release = $run->context['release'];
 
     $historyExit = Artisan::call('deploy:history', [
         'app' => 'docs',
@@ -162,7 +168,21 @@ it('runs deployment steps and stores history and logs', function (): void {
 
     expect($historyExit)->toBe(0)
         ->and($historyPayload['success']['data']['runs'][0]['id'])->toBe($run->id)
+        ->and($historyPayload['success']['data']['runs'][0]['context']['release'])->toBe($release)
         ->and($historyPayload['success']['meta']['pagination']['limit_capped'])->toBeFalse();
+
+    expect($run->context)
+        ->toMatchArray([
+            'app_name' => 'docs',
+            'app_path' => '/srv/docs',
+            'app_user' => 'orbit',
+            'release_path' => "/srv/docs/releases/{$release}",
+        ])
+        ->and($release)->toMatch('/^\d{8}_\d{6}_\d+$/')
+        ->and($shell->runs[0]['script'])->toContain("printf '{$release}'")
+        ->and($shell->runs[0]['script'])->toContain("printf '/srv/docs/releases/{$release}'")
+        ->and($shell->runs[0]['options']['env']['ORBIT_DEPLOY_RELEASE'])->toBe($release)
+        ->and($step->command)->toBe($shell->runs[0]['script']);
 
     $logExit = Artisan::call('deploy:log', [
         'app' => 'docs',
@@ -179,6 +199,34 @@ it('runs deployment steps and stores history and logs', function (): void {
             'stderr' => '',
         ])
         ->and($logPayload['success']['meta']['lines'])->toBe(20);
+});
+
+it('renders multiline deployment steps as readable command blocks', function (): void {
+    $app = deployCommandCreateApp();
+
+    DeployStep::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Run migrations',
+        'command' => <<<'SH'
+cd {{ release_path }}
+php artisan migrate --force
+SH,
+        'sort_order' => 1,
+        'timeout_seconds' => 300,
+    ]);
+
+    $exit = Artisan::call('deploy:step-list', [
+        'app' => 'docs',
+    ]);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('Run migrations')
+        ->and($output)->toContain('Commands:')
+        ->and($output)->toContain('[1] Run migrations')
+        ->and($output)->toContain('  cd {{ release_path }}')
+        ->and($output)->toContain('  php artisan migrate --force')
+        ->and($output)->not->toContain('COMMAND');
 });
 
 it('fails before side effects for non-production apps', function (): void {

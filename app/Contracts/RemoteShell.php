@@ -16,6 +16,7 @@ interface RemoteShell
      *     input?: string,
      *     throw?: bool,
      *     env?: array<string, string>,
+     *     strict?: bool,
      * }  $options
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult;

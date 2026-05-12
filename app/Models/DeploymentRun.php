@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property int|null $duration_ms
+ * @property array<string, mixed>|null $context
  * @property-read App|null $app
  */
 class DeploymentRun extends Model
@@ -31,6 +32,7 @@ class DeploymentRun extends Model
         'started_at',
         'finished_at',
         'duration_ms',
+        'context',
     ];
 
     #[\Override]
@@ -39,6 +41,7 @@ class DeploymentRun extends Model
         return [
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
+            'context' => 'array',
         ];
     }
 

@@ -21,9 +21,9 @@ it does not override the [Blueprint](../../BLUEPRINT.md).
 
 - **Deployment step definition:** Gateway-assigned app-owned record containing a
   title, shell command, order, timeout, and optional retention metadata.
-- **Deployment step command:** Arbitrary shell command executed during
+- **Deployment step command:** Arbitrary shell script executed during
   `deploy:run` from the gateway-tracked app source path on the app's owning
-  node.
+  node. Step commands may be single-line commands or multiline scripts.
 - **Deployment step order:** Positive integer ordering within a production
   app's deployment pipeline. Insertions and removals reorder neighboring steps
   to keep the pipeline stable and ascending.
@@ -37,6 +37,11 @@ it does not override the [Blueprint](../../BLUEPRINT.md).
 
 - **Deployment run:** Durable app-owned gateway history record created by
   `deploy:run` before the first configured step executes.
+- **Deployment run context:** Per-run variable map generated once before the
+  first step executes. It includes reusable values such as `release`,
+  `app_path`, `release_path`, `app_user`, and related app/node metadata.
+  Step commands may reference context values with `{{ key }}` placeholders or
+  `ORBIT_DEPLOY_*` environment variables.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,

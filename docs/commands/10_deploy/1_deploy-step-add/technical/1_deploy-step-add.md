@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app the caller may manage. |
-| `command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command string. |
+| `command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
 | `title` | `--title` | `Optional.` | `Never.` | Command-derived title. | Non-empty display label. |
 | `order` | `--order` | `Optional.` | `Never.` | Next pipeline position. | Positive integer insertion order. |
 | `timeout` | `--timeout` | `Optional.` | `Never.` | `600`. | Positive integer seconds. |
@@ -52,12 +52,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolves the selected app through gateway app intent.
 - Fails before side effects unless the selected app is production.
 - Writes one deploy-step definition owned by the production app.
+- Stores the step command exactly as provided. Context placeholders are not
+  resolved during policy writes.
 - Inserts the step at the selected order. When another step already has that
   order or a later order, the gateway increments those step orders by one and
   returns the reordered deployment pipeline.
 - Stores the step timeout in seconds. `deploy:run` marks the step failed if
   execution exceeds this timeout.
 - Stores optional retention metadata only on the step that declares it.
+- Allows `{{ key }}` placeholders for deploy-run context values. Unknown or
+  non-scalar placeholders are preserved and may fail later during execution.
 
 ### Execution Boundary Rules
 

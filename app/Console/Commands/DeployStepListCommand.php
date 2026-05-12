@@ -70,15 +70,26 @@ class DeployStepListCommand extends Command
         }
 
         table(
-            headers: ['ID', 'ORDER', 'TITLE', 'COMMAND', 'TIMEOUT'],
+            headers: ['ID', 'ORDER', 'TITLE', 'TIMEOUT'],
             rows: array_map(fn (array $step): array => [
                 $step['id'],
                 $step['order'],
                 $step['title'],
-                $step['command'],
                 "{$step['timeout_seconds']}s",
             ], $result['steps']),
         );
+
+        $this->newLine();
+        $this->line('Commands:');
+
+        foreach ($result['steps'] as $step) {
+            $this->newLine();
+            $this->line("[{$step['order']}] {$step['title']}");
+
+            foreach (preg_split("/\r\n|\n|\r/", (string) $step['command']) ?: [] as $line) {
+                $this->line('  '.$line);
+            }
+        }
 
         return self::SUCCESS;
     }

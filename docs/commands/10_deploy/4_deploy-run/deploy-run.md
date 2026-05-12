@@ -33,10 +33,16 @@ orbit deploy:run docs --json
 ## What Happens
 
 `deploy:run` resolves the production app, reads its ordered deployment steps,
-creates a gateway deployment run, and executes the configured shell commands on
-the app's owning node through the gateway. It stops at the first failed step,
-captures output for every executed step, and updates the app's latest
-deployment status.
+creates a gateway deployment run with a reusable run context, renders
+`{{ ... }}` placeholders in each step, and executes the configured shell
+scripts on the app's owning node through the gateway. It stops at the first
+failed step, captures output for every executed step, and updates the app's
+latest deployment status.
+
+Available run context includes `release`, `app_path`, `releases_path`,
+`release_path`, `live_path`, `env_path`, `storage_path`, `database_path`,
+`app_user`, `app_name`, `domain`, and `repository`. The same scalar values are
+also exported as `ORBIT_DEPLOY_*` environment variables.
 
 Detached runs return the run identifier without streaming step output.
 
