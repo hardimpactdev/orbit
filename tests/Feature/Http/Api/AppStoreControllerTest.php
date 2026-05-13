@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
@@ -47,6 +49,7 @@ describe('AppStoreController', function (): void {
 
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $response = $this->call('POST', '/api/apps', [
             'name' => 'docs',

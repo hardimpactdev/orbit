@@ -19,7 +19,7 @@ it('runs local nodes through bash without ssh', function (): void {
     ]);
 
     $node = Node::factory()->create([
-        'is_local' => true,
+        'role' => 'gateway',
     ]);
 
     $result = (new SshRemoteShell)->run($node, 'pwd', [
@@ -47,9 +47,7 @@ it('runs remote nodes over ssh using wireguard address and steady state user', f
     $node = Node::factory()->create([
         'host' => 'public.example.com',
         'wireguard_address' => '10.44.0.20',
-        'ssh_user' => 'provisioner',
         'user' => 'deploy',
-        'is_local' => false,
     ]);
 
     $result = (new SshRemoteShell)->run($node, 'git clone git@github.com:acme/site.git site');
@@ -73,9 +71,7 @@ it('falls back to ssh user when steady state user is not recorded', function ():
 
     $node = Node::factory()->create([
         'wireguard_address' => '10.44.0.21',
-        'ssh_user' => 'orbit',
         'user' => null,
-        'is_local' => false,
     ]);
 
     (new SshRemoteShell)->run($node, 'whoami');
@@ -97,7 +93,6 @@ it('throws failed remote shell results when requested', function (): void {
         'name' => 'app-a',
         'wireguard_address' => null,
         'host' => 'app-a.internal',
-        'ssh_user' => 'orbit',
     ]);
 
     expect(fn () => (new SshRemoteShell)->run($node, 'mkdir /srv/example', ['throw' => true]))

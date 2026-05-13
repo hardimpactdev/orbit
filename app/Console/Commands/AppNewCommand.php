@@ -42,27 +42,7 @@ class AppNewCommand extends Command
 
     public function handle(CreateAppSourceOnNode $createAppSourceOnNode, EnactAppRuntime $enactAppRuntime): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $input = $this->resolveInput();
 
@@ -333,24 +313,6 @@ class AppNewCommand extends Command
         }
 
         return "{$input['name']}.{$tld}";
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     /**

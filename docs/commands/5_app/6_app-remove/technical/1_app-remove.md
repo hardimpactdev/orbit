@@ -4,6 +4,12 @@
 
 **Effects:** `destructive`, `write`, `stream`.
 
+## App-Node Denial
+
+App-node callers are denied by the gateway with
+`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
+does not perform client-side role detection.
+
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target app exists in the gateway app registry.

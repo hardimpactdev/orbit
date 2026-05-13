@@ -15,7 +15,6 @@ it('renders the documented progress tree and completion summary', function (): v
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -46,7 +45,6 @@ it('renders validation failures without a progress tree', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $this->artisan('app:new Invalid --node=app-1')
@@ -59,7 +57,6 @@ it('renders decorated progress tree glyphs and colors', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -94,7 +91,6 @@ it('renders warning retry hints in human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -107,6 +103,7 @@ it('renders warning retry hints in human output', function (): void {
     app()->instance(RemoteShell::class, new AppNewHumanSequencedRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'caddy reload failed', durationMs: 1),
     ]));

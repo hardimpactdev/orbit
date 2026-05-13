@@ -30,12 +30,10 @@ final readonly class E2EGatewayApi
         'host' => {$controlIpValue},
         'wireguard_address' => {$controlWireGuardIpValue},
         'gateway_endpoint' => {$gatewayIpValue},
-        'ssh_user' => {$controlUserValue},
-        'user' => {$controlUserValue},
+                'user' => {$controlUserValue},
         'orbit_path' => {$orbitPathValue},
         'status' => 'active',
-        'is_local' => false,
-    ],
+            ],
 );
 PHP;
 
@@ -200,10 +198,8 @@ echo json_encode(\\App\\Models\\Node::query()->where('name', {$nameValue})->firs
     'host',
     'wireguard_address',
     'gateway_endpoint',
-    'ssh_user',
-    'user',
-    'is_local',
-]), JSON_THROW_ON_ERROR);
+        'user',
+    ]), JSON_THROW_ON_ERROR);
 PHP;
 
         $result = E2ECommand::orbit(
@@ -314,7 +310,7 @@ PHP;
                 '--role='.escapeshellarg((string) ($input['role'] ?? '')),
                 '--host='.escapeshellarg((string) ($input['host'] ?? '')),
                 '--environment='.escapeshellarg((string) ($input['environment'] ?? '')),
-                '--ssh-user='.escapeshellarg((string) ($input['ssh_user'] ?? 'root')),
+                '--user='.escapeshellarg((string) ($input['user'] ?? 'root')),
                 '--json',
             ];
         

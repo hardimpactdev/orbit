@@ -23,11 +23,9 @@ function nodeShowHumanRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -37,11 +35,12 @@ function nodeShowHumanRow(array $overrides = []): array
 
 function setupNodeShowHumanGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeShowHumanRow([
         'name' => 'local-gateway',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -233,16 +232,5 @@ describe('node:show human renderer contract', function (): void {
 
         expect($result['exitCode'])->not->toBe(0);
         expect($result['output'])->toContain('Gateway connection is required to show node details.');
-    });
-
-    it('renders local context invalid prose error', function (): void {
-        $result = invokeNodeShowFailCommandHuman(
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain('Local node role setting is invalid.');
     });
 });

@@ -29,7 +29,6 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -123,7 +122,6 @@ it('requires destructive consent in non-interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -151,7 +149,6 @@ it('returns app not found for already absent apps', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([]));
@@ -171,11 +168,12 @@ it('returns app not found for already absent apps', function (): void {
         ]);
 });
 
-it('denies app callers before side effects', function (): void {
+it('forwards app-node CLI callers through the typed gateway request without local side effects', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'app-local',
         'role' => 'app',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -185,6 +183,40 @@ it('denies app callers before side effects', function (): void {
     $remoteShell = new AppRemoveSequencedRemoteShell([]);
     app()->instance(RemoteShell::class, $remoteShell);
 
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        RemoveAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'result' => ['action' => 'removed'],
+                    'cleanup' => [
+                        'proxy_routes_removed' => 1,
+                        'workspaces_removed' => 0,
+                        'schedules_removed' => 0,
+                        'processes_removed' => 0,
+                        'fpm_config_removed' => true,
+                        'runtime_config_removed' => true,
+                    ],
+                ],
+            ],
+        ], 200),
+    ]);
+
     $exitCode = Artisan::call('app:remove', [
         'app' => 'docs',
         '--force' => true,
@@ -193,17 +225,16 @@ it('denies app callers before side effects', function (): void {
 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
+    expect($exitCode)->toBe(0)
         ->and(App::query()->whereKey($app->id)->exists())->toBeTrue()
         ->and($remoteShell->scripts)->toBe([])
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed');
+        ->and($payload['success']['data']['app']['name'])->toBe('docs');
 });
 
 it('reports node cleanup drift as success warnings after intent removal', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -236,10 +267,11 @@ it('reports node cleanup drift as success warnings after intent removal', functi
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -301,7 +333,6 @@ it('prompts for destructive confirmation and renders the documented human progre
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -342,7 +373,6 @@ it('cancels before side effects when interactive destructive confirmation is dec
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -365,7 +395,6 @@ it('renders drift details in human output when node cleanup leaves warnings', fu
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([

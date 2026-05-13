@@ -7,6 +7,13 @@ authenticated node record has role `app`.
 
 **Effects:** `none`. The gateway rejects the request before side effects.
 
+## App-Node Rules
+
+On an app node, the CLI remains a thin gateway client: it gathers command
+input, sends the request to the gateway over the VPN, and renders the gateway
+rejection. The CLI does not inspect local app-node role state or reject the
+command from a local node record.
+
 **Prerequisites:**
 - The gateway authenticates the caller and resolves its role to `app`.
 - No command argument, option, or WireGuard identity prerequisite can make

@@ -17,6 +17,10 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
+beforeEach(function (): void {
     $this->tempStorage = sys_get_temp_dir().'/orbit-test-storage-'.uniqid();
     app()->useStoragePath($this->tempStorage);
 

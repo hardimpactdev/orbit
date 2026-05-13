@@ -198,7 +198,7 @@ class ToolLogsCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function writeStreamOutput(string $output): void
@@ -208,24 +208,6 @@ class ToolLogsCommand extends Command
         if (defined('STDOUT')) {
             fflush(STDOUT);
         }
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function failValidation(string $field, string $message): int

@@ -17,10 +17,8 @@ beforeEach(function (): void {
         'name' => 'gateway',
         'role' => 'gateway',
         'host' => 'gateway',
-        'ssh_user' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
-        'is_local' => true,
         'wireguard_address' => UPDATE_ALL_CALLER_WG_IP,
     ]);
 });
@@ -70,10 +68,8 @@ it('includes app nodes in updates and uses RemoteShell', function (): void {
         'name' => 'beast',
         'role' => 'app',
         'host' => 'beast',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
     ]);
 
     Process::fake([
@@ -102,10 +98,8 @@ it('excludes control nodes from remote updates', function (): void {
         'name' => 'mini',
         'role' => 'control',
         'host' => 'mini',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/Users/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
     ]);
 
     Process::fake([
@@ -129,10 +123,8 @@ it('reports remote_update_failed when an app node fails', function (): void {
         'name' => 'beast',
         'role' => 'app',
         'host' => 'beast',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
     ]);
 
     Process::fake([
@@ -164,10 +156,8 @@ it('streams progress events for gateway-owned update targets', function (): void
         'name' => 'beast',
         'role' => 'app',
         'host' => 'beast',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
     ]);
 
     Process::fake([

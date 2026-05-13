@@ -12,7 +12,6 @@ uses(RefreshDatabase::class);
 
 describe('app:list human renderer contract', function (): void {
     it('renders grouped app tables by owning node', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'environment' => 'development', 'domain' => 'docs.test']);
@@ -32,7 +31,6 @@ describe('app:list human renderer contract', function (): void {
     });
 
     it('renders workspace child rows below their parent app', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'environment' => 'development', 'domain' => null]);
 
@@ -49,8 +47,6 @@ describe('app:list human renderer contract', function (): void {
     });
 
     it('renders empty result prose', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('app:list');
         $output = Artisan::output();
 

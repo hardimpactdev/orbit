@@ -12,7 +12,6 @@ uses(RefreshDatabase::class);
 
 describe('app:list JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns the canonical app entity shape', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
         $app = App::factory()->create([
             'name' => 'docs',
@@ -57,8 +56,6 @@ describe('app:list JSON renderer contract', function (): void {
     });
 
     it('returns an empty apps array when no apps match', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('app:list', ['--json' => true, '--environment' => 'production']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 

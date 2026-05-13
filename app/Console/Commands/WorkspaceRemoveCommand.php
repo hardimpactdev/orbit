@@ -11,7 +11,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceRemoveResponse;
-use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -34,15 +33,7 @@ class WorkspaceRemoveCommand extends Command
 
     public function handle(RemoveWorkspace $removeWorkspace): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app' || $callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $app = $this->stringOption('app');
         $workspaceFromCwd = null;
@@ -191,24 +182,6 @@ class WorkspaceRemoveCommand extends Command
 
                 return $workspacePath === $cwd || str_starts_with($cwd, "{$workspacePath}/");
             });
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function stringArgument(string $key): ?string

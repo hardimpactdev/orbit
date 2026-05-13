@@ -15,7 +15,6 @@ use App\Http\Gateway\Requests\Workspaces\CreateWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\CreateWorkspaceResponse;
 use App\Http\Gateway\WorkspaceNewGatewayStreamClient;
 use App\Models\App;
-use App\Models\Node;
 use App\Models\Workspace;
 use App\Support\Cli\RemoteProgressRenderer;
 use Illuminate\Console\Attributes\Description;
@@ -43,27 +42,7 @@ class WorkspaceNewCommand extends Command
         CreateWorkspaceProgress $createProgress,
         WorkspaceNewGatewayStreamClient $createStream,
     ): int {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->resolveName();
 
@@ -447,24 +426,6 @@ class WorkspaceNewCommand extends Command
             ])->all(),
             required: true,
         );
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function isInteractiveInput(): bool

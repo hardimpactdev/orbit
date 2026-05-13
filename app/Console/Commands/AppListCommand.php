@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Http\Gateway\Responses\Apps\AppListResponse;
 use App\Models\App;
-use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -97,25 +96,7 @@ class AppListCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     /**

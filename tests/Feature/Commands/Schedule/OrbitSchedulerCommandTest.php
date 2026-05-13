@@ -90,6 +90,8 @@ it('skips schedules that are not due or do not target the local node', function 
 });
 
 it('reports app-node scheduler heartbeat and run history to the gateway', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     $localNode = createOrbitSchedulerLocalNode('app');
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.1',
@@ -178,7 +180,6 @@ function createOrbitSchedulerLocalNode(string $role): Node
         'host' => '10.6.0.10',
         'wireguard_address' => '10.6.0.10',
         'status' => 'active',
-        'is_local' => true,
     ]);
 }
 

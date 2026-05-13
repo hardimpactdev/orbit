@@ -293,7 +293,7 @@ it('builds prepared topology templates through staged node:new snapshots', funct
         ->and($commandOutput)->toContain('orbit node:new')
         ->and($commandOutput)->toContain('app-dev-1')
         ->and($commandOutput)->toContain('10.201.0.12')
-        ->and($commandOutput)->toContain('--ssh-user=')
+        ->and($commandOutput)->toContain('--user=')
         ->and($commandOutput)->toContain('provisioner')
         ->and($commandOutput)->toContain('app-prod-1')
         ->and($commandOutput)->toContain('10.201.0.13')

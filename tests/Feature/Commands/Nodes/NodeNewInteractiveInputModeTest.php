@@ -25,11 +25,10 @@ function nodeNewInteractiveRow(array $overrides = []): array
         'role' => 'control',
         'host' => '127.0.0.1',
         'wireguard_address' => '10.6.0.3',
-        'ssh_user' => 'nckrtl',
+        'user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos_15-4',
         'created_at' => now(),
@@ -60,7 +59,6 @@ function setupNodeNewInteractiveAppCaller(): void
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'is_local' => true,
         'environment' => 'development',
     ]));
 }
@@ -77,6 +75,8 @@ function fakeNodeNewGateway(array|string $body, int $status = 200): MockClient
 
 describe('node:new interactive input mode', function (): void {
     it('prompts for missing name and role before control-node path validation', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeNewInteractiveUnconfiguredControlCaller();
 
         $this->artisan('node:new')
@@ -87,6 +87,8 @@ describe('node:new interactive input mode', function (): void {
     });
 
     it('prompts for app inputs in documented order and forwards the resolved request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeNewInteractiveControlCaller();
         fakeNodeNewGateway([
             'success' => [
@@ -121,6 +123,8 @@ describe('node:new interactive input mode', function (): void {
     });
 
     it('does not prompt for tld when app environment is production', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeNewInteractiveControlCaller();
         fakeNodeNewGateway([
             'success' => [
@@ -159,11 +163,4 @@ describe('node:new interactive input mode', function (): void {
             ->assertFailed();
     });
 
-    it('denies app-node callers before prompts', function (): void {
-        setupNodeNewInteractiveAppCaller();
-
-        $this->artisan('node:new')
-            ->expectsOutputToContain('This command may only be run from a control or gateway node.')
-            ->assertFailed();
-    });
 });

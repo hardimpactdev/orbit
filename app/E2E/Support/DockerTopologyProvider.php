@@ -333,7 +333,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=%s --wireguard-address=%s --environment=development --tld=test --gateway-endpoint=%s --ssh-user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=%s --wireguard-address=%s --environment=development --tld=test --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($networkPlan->ipForRole('dev')),
                 escapeshellarg($gatewayIp),
@@ -342,7 +342,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['prod'])) {
             E2ECommand::ssh($gateway, 'orbit', $key, sprintf(
-                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --ssh-user=orbit --user=orbit',
+                'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=%s --wireguard-address=%s --environment=production --gateway-endpoint=%s --user=orbit --user=orbit',
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($networkPlan->ipForRole('prod')),
                 escapeshellarg($gatewayIp),
@@ -365,12 +365,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         'host' => {$gatewayIpValue},
         'wireguard_address' => {$gatewayIpValue},
         'gateway_endpoint' => null,
-        'ssh_user' => 'orbit',
-        'user' => 'orbit',
+                'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-        'is_local' => false,
-    ],
+            ],
 );
 
 \$settings = \\App\\Models\\LocalGatewaySettings::current();

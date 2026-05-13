@@ -30,7 +30,6 @@ function createScheduleAddLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -109,6 +108,8 @@ it('validates target and execution source exclusivity', function (): void {
 });
 
 it('forwards non-gateway schedule adds through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createScheduleAddLocalNode('control');
 
     LocalGatewaySettings::current()->fill([

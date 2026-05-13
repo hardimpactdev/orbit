@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\ShowAppRequest;
 use App\Http\Gateway\Responses\Apps\AppShowResponse;
 use App\Models\App;
-use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -26,19 +25,7 @@ class AppShowCommand extends Command
 {
     public function handle(): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $app = $this->resolveAppSelector($callerRole);
 
@@ -79,24 +66,6 @@ class AppShowCommand extends Command
         $this->renderHuman($result);
 
         return self::SUCCESS;
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function resolveAppSelector(string $callerRole): ?string

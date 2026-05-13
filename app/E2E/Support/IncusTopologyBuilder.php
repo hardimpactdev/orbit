@@ -371,7 +371,7 @@ PHP;
             '--role=app',
             '--host='.escapeshellarg($host),
             '--environment='.escapeshellarg($environment),
-            '--ssh-user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--json',
         ];
 
@@ -418,12 +418,10 @@ PHP;
         'host' => {$gatewayIpValue},
         'wireguard_address' => {$gatewayIpValue},
         'gateway_endpoint' => null,
-        'ssh_user' => 'orbit',
-        'user' => 'orbit',
+                'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-        'is_local' => false,
-    ],
+            ],
 );
 PHP;
 

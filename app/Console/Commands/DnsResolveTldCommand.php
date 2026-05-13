@@ -9,7 +9,6 @@ use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Models\Node;
 use App\Services\Dns\LocalResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -105,33 +104,13 @@ class DnsResolveTldCommand extends Command implements Loggable
 
     private function executeDnsResolveTld(LocalResolver $resolver): int
     {
-        $callerRole = $this->callerRole();
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         if ($callerRole === 'gateway') {
             return $this->failCommand(
                 code: 'caller_role_not_allowed',
                 message: 'This command may only be run from a control node.',
                 meta: ['caller_role' => 'gateway'],
-            );
-        }
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
             );
         }
 
@@ -490,24 +469,6 @@ class DnsResolveTldCommand extends Command implements Loggable
         }
 
         return null;
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     protected function isInteractiveInput(): bool

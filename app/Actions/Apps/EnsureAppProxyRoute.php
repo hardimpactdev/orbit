@@ -158,7 +158,7 @@ SH,
 
     private function socketPath(App $app): string
     {
-        $user = $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit');
+        $user = $app->node?->user ?: 'orbit';
         $home = $user === 'root' ? '/root' : "/home/{$user}";
 
         return "{$home}/.config/orbit/php/{$app->name}.sock";

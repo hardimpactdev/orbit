@@ -29,26 +29,6 @@ abstract class AbstractWorkspaceStepAddCommand extends Command
     {
         $callerRole = app(CallerRoleResolver::class)->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'App-node callers cannot manage workspace step policy.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
         $command = $this->resolveStepCommand();
 
         if ($command === null) {

@@ -27,11 +27,9 @@ function nodeRevokeRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -41,11 +39,12 @@ function nodeRevokeRow(array $overrides = []): array
 
 function setupNodeRevokeGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeRevokeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -55,7 +54,6 @@ function setupRevokeControlCaller(): void
         'name' => 'control-1',
         'role' => 'control',
         'environment' => null,
-        'is_local' => true,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -210,36 +208,13 @@ describe('node:revoke base contract', function (): void {
             ->and($payload['error']['meta'])->toBe(['name' => 'missing']);
     });
 
-    it('rejects app-node callers before side effects', function (): void {
-        DB::table('nodes')->insert(nodeRevokeRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-        DB::table('nodes')->insert(nodeRevokeRow());
-
-        $exitCode = Artisan::call('node:revoke', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-            '--force' => true,
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-        expect(DB::table('node_access')->count())->toBe(0);
-    });
-
     it('rejects control-node callers with gateway_unavailable', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'control-1',
             'role' => 'control',
             'environment' => null,
-            'is_local' => true,
         ]));
         DB::table('nodes')->insert(nodeRevokeRow());
 
@@ -254,29 +229,6 @@ describe('node:revoke base contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('gateway_unavailable');
-    });
-
-    it('rejects unknown callers with local_context_invalid', function (): void {
-        DB::table('nodes')->insert(nodeRevokeRow([
-            'name' => 'bogus',
-            'role' => 'bogus',
-            'environment' => null,
-            'is_local' => true,
-        ]));
-        DB::table('nodes')->insert(nodeRevokeRow());
-
-        $exitCode = Artisan::call('node:revoke', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-            '--force' => true,
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
     });
 
     it('skips consent check with --force', function (): void {
@@ -327,6 +279,8 @@ describe('node:revoke base contract', function (): void {
 
 describe('node:revoke control forwarding', function (): void {
     it('forwards configured control-node revokes to the gateway without local target rows', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
 
         $mock = fakeNodeRevokeGateway([
@@ -369,6 +323,8 @@ describe('node:revoke control forwarding', function (): void {
     });
 
     it('renders forwarded already-absent success with human output', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
 
         fakeNodeRevokeGateway([
@@ -394,6 +350,8 @@ describe('node:revoke control forwarding', function (): void {
     });
 
     it('renders forwarded self-lockout success with human output', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
 
         fakeNodeRevokeGateway([
@@ -421,6 +379,8 @@ describe('node:revoke control forwarding', function (): void {
     });
 
     it('preserves structured gateway errors when forwarding', function (array $error): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
 
         fakeNodeRevokeGateway(['error' => $error], 422);
@@ -463,6 +423,8 @@ describe('node:revoke control forwarding', function (): void {
     ]);
 
     it('does not mutate local node_access for forwarded control calls', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
         DB::table('nodes')->insert(nodeRevokeRow([
             'name' => 'app-1',
@@ -500,6 +462,8 @@ describe('node:revoke control forwarding', function (): void {
     });
 
     it('fails with validation_failed before gateway call when force is missing for control callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupRevokeControlCaller();
 
         $mock = fakeNodeRevokeGateway([

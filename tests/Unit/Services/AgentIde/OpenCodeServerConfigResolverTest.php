@@ -16,7 +16,6 @@ it('resolves remote local-bind tool config through the node wireguard address', 
         'name' => 'beast',
         'host' => 'beast.local',
         'wireguard_address' => '10.6.0.7',
-        'is_local' => false,
     ]);
     $app = App::factory()->create([
         'name' => 'demo',
@@ -82,7 +81,6 @@ it('resolves remote credential host and port through the node wireguard address'
         'name' => 'beast',
         'host' => 'beast.local',
         'wireguard_address' => '10.6.0.7',
-        'is_local' => false,
     ]);
     $app = App::factory()->create([
         'name' => 'demo',

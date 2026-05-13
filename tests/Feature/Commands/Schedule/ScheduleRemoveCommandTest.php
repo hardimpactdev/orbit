@@ -29,7 +29,6 @@ function createScheduleRemoveLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -117,6 +116,8 @@ it('removes gateway intent and reports scheduler unreachable when pickup cannot 
 });
 
 it('forwards non-gateway schedule removes through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createScheduleRemoveLocalNode('control');
 
     LocalGatewaySettings::current()->fill([

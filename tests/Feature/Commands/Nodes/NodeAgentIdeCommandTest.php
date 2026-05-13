@@ -32,11 +32,9 @@ function nodeAgentIdeRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
@@ -49,11 +47,12 @@ function nodeAgentIdeRow(array $overrides = []): array
 
 function setupNodeAgentIdeGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeAgentIdeRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -63,7 +62,6 @@ function setupNodeAgentIdeControlCaller(): void
         'name' => 'control-1',
         'role' => 'control',
         'environment' => null,
-        'is_local' => true,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -288,28 +286,9 @@ describe('node:agent-ide command', function (): void {
             ->and($payload['error']['meta']['adapter'])->toBe('unknown-ide');
     });
 
-    it('denies app callers before mutation', function (): void {
-        DB::table('nodes')->insert(nodeAgentIdeRow([
-            'name' => 'local-app',
-            'is_local' => true,
-        ]));
-        DB::table('nodes')->insert(nodeAgentIdeRow());
-
-        $exitCode = Artisan::call('node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'opencode',
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app')
-            ->and(DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'))->toBeNull();
-    });
-
     it('forwards control callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeAgentIdeControlCaller();
         $mockClient = fakeNodeAgentIdeGateway([
             'success' => [
@@ -339,6 +318,8 @@ describe('node:agent-ide command', function (): void {
     });
 
     it('queries gateway adapter choices before prompting configured control callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeAgentIdeControlCaller();
 
         $mockClient = MockClient::global([
@@ -383,6 +364,8 @@ describe('node:agent-ide command', function (): void {
     });
 
     it('fails before prompting when configured control callers cannot fetch adapter choices', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeAgentIdeControlCaller();
 
         MockClient::global([
@@ -402,6 +385,8 @@ describe('node:agent-ide command', function (): void {
     });
 
     it('surfaces gateway authorization failures for control callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeAgentIdeControlCaller();
         fakeNodeAgentIdeGateway([
             'error' => [

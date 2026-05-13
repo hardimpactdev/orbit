@@ -6,6 +6,12 @@
 
 **Effects:** `write`
 
+## App-Node Denial
+
+App-node callers are denied by the gateway with
+`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
+does not perform client-side role detection.
+
 `app:root` is `Effects: write`, not `Effects: destructive`. It does not invoke
 the destructive-consent prompt or require `--force`, including for production
 apps with active domains. Cross-cutting "production-write confirmation" is not

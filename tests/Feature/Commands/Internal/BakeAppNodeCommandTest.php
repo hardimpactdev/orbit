@@ -16,7 +16,6 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--host' => '10.6.0.4',
             '--wireguard-address' => '10.6.0.4',
             '--gateway-endpoint' => '10.6.0.2',
-            '--ssh-user' => 'orbit',
             '--user' => 'orbit',
             '--tld' => 'test',
         ])->assertSuccessful();
@@ -28,12 +27,10 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($node->host)->toBe('10.6.0.4')
             ->and($node->wireguard_address)->toBe('10.6.0.4')
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
-            ->and($node->ssh_user)->toBe('orbit')
             ->and($node->user)->toBe('orbit')
             ->and($node->orbit_path)->toBe('/home/orbit/orbit')
             ->and($node->tld)->toBe('test')
-            ->and($node->status)->toBe('active')
-            ->and($node->is_local)->toBeFalse();
+            ->and($node->status)->toBe('active');
     });
 
     it('is idempotent across repeated runs', function (): void {
@@ -44,7 +41,6 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--host' => '10.6.0.5',
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
-            '--ssh-user' => 'orbit',
             '--user' => 'orbit',
         ];
 

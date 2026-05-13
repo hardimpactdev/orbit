@@ -10,7 +10,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ReconfigureToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolReconfigureResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
-use App\Models\Node;
 use App\Services\Tools\ToolReconfigurer;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Tools\ToolActionProgressRunner;
@@ -126,25 +125,7 @@ class ToolReconfigureCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function stringOption(string $name): ?string

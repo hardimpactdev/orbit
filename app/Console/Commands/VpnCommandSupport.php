@@ -67,27 +67,9 @@ abstract class VpnCommandSupport extends Command implements Loggable
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
-    protected function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
-    }
-
     protected function ensureAllowedCaller(): ?int
     {
-        $role = $this->callerRole();
+        $role = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         if (in_array($role, ['gateway', 'control'], true)) {
             return null;

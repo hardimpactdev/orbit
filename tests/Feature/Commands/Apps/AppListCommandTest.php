@@ -26,7 +26,6 @@ function createAppListLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -77,6 +76,8 @@ describe('app:list base contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createAppListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -126,6 +127,8 @@ describe('app:list base contract', function (): void {
     });
 
     it('preserves structured gateway authorization failures', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createAppListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

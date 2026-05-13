@@ -83,8 +83,10 @@ final readonly class OrbitScheduler
 
     private function localNode(): ?Node
     {
+        $role = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'app';
+
         return Node::query()
-            ->where('is_local', true)
+            ->where('role', $role)
             ->where('status', 'active')
             ->first();
     }

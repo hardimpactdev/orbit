@@ -78,7 +78,7 @@ function e2eProvisionGatewayThroughNodeNew(
 
     $gatewayIp = $gateway->waitForIpv4();
 
-    $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new {$name} --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
+    $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new {$name} --role=gateway --host={$gatewayIp} --user={$config->bootstrapUser} --control-name=control-1 --json";
     $nodeNew = e2eProvisionStep('run node:new gateway', fn () => E2ECommand::ssh(
         $control,
         $config->controlUser,
@@ -121,7 +121,7 @@ function e2eProvisionAppThroughNodeNew(
         '--role=app',
         '--host='.escapeshellarg($app->waitForIpv4()),
         '--environment='.escapeshellarg($environment),
-        '--ssh-user='.escapeshellarg($config->bootstrapUser),
+        '--user='.escapeshellarg($config->bootstrapUser),
         '--json',
     ];
 

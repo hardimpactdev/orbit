@@ -30,14 +30,12 @@ it('creates source on the target app node before writing gateway app intent', fu
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -76,13 +74,12 @@ it('canonicalizes github shorthand repositories before source creation and regis
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
-        'ssh_user' => 'deploy',
+        'user' => 'deploy',
         'status' => 'active',
     ]);
 
@@ -110,7 +107,6 @@ it('does not write gateway app intent when source creation fails', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -149,7 +145,6 @@ it('keeps gateway app intent and reports a warning when runtime enactment needs 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -185,13 +180,11 @@ it('renders and reloads an app php-fpm pool after app intent is durable', functi
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -227,14 +220,12 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -284,14 +275,12 @@ it('uses the production domain as the app-owned proxy route domain', function ()
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -313,14 +302,12 @@ it('keeps app and proxy route intent when proxy backend enactment needs later co
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -354,7 +341,6 @@ it('fails before source creation when the proxy route domain is already register
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
@@ -398,7 +384,6 @@ it('fails before remote work when the app name is already registered', function 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $existingNode = Node::factory()->create([
@@ -433,10 +418,11 @@ it('fails before remote work when the app name is already registered', function 
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([

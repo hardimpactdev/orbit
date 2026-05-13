@@ -36,12 +36,6 @@ class ScheduleRemoveCommand extends Command
     {
         $callerRole = $callerRoleResolver->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand('caller_role_not_allowed', 'The local Orbit caller role could not be resolved.', [
-                'caller_role' => 'unknown',
-            ]);
-        }
-
         $consent = $this->confirmRemoval((string) $this->argument('name'));
 
         if (is_int($consent)) {

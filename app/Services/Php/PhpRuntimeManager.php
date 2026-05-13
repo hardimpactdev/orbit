@@ -459,7 +459,7 @@ final readonly class PhpRuntimeManager
         }
 
         $localNode = Node::query()
-            ->where('is_local', true)
+            ->where('role', 'gateway')
             ->where('status', 'active')
             ->first();
 

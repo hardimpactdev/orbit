@@ -11,9 +11,12 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 describe('workspace:list JSON renderer contract', function (): void {
     it('selects JSON renderer with --json and returns the workspace list entity shape', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
 
@@ -39,7 +42,6 @@ describe('workspace:list JSON renderer contract', function (): void {
     });
 
     it('returns an empty workspaces array when no workspaces match', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
@@ -51,8 +53,6 @@ describe('workspace:list JSON renderer contract', function (): void {
     });
 
     it('returns validation errors in the documented JSON shape', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('workspace:list', ['--json' => true, '--node' => 'missing-node']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 

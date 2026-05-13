@@ -177,18 +177,14 @@ it('emits validation_failed when registry gateways exist without configured sett
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
     Node::query()->create([
         'name' => 'gw2',
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
 
     $output = runJson();

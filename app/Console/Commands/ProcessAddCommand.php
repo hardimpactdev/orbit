@@ -40,14 +40,6 @@ class ProcessAddCommand extends Command
     {
         $callerRole = $callerRoleResolver->resolve();
 
-        if ($callerRole === 'app' || $callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
-
         $input = $this->validatedInput();
 
         if (is_int($input)) {

@@ -30,7 +30,6 @@ function createScheduleReadLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -183,6 +182,8 @@ it('rejects schedule API reads from unauthorized callers', function (): void {
 });
 
 it('forwards non-gateway schedule reads through typed gateway requests', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createScheduleReadLocalNode('control');
 
     LocalGatewaySettings::current()->fill([

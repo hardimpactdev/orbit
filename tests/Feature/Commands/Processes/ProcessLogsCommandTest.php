@@ -28,7 +28,6 @@ function createProcessLogsLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -145,11 +144,13 @@ describe('process:logs base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
+            ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($remoteShell->scripts)->toBe([]);
     });
 
     it('forwards app callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProcessLogsLocalNode('app');
 
         LocalGatewaySettings::current()->fill([

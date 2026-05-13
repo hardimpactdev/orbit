@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\RemoveAppRequest;
 use App\Http\Gateway\Responses\Apps\AppRemoveResponse;
 use App\Models\App;
-use App\Models\Node;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -33,15 +32,7 @@ class AppRemoveCommand extends Command
 
     public function handle(RemoveApp $removeApp): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app' || $callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => $callerRole],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $selector = $this->stringArgument('app');
 
@@ -166,24 +157,6 @@ class AppRemoveCommand extends Command
                 || $app->url() === "https://{$selector}")
             ->values()
             ->first();
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function stringArgument(string $key): ?string

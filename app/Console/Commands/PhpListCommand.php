@@ -10,7 +10,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Php\ShowPhpRuntimeRequest;
 use App\Http\Gateway\Responses\Php\PhpRuntimeResponse;
-use App\Models\Node;
 use App\Services\Php\PhpRuntimeManager;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -30,15 +29,7 @@ class PhpListCommand extends Command
 {
     public function handle(PhpRuntimeManager $php): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(new PhpRuntimeFailure('local_context_invalid', 'Local node role setting is invalid.', [
-                'setting' => 'general.local_node_role',
-                'reason' => 'unsupported_value',
-                'caller_role' => 'unknown',
-            ]));
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $result = $callerRole === 'gateway'
             ? $php->view(
@@ -114,24 +105,6 @@ class PhpListCommand extends Command
             $inheritance = ($php['workspace']['inherits'] ?? false) ? 'inherits' : 'override';
             $this->line("Workspace {$php['workspace']['name']}: PHP {$php['workspace']['php_version']} ({$inheritance})");
         }
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function stringOption(string $name): ?string

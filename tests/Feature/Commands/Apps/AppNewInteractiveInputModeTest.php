@@ -14,7 +14,6 @@ it('prompts for missing name and target app node', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -40,13 +39,11 @@ it('prompts for an optional repository and canonicalizes github shorthand', func
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 

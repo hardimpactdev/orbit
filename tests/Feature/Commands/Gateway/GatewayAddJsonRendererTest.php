@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
@@ -17,6 +16,10 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
 
 beforeEach(function (): void {
     $this->tempStorage = sys_get_temp_dir().'/orbit-test-storage-'.uniqid();
@@ -218,61 +221,6 @@ it('emits validation_failed for invalid gateway_ip', function (): void {
         ->and($output['error']['message'])->toBe('Gateway IP must be a valid Orbit WireGuard address.')
         ->and($output['error']['meta']['field'])->toBe('gateway_ip')
         ->and($output['error']['meta']['reason'])->toBe('invalid_ip');
-});
-
-it('emits caller_role_not_allowed for gateway caller', function (): void {
-    Node::query()->create([
-        'name' => 'gateway-1',
-        'role' => 'gateway',
-        'status' => 'active',
-        'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
-
-    expect($output['error']['code'])->toBe('caller_role_not_allowed')
-        ->and($output['error']['message'])->toBe('This command may only be run from a control node.')
-        ->and($output['error']['meta']['caller_role'])->toBe('gateway');
-});
-
-it('emits caller_role_not_allowed for app caller', function (): void {
-    Node::query()->create([
-        'name' => 'app-1',
-        'role' => 'app',
-        'status' => 'active',
-        'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
-
-    expect($output['error']['code'])->toBe('caller_role_not_allowed')
-        ->and($output['error']['meta']['caller_role'])->toBe('app');
-});
-
-it('emits local_context_invalid for unknown role', function (): void {
-    Node::query()->create([
-        'name' => 'weird',
-        'role' => 'weird',
-        'status' => 'active',
-        'host' => '10.6.0.4',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $output = runGatewayAddJson(['gateway_ip' => '10.6.0.2']);
-
-    expect($output['error']['code'])->toBe('local_context_invalid')
-        ->and($output['error']['message'])->toBe('Local node role setting must be control, gateway, or app.')
-        ->and($output['error']['meta']['setting'])->toBe('general.local_node_role')
-        ->and($output['error']['meta']['reason'])->toBe('unsupported_value')
-        ->and($output['error']['meta']['caller_role'])->toBe('unknown');
 });
 
 it('emits node.identity_unknown for 403 response', function (): void {

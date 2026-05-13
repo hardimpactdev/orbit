@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\SendAgentIdeMessageRequest;
 use App\Http\Gateway\Responses\AgentIde\AgentIdeMessageResponse;
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -27,19 +26,7 @@ class AgentIdeMessageCommand extends Command
     public function handle(
         AgentIdeMessageDelivery $delivery,
     ): int {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         try {
             $message = $this->resolveMessage();
@@ -144,24 +131,6 @@ class AgentIdeMessageCommand extends Command
             ->whereNotNull('gateway_url')
             ->where('gateway_url', '!=', '')
             ->exists();
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function resolveMessage(): ?string

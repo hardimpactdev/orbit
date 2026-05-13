@@ -39,7 +39,7 @@ it('NodeNewWireGuard enrolls the first gateway from blank VMs', function (): voi
 
         expect($controlIp)->not->toBe($gatewayIp);
 
-        $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
+        $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --user={$config->bootstrapUser} --control-name=control-1 --json";
         expect($payload['success']['data']['node']['name'])->toBe('gateway-1')
             ->and($payload['success']['data']['node']['role'])->toBe('gateway')
             ->and($payload['success']['data']['local_control_node']['name'])->toBe('control-1');

@@ -101,19 +101,7 @@ class ProfileCommand extends Command implements Loggable
 
     private function executeProfile(ShowProfile $profile): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $target = $this->stringArgument('target');
         $appOption = $this->stringOption('app');
@@ -190,7 +178,7 @@ class ProfileCommand extends Command implements Loggable
             $this->activityUri = $uri;
         }
 
-        if ($selector === null && in_array($callerRole, ['gateway', 'app'], true)) {
+        if ($selector === null && $callerRole === 'gateway') {
             $cwd = getcwd();
             $selector = is_string($cwd) ? $cwd : null;
         }
@@ -208,41 +196,6 @@ class ProfileCommand extends Command implements Loggable
                     'reason' => 'missing_required_input',
                 ],
             );
-        }
-
-        if ($callerRole === 'app') {
-            $gatewayResult = $this->profileThroughGateway($selector, $uri, $nodeConstraint);
-
-            if (
-                $selectorWasOmitted
-                && $gatewayResult instanceof GatewayApiException
-                && $gatewayResult->errorCode() === 'app.not_found'
-                && $this->canPromptForApp()
-            ) {
-                $selected = $this->promptForApp($callerRole, $nodeConstraint);
-                $gatewayResult = $selected !== null
-                    ? $this->profileThroughGateway($selected, $uri, $nodeConstraint)
-                    : $gatewayResult;
-            }
-
-            if ($gatewayResult instanceof GatewayApiException) {
-                return $this->failCommand(
-                    code: $gatewayResult->errorCode() ?? 'gateway_unavailable',
-                    message: $gatewayResult->getMessage() !== '' ? $gatewayResult->getMessage() : 'Gateway connection is required to profile this target.',
-                    meta: $gatewayResult->errorMeta(),
-                );
-            }
-
-            if ($this->wantsJson()) {
-                $this->captureActivitySuccess($gatewayResult);
-
-                return $this->jsonSuccess($gatewayResult);
-            }
-
-            $this->captureActivitySuccess($gatewayResult);
-            $this->renderHuman($gatewayResult);
-
-            return self::SUCCESS;
         }
 
         if ($callerRole === 'gateway') {
@@ -458,24 +411,6 @@ class ProfileCommand extends Command implements Loggable
             'app' => $dto->app,
             'details' => $dto->details,
         ];
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function canPromptForApp(): bool

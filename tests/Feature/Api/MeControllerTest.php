@@ -18,10 +18,8 @@ function meNodeRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.8',
         'wireguard_address' => '10.6.0.8',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/Users/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'platform' => 'macos_15-4',
         'created_at' => now(),
         'updated_at' => now(),
@@ -48,7 +46,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
             'platform' => 'ubuntu_24-04',
         ]));
 
@@ -86,7 +83,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
             'platform' => 'ubuntu_24-04',
         ]));
 
@@ -127,7 +123,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
             'platform' => 'ubuntu_24-04',
         ]));
 
@@ -144,7 +139,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]));
 
         $response = $this->call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
@@ -166,7 +160,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]));
 
         $response = $this
@@ -183,7 +176,6 @@ describe('GET /api/me', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]));
 
         $response = $this

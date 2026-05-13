@@ -27,7 +27,6 @@ function createProxyListLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -126,6 +125,8 @@ describe('proxy:list', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProxyListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -172,6 +173,8 @@ describe('proxy:list', function (): void {
     });
 
     it('preserves structured gateway authorization failures', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProxyListLocalNode('app');
 
         LocalGatewaySettings::current()->fill([

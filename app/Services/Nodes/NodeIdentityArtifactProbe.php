@@ -62,12 +62,11 @@ $base = getcwd();
 require $base."/vendor/autoload.php";
 $app = require $base."/bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$node = App\Models\Node::query()
-    ->where("is_local", true)
-    ->where("status", "active")
+$peer = App\Models\WireGuardPeer::query()
+    ->where("public_key", trim((string) getenv("ORBIT_WIREGUARD_PUBLIC_KEY")))
     ->first();
-$peer = $node instanceof App\Models\Node
-    ? App\Models\WireGuardPeer::query()->where("node_id", $node->id)->first()
+$node = $peer instanceof App\Models\WireGuardPeer
+    ? $peer->node()->where("status", "active")->first()
     : null;
 echo json_encode([
     "name" => $node?->name,

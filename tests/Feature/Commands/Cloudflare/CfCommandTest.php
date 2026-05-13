@@ -37,7 +37,6 @@ function createCloudflareLocalNode(string $role = 'gateway'): Node
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
-        'is_local' => true,
     ]);
 }
 
@@ -84,20 +83,23 @@ it('lists Cloudflare zones from a gateway caller', function (): void {
     Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer test-token'));
 });
 
-it('denies app-node callers before provider requests', function (): void {
+it('fails non-gateway callers without configured gateway settings before provider requests', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createCloudflareLocalNode('app');
 
     $exitCode = Artisan::call('cf-zone:list', ['--json' => true]);
     $payload = cfJsonPayload();
 
     expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-        ->and($payload['error']['meta']['caller_role'])->toBe('app');
+        ->and($payload['error']['code'])->toBe('gateway_unavailable');
 
     Http::assertNothingSent();
 });
 
 it('forwards control callers through the gateway API', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createCloudflareLocalNode('control');
     LocalGatewaySettings::current()->fill([
         'gateway_url' => 'https://10.6.0.1',

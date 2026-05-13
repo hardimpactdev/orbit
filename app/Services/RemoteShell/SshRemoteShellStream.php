@@ -64,12 +64,12 @@ final readonly class SshRemoteShellStream implements RemoteShellStream
 
     private function command(Node $node, string $script): string
     {
-        if ($node->is_local) {
+        if ((bool) config('orbit.is_gateway', false) && $node->role === 'gateway') {
             return 'bash -c '.escapeshellarg($script);
         }
 
         $host = $node->wireguard_address ?: $node->host;
-        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
+        $user = $node->user ?: 'orbit';
 
         return sprintf(
             'ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 %s@%s %s',

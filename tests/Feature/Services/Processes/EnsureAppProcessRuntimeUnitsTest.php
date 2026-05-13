@@ -20,7 +20,6 @@ it('renders and enacts supervisor programs for app process definitions', functio
         'name' => 'app-1',
         'role' => 'app',
         'tld' => 'test',
-        'ssh_user' => 'orbit',
         'status' => 'active',
     ]);
 
@@ -185,8 +184,8 @@ final class ProcessRuntimeRecordingSiteCertificateInstaller implements SiteCerti
     public function expectedPathsFor(Node $node, string $host): array
     {
         return [
-            'cert' => "/home/{$node->ssh_user}/.config/orbit/certs/{$host}.crt",
-            'key' => "/home/{$node->ssh_user}/.config/orbit/certs/{$host}.key",
+            'cert' => "/home/{$node->user}/.config/orbit/certs/{$host}.crt",
+            'key' => "/home/{$node->user}/.config/orbit/certs/{$host}.key",
         ];
     }
 }

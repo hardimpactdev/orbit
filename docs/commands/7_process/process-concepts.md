@@ -10,7 +10,11 @@ This document defines process-family vocabulary and invariants. It supports the 
 
 ## Runtime Artifacts
 
-- **Runtime unit:** Abstract product noun for an Orbit-managed long-running process derived from app, optional workspace, and process configuration. The product model. One runtime unit is rendered for the main app instance and one for each workspace of that app per process definition. Each runtime unit is applied by the process manager as a Supervisor program.
+- **Runtime unit:** Abstract product noun for an Orbit-managed long-running
+  process derived from app, optional workspace, and process configuration.
+- **Runtime unit expansion:** One runtime unit is rendered for the main app
+  instance and one for each workspace of that app per process definition. Each
+  runtime unit is applied by the process manager as a Supervisor program.
 - **Runtime unit filename:** `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks Orbit ownership; underscores are reserved as backend segment delimiters. The rendered Supervisor program uses the same name.
 - **Runtime unit environment:** Predictable runtime environment exposed to derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`, and Orbit-managed TLS path variables. Separate from workspace lifecycle step environment.
 - **Supervisor program:** Backend-specific rendering of a runtime unit. The program is supervised by the node's process manager and starts the process command in the resolved app or workspace context.

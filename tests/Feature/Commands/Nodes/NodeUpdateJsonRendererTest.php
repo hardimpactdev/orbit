@@ -24,11 +24,9 @@ function nodeUpdateJsonRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
@@ -40,11 +38,12 @@ function nodeUpdateJsonRow(array $overrides = []): array
 
 function setupGatewayCallerJson(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeUpdateJsonRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -208,33 +207,13 @@ describe('node:update JSON renderer contract', function (): void {
             ->and($payload['error']['meta']['role'])->toBe('gateway');
     });
 
-    it('returns caller_role_not_allowed error for app-node callers', function (): void {
-        DB::table('nodes')->insert(nodeUpdateJsonRow([
-            'name' => 'test-app',
-            'is_local' => true,
-        ]));
-
-        DB::table('nodes')->insert(nodeUpdateJsonRow());
-
-        $exitCode = Artisan::call('node:update', [
-            'name' => 'app-1',
-            '--host' => '10.6.0.99',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['message'])->toBe('This command may only be run from a control or gateway node.')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-    });
-
     it('returns gateway_unavailable error for control-node callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         DB::table('nodes')->insert(nodeUpdateJsonRow([
             'name' => 'control-1',
             'role' => 'control',
             'environment' => null,
-            'is_local' => true,
         ]));
 
         DB::table('nodes')->insert(nodeUpdateJsonRow());
@@ -250,33 +229,6 @@ describe('node:update JSON renderer contract', function (): void {
             ->and($payload['error']['code'])->toBe('gateway_unavailable')
             ->and($payload['error']['message'])->toBe('Gateway connection is required to update a node.')
             ->and($payload['error']['meta'])->toBe([]);
-    });
-
-    it('returns local_context_invalid error with correct metadata', function (): void {
-        DB::table('nodes')->insert(nodeUpdateJsonRow([
-            'name' => 'bogus-local',
-            'role' => 'bogus',
-            'environment' => null,
-            'is_local' => true,
-        ]));
-
-        DB::table('nodes')->insert(nodeUpdateJsonRow());
-
-        $exitCode = Artisan::call('node:update', [
-            'name' => 'app-1',
-            '--host' => '10.6.0.99',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['message'])->toBe('Local node role setting is invalid.')
-            ->and($payload['error']['meta'])->toBe([
-                'setting' => 'general.local_node_role',
-                'reason' => 'unsupported_value',
-                'caller_role' => 'unknown',
-            ]);
     });
 
     it('returns validation_failed error for duplicate field flag', function (): void {

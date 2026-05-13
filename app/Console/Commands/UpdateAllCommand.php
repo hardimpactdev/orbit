@@ -79,27 +79,7 @@ class UpdateAllCommand extends Command implements Loggable
 
     private function executeUpdateAll(OrbitUpdater $updater, UpdateAllGatewayStream $gatewayStream): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         if ($callerRole === 'control' && ! $this->hasConfiguredGateway()) {
             return $this->failCommand(
@@ -435,8 +415,7 @@ class UpdateAllCommand extends Command implements Loggable
     {
         $nodes = Node::query()
             ->where('status', 'active')
-            ->where('is_local', false)
-            ->where('role', '!=', 'control')
+            ->where('role', 'app')
             ->orderBy('name')
             ->get();
 
@@ -1273,24 +1252,6 @@ class UpdateAllCommand extends Command implements Loggable
         } catch (Throwable) {
             // Activity logging must not change the documented update:all result.
         }
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function hasConfiguredGateway(): bool

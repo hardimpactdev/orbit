@@ -137,6 +137,10 @@ trait LogsCommandActivity
             return null;
         }
 
-        return Node::query()->where('is_local', true)->first();
+        if (! (bool) config('orbit.is_gateway', false)) {
+            return null;
+        }
+
+        return Node::query()->where('role', 'gateway')->where('status', 'active')->first();
     }
 }

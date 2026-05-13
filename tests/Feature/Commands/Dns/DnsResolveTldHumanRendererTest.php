@@ -26,11 +26,9 @@ function dnsResolveTldHumanRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -101,6 +99,8 @@ function cleanupDnsResolveTldHumanConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsResolveTldHumanConfig();
 });
 
@@ -347,23 +347,6 @@ describe('dns:resolve-tld human renderer contract', function (): void {
 
         expect($exitCode)->toBe(0);
         expect($output)->toContain('.test resolver override already absent.');
-    });
-
-    it('renders caller-role-not-allowed prose error', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldHumanRow([
-            'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('dns:resolve-tld', [
-            'tld' => 'test',
-            'target' => '10.6.0.7',
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('This command may only be run from a control node.');
     });
 
     it('renders validation failure prose error for invalid TLD', function (): void {

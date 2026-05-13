@@ -19,11 +19,9 @@ function nodeShowNonInteractiveRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -33,35 +31,23 @@ function nodeShowNonInteractiveRow(array $overrides = []): array
 
 function setupShowNonInteractiveGatewayCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeShowNonInteractiveRow([
         'name' => 'test-gateway',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
 function setupShowNonInteractiveControlCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
-    DB::table('nodes')->insert(nodeShowNonInteractiveRow([
-        'name' => 'test-control',
-        'role' => 'control',
-        'environment' => null,
-        'is_local' => true,
-    ]));
+    config(['orbit.is_gateway' => false]);
 }
 
 function setupShowNonInteractiveAppCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
-    DB::table('nodes')->insert(nodeShowNonInteractiveRow([
-        'name' => 'test-app',
-        'role' => 'app',
-        'environment' => 'development',
-        'is_local' => true,
-    ]));
+    config(['orbit.is_gateway' => false]);
 }
 
 function callShowNonInteractiveJsonCommand(string $command, array $parameters = []): array
@@ -166,32 +152,5 @@ describe('node:show non-interactive input mode', function (): void {
 
         expect($result['exit_code'])->not->toBe(0);
         expect($result['output'])->toContain('Gateway connection is required');
-    });
-
-    it('forwards for app callers when not on gateway', function (): void {
-        setupShowNonInteractiveAppCaller();
-
-        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'some-app']));
-
-        $result = callShowNonInteractiveJsonCommand('node:show', [
-            'name' => 'some-app',
-        ]);
-
-        expect($result['exit_code'])->not->toBe(0);
-        expect($result['output'])->toContain('Gateway connection is required');
-    });
-
-    it('executes locally for gateway callers', function (): void {
-        DB::table('nodes')->insert(nodeShowNonInteractiveRow(['name' => 'local-app']));
-
-        $result = callShowNonInteractiveJsonCommand('node:show', [
-            'name' => 'local-app',
-        ]);
-
-        expect($result['exit_code'])->toBe(0);
-        expect($result['payload'])->toBeArray();
-        expect($result['payload'])->toHaveKey('success');
-        expect($result['payload']['success'])->toBeArray();
-        expect($result['payload']['success'])->toHaveKey('data');
     });
 });

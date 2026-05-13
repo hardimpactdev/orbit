@@ -23,12 +23,13 @@ afterEach(function (): void {
 
 function createWorkspaceHistoryLocalNode(string $role = 'gateway'): Node
 {
+    config(['orbit.is_gateway' => $role === 'gateway']);
+
     return Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 

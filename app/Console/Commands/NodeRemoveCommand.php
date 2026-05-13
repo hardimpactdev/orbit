@@ -34,27 +34,7 @@ class NodeRemoveCommand extends Command
 
     public function handle(): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->argument('name');
         if ($name === null) {
@@ -75,12 +55,8 @@ class NodeRemoveCommand extends Command
 
         $name = (string) $name;
 
-        $localNodeName = Node::query()
-            ->where('is_local', true)
-            ->value('name');
-
-        $isSelfRemoval = $localNodeName !== null
-            && $localNodeName === $name;
+        $isSelfRemoval = (bool) config('orbit.is_gateway', false)
+            && Node::query()->where('name', $name)->where('role', 'gateway')->exists();
 
         if (! $this->option('force')) {
             if (! $this->isInteractiveInput()) {
@@ -282,24 +258,6 @@ class NodeRemoveCommand extends Command
         }
 
         return $node;
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     protected function isInteractiveInput(): bool

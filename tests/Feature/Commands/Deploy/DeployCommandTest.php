@@ -49,7 +49,6 @@ function deployCommandCreateApp(string $environment = 'production'): App
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -244,10 +243,11 @@ it('renders a progress tree while running deployment steps', function (): void {
 });
 
 it('streams deploy run progress through the gateway for control callers', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -401,10 +401,11 @@ it('fails before side effects for non-production apps', function (): void {
 });
 
 it('forwards control callers through typed gateway requests', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([

@@ -30,7 +30,6 @@ function createScheduleRunLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -96,6 +95,8 @@ it('returns schedule run failed with captured history for non-zero exits', funct
 });
 
 it('forwards non-gateway schedule runs through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     createScheduleRunLocalNode('control');
 
     LocalGatewaySettings::current()->fill([

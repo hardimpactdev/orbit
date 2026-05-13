@@ -60,7 +60,6 @@ describe('record completeness', function (): void {
             'name' => 'incomplete',
             'role' => '',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'created_at' => now(),
@@ -81,7 +80,6 @@ describe('record completeness', function (): void {
             'name' => 'complete',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -100,7 +98,6 @@ describe('record completeness', function (): void {
             'name' => 'app-no-env',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -118,7 +115,6 @@ describe('record completeness', function (): void {
             'name' => 'gateway-no-env',
             'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -132,137 +128,16 @@ describe('record completeness', function (): void {
     });
 });
 
-describe('local caller role', function (): void {
-    it('accepts missing local role as control before bootstrap', function (): void {
-        $node = Node::create([
-            'name' => 'control',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
-        ]);
-
-        // No local node exists with is_local=true and active status... wait, we just created one
-        // Let me fix this - delete the node so there's no local active node
-        $node->delete();
-
-        $otherNode = Node::create([
-            'name' => 'other',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-        $drift = $this->probe->diff($otherNode, new ProbeSnapshot([]));
-        $localRoleIssues = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.local_role'));
-
-        expect($localRoleIssues)->toHaveCount(0);
-    });
-
-    it('detects invalid local role', function (): void {
-        Node::create([
-            'name' => 'local',
-            'role' => 'invalid',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
-        ]);
-
-        $node = Node::create([
-            'name' => 'probe',
-            'role' => 'control',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'macos_14',
-            'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $invalid = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_role_invalid');
-
-        expect($invalid)->toHaveCount(1);
-        expect($invalid[array_key_first($invalid)]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('detects local role mismatch', function (): void {
-        Node::create([
-            'name' => 'local',
-            'role' => 'app',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-            'is_local' => true,
-        ]);
-
-        $node = Node::create([
-            'name' => 'probe',
-            'role' => 'gateway',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.1',
-            'is_local' => true,
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mismatch = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.local_role_mismatch');
-
-        expect($mismatch)->toHaveCount(1);
-        expect($mismatch[array_key_first($mismatch)]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('skips local role check for non-local nodes', function (): void {
-        $node = Node::create([
-            'name' => 'remote',
-            'role' => 'app',
-            'host' => '10.0.0.1',
-            'ssh_user' => 'user',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-            'is_local' => false,
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $localRoleIssues = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.local_role'));
-
-        expect($localRoleIssues)->toHaveCount(0);
-    });
-});
-
 describe('local default', function (): void {
     it('passes when no default is set', function (): void {
         $node = Node::create([
             'name' => 'control',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -278,12 +153,10 @@ describe('local default', function (): void {
             'name' => 'control',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -298,7 +171,6 @@ describe('local default', function (): void {
             'name' => 'prod-app',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'production',
@@ -312,12 +184,10 @@ describe('local default', function (): void {
             'name' => 'control',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -331,7 +201,6 @@ describe('local default', function (): void {
             'name' => 'dev-app',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -345,12 +214,10 @@ describe('local default', function (): void {
             'name' => 'control',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -364,7 +231,6 @@ describe('local default', function (): void {
             'name' => 'dev-app',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -378,12 +244,10 @@ describe('local default', function (): void {
             'name' => 'control',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         NodeAccess::create([
@@ -404,12 +268,10 @@ describe('local default', function (): void {
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
-            'is_local' => true,
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -425,7 +287,6 @@ describe('agent IDE default', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -444,7 +305,6 @@ describe('agent IDE default', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -466,7 +326,6 @@ describe('agent IDE default', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -489,7 +348,6 @@ describe('access grants', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -508,7 +366,6 @@ describe('access grants', function (): void {
             'name' => 'consumer',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
@@ -519,7 +376,6 @@ describe('access grants', function (): void {
             'name' => 'serving',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -545,7 +401,6 @@ describe('access grants', function (): void {
             'name' => 'consumer',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
@@ -556,7 +411,6 @@ describe('access grants', function (): void {
             'name' => 'serving',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -584,7 +438,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -604,7 +457,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -628,7 +480,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -653,7 +504,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
             'environment' => 'development',
@@ -678,7 +528,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -693,6 +542,8 @@ describe('external service stubs', function (): void {
     });
 
     it('detects local platform record mismatches', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         $probe = new NodesProbe(new class extends PlatformDetector
         {
             public function detectLocal(): string
@@ -703,14 +554,12 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
+            'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -725,6 +574,8 @@ describe('external service stubs', function (): void {
     });
 
     it('detects unsupported local platform detection', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         $probe = new NodesProbe(new class extends PlatformDetector
         {
             public function detectLocal(): string
@@ -735,14 +586,12 @@ describe('external service stubs', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
+            'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'solaris_11',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -763,7 +612,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -792,7 +640,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -823,7 +670,6 @@ describe('external service stubs', function (): void {
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -842,7 +688,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -866,7 +711,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -896,7 +740,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -927,7 +770,6 @@ describe('external service stubs', function (): void {
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -946,7 +788,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -966,7 +807,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -994,7 +834,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1015,7 +854,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1044,7 +882,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1073,7 +910,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'production',
@@ -1092,7 +928,6 @@ describe('external service stubs', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1113,7 +948,6 @@ describe('reconciliation', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1137,7 +971,6 @@ describe('reconciliation', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1146,8 +979,6 @@ describe('reconciliation', function (): void {
         ]);
 
         $supportedKeys = [
-            'node.local_role_invalid',
-            'node.local_role_mismatch',
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
@@ -1174,7 +1005,6 @@ describe('reconciliation', function (): void {
             'name' => 'consumer',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14',
@@ -1185,7 +1015,6 @@ describe('reconciliation', function (): void {
             'name' => 'serving',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1217,7 +1046,6 @@ describe('reconciliation', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1255,7 +1083,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
@@ -1268,6 +1095,8 @@ describe('adoption', function (): void {
     });
 
     it('snapshots local platform record mismatches for adopt', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         $probe = new NodesProbe(new class extends PlatformDetector
         {
             public function detectLocal(): string
@@ -1278,14 +1107,12 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
+            'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $snapshot = $probe->snapshotForAdopt($node);
@@ -1301,7 +1128,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1328,7 +1154,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1356,7 +1181,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
             'platform' => 'ubuntu_24-04',
@@ -1389,7 +1213,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
             'platform' => 'ubuntu_24-04',
@@ -1422,7 +1245,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1464,7 +1286,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1487,7 +1308,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1521,7 +1341,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1548,7 +1367,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1573,6 +1391,8 @@ describe('adoption', function (): void {
     });
 
     it('adopts local platform record mismatches', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         $probe = new NodesProbe(new class extends PlatformDetector
         {
             public function detectLocal(): string
@@ -1583,14 +1403,12 @@ describe('adoption', function (): void {
 
         $node = Node::create([
             'name' => 'test',
-            'role' => 'control',
+            'role' => 'gateway',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'macos_14-0',
             'wireguard_address' => '10.6.0.2',
-            'is_local' => true,
         ]);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
@@ -1610,7 +1428,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1646,7 +1463,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'control',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'decommissioned',
             'platform' => 'ubuntu_24-04',
@@ -1689,7 +1505,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1718,7 +1533,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1752,7 +1566,6 @@ describe('adoption', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',
@@ -1784,7 +1597,6 @@ describe('public IP metadata exclusion', function (): void {
             'name' => 'test',
             'role' => 'app',
             'host' => '10.0.0.1',
-            'ssh_user' => 'user',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'environment' => 'development',

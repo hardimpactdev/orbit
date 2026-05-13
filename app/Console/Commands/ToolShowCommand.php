@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\ShowToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolShowResponse;
-use App\Models\Node;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
@@ -119,25 +118,7 @@ class ToolShowCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function stringOption(string $name): ?string

@@ -23,7 +23,7 @@ final class SiteCertificateInstallerFake implements SiteCertificateInstaller
 
     public function expectedPathsFor(Node $node, string $host): array
     {
-        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
+        $user = $node->user ?: ($node->user ?: 'orbit');
         $home = $user === 'root' ? '/root' : "/home/{$user}";
 
         return [

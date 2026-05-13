@@ -140,11 +140,11 @@ final readonly class DockerTopologyBuilder
         $this->seedRemoteShellSshAccess($gateway, $containers);
 
         if (isset($containers['dev'])) {
-            E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=10.6.0.4 --wireguard-address=10.6.0.4 --environment=development --tld=test --gateway-endpoint=10.6.0.2 --ssh-user=orbit --user=orbit', timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-dev-1 --role=app --host=10.6.0.4 --wireguard-address=10.6.0.4 --environment=development --tld=test --gateway-endpoint=10.6.0.2 --user=orbit', timeoutSeconds: 120);
         }
 
         if (isset($containers['prod'])) {
-            E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=10.6.0.5 --wireguard-address=10.6.0.5 --environment=production --gateway-endpoint=10.6.0.2 --ssh-user=orbit --user=orbit', timeoutSeconds: 120);
+            E2ECommand::ssh($gateway, 'orbit', $key, 'cd /home/orbit/orbit && php artisan orbit:internal:bake-app-node app-prod-1 --role=app --host=10.6.0.5 --wireguard-address=10.6.0.5 --environment=production --gateway-endpoint=10.6.0.2 --user=orbit', timeoutSeconds: 120);
         }
     }
 

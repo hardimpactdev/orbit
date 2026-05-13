@@ -22,11 +22,9 @@ function dnsResolveTldNiRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -57,6 +55,8 @@ function cleanupDnsResolveTldNiConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsResolveTldNiConfig();
 });
 

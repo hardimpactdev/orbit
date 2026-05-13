@@ -14,10 +14,10 @@ use Illuminate\Support\Facades\DB;
     {name : Registry name for the node}
     {--role=control : Node role: gateway, control, or app}
     {--host= : SSH host or alias}
-    {--ssh-user= : SSH user}
+    {--user= : SSH user}
     {--orbit-path= : Path to the Orbit checkout on the node}
     {--status=active : Node status}
-    {--local : Mark this row as the local checkout for this registry}')]
+    {--local : Deprecated no-op; local node rows are no longer stored}')]
 #[Description('Register or update a node in the gateway registry')]
 class NodeRegisterCommand extends Command
 {
@@ -41,22 +41,15 @@ class NodeRegisterCommand extends Command
         }
 
         $name = (string) $this->argument('name');
-        $isLocal = (bool) $this->option('local');
-
-        DB::transaction(function () use ($name, $role, $status, $isLocal): void {
-            if ($isLocal) {
-                Node::query()->where('is_local', true)->update(['is_local' => false]);
-            }
-
+        DB::transaction(function () use ($name, $role, $status): void {
             Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
                     'role' => $role,
                     'host' => (string) ($this->option('host') ?: $name),
-                    'ssh_user' => (string) ($this->option('ssh-user') ?: get_current_user()),
+                    'user' => (string) ($this->option('user') ?: get_current_user()),
                     'orbit_path' => (string) ($this->option('orbit-path') ?: base_path()),
                     'status' => $status,
-                    'is_local' => $isLocal,
                 ],
             );
         });

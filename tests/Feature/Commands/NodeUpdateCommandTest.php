@@ -23,11 +23,9 @@ function nodeUpdateRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
@@ -37,16 +35,14 @@ function nodeUpdateRow(array $overrides = []): array
     ], $overrides);
 }
 
-/**
- * Insert a local gateway node so callerRole() resolves as gateway.
- */
 function setupGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeUpdateRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 

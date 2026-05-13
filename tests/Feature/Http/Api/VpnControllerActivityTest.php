@@ -18,7 +18,6 @@ it('logs vpn api activity with safe metadata', function (): void {
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
-        'is_local' => true,
     ]);
 
     app()->instance(VpnBackend::class, new ArrayVpnBackend([

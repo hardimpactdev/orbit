@@ -32,11 +32,9 @@ function dnsListJsonRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -73,6 +71,8 @@ function cleanupDnsListJsonConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsListJsonConfig();
 });
 
@@ -137,46 +137,6 @@ describe('dns:list JSON renderer contract', function (): void {
             ->and($payload['success']['meta'])->toBe([
                 'count' => 0,
                 'resolver_backend' => 'dnsmasq',
-            ]);
-    });
-
-    it('renders caller-role-denied error envelope', function (): void {
-        DB::table('nodes')->insert(dnsListJsonRow([
-            'role' => 'gateway',
-        ]));
-
-        $exitCode = Artisan::call('dns:list', [
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error'])->toBe([
-                'code' => 'caller_role_not_allowed',
-                'message' => 'This command may only be run from a control node.',
-                'meta' => [
-                    'caller_role' => 'gateway',
-                ],
-            ]);
-    });
-
-    it('renders local-context-invalid error envelope', function (): void {
-        DB::table('nodes')->insert(dnsListJsonRow([
-            'role' => 'bogus',
-        ]));
-
-        $exitCode = Artisan::call('dns:list', [
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta'])->toBe([
-                'field' => 'general.local_node_role',
-                'reason' => 'unsupported_value',
             ]);
     });
 

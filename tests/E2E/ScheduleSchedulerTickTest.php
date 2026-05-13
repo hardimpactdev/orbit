@@ -114,12 +114,10 @@ function scheduleSchedulerPrepareDevNode($topology, string $gatewayApiIp, string
         'host' => '10.6.0.4',
         'wireguard_address' => '10.6.0.4',
         'gateway_endpoint' => {$gatewayApiIpValue},
-        'ssh_user' => 'orbit',
-        'user' => 'orbit',
+                'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-        'is_local' => true,
-    ],
+            ],
 );
 
 \$settings = \\App\\Models\\LocalGatewaySettings::current();

@@ -33,18 +33,6 @@ class WorkspaceLogCommand extends Command
 
         $callerRole = app(CallerRoleResolver::class)->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
-
         try {
             $run = $this->fetchRun($runId, $callerRole, $payload);
         } catch (GatewayApiException $e) {

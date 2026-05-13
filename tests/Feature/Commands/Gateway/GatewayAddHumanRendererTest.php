@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Services\Trust\TrustStoreInstaller;
 use App\Services\Trust\TrustStoreInstallException;
 use App\Services\Trust\TrustStoreInstallReason;
@@ -17,6 +16,10 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
 
 beforeEach(function (): void {
     $this->tempStorage = sys_get_temp_dir().'/orbit-test-storage-'.uniqid();
@@ -183,54 +186,6 @@ it('shows missing gateway_ip prose', function (): void {
 it('shows invalid gateway_ip prose', function (): void {
     $this->artisan('gateway:add', ['gateway_ip' => '192.168.1.1'])
         ->expectsOutputToContain('Gateway IP must be a valid Orbit WireGuard address.')
-        ->assertFailed();
-});
-
-it('shows caller role denial prose for gateway', function (): void {
-    Node::query()->create([
-        'name' => 'gateway-1',
-        'role' => 'gateway',
-        'status' => 'active',
-        'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('This command may only be run from a control node.')
-        ->assertFailed();
-});
-
-it('shows caller role denial prose for app', function (): void {
-    Node::query()->create([
-        'name' => 'app-1',
-        'role' => 'app',
-        'status' => 'active',
-        'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('This command may only be run from a control node.')
-        ->assertFailed();
-});
-
-it('shows local context error prose', function (): void {
-    Node::query()->create([
-        'name' => 'weird',
-        'role' => 'weird',
-        'status' => 'active',
-        'host' => '10.6.0.4',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2'])
-        ->expectsOutputToContain('Local node role setting must be control, gateway, or app.')
         ->assertFailed();
 });
 

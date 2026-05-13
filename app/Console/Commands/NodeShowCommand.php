@@ -26,21 +26,9 @@ class NodeShowCommand extends Command
 {
     public function handle(): int
     {
-        $callerRole = $this->callerRole();
+        $isGateway = (bool) config('orbit.is_gateway', false);
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
-
-        $name = $this->resolveName($callerRole);
+        $name = $this->resolveName($isGateway);
 
         if ($name === null) {
             return $this->failCommand(
@@ -50,7 +38,7 @@ class NodeShowCommand extends Command
             );
         }
 
-        if ($callerRole !== 'gateway') {
+        if (! $isGateway) {
             try {
                 /** @var NodeShowResponse $dto */
                 $dto = app(GatewayConnector::class)
@@ -107,25 +95,7 @@ class NodeShowCommand extends Command
         return self::SUCCESS;
     }
 
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
-    }
-
-    private function resolveName(string $callerRole): ?string
+    private function resolveName(bool $isGateway): ?string
     {
         $name = $this->argument('name');
 
@@ -139,17 +109,16 @@ class NodeShowCommand extends Command
             return $defaultRecord->default_node_name;
         }
 
-        $localName = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('name');
+        $localName = $isGateway
+            ? Node::query()->where('role', 'gateway')->where('status', 'active')->value('name')
+            : null;
 
         if (is_string($localName) && $localName !== '') {
             return $localName;
         }
 
         if ($this->isInteractiveInput()) {
-            return $this->promptNodeName($callerRole);
+            return $this->promptNodeName($isGateway ? 'gateway' : 'control');
         }
 
         return null;

@@ -45,7 +45,7 @@ final class VpnClientNewCommand extends VpnCommandSupport
         $includeConfig = (bool) $this->option('config');
         $totp = $this->stringOption('totp');
 
-        if ($this->callerRole() === 'control') {
+        if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway('vpn-client:new', [$name], [
                 'config' => $includeConfig,

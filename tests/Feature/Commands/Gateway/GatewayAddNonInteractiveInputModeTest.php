@@ -13,6 +13,10 @@ use Saloon\Http\Faking\MockClient;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
+beforeEach(function (): void {
     $this->tempStorage = sys_get_temp_dir().'/orbit-test-storage-'.uniqid();
     app()->useStoragePath($this->tempStorage);
 
@@ -49,9 +53,7 @@ it('selects non-interactive mode with --json flag', function (): void {
         'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
     ]);
 
     Http::fake([
@@ -89,9 +91,7 @@ it('derives gateway_ip in non-interactive mode when the active WireGuard network
         'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
     ]);
 
     app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
@@ -120,50 +120,5 @@ it('derives gateway_ip in non-interactive mode when the active WireGuard network
 
 it('fails for invalid gateway_ip in non-interactive mode', function (): void {
     $this->artisan('gateway:add', ['gateway_ip' => '192.168.1.1', '--json' => true])
-        ->assertFailed();
-});
-
-it('rejects gateway caller in non-interactive mode', function (): void {
-    Node::query()->create([
-        'name' => 'gateway-1',
-        'role' => 'gateway',
-        'status' => 'active',
-        'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
-        ->assertFailed();
-});
-
-it('rejects app caller in non-interactive mode', function (): void {
-    Node::query()->create([
-        'name' => 'app-1',
-        'role' => 'app',
-        'status' => 'active',
-        'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
-        ->assertFailed();
-});
-
-it('rejects unknown role caller in non-interactive mode', function (): void {
-    Node::query()->create([
-        'name' => 'weird',
-        'role' => 'weird',
-        'status' => 'active',
-        'host' => '10.6.0.4',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
         ->assertFailed();
 });

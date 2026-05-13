@@ -11,7 +11,6 @@ use App\Http\Gateway\Responses\Workspaces\WorkspaceListResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -71,7 +70,7 @@ class WorkspaceListCommand extends Command
      */
     private function fetchWorkspaces(?string $app, ?string $node): array
     {
-        if ($this->callerRole() === 'gateway') {
+        if ((bool) config('orbit.is_gateway', false)) {
             $this->validateLocalFilters($app, $node);
 
             return $this->fetchLocalWorkspaces($app, $node);
@@ -258,10 +257,5 @@ class WorkspaceListCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
-    }
-
-    private function callerRole(): string
-    {
-        return app(CallerRoleResolver::class)->resolve();
     }
 }

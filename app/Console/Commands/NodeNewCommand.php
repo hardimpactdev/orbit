@@ -45,7 +45,7 @@ use function Laravel\Prompts\text;
     {--control-name= : Initiating control-node name for first-gateway bootstrap}
     {--environment= : App-node environment: development or production}
     {--tld= : Development app-node TLD}
-    {--ssh-user=root : SSH user for provisioning}
+    {--user=root : SSH user for provisioning}
     {--json : Output JSON}')]
 #[Description('Create or provision a node in the Orbit fleet')]
 class NodeNewCommand extends Command
@@ -62,15 +62,7 @@ class NodeNewCommand extends Command
         WireGuardInterfaceInstaller $wireGuardInterfaceInstaller,
         NodesProbe $nodesProbe,
     ): int {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $name = $this->resolveName();
         $role = $this->resolveRole();
@@ -200,7 +192,6 @@ class NodeNewCommand extends Command
             ->where('name', $controlName)
             ->where('role', 'control')
             ->where('status', 'active')
-            ->where('is_local', true)
             ->first();
 
         if (! $control instanceof Node) {
@@ -317,7 +308,7 @@ class NodeNewCommand extends Command
                     host: $inputs['host'],
                     environment: $inputs['environment'],
                     tld: $inputs['tld'],
-                    sshUser: $inputs['sshUser'],
+                    user: $inputs['sshUser'],
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -365,7 +356,7 @@ class NodeNewCommand extends Command
                     host: $host,
                     environment: null,
                     tld: null,
-                    sshUser: $this->resolveSshUser(),
+                    user: $this->resolveSshUser(),
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -475,7 +466,7 @@ class NodeNewCommand extends Command
                     host: null,
                     environment: null,
                     tld: null,
-                    sshUser: null,
+                    user: null,
                 ))
                 ->dto();
         } catch (GatewayApiException $exception) {
@@ -529,7 +520,6 @@ class NodeNewCommand extends Command
         $gateway = Node::query()
             ->where('role', 'gateway')
             ->where('status', 'active')
-            ->orderByDesc('is_local')
             ->first();
 
         if (! $gateway instanceof Node) {
@@ -580,11 +570,9 @@ class NodeNewCommand extends Command
                 'host' => $wireguardAddress,
                 'wireguard_address' => $wireguardAddress,
                 'gateway_endpoint' => $this->gatewayEndpoint(),
-                'ssh_user' => self::DEFAULT_RUNTIME_USER,
                 'user' => self::DEFAULT_RUNTIME_USER,
                 'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
                 'status' => 'active',
-                'is_local' => false,
             ],
         );
 
@@ -786,11 +774,9 @@ class NodeNewCommand extends Command
             'host' => $inputs['host'],
             'wireguard_address' => '',
             'gateway_endpoint' => $this->gatewayEndpoint(),
-            'ssh_user' => $inputs['sshUser'],
-            'user' => null,
+            'user' => $inputs['sshUser'],
             'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
             'status' => 'active',
-            'is_local' => false,
         ]);
 
         try {
@@ -1260,9 +1246,7 @@ class NodeNewCommand extends Command
             );
         }
 
-        DB::transaction(function () use ($name, $host, $sshUser, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
-            Node::query()->where('is_local', true)->update(['is_local' => false]);
-
+        DB::transaction(function () use ($name, $host, $runtimeUser, $controlName, $gatewayAddress, $gatewayPlatform, $controlAddress, $controlPlatform, $controlKeys, $trustPath, $caSha256): void {
             Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -1273,11 +1257,9 @@ class NodeNewCommand extends Command
                     'host' => $host,
                     'wireguard_address' => $gatewayAddress,
                     'gateway_endpoint' => $host,
-                    'ssh_user' => $sshUser,
                     'user' => $runtimeUser,
                     'orbit_path' => "/home/{$runtimeUser}/orbit",
                     'status' => 'active',
-                    'is_local' => false,
                 ],
             );
 
@@ -1291,11 +1273,9 @@ class NodeNewCommand extends Command
                     'host' => '127.0.0.1',
                     'wireguard_address' => $controlAddress,
                     'gateway_endpoint' => $host,
-                    'ssh_user' => get_current_user(),
                     'user' => get_current_user(),
                     'orbit_path' => base_path(),
                     'status' => 'active',
-                    'is_local' => true,
                 ],
             );
 
@@ -1613,24 +1593,6 @@ class NodeNewCommand extends Command
         return storage_path('app/orbit/gateway-ca/orbit.crt');
     }
 
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
-    }
-
     private function gatewayConfigured(): bool
     {
         if (Node::query()->where('role', 'gateway')->where('status', 'active')->exists()) {
@@ -1745,7 +1707,7 @@ class NodeNewCommand extends Command
 
     private function resolveSshUser(): string
     {
-        $sshUser = $this->stringOption('ssh-user') ?? 'root';
+        $sshUser = $this->stringOption('user') ?? 'root';
 
         if (! $this->isInteractiveInput() || $this->sshUserOptionWasSupplied()) {
             return $sshUser;
@@ -1756,7 +1718,7 @@ class NodeNewCommand extends Command
 
     private function sshUserOptionWasSupplied(): bool
     {
-        return $this->input->hasParameterOption('--ssh-user', true);
+        return $this->input->hasParameterOption('--user', true);
     }
 
     private function forbiddenControlInput(): ?string
@@ -1774,7 +1736,7 @@ class NodeNewCommand extends Command
         }
 
         if ($this->sshUserOptionWasSupplied()) {
-            return 'ssh_user';
+            return 'user';
         }
 
         return null;
@@ -1907,7 +1869,6 @@ class NodeNewCommand extends Command
         $gateway = Node::query()
             ->where('role', 'gateway')
             ->where('status', 'active')
-            ->orderByDesc('is_local')
             ->first();
 
         if (! $gateway instanceof Node) {

@@ -38,7 +38,6 @@ describe('AppRootController', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
             'role' => 'gateway',
-            'is_local' => true,
         ]);
 
         $caller = createAppRootCallerNode();
@@ -79,7 +78,6 @@ describe('AppRootController', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
             'role' => 'gateway',
-            'is_local' => true,
         ]);
 
         createAppRootCallerNode();

@@ -13,7 +13,6 @@ use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Services\Gateway\FetchGatewayRootCa;
 use App\Services\Gateway\RootCaFetchResult;
 use App\Services\Trust\TrustStoreInstaller;
@@ -97,19 +96,7 @@ class GatewayAddCommand extends Command implements Loggable
     private function executeGatewayAdd(FetchGatewayRootCa $fetch, WireGuardGatewayAddressResolver $gatewayAddressResolver): int
     {
         // 1. Resolve caller role before any input or side effects
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting must be control, gateway, or app.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         if ($callerRole !== 'control') {
             return $this->failCommand(
@@ -323,24 +310,6 @@ class GatewayAddCommand extends Command implements Loggable
         } catch (\Throwable) {
             // Activity logging must not change the documented gateway:add result.
         }
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function resolveGatewayIp(WireGuardGatewayAddressResolver $gatewayAddressResolver): ?string

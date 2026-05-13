@@ -13,6 +13,10 @@ use Saloon\Http\Faking\MockClient;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
+beforeEach(function (): void {
     $this->tempStorage = sys_get_temp_dir().'/orbit-test-storage-'.uniqid();
     app()->useStoragePath($this->tempStorage);
 
@@ -49,9 +53,7 @@ it('selects interactive mode in tty without --json', function (): void {
         'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
     ]);
 
     Http::fake([
@@ -76,9 +78,7 @@ it('does not prompt when gateway_ip is supplied in interactive mode', function (
         'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
     ]);
 
     Http::fake([
@@ -104,9 +104,7 @@ it('does not prompt when gateway_ip is derived in interactive mode', function ()
         'role' => 'control',
         'status' => 'active',
         'host' => '10.6.0.8',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
     ]);
 
     app()->instance(WireGuardGatewayAddressResolver::class, new class extends WireGuardGatewayAddressResolver
@@ -132,36 +130,4 @@ it('does not prompt when gateway_ip is derived in interactive mode', function ()
     $this->artisan('gateway:add')
         ->doesntExpectOutput('Gateway IP')
         ->assertSuccessful();
-});
-
-it('rejects gateway caller before prompts in interactive mode', function (): void {
-    Node::query()->create([
-        'name' => 'gateway-1',
-        'role' => 'gateway',
-        'status' => 'active',
-        'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add')
-        ->expectsOutputToContain('This command may only be run from a control node.')
-        ->assertFailed();
-});
-
-it('rejects app caller before prompts in interactive mode', function (): void {
-    Node::query()->create([
-        'name' => 'app-1',
-        'role' => 'app',
-        'status' => 'active',
-        'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
-        'orbit_path' => '/home/orbit/orbit',
-        'is_local' => true,
-    ]);
-
-    $this->artisan('gateway:add')
-        ->expectsOutputToContain('This command may only be run from a control node.')
-        ->assertFailed();
 });

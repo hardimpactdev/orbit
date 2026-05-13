@@ -56,11 +56,9 @@ function nodeShowInteractiveRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -70,35 +68,23 @@ function nodeShowInteractiveRow(array $overrides = []): array
 
 function setupShowInteractiveGatewayCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeShowInteractiveRow([
         'name' => 'test-gateway',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
 function setupShowInteractiveControlCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
-    DB::table('nodes')->insert(nodeShowInteractiveRow([
-        'name' => 'test-control',
-        'role' => 'control',
-        'environment' => null,
-        'is_local' => true,
-    ]));
+    config(['orbit.is_gateway' => false]);
 }
 
 function setupShowInteractiveAppCaller(): void
 {
-    DB::table('nodes')->where('is_local', true)->delete();
-    DB::table('nodes')->insert(nodeShowInteractiveRow([
-        'name' => 'test-app',
-        'role' => 'app',
-        'environment' => 'development',
-        'is_local' => true,
-    ]));
+    config(['orbit.is_gateway' => false]);
 }
 
 /**
@@ -215,12 +201,14 @@ describe('node:show interactive input mode', function (): void {
 
         expect(TestableNodeShowCommand::$promptCalls)->toBe(1)
             ->and($result['exit_code'])->not->toBe(0)
-            ->and($result['output'])->toContain('Gateway connection is required')
+            ->and($result['output'])->toContain("Node 'prompted-node' not found or not visible.")
             ->and($result['output'])->not->toContain('Node name is required.')
             ->and($result['output'])->not->toContain('validation_failed');
     });
 
     it('uses the documented prompt label and forwards the prompted node name', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         DB::table('nodes')->delete();
         DB::table('local_node_defaults')->delete();
 
@@ -278,22 +266,6 @@ describe('node:show interactive input mode', function (): void {
             ->and($result['output'])->toContain('test-gateway');
     });
 
-    it('does not deny app callers before prompts or side effects', function (): void {
-        setupShowInteractiveAppCaller();
-
-        DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'visible-app']));
-
-        $exitCode = Artisan::call('node:show', [
-            'name' => 'visible-app',
-            '--no-interaction' => false,
-        ]);
-
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('Gateway');
-    });
-
     it('forwards for control callers when not on gateway', function (): void {
         setupShowInteractiveControlCaller();
 
@@ -308,16 +280,5 @@ describe('node:show interactive input mode', function (): void {
 
         expect($exitCode)->not->toBe(0);
         expect($output)->toContain('Gateway connection is required');
-    });
-
-    it('executes locally for gateway callers', function (): void {
-        DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'local-app']));
-
-        $exitCode = Artisan::call('node:show', [
-            'name' => 'local-app',
-            '--no-interaction' => false,
-        ]);
-
-        expect($exitCode)->toBe(0);
     });
 });

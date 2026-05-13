@@ -6,12 +6,16 @@ use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Http\Gateway\Requests\Apps\PruneAppRequest;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
@@ -21,10 +25,8 @@ beforeEach(function (): void {
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => 'gateway',
-            'ssh_user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -47,6 +49,10 @@ beforeEach(function (): void {
 
     app()->instance(AgentIdeMessageAdapter::class, new AppPruneTestAdapter);
     app()->instance(RemoteShell::class, new AppPruneCommandRemoteShell);
+});
+
+afterEach(function (): void {
+    MockClient::destroyGlobal();
 });
 
 it('prunes stale workspaces for a gateway caller', function (): void {
@@ -106,20 +112,25 @@ it('dry-run previews stale workspaces without removing', function (): void {
     expect(Workspace::query()->where('name', 'stale-ws')->exists())->toBeTrue();
 });
 
-it('rejects app-node callers', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'beast',
-            'role' => 'app',
-            'host' => 'beast',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
+it('forwards app-node CLI callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    MockClient::global([
+        PruneAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => 'demo',
+                    'stale_workspaces' => [],
+                    'dry_run' => false,
+                ],
+                'meta' => [],
+            ],
+        ], 200),
     ]);
 
     $exitCode = Artisan::call('app:prune', [
@@ -131,8 +142,8 @@ it('rejects app-node callers', function (): void {
     $output = Artisan::output();
     $payload = json_decode($output, true);
 
-    expect($exitCode)->toBe(1);
-    expect($payload['error']['code'])->toBe('caller_role_not_allowed');
+    expect($exitCode)->toBe(0);
+    expect($payload['success']['data']['app'])->toBe('demo');
 });
 
 it('requires force in non-interactive mode', function (): void {

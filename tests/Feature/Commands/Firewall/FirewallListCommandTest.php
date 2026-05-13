@@ -27,7 +27,6 @@ function createFirewallListLocalNode(string $role = 'gateway'): Node
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
         'platform' => 'ubuntu',
-        'is_local' => true,
     ]);
 }
 
@@ -122,6 +121,8 @@ describe('firewall:list command contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createFirewallListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -168,6 +169,8 @@ describe('firewall:list command contract', function (): void {
     });
 
     it('preserves structured gateway authorization failures', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createFirewallListLocalNode('app');
 
         LocalGatewaySettings::current()->fill([

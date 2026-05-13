@@ -38,7 +38,7 @@ it('NodeNewGatewayCaVerify proves first-gateway CA trust from blank VMs', functi
 
         expect($controlIp)->not->toBe($gatewayIp);
 
-        $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --ssh-user={$config->bootstrapUser} --control-name=control-1 --json";
+        $command = "cd /home/{$config->controlUser}/orbit && php artisan node:new gateway-1 --role=gateway --host={$gatewayIp} --user={$config->bootstrapUser} --control-name=control-1 --json";
         expect($payload['success']['data']['result']['action'])->toBe('created')
             ->and($payload['success']['data']['local_onboarding']['gateway_trust'])->toBe('trusted')
             ->and($payload['success']['data']['local_onboarding']['gateway_config'])->toBe('stored')

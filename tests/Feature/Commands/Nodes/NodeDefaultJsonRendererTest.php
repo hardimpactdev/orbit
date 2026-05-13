@@ -12,6 +12,10 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
 /**
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -23,11 +27,9 @@ function nodeDefaultJsonRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -332,49 +334,6 @@ describe('node:default JSON renderer contract', function (): void {
         expect($error['code'])->toBe('gateway_unavailable')
             ->and($error['message'])->toBe('Gateway connection is required to set a default node.')
             ->and($error['meta'])->toBe([]);
-    });
-
-    it('returns caller_role_not_allowed error with correct metadata', function (): void {
-        DB::table('nodes')->insert(nodeDefaultJsonRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('node:default', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('caller_role_not_allowed')
-            ->and($error['message'])->toBe('This command may only be run from a control node.')
-            ->and($error['meta'])->toBe(['caller_role' => 'app']);
-    });
-
-    it('returns local_context_invalid error with correct metadata', function (): void {
-        $result = invokeNodeDefaultFailCommand(
-            json: true,
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($result['exitCode'])->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('local_context_invalid')
-            ->and($error['message'])->toBe('Local node role setting is invalid.')
-            ->and($error['meta'])->toBe(['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown']);
     });
 
     it('uses correct enum values for action', function (): void {

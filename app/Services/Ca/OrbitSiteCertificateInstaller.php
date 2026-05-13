@@ -75,7 +75,7 @@ SH,
 
     private function nodeHome(Node $node): string
     {
-        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
+        $user = $node->user ?: 'orbit';
 
         return $user === 'root' ? '/root' : "/home/{$user}";
     }

@@ -30,10 +30,6 @@ class DeployLogCommand extends Command
     {
         $callerRole = $roles->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand('caller_role_not_allowed', 'This command may only be run from a known Orbit node.', ['caller_role' => 'unknown']);
-        }
-
         $app = $this->stringArgument('app');
         $run = $this->stringArgument('run');
 

@@ -33,12 +33,6 @@ class ScheduleRunCommand extends Command
     {
         $callerRole = $callerRoleResolver->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand('caller_role_not_allowed', 'The local Orbit caller role could not be resolved.', [
-                'caller_role' => 'unknown',
-            ]);
-        }
-
         $result = null;
         $failure = null;
         $operation = function () use ($callerRole, $payload, $runSchedule, &$result, &$failure): string {

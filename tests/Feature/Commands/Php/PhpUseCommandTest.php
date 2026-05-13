@@ -167,6 +167,8 @@ describe('php:use command contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createPhpLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

@@ -17,7 +17,6 @@ use RuntimeException;
     {--host= : App-node host address}
     {--wireguard-address= : App-node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
-    {--ssh-user=orbit : SSH user}
     {--user=orbit : Runtime user}
     {--tld= : Development app-node TLD}')]
 #[Description('Bake an app-node registry row for prepared E2E topology images')]
@@ -33,7 +32,6 @@ class BakeAppNodeCommand extends Command
         $host = $this->stringOption('host');
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
-        $sshUser = $this->stringOption('ssh-user') ?? 'orbit';
         $user = $this->stringOption('user') ?? 'orbit';
         $tld = $this->stringOption('tld');
 
@@ -52,7 +50,7 @@ class BakeAppNodeCommand extends Command
             host: $host,
             wireguardAddress: $wireguardAddress,
             gatewayEndpoint: $gatewayEndpoint,
-            sshUser: $sshUser,
+            sshUser: $user,
             user: $user,
         );
 

@@ -21,11 +21,9 @@ describe('GatewayApiRuntimeInstaller', function (): void {
             'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
-            'ssh_user' => 'orbit',
             'user' => 'orbit',
             'orbit_path' => base_path(),
             'status' => 'active',
-            'is_local' => true,
         ]);
     });
 

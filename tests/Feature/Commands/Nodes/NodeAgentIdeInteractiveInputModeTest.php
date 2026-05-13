@@ -18,11 +18,9 @@ function nodeAgentIdeInteractiveRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'agent_ide_config' => null,
@@ -33,11 +31,12 @@ function nodeAgentIdeInteractiveRow(array $overrides = []): array
 
 function setupNodeAgentIdeInteractiveGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeAgentIdeInteractiveRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -77,18 +76,6 @@ describe('node:agent-ide interactive input mode', function (): void {
 
         $this->artisan('node:agent-ide --json')
             ->expectsOutputToContain('Node name is required.')
-            ->assertFailed();
-    });
-
-    it('denies app-node callers before prompts', function (): void {
-        DB::table('nodes')->insert(nodeAgentIdeInteractiveRow([
-            'name' => 'local-app',
-            'is_local' => true,
-        ]));
-        DB::table('nodes')->insert(nodeAgentIdeInteractiveRow());
-
-        $this->artisan('node:agent-ide')
-            ->expectsOutputToContain('This command may only be run from a control or gateway node.')
             ->assertFailed();
     });
 });

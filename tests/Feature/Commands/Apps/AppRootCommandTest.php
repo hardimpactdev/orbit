@@ -23,7 +23,6 @@ it('updates app root intent and re-enacts runtime artifacts from a gateway calle
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -74,7 +73,6 @@ it('reports converged no-op when root intent is unchanged', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -114,7 +112,6 @@ it('rejects roots that resolve outside the app path', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -150,15 +147,50 @@ it('rejects roots that resolve outside the app path', function (): void {
         ]);
 });
 
-it('denies app callers before side effects', function (): void {
+it('forwards app-node CLI callers through the typed gateway request without local side effects', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'app-local',
         'role' => 'app',
-        'is_local' => true,
     ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
 
     $remoteShell = new AppRootSequencedRemoteShell([]);
     app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        UpdateAppRootRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => false,
+                    ],
+                    'result' => [
+                        'hostname' => 'docs.test',
+                        'changed' => false,
+                    ],
+                ],
+                'meta' => [
+                    'node' => 'app-1',
+                    'artifacts_reenacted' => false,
+                    'warnings' => [],
+                ],
+            ],
+        ], 200),
+    ]);
 
     $exitCode = Artisan::call('app:root', [
         'app' => 'docs',
@@ -168,16 +200,17 @@ it('denies app callers before side effects', function (): void {
 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
+    expect($exitCode)->toBe(0)
         ->and($remoteShell->scripts)->toBe([])
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed');
+        ->and($payload['success']['data']['app']['name'])->toBe('docs');
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -235,7 +268,6 @@ it('prompts for missing human input and renders the progress tree', function ():
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -276,7 +308,6 @@ it('renders converged human output when root intent is unchanged', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([

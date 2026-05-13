@@ -23,7 +23,6 @@ function createActivityShowLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.9',
         'wireguard_address' => '10.6.0.9',
-        'is_local' => true,
     ]);
 }
 
@@ -128,6 +127,8 @@ describe('activity:show command', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createActivityShowLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -172,6 +173,8 @@ describe('activity:show command', function (): void {
     });
 
     it('preserves gateway authorization failures for forwarded callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createActivityShowLocalNode('app');
 
         LocalGatewaySettings::current()->fill([

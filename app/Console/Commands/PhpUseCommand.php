@@ -12,7 +12,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Php\UsePhpRuntimeRequest;
 use App\Http\Gateway\Responses\Php\PhpRuntimeUseResponse;
-use App\Models\Node;
 use App\Services\Php\PhpRuntimeManager;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -35,13 +34,7 @@ class PhpUseCommand extends Command
 
     public function handle(PhpRuntimeManager $php): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(new PhpRuntimeFailure('caller_role_not_allowed', 'This caller role may not manage PHP runtime selection.', [
-                'caller_role' => 'unknown',
-            ]));
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         if (! $this->wantsJson()) {
             return $this->handleHuman($php, $callerRole);
@@ -226,24 +219,6 @@ class PhpUseCommand extends Command
         }
 
         return "Successfully updated PHP runtime to PHP {$version}";
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     private function stringArgument(string $name): ?string

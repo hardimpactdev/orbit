@@ -22,6 +22,10 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 afterEach(function (): void {
     MockClient::destroyGlobal();
 });
@@ -30,7 +34,6 @@ it('removes workspace intent and owned artifacts from a gateway caller', functio
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -129,7 +132,6 @@ it('renders the documented human progress tree while removing a workspace', func
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -173,7 +175,6 @@ it('renders decorated progress tree glyphs and colors while removing a workspace
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -221,7 +222,6 @@ it('requires destructive consent in non-interactive mode', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -248,7 +248,6 @@ it('returns not found for already absent workspaces', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceRemoveSequencedRemoteShell([]));
@@ -266,38 +265,10 @@ it('returns not found for already absent workspaces', function (): void {
         ->and($payload['error']['meta']['name'])->toBe('feature-api');
 });
 
-it('denies app callers before side effects', function (): void {
-    Node::factory()->create([
-        'name' => 'app-local',
-        'role' => 'app',
-        'is_local' => true,
-    ]);
-
-    $workspace = Workspace::factory()->create([
-        'name' => 'feature-api',
-    ]);
-    $remoteShell = new WorkspaceRemoveSequencedRemoteShell([]);
-    app()->instance(RemoteShell::class, $remoteShell);
-
-    $exitCode = Artisan::call('workspace:remove', [
-        'name' => 'feature-api',
-        '--force' => true,
-        '--json' => true,
-    ]);
-
-    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-
-    expect($exitCode)->toBe(1)
-        ->and(Workspace::query()->whereKey($workspace->id)->exists())->toBeTrue()
-        ->and($remoteShell->scripts)->toBe([])
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed');
-});
-
 it('preserves files when keep files is requested', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -330,7 +301,6 @@ it('reports cleanup drift as success warnings after intent removal', function ()
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -365,7 +335,6 @@ it('continues workspace teardown after a failed step and reports the failed step
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -431,7 +400,6 @@ it('uses the app context resolved from the current workspace directory', functio
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -493,10 +461,11 @@ it('uses the app context resolved from the current workspace directory', functio
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([

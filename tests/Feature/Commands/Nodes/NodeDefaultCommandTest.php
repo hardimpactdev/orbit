@@ -12,6 +12,10 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
 afterEach(function (): void {
     MockClient::destroyGlobal();
 });
@@ -27,11 +31,9 @@ function nodeDefaultCommandRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -54,7 +56,6 @@ function setupConfiguredControlNodeDefaultCaller(): void
         'name' => 'local-control',
         'role' => 'control',
         'environment' => null,
-        'is_local' => true,
     ]));
 
     LocalGatewaySettings::current()->fill([
@@ -174,58 +175,6 @@ describe('node:default command contract', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('node.invalid_role');
-    });
-
-    it('rejects app-node callers', function (): void {
-        DB::table('nodes')->insert(nodeDefaultCommandRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('node:default', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-    });
-
-    it('rejects gateway callers', function (): void {
-        DB::table('nodes')->insert(nodeDefaultCommandRow([
-            'name' => 'gateway-1',
-            'role' => 'gateway',
-            'is_local' => true,
-            'environment' => null,
-        ]));
-
-        $exitCode = Artisan::call('node:default', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('gateway');
-    });
-
-    it('rejects unknown caller role', function (): void {
-        DB::table('nodes')->insert(nodeDefaultCommandRow([
-            'name' => 'weird',
-            'role' => 'bogus',
-            'is_local' => true,
-            'environment' => null,
-        ]));
-
-        $exitCode = Artisan::call('node:default', ['--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta'])->toBe([
-                'setting' => 'general.local_node_role',
-                'reason' => 'unsupported_value',
-                'caller_role' => 'unknown',
-            ]);
     });
 
     it('persists default to local_node_defaults table on set', function (): void {

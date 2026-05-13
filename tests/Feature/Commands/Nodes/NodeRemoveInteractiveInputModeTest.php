@@ -59,11 +59,9 @@ function nodeRemoveInteractiveRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -73,11 +71,12 @@ function nodeRemoveInteractiveRow(array $overrides = []): array
 
 function setupNodeRemoveGatewayCallerInteractive(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeRemoveInteractiveRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -142,25 +141,6 @@ describe('node:remove interactive input mode contract', function (): void {
             ->assertExitCode(1);
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeTrue();
-    });
-
-    it('rejects app-node callers before prompts in interactive mode', function (): void {
-        DB::table('nodes')->insert(nodeRemoveInteractiveRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-        DB::table('nodes')->insert(nodeRemoveInteractiveRow());
-
-        $exitCode = Artisan::call('node:remove', [
-            'name' => 'app-1',
-        ]);
-
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1);
-        expect($output)->toContain('This command may only be run from a control or gateway node.');
     });
 
     it('renders normal confirmation message via reflection', function (): void {

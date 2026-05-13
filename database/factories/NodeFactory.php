@@ -18,10 +18,9 @@ class NodeFactory extends Factory
             'name' => fake()->unique()->bothify('node-####'),
             'role' => 'app',
             'host' => fake()->unique()->bothify('node-####.test'),
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => false,
         ];
     }
 }

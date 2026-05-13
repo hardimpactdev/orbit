@@ -8,7 +8,6 @@ use App\Services\Schedules\OrbitSchedulerProgramRenderer;
 it('builds the orbit scheduler supervisor program definition for a node', function (): void {
     $node = new Node([
         'name' => 'app-1',
-        'ssh_user' => 'orbit',
         'user' => 'deploy',
         'orbit_path' => '/srv/orbit',
     ]);
@@ -26,7 +25,6 @@ it('builds the orbit scheduler supervisor program definition for a node', functi
 
 it('renders install scripts for the orbit scheduler supervisor program', function (): void {
     $node = new Node([
-        'ssh_user' => 'orbit',
         'user' => null,
         'orbit_path' => '/home/orbit/orbit',
     ]);

@@ -66,9 +66,7 @@ function expectPreparedControlTopology(E2ETopologyLease $topology, E2EConfig $co
 
     $controlNode = readPreparedNodeFromControl($control, $config->controlUser, $key, 'control-1');
 
-    expect($controlNode)->not->toBeNull()
-        ->and($controlNode['role'])->toBe('control')
-        ->and($controlNode['is_local'])->toBeTrue();
+    expect($controlNode)->toBeNull();
 }
 
 function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -97,12 +95,10 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
     $controlOnGateway = E2EGatewayApi::getNode($gateway, 'control-1');
 
     expect($gatewayNode['role'])->toBe('gateway')
-        ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2')
-        ->and((bool) $gatewayNode['is_local'])->toBeTrue();
+        ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2');
 
     expect($controlOnGateway['role'])->toBe('control')
-        ->and($controlOnGateway['wireguard_address'])->toBe('10.6.0.3')
-        ->and((bool) $controlOnGateway['is_local'])->toBeFalse();
+        ->and($controlOnGateway['wireguard_address'])->toBe('10.6.0.3');
 }
 
 function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -163,7 +159,6 @@ function readPreparedLocalGatewayNode(E2EInstance $gateway): array
     $php = <<<'PHP'
 echo json_encode(\App\Models\Node::query()
     ->where('role', 'gateway')
-    ->where('is_local', true)
     ->firstOrFail()
     ->only([
         'name',
@@ -173,10 +168,8 @@ echo json_encode(\App\Models\Node::query()
         'host',
         'wireguard_address',
         'gateway_endpoint',
-        'ssh_user',
-        'user',
-        'is_local',
-    ]), JSON_THROW_ON_ERROR);
+                'user',
+            ]), JSON_THROW_ON_ERROR);
 PHP;
 
     $result = E2ECommand::orbit(
@@ -205,10 +198,8 @@ echo json_encode(\$node?->only([
     'host',
     'wireguard_address',
     'gateway_endpoint',
-    'ssh_user',
-    'user',
-    'is_local',
-]), JSON_THROW_ON_ERROR);
+        'user',
+    ]), JSON_THROW_ON_ERROR);
 PHP;
 
     $result = E2ECommand::ssh(
@@ -261,7 +252,6 @@ function expectPreparedAppNode(array $node, string $environment, ?string $tld): 
         ->and($node['tld'])->toBe($tld)
         ->and($node['gateway_endpoint'])->toBe('10.6.0.2')
         ->and($node['user'])->toBe('orbit')
-        ->and((bool) $node['is_local'])->toBeFalse()
         ->and(is_string($node['wireguard_address']))->toBeTrue()
         ->and(str_starts_with((string) $node['wireguard_address'], '10.6.0.'))->toBeTrue();
 }

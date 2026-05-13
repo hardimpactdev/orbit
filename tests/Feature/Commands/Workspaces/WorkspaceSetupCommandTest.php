@@ -18,15 +18,17 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
+beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => 'gateway',
-            'ssh_user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
-            'is_local' => true,
             'tld' => null,
             'created_at' => now(),
             'updated_at' => now(),
@@ -35,10 +37,8 @@ beforeEach(function (): void {
             'name' => 'app-1',
             'role' => 'app',
             'host' => 'app-1',
-            'ssh_user' => 'nckrtl',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'is_local' => false,
             'tld' => 'beast',
             'created_at' => now(),
             'updated_at' => now(),
@@ -148,50 +148,8 @@ it('rejects generic workspace paths outside the app worktrees directory', functi
     expect($payload['error']['meta']['field'])->toBe('path');
 });
 
-it('rejects unknown caller role', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'weird',
-            'role' => 'weird',
-            'host' => 'weird',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-    ]);
-
-    $exitCode = Artisan::call('workspace:setup', [
-        'name' => 'feature-a',
-        '--app' => 'demo',
-        '--json' => true,
-    ]);
-
-    $output = Artisan::output();
-    $payload = json_decode($output, true);
-
-    expect($exitCode)->toBe(1);
-    expect($payload['error']['code'])->toBe('local_context_invalid');
-});
-
 it('forwards control callers to gateway', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'control',
-            'role' => 'control',
-            'host' => 'control',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-    ]);
+    config(['orbit.is_gateway' => false]);
 
     MockClient::global([
         SetupWorkspaceRequest::class => MockResponse::make([
@@ -226,20 +184,7 @@ it('forwards control callers to gateway', function (): void {
 });
 
 it('streams progress for forwarded human setup calls', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'control',
-            'role' => 'control',
-            'host' => 'control',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-    ]);
+    config(['orbit.is_gateway' => false]);
 
     app()->instance(WorkspaceSetupGatewayStreamClient::class, new WorkspaceSetupTestStreamClient);
 

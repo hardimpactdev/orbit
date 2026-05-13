@@ -30,22 +30,6 @@ abstract class AbstractWorkspaceStepRemoveCommand extends Command
     {
         $callerRole = app(CallerRoleResolver::class)->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'unknown'],
-            );
-        }
-
-        if ($callerRole === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'This command may only be run from a control or gateway node.',
-                meta: ['caller_role' => 'app'],
-            );
-        }
-
         $step = $this->resolveStepId();
 
         if ($step === null) {

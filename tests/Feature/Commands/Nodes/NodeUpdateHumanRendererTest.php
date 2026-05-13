@@ -20,11 +20,9 @@ function nodeUpdateHumanRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'public_ipv4' => null,
@@ -36,11 +34,12 @@ function nodeUpdateHumanRow(array $overrides = []): array
 
 function setupGatewayCallerHuman(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeUpdateHumanRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -162,11 +161,12 @@ describe('node:update human renderer contract', function (): void {
     });
 
     it('renders gateway-unavailable prose error for control caller', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         DB::table('nodes')->insert(nodeUpdateHumanRow([
             'name' => 'control-1',
             'role' => 'control',
             'environment' => null,
-            'is_local' => true,
         ]));
 
         DB::table('nodes')->insert(nodeUpdateHumanRow());
@@ -176,40 +176,6 @@ describe('node:update human renderer contract', function (): void {
             '--host' => '10.6.0.99',
         ])
             ->expectsOutputToContain('Gateway connection is required to update a node.')
-            ->assertFailed();
-    });
-
-    it('renders caller-role-not-allowed prose error for app caller', function (): void {
-        DB::table('nodes')->insert(nodeUpdateHumanRow([
-            'name' => 'test-app',
-            'is_local' => true,
-        ]));
-
-        DB::table('nodes')->insert(nodeUpdateHumanRow());
-
-        $this->artisan('node:update', [
-            'name' => 'app-1',
-            '--host' => '10.6.0.99',
-        ])
-            ->expectsOutputToContain('This command may only be run from a control or gateway node.')
-            ->assertFailed();
-    });
-
-    it('renders local-context-invalid prose error', function (): void {
-        DB::table('nodes')->insert(nodeUpdateHumanRow([
-            'name' => 'bogus-local',
-            'role' => 'bogus',
-            'environment' => null,
-            'is_local' => true,
-        ]));
-
-        DB::table('nodes')->insert(nodeUpdateHumanRow());
-
-        $this->artisan('node:update', [
-            'name' => 'app-1',
-            '--host' => '10.6.0.99',
-        ])
-            ->expectsOutputToContain('Local node role setting is invalid.')
             ->assertFailed();
     });
 });

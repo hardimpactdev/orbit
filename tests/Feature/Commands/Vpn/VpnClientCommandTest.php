@@ -22,7 +22,6 @@ function vpnLocalNode(string $role): Node
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
-        'is_local' => true,
     ]);
 }
 
@@ -147,7 +146,7 @@ it('protects active node peers from vpn-client writes', function (): void {
         ->and(Node::query()->where('name', 'app-1')->exists())->toBeTrue();
 });
 
-it('denies app callers before backend access', function (): void {
+it('runs on gateway machines without client-side role checks', function (): void {
     vpnLocalNode('app');
     $backend = new ArrayVpnBackend;
     bindVpnBackend($backend);
@@ -155,13 +154,14 @@ it('denies app callers before backend access', function (): void {
     $exitCode = Artisan::call('vpn-client:list', ['--json' => true]);
     $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-        ->and($payload['error']['meta']['caller_role'])->toBe('app')
-        ->and($backend->listCalled)->toBeFalse();
+    expect($exitCode)->toBe(0)
+        ->and($payload['success']['data']['clients'])->toBe([])
+        ->and($backend->listCalled)->toBeTrue();
 });
 
 it('forwards control callers to the gateway over remote shell', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     vpnLocalNode('control');
     Node::factory()->create([
         'name' => 'gateway-1',

@@ -26,15 +26,17 @@ use Saloon\Http\Faking\MockResponse;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
+beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => 'gateway',
-            'ssh_user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
-            'is_local' => true,
             'tld' => null,
             'created_at' => now(),
             'updated_at' => now(),
@@ -43,10 +45,8 @@ beforeEach(function (): void {
             'name' => 'app-1',
             'role' => 'app',
             'host' => 'app-1',
-            'ssh_user' => 'nckrtl',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'is_local' => false,
             'tld' => 'beast',
             'created_at' => now(),
             'updated_at' => now(),
@@ -242,35 +242,6 @@ it('fails before writing intent when source provisioning fails', function (): vo
     expect(Workspace::query()->where('name', 'feature-warning')->exists())->toBeFalse();
 });
 
-it('rejects app-node callers', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'beast',
-            'role' => 'app',
-            'host' => 'beast',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-    ]);
-
-    $exitCode = Artisan::call('workspace:new', [
-        'name' => 'feature-a',
-        '--app' => 'demo',
-        '--json' => true,
-    ]);
-
-    $output = Artisan::output();
-    $payload = json_decode($output, true);
-
-    expect($exitCode)->toBe(1);
-    expect($payload['error']['code'])->toBe('caller_role_not_allowed');
-});
-
 it('rejects reserved name main', function (): void {
     $exitCode = Artisan::call('workspace:new', [
         'name' => 'main',
@@ -386,20 +357,7 @@ it('renders the documented progress tree and final tree state for human output',
 });
 
 it('streams progress for forwarded human create calls', function (): void {
-    DB::table('nodes')->update(['is_local' => false]);
-    DB::table('nodes')->insert([
-        [
-            'name' => 'control',
-            'role' => 'control',
-            'host' => 'control',
-            'ssh_user' => 'nckrtl',
-            'orbit_path' => '/home/nckrtl/orbit',
-            'status' => 'active',
-            'is_local' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ],
-    ]);
+    config(['orbit.is_gateway' => false]);
 
     app()->instance(WorkspaceNewGatewayStreamClient::class, new WorkspaceNewTestStreamClient);
 

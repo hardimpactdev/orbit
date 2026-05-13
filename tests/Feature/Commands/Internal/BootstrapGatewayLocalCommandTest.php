@@ -50,7 +50,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and(Node::query()->where('is_local', true)->value('role'))->toBe('gateway')
+            ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway')
             ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
             ->and($output)->toContain('-----END CERTIFICATE-----')
             ->and($this->gatewayApiRuntimeInstaller->addresses)->toBe(['10.6.0.2']);
@@ -87,15 +87,13 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->count())->toBe(1);
     });
 
-    it('demotes any existing local node before creating the gateway record', function (): void {
+    it('keeps existing control nodes when creating the gateway record', function (): void {
         Node::query()->create([
             'name' => 'old-control',
             'role' => 'control',
             'host' => '127.0.0.1',
-            'ssh_user' => get_current_user(),
             'orbit_path' => base_path(),
             'status' => 'active',
-            'is_local' => true,
         ]);
 
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
@@ -103,8 +101,8 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             'wireguard-address' => '10.6.0.2',
         ]);
 
-        expect((bool) Node::query()->where('name', 'old-control')->value('is_local'))->toBeFalse()
-            ->and((bool) Node::query()->where('name', 'gateway-1')->value('is_local'))->toBeTrue();
+        expect(Node::query()->where('name', 'old-control')->value('role'))->toBe('control')
+            ->and(Node::query()->where('name', 'gateway-1')->value('role'))->toBe('gateway');
     });
 
     it('persists wireguard peers and configures the gateway interface idempotently', function (): void {

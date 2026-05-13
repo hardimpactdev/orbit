@@ -59,9 +59,7 @@ it('provisions a production app node from a provisioned control VM through a pro
             ->and($gatewayNode['host'])->toBe($appIp)
             ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.4')
             ->and($gatewayNode['gateway_endpoint'])->toBe('10.6.0.2')
-            ->and($gatewayNode['ssh_user'])->toBe($config->bootstrapUser)
-            ->and($gatewayNode['user'])->toBe('orbit')
-            ->and((bool) $gatewayNode['is_local'])->toBeFalse();
+            ->and($gatewayNode['user'])->toBe('orbit');
 
         E2ENodeProbe::assertOrbitInstalled($app);
 

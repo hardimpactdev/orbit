@@ -28,18 +28,6 @@ abstract class AbstractWorkspaceStepListCommand extends Command
     {
         $callerRole = app(CallerRoleResolver::class)->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
-
         $app = $this->stringOption('app');
         $path = null;
 

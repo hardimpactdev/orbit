@@ -65,7 +65,6 @@ it('delivers a JSON message to an explicit app target on the gateway', function 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -130,7 +129,6 @@ it('delivers through the core OpenCode HTTP transport when no test adapter is bo
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -198,7 +196,6 @@ it('renders the human progress tree for an app target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -236,7 +233,6 @@ it('delivers a stdin message to an explicit app target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -276,7 +272,6 @@ it('fails when stdin is combined with a positional message', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $command = app(AgentIdeMessageCommand::class);
@@ -310,7 +305,6 @@ it('delivers a JSON message to an explicit workspace target on the gateway', fun
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -363,7 +357,6 @@ it('renders the human progress tree for a workspace target', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -402,7 +395,6 @@ it('fails when the target workspace has no effective adapter', function (): void
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -445,7 +437,6 @@ it('infers a workspace target from the current directory on gateway callers', fu
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -503,7 +494,6 @@ it('infers an app target from the current directory on gateway callers', functio
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -555,7 +545,6 @@ it('fails when the target app has no effective adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -592,7 +581,6 @@ it('fails when the adapter cannot find an active session', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -631,7 +619,6 @@ it('renders adapter delivery diagnostics under error data for gateway callers', 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -675,7 +662,6 @@ it('does not mutate app node or process state while messaging', function (): voi
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -708,10 +694,11 @@ it('does not mutate app node or process state while messaging', function (): voi
 });
 
 it('fails for non-gateway callers without configured gateway settings', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -742,10 +729,11 @@ it('fails for non-gateway callers without configured gateway settings', function
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -799,10 +787,11 @@ it('forwards configured control callers through the typed gateway request', func
 });
 
 it('forwards configured app callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'app-1',
         'role' => 'app',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -856,10 +845,11 @@ it('forwards configured app callers through the typed gateway request', function
 });
 
 it('forwards configured workspace targets through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -914,10 +904,11 @@ it('forwards configured workspace targets through the typed gateway request', fu
 });
 
 it('preserves forwarded adapter delivery diagnostics under error data', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -959,10 +950,11 @@ it('preserves forwarded adapter delivery diagnostics under error data', function
 });
 
 it('forwards current working directory context through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([

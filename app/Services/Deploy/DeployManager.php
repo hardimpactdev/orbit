@@ -549,7 +549,7 @@ final readonly class DeployManager
             'node' => [
                 'name' => $app->node?->name,
                 'host' => $app->node?->host,
-                'user' => $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit'),
+                'user' => $app->node?->user ?: 'orbit',
             ],
         ];
     }
@@ -560,7 +560,7 @@ final readonly class DeployManager
             return $matches[1];
         }
 
-        return $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit');
+        return $app->node?->user ?: 'orbit';
     }
 
     /**

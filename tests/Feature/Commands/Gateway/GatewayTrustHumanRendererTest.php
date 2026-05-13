@@ -172,18 +172,14 @@ it('shows missing gateway prose when registry gateways exist without configured 
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
     Node::query()->create([
         'name' => 'gw2',
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
 
     $this->artisan('gateway:trust')

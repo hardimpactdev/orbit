@@ -26,11 +26,9 @@ function dnsResolveTldJsonRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -101,6 +99,8 @@ function cleanupDnsResolveTldJsonConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsResolveTldJsonConfig();
 });
 
@@ -346,40 +346,6 @@ describe('dns:resolve-tld JSON renderer contract', function (): void {
             ->and($payload['error']['code'])->toBe('local_resolver_write_failed')
             ->and($payload['error']['meta']['tld'])->toBe('test')
             ->and($payload['error']['meta']['resolver_backend'])->toBe('dnsmasq');
-    });
-
-    it('returns caller_role_not_allowed error with correct metadata', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldJsonRow([
-            'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('dns:resolve-tld', [
-            'tld' => 'test',
-            'target' => '10.6.0.7',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-    });
-
-    it('returns local_context_invalid error with correct metadata', function (): void {
-        $result = invokeDnsResolveTldFailCommandJson(
-            json: true,
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($result['exitCode'])->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta'])->toBe(['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown']);
     });
 
     it('forces non-interactive mode with --json even in TTY', function (): void {

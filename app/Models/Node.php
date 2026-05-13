@@ -24,11 +24,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $public_ipv4
  * @property string|null $public_ipv6
  * @property array<string, mixed>|null $agent_ide_config
- * @property string $ssh_user
  * @property string|null $user
  * @property string $orbit_path
  * @property string $status
- * @property bool $is_local
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, FirewallRule> $firewallRules
  * @property-read SchedulerState|null $schedulerState
@@ -50,18 +48,15 @@ class Node extends Model
         'public_ipv4',
         'public_ipv6',
         'agent_ide_config',
-        'ssh_user',
         'user',
         'orbit_path',
         'status',
-        'is_local',
     ];
 
     #[\Override]
     protected function casts(): array
     {
         return [
-            'is_local' => 'boolean',
             'agent_ide_config' => 'array',
         ];
     }

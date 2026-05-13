@@ -43,7 +43,7 @@ final class VpnClientListCommand extends VpnCommandSupport
             return $denied;
         }
 
-        if ($this->callerRole() === 'control') {
+        if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway('vpn-client:list', options: ['totp' => $this->stringOption('totp')]);
 

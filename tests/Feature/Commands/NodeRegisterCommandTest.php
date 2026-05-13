@@ -12,7 +12,7 @@ it('registers a node through the hidden internal bootstrap command', function ()
         'name' => 'gateway',
         '--role' => 'gateway',
         '--host' => 'gateway',
-        '--ssh-user' => 'gateway',
+        '--user' => 'gateway',
         '--orbit-path' => '/home/gateway/orbit',
         '--local' => true,
     ])
@@ -24,7 +24,6 @@ it('registers a node through the hidden internal bootstrap command', function ()
     expect($node)->not->toBeNull()
         ->and($node->role)->toBe('gateway')
         ->and($node->host)->toBe('gateway')
-        ->and($node->ssh_user)->toBe('gateway')
-        ->and($node->orbit_path)->toBe('/home/gateway/orbit')
-        ->and((bool) $node->is_local)->toBeTrue();
+        ->and($node->user)->toBe('gateway')
+        ->and($node->orbit_path)->toBe('/home/gateway/orbit');
 });

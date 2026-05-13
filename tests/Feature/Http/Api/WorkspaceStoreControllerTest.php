@@ -19,10 +19,8 @@ beforeEach(function (): void {
         'name' => 'gateway',
         'role' => 'gateway',
         'host' => 'gateway',
-        'ssh_user' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
-        'is_local' => true,
         'wireguard_address' => WORKSPACE_STORE_CALLER_WG_IP,
     ]);
 

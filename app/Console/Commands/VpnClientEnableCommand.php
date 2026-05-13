@@ -44,7 +44,7 @@ class VpnClientEnableCommand extends VpnCommandSupport
         $this->activityClientName = $name;
         $command = $enabled ? 'vpn-client:enable' : 'vpn-client:disable';
 
-        if ($this->callerRole() === 'control') {
+        if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway($command, [$name], ['totp' => $this->stringOption('totp')]);
 

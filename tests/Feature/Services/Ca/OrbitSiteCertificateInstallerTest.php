@@ -24,9 +24,7 @@ beforeEach(function (): void {
         'name' => 'gateway',
         'role' => 'gateway',
         'status' => 'active',
-        'is_local' => true,
         'host' => '10.6.0.1',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
     ]);
 });
@@ -40,7 +38,6 @@ afterEach(function (): void {
 it('installs Orbit CA leaf certificates into the node Orbit cert directory', function (): void {
     $appNode = Node::factory()->create([
         'name' => 'app-1',
-        'ssh_user' => 'nckrtl',
         'user' => 'deploy',
     ]);
 

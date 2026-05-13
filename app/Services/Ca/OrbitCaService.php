@@ -158,7 +158,6 @@ readonly class OrbitCaService
     {
         return Node::query()
             ->where('role', 'gateway')
-            ->where('is_local', true)
             ->where('status', 'active')
             ->exists();
     }

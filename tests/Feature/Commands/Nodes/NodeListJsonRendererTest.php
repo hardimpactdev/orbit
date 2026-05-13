@@ -27,10 +27,8 @@ function nodeListJsonRow(array $overrides = []): array
         'name' => 'app-1',
         'role' => 'app',
         'host' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
@@ -42,16 +40,16 @@ function nodeListJsonRow(array $overrides = []): array
 
 describe('node:list JSON renderer contract', function (): void {
     beforeEach(function (): void {
+        config(['orbit.is_gateway' => true]);
+
         app()->instance(RemoteShell::class, new NodeListJsonRendererRemoteShell);
 
         DB::table('nodes')->insert([
             'name' => 'local-gateway',
             'role' => 'gateway',
             'host' => '10.6.0.1',
-            'ssh_user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
@@ -156,7 +154,7 @@ describe('node:list JSON renderer contract', function (): void {
             expect($node)->not->toHaveKey('wg_ip')
                 ->and($node)->not->toHaveKey('wireguard_address')
                 ->and($node)->not->toHaveKey('host')
-                ->and($node)->not->toHaveKey('ssh_user')
+                ->and($node)->not->toHaveKey('user')
                 ->and($node)->not->toHaveKey('orbit_path')
                 ->and($node)->not->toHaveKey('is_local');
         }

@@ -11,7 +11,6 @@ uses(RefreshDatabase::class);
 
 describe('app:show human renderer contract', function (): void {
     it('renders the registry detail view', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '10.6.0.7']);
         App::factory()->create([
             'name' => 'docs',
@@ -38,8 +37,6 @@ describe('app:show human renderer contract', function (): void {
     });
 
     it('renders not-found prose errors', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('app:show', ['app' => 'missing']);
         $output = Artisan::output();
 

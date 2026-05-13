@@ -31,9 +31,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -52,9 +50,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -77,9 +73,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -101,9 +95,7 @@ describe('OrbitCaService', function () {
                 'name' => 'not-a-gateway',
                 'role' => 'control',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '127.0.0.1',
-                'ssh_user' => get_current_user(),
                 'orbit_path' => base_path(),
             ]);
 
@@ -120,9 +112,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -198,9 +188,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -228,9 +216,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -242,9 +228,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-control',
                 'role' => 'control',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '127.0.0.1',
-                'ssh_user' => get_current_user(),
                 'orbit_path' => base_path(),
             ]);
 
@@ -257,9 +241,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-gateway',
                 'role' => 'gateway',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '10.6.0.1',
-                'ssh_user' => 'orbit',
                 'orbit_path' => '/home/orbit/orbit',
             ]);
 
@@ -271,9 +253,7 @@ describe('OrbitCaService', function () {
                 'name' => 'test-control',
                 'role' => 'control',
                 'status' => 'active',
-                'is_local' => true,
                 'host' => '127.0.0.1',
-                'ssh_user' => get_current_user(),
                 'orbit_path' => base_path(),
             ]);
 

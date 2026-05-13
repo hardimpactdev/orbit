@@ -65,4 +65,10 @@ supports the Cloudflare command contracts; it does not override the
 
 ## Boundaries
 
-- **Cloudflare-domain boundaries:** Cloudflare commands own gateway-mediated provider visibility and provider-side DNS, cache, and SSL mutations for real Cloudflare-backed domains. They do not own a state family, create Orbit app domains or proxy routes, replace `proxy` as the canonical ingress registry, manage development TLDs, store provider records as Orbit configuration, or create a `doctor --family=cf` contract.
+- **Cloudflare-domain boundaries:** Cloudflare commands own gateway-mediated
+  provider visibility and provider-side DNS, cache, and SSL mutations for real
+  Cloudflare-backed domains.
+- **Cloudflare-domain exclusions:** Cloudflare commands do not own a state
+  family, create Orbit app domains or proxy routes, replace `proxy` as the
+  canonical ingress registry, manage development TLDs, store provider records
+  as Orbit configuration, or create a `doctor --family=cf` contract.

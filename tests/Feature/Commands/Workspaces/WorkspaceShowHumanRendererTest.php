@@ -10,9 +10,12 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 describe('workspace:show human renderer contract', function (): void {
     it('renders registry detail sections without a progress tree', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'host' => '1.2.3.4']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
@@ -33,8 +36,6 @@ describe('workspace:show human renderer contract', function (): void {
     });
 
     it('renders missing input as prose', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('workspace:show', ['--no-interaction' => true]);
         $output = Artisan::output();
 

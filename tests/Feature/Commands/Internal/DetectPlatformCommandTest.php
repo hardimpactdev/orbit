@@ -38,11 +38,9 @@ describe('orbit:internal:detect-platform', function (): void {
             'platform' => 'unknown',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
-            'ssh_user' => 'orbit',
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
         ]);
 
         $exitCode = Artisan::call('orbit:internal:detect-platform', [

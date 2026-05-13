@@ -23,8 +23,6 @@ use Throwable;
 
 final readonly class NodesProbe
 {
-    private const array SUPPORTED_ROLES = ['control', 'gateway', 'app'];
-
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
         private ?RemoteShell $remoteShell = null,
@@ -58,7 +56,6 @@ final readonly class NodesProbe
         $drift = [];
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
-        $drift = array_merge($drift, $this->checkLocalRole($node));
         $drift = array_merge($drift, $this->checkLocalDefault($node));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
         $drift = array_merge($drift, $this->checkAccessGrants($node));
@@ -107,52 +104,9 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkLocalRole(Node $node): array
-    {
-        if (! $node->is_local) {
-            return [];
-        }
-
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return [];
-        }
-
-        if (! in_array($localRole, self::SUPPORTED_ROLES, true)) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.local_role_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Local node role '{$localRole}' is not a supported role.",
-                ),
-            ];
-        }
-
-        if ($node->role !== $localRole) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.local_role_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Local node role '{$localRole}' does not match node record role '{$node->role}'.",
-                ),
-            ];
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
     private function checkLocalDefault(Node $node): array
     {
-        if (! $node->is_local || $node->role !== 'control') {
+        if ($node->role !== 'control') {
             return [];
         }
 
@@ -187,16 +141,9 @@ final readonly class NodesProbe
             ];
         }
 
-        $localNode = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->first();
-
         if (
-            $localNode instanceof Node
-            && $localNode->id !== $defaultNode->id
-            && ! NodeAccess::query()
-                ->where('consumer_node_id', $localNode->id)
+            ! NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
                 ->where('serving_node_id', $defaultNode->id)
                 ->exists()
         ) {
@@ -370,7 +317,7 @@ final readonly class NodesProbe
      */
     private function checkPlatformReality(Node $node): array
     {
-        if (! $node->is_local) {
+        if (! (bool) config('orbit.is_gateway', false) || $node->role !== 'gateway') {
             return [];
         }
 
@@ -616,8 +563,6 @@ final readonly class NodesProbe
     public function reconcile(Node $node, DriftEntry $entry): void
     {
         $fixableKeys = [
-            'node.local_role_invalid',
-            'node.local_role_mismatch',
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
@@ -632,7 +577,6 @@ final readonly class NodesProbe
         }
 
         match ($entry->key) {
-            'node.local_role_invalid', 'node.local_role_mismatch' => $this->reconcileLocalRole($node),
             'node.wireguard_peer_missing' => $this->reconcileWireguardPeerMissing($node),
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
             'node.gateway_runtime_unready' => $this->reconcileGatewayRuntime($node),
@@ -640,11 +584,6 @@ final readonly class NodesProbe
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.development_dns_mapping_mismatch', 'node.development_dns_public_exposure' => $this->reconcileDevelopmentDnsMapping($node),
         };
-    }
-
-    private function reconcileLocalRole(Node $node): void
-    {
-        // Local role reconciliation is handled by updating the local node record
     }
 
     private function reconcileWireguardPeerMissing(Node $node): void
@@ -802,7 +741,7 @@ final readonly class NodesProbe
             }
         }
 
-        if ($node->is_local) {
+        if ((bool) config('orbit.is_gateway', false) && $node->role === 'gateway') {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
             } catch (Throwable) {

@@ -23,11 +23,9 @@ function dnsResolveTldRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -58,6 +56,8 @@ function cleanupDnsResolveTldConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsResolveTldConfig();
 });
 
@@ -267,11 +267,10 @@ describe('dns:resolve-tld base contract', function (): void {
     });
 
     it('rejects gateway callers before side effects', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldRow([
-            'name' => 'gateway-1',
-            'role' => 'gateway',
-            'environment' => null,
-        ]));
+        config(['orbit.is_gateway' => true]);
+
+        Process::fake();
+        Process::preventStrayProcesses();
 
         $exitCode = Artisan::call('dns:resolve-tld', [
             'tld' => 'test',
@@ -284,46 +283,8 @@ describe('dns:resolve-tld base contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
             ->and($payload['error']['meta']['caller_role'])->toBe('gateway');
-    });
 
-    it('rejects app callers before side effects', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldRow([
-            'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('dns:resolve-tld', [
-            'tld' => 'test',
-            'target' => '10.6.0.7',
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-    });
-
-    it('rejects unknown callers with local_context_invalid', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldRow([
-            'name' => 'bogus',
-            'role' => 'bogus',
-            'environment' => null,
-        ]));
-
-        $exitCode = Artisan::call('dns:resolve-tld', [
-            'tld' => 'test',
-            'target' => '10.6.0.7',
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
+        Process::assertNothingRan();
     });
 
     it('fails with unsupported_platform on non-macos', function (): void {
@@ -367,23 +328,6 @@ describe('dns:resolve-tld base contract', function (): void {
 });
 
 describe('dns:resolve-tld safety', function (): void {
-    it('does not invoke external processes when caller role is invalid', function (): void {
-        DB::table('nodes')->insert(dnsResolveTldRow([
-            'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        Process::fake();
-        Process::preventStrayProcesses();
-
-        Artisan::call('dns:resolve-tld', [
-            'tld' => 'test',
-            'target' => '10.6.0.7',
-        ]);
-
-        Process::assertNothingRan();
-    });
 
     it('makes only targeted local resolver mutations', function (): void {
         setupDnsResolveTldControlCaller();

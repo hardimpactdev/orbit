@@ -38,7 +38,6 @@ describe('AppRegisterController', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
             'role' => 'gateway',
-            'is_local' => true,
         ]);
 
         $caller = createAppRegisterCallerNode();
@@ -79,7 +78,6 @@ describe('AppRegisterController', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
             'role' => 'gateway',
-            'is_local' => true,
         ]);
 
         createAppRegisterCallerNode();

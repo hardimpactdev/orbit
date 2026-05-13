@@ -18,6 +18,7 @@ final class ShowGatewayIdentityRequest extends GatewayRequest
         return '/api/me';
     }
 
+    #[\Override]
     public function hasRequestFailed(Response $response): ?bool
     {
         return false;

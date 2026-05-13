@@ -14,15 +14,17 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
+beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
             'role' => 'gateway',
             'host' => 'gateway',
-            'ssh_user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -30,10 +32,8 @@ beforeEach(function (): void {
             'name' => 'beast',
             'role' => 'app',
             'host' => 'beast',
-            'ssh_user' => 'nckrtl',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -169,10 +169,8 @@ it('excludes control nodes from updates array', function (): void {
             'name' => 'mini',
             'role' => 'control',
             'host' => 'mini',
-            'ssh_user' => 'nckrtl',
             'orbit_path' => '/Users/nckrtl/orbit',
             'status' => 'active',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ],

@@ -12,7 +12,6 @@ use App\Http\Gateway\Requests\Tools\UpdateToolsBulkRequest;
 use App\Http\Gateway\Responses\Tools\ToolUpdateBulkResponse;
 use App\Http\Gateway\Responses\Tools\ToolUpdateResponse;
 use App\Http\Gateway\ToolActionGatewayStreamClient;
-use App\Models\Node;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolUpdater;
 use App\Support\Tools\ToolActionProgressRunner;
@@ -266,25 +265,7 @@ class ToolUpdateCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function stringArgument(string $name): ?string

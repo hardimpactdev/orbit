@@ -12,7 +12,7 @@ afterEach(function (): void {
     m::close();
 });
 
-it('ensures the local control node identity over the control user transport', function (): void {
+it('removes the obsolete local control node identity over the control user transport', function (): void {
     $key = new SshKeyPair('/tmp/e2e-id', '/tmp/e2e-id.pub');
 
     $result = m::mock(ProcessResult::class);
@@ -30,7 +30,9 @@ it('ensures the local control node identity over the control user transport', fu
             $key,
             m::on(fn (string $command): bool => str_contains($command, 'php artisan tinker --execute=')
                 && str_contains($command, 'control-1')
-                && str_contains($command, 'is_local')),
+                && str_contains($command, 'role')
+                && str_contains($command, 'control')
+                && str_contains($command, 'delete()')),
             60,
         )
         ->andReturn($result);

@@ -28,11 +28,9 @@ function apiStoreNodeRow(array $overrides = []): array
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'gateway_endpoint' => null,
-        'ssh_user' => 'orbit',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
-        'is_local' => true,
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -48,10 +46,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '10.6.0.3',
                 'wireguard_address' => '10.6.0.3',
                 'gateway_endpoint' => '10.6.0.2',
-                'ssh_user' => 'tester',
                 'user' => 'tester',
                 'orbit_path' => '/home/tester/orbit',
-                'is_local' => false,
             ]),
         ]);
 
@@ -68,7 +64,6 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
             ]);
 
         $response->assertOk()
@@ -113,7 +108,6 @@ describe('NodeStoreController', function (): void {
                 'host' => '10.6.0.7',
                 'wireguard_address' => '10.6.0.7',
                 'gateway_endpoint' => '10.6.0.2',
-                'is_local' => false,
             ]),
         ]);
 
@@ -128,7 +122,6 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
             ]);
 
         $response->assertForbidden()
@@ -147,10 +140,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '10.6.0.3',
                 'wireguard_address' => '10.6.0.3',
                 'gateway_endpoint' => '10.6.0.2',
-                'ssh_user' => 'tester',
                 'user' => 'tester',
                 'orbit_path' => '/home/tester/orbit',
-                'is_local' => false,
             ]),
         ]);
 
@@ -163,11 +154,9 @@ describe('NodeStoreController', function (): void {
             'host' => '192.0.2.30',
             'wireguard_address' => '10.6.0.8',
             'gateway_endpoint' => '10.6.0.2',
-            'ssh_user' => 'provisioner',
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'decommissioned',
-            'is_local' => false,
         ]));
 
         WireGuardPeer::query()->create([
@@ -190,7 +179,6 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.30',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
             ]);
 
         $response->assertOk()
@@ -224,10 +212,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '10.6.0.3',
                 'wireguard_address' => '10.6.0.3',
                 'gateway_endpoint' => '10.6.0.2',
-                'ssh_user' => 'tester',
                 'user' => 'tester',
                 'orbit_path' => '/home/tester/orbit',
-                'is_local' => false,
             ]),
         ]);
 
@@ -268,7 +254,6 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.33',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
             ]);
 
         $response->assertOk()

@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 function createWorkspaceLogHumanRun(): WorkspaceRun
 {
     Node::factory()->create([
@@ -20,7 +24,6 @@ function createWorkspaceLogHumanRun(): WorkspaceRun
         'role' => 'gateway',
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
     $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

@@ -22,12 +22,13 @@ afterEach(function (): void {
 
 function createWorkspaceShowLocalNode(string $role = 'gateway'): Node
 {
+    config(['orbit.is_gateway' => $role === 'gateway']);
+
     return Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -107,17 +108,6 @@ describe('workspace:show base contract', function (): void {
             ->expectsChoice('Parent app', 'api', ['docs', 'api'])
             ->expectsOutputToContain('App:       api')
             ->assertSuccessful();
-    });
-
-    it('fails before input when local node role is invalid', function (): void {
-        createWorkspaceShowLocalNode('invalid-role');
-
-        $exitCode = Artisan::call('workspace:show', ['name' => 'feature-docs', '--json' => true]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {

@@ -23,11 +23,9 @@ function nodeRemoveHumanRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -76,11 +74,12 @@ function invokeNodeRemoveFailCommandHuman(string $code, string $message, array $
 
 function setupNodeRemoveGatewayCallerHuman(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeRemoveHumanRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -206,36 +205,6 @@ describe('node:remove human renderer contract', function (): void {
 
         expect($result['exitCode'])->not->toBe(0);
         expect($result['output'])->toContain('Gateway connection is required to remove a node.');
-    });
-
-    it('renders caller-role-not-allowed prose error for app caller', function (): void {
-        DB::table('nodes')->insert(nodeRemoveHumanRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-        DB::table('nodes')->insert(nodeRemoveHumanRow());
-
-        $exitCode = Artisan::call('node:remove', [
-            'name' => 'app-1',
-            '--force' => true,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->not->toBe(0);
-        expect($output)->toContain('This command may only be run from a control or gateway node.');
-    });
-
-    it('renders local-context-invalid prose error', function (): void {
-        $result = invokeNodeRemoveFailCommandHuman(
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain('Local node role setting is invalid.');
     });
 
     it('renders authorization-failed prose error', function (): void {

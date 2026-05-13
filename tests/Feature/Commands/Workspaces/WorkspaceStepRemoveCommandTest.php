@@ -21,12 +21,13 @@ afterEach(function (): void {
 
 function createWorkspaceStepRemoveLocalNode(string $role = 'gateway'): Node
 {
+    config(['orbit.is_gateway' => $role === 'gateway']);
+
     return Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -129,24 +130,6 @@ describe('workspace step remove commands', function (): void {
             ->and($wrongPhasePayload['error']['code'])->toBe('workspace.step_not_found')
             ->and($wrongPhasePayload['error']['meta']['phase'])->toBe('setup')
             ->and(WorkspaceStep::query()->count())->toBe(1);
-    });
-
-    it('rejects app-node callers before prompts or deletes', function (): void {
-        createWorkspaceStepRemoveLocalNode('app');
-        $app = createWorkspaceStepRemoveApp();
-        $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Setup]);
-
-        $exitCode = Artisan::call('workspace-setup-step:remove', [
-            '--app' => 'docs',
-            '--step' => (string) $step->id,
-            '--force' => true,
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and(WorkspaceStep::query()->whereKey($step->id)->exists())->toBeTrue();
     });
 
     it('forwards control callers through the typed gateway request', function (): void {

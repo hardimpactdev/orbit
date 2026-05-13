@@ -27,12 +27,6 @@ class ScheduleShowCommand extends Command
     {
         $callerRole = $callerRoleResolver->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand('caller_role_not_allowed', 'The local Orbit caller role could not be resolved.', [
-                'caller_role' => 'unknown',
-            ]);
-        }
-
         try {
             $data = $this->fetchSchedule($payload, $callerRole);
         } catch (GatewayApiException $e) {

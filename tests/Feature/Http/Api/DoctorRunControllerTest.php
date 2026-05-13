@@ -43,8 +43,7 @@ function createDoctorRunCallerNode(array $overrides = []): Node
 
 describe('DoctorRunController', function (): void {
     it('runs verify mode and returns a doctor report', function (): void {
-        createDoctorRunCallerNode(['platform' => 'linux', 'is_local' => true]);
-
+        createDoctorRunCallerNode(['platform' => 'linux']);
         $response = $this->call('POST', '/api/doctor/run', [
             'families' => ['node'],
             'mode' => 'verify',
@@ -56,7 +55,7 @@ describe('DoctorRunController', function (): void {
     });
 
     it('accepts the proxy family scope when targeting an app node', function (): void {
-        createDoctorRunCallerNode(['platform' => 'linux', 'is_local' => true]);
+        createDoctorRunCallerNode(['platform' => 'linux']);
         Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'status' => 'active']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', nodeLevelStdout: ''));
 

@@ -38,8 +38,6 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity): ?array {
-            Node::query()->where('is_local', true)->update(['is_local' => false]);
-
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -50,11 +48,9 @@ class BootstrapGatewayLocalCommand extends Command
                     'host' => $wireguardAddress,
                     'wireguard_address' => $wireguardAddress,
                     'gateway_endpoint' => null,
-                    'ssh_user' => 'orbit',
                     'user' => 'orbit',
                     'orbit_path' => '/home/orbit/orbit',
                     'status' => 'active',
-                    'is_local' => true,
                 ],
             );
 
@@ -72,11 +68,9 @@ class BootstrapGatewayLocalCommand extends Command
                     'host' => $identity['control']['wireguard_address'],
                     'wireguard_address' => $identity['control']['wireguard_address'],
                     'gateway_endpoint' => $wireguardAddress,
-                    'ssh_user' => 'orbit',
                     'user' => 'orbit',
                     'orbit_path' => '/home/orbit/orbit',
                     'status' => 'active',
-                    'is_local' => false,
                 ],
             );
 

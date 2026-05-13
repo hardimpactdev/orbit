@@ -133,8 +133,7 @@ final class UpdateAllController implements Loggable
     {
         $nodes = Node::query()
             ->where('status', 'active')
-            ->where('is_local', false)
-            ->where('role', '!=', 'control')
+            ->where('role', 'app')
             ->orderBy('name')
             ->get();
 
@@ -284,7 +283,7 @@ final class UpdateAllController implements Loggable
     private function localGatewayTarget(): array
     {
         $node = Node::query()
-            ->where('is_local', true)
+            ->where('role', 'gateway')
             ->where('status', 'active')
             ->first();
 

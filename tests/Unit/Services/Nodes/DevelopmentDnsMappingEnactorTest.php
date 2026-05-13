@@ -87,7 +87,6 @@ function developmentDnsMappingNode(array $overrides = []): Node
         'tld' => 'test',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'orbit',
         'user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',

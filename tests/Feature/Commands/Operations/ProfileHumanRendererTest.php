@@ -10,11 +10,14 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 it('renders baseline profile timing in human mode', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -70,7 +73,6 @@ it('renders toolbar stages and query summary in human mode', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([

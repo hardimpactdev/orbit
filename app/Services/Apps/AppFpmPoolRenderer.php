@@ -80,6 +80,6 @@ CONF;
     {
         $app->loadMissing('node');
 
-        return $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit');
+        return $app->node?->user ?: 'orbit';
     }
 }

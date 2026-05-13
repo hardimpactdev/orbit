@@ -33,18 +33,7 @@ class ActivityListCommand extends Command
 
     public function handle(ActivityHistory $history): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failGatewayError(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'field' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $filters = $this->validatedFilters();
 
@@ -163,24 +152,6 @@ class ActivityListCommand extends Command
             'activities' => $dto->activities,
             'meta' => $dto->meta,
         ];
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     /**

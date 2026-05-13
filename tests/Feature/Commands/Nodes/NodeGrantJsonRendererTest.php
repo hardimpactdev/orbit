@@ -23,11 +23,9 @@ function nodeGrantJsonRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -77,11 +75,12 @@ function invokeNodeGrantFailCommand(bool $json, string $code, string $message, a
 
 function setupGrantGatewayCallerJson(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeGrantJsonRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -290,54 +289,6 @@ describe('node:grant JSON renderer contract', function (): void {
         expect($error['code'])->toBe('authorization_failed')
             ->and($error['message'])->toBe('This control node is not authorized to grant node access.')
             ->and($error['meta'])->toBe(['required_node' => 'gateway-1', 'caller_role' => 'control']);
-    });
-
-    it('returns caller_role_not_allowed error with correct metadata', function (): void {
-        DB::table('nodes')->insert(nodeGrantJsonRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-        DB::table('nodes')->insert(nodeGrantJsonRow());
-
-        $exitCode = Artisan::call('node:grant', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('caller_role_not_allowed')
-            ->and($error['message'])->toBe('This command may only be run from a control or gateway node.')
-            ->and($error['meta'])->toBe(['caller_role' => 'app']);
-    });
-
-    it('returns local_context_invalid error with correct metadata', function (): void {
-        $result = invokeNodeGrantFailCommand(
-            json: true,
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($result['exitCode'])->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('local_context_invalid')
-            ->and($error['message'])->toBe('Local node role setting is invalid.')
-            ->and($error['meta'])->toBe(['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown']);
     });
 
     it('returns validation_failed error with correct metadata', function (): void {

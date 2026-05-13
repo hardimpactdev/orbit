@@ -73,7 +73,7 @@ final class VpnWebUiChangePasswordCommand extends VpnCommandSupport
             }
         }
 
-        if ($this->callerRole() === 'control') {
+        if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityActionResult = 'rotated';
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway('vpn-web-ui:change-password', [$newPassword], [

@@ -22,11 +22,9 @@ function dnsListRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -63,6 +61,8 @@ function cleanupDnsListConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsListConfig();
 });
 
@@ -167,10 +167,7 @@ describe('dns:list base contract', function (): void {
     });
 
     it('rejects gateway callers before local resolver reads', function (): void {
-        DB::table('nodes')->insert(dnsListRow([
-            'name' => 'gateway-1',
-            'role' => 'gateway',
-        ]));
+        config(['orbit.is_gateway' => true]);
 
         $exitCode = Artisan::call('dns:list', [
             '--json' => true,
@@ -181,40 +178,6 @@ describe('dns:list base contract', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
             ->and($payload['error']['meta']['caller_role'])->toBe('gateway');
-    });
-
-    it('rejects app callers before local resolver reads', function (): void {
-        DB::table('nodes')->insert(dnsListRow([
-            'name' => 'app-1',
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('dns:list', [
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('app');
-    });
-
-    it('fails for unsupported local node role values', function (): void {
-        DB::table('nodes')->insert(dnsListRow([
-            'role' => 'bogus',
-        ]));
-
-        $exitCode = Artisan::call('dns:list', [
-            '--json' => true,
-        ]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta']['reason'])->toBe('unsupported_value');
     });
 
     it('fails when the caller platform is unsupported', function (): void {

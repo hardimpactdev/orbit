@@ -49,7 +49,7 @@ final readonly class SupervisorProgramRenderer
         $app->loadMissing('node');
 
         $programName = $this->programName($app, $process, $workspace);
-        $user = $app->node?->user ?: ($app->node?->ssh_user ?: 'orbit');
+        $user = $app->node?->user ?: 'orbit';
         $home = $user === 'root' ? '/root' : "/home/{$user}";
         $logPath = "{$home}/.config/orbit/logs/{$programName}.log";
 

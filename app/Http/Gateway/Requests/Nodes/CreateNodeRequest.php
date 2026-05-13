@@ -23,7 +23,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $host,
         public readonly ?string $environment,
         public readonly ?string $tld,
-        public readonly ?string $sshUser,
+        public readonly ?string $user,
     ) {}
 
     public function resolveEndpoint(): string
@@ -42,7 +42,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
             'host' => $this->host,
             'environment' => $this->environment,
             'tld' => $this->tld,
-            'ssh_user' => $this->sshUser,
+            'user' => $this->user,
         ];
     }
 

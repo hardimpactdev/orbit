@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\App;
-use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,9 +10,12 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 describe('workspace:history human renderer contract', function (): void {
     it('renders a history table without a progress tree', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id, 'status' => 'completed']);
@@ -30,7 +32,6 @@ describe('workspace:history human renderer contract', function (): void {
     });
 
     it('renders empty history prose', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $app = App::factory()->create(['name' => 'docs']);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 

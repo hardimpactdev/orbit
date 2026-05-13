@@ -25,7 +25,6 @@ function createProxyMutationLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -107,6 +106,8 @@ describe('proxy add/remove commands', function (): void {
     });
 
     it('forwards add and remove through typed gateway requests for non-gateway callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProxyMutationLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

@@ -149,7 +149,7 @@ final class OpenCodeServerConfigResolver
 
     private function reachableHost(string $host, ?Node $node): string
     {
-        if (in_array($host, ['0.0.0.0', '127.0.0.1', '::1', 'localhost'], true) && $node?->is_local === false) {
+        if (in_array($host, ['0.0.0.0', '127.0.0.1', '::1', 'localhost'], true) && $node instanceof Node && $node->role !== 'gateway') {
             return $this->stringValue($node->wireguard_address)
                 ?? $this->stringValue($node->host)
                 ?? $host;

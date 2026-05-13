@@ -9,7 +9,6 @@ use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\ShowWorkspaceHistoryRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceHistoryResponse;
 use App\Models\Workspace;
-use App\Services\Nodes\CallerRoleResolver;
 use App\Services\Workspaces\WorkspaceHistoryPayload;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -44,20 +43,8 @@ class WorkspaceHistoryCommand extends Command
 
         $name = $this->stringArgument('name');
         $app = $this->stringOption('app');
-        $callerRole = $this->callerRole();
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
         $path = null;
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'setting' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                    'caller_role' => 'unknown',
-                ],
-            );
-        }
 
         if ($name === null) {
             $name = $this->resolveNameFromCwd($callerRole);
@@ -382,10 +369,5 @@ class WorkspaceHistoryCommand extends Command
     private function wantsJson(): bool
     {
         return $this->option('json') === true;
-    }
-
-    private function callerRole(): string
-    {
-        return app(CallerRoleResolver::class)->resolve();
     }
 }

@@ -30,7 +30,7 @@ class DetectPlatformCommand extends Command
 
         if ($this->option('update-local-node') === true) {
             Node::query()
-                ->where('is_local', true)
+                ->where('role', 'gateway')
                 ->where('status', 'active')
                 ->update(['platform' => $platform]);
         }

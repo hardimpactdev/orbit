@@ -8,6 +8,7 @@ use Saloon\Http\Response;
 
 abstract class GatewayStreamRequest extends GatewayRequest
 {
+    #[\Override]
     public function hasRequestFailed(Response $response): ?bool
     {
         return $response->serverError() || $response->clientError();

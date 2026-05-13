@@ -16,7 +16,6 @@ final readonly class MeController
         $self = $request->user();
 
         $gateway = Node::query()
-            ->where('is_local', true)
             ->where('role', 'gateway')
             ->first();
 

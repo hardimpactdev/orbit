@@ -32,11 +32,9 @@ function dnsListHumanRow(array $overrides = []): array
         'role' => 'control',
         'host' => '10.6.0.5',
         'wireguard_address' => '10.6.0.5',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => true,
         'environment' => null,
         'platform' => 'macos',
         'created_at' => now(),
@@ -73,6 +71,8 @@ function cleanupDnsListHumanConfig(): void
 }
 
 beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+
     cleanupDnsListHumanConfig();
 });
 
@@ -128,20 +128,6 @@ describe('dns:list human renderer contract', function (): void {
         expect($output)->toContain('No local Orbit DNS overrides found.');
     });
 
-    it('renders caller-role denial prose without JSON envelope', function (): void {
-        DB::table('nodes')->insert(dnsListHumanRow([
-            'role' => 'app',
-            'environment' => 'development',
-        ]));
-
-        $exitCode = Artisan::call('dns:list');
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1);
-        expect($output)->toContain('This command may only be run from a control node.')
-            ->and($output)->not->toContain('"error"');
-    });
-
     it('renders unsupported-platform prose without JSON envelope', function (): void {
         setupDnsListHumanControlCaller();
         setupDnsListHumanResolver('unsupported');
@@ -163,19 +149,6 @@ describe('dns:list human renderer contract', function (): void {
 
         expect($exitCode)->toBe(1);
         expect($output)->toContain('Could not read local DNS resolver configuration.')
-            ->and($output)->not->toContain('"error"');
-    });
-
-    it('renders local-context-invalid prose without JSON envelope', function (): void {
-        DB::table('nodes')->insert(dnsListHumanRow([
-            'role' => 'bogus',
-        ]));
-
-        $exitCode = Artisan::call('dns:list');
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1);
-        expect($output)->toContain('Local node role setting is invalid.')
             ->and($output)->not->toContain('"error"');
     });
 });

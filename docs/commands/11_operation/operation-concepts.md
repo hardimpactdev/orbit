@@ -21,7 +21,14 @@ This document defines operation-command-domain vocabulary and invariants. It sup
 
 - **Doctor orchestration:** Global `doctor` command responsibility for scope resolution, authorization, mode selection, family dispatch, output envelopes, generic issue kinds, and generic failure behavior.
 - **Doctor scope:** Resolved and authorized filter set for a doctor run, including selected families, node or self scope, app scope, and workspace scope.
-- **Doctor mode:** One of `verify`, `interactive`, `restore`, or `adopt`. Verify (no flag) compares only. Interactive (`--fix`) walks each finding and prompts the operator to restore, adopt, skip, or view details. Restore (`--restore`) bulk-applies family-declared safe gateway configuration to node reality. Adopt (`--adopt`) bulk-records family-declared compatible node reality into gateway configuration. `--fix`, `--restore`, and `--adopt` are mutually exclusive. The two directions are restore (gateway to node) and adopt (node to gateway); `fix` itself is the interactive driver, not a direction.
+- **Doctor mode:** One of `verify`, `interactive`, `restore`, or `adopt`.
+- **Doctor verify mode:** Default mode; compares gateway configuration and node
+  reality only.
+- **Doctor interactive mode:** `--fix`; prompts per finding to restore, adopt,
+  skip, or view details.
+- **Doctor force modes:** `--restore` applies safe gateway configuration to node
+  reality. `--adopt` records compatible node reality into gateway configuration.
+  `--fix`, `--restore`, and `--adopt` are mutually exclusive.
 - **Family doctor contract:** Family-owned contract for probe layers, concrete issue codes, diagnostic details, restore action maps, adopt action maps, and family-specific test mapping.
 - **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`. Families own the concrete issue codes that produce these kinds.
 - **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract. Actions may complete, skip, fail, or conflict, and remaining drift must stay visible after action execution.
@@ -40,4 +47,11 @@ Activity logging and history reads live in the activity family. See [`docs/comma
 
 ## Boundaries
 
-- **Operation-domain boundaries:** Operation commands own cross-family orchestration, update workflows, and request profiling diagnostics. They do not own durable operation configuration, invent operation-family drift, replace family doctor contracts, grant node access, create product-family records, or treat update or profile success as proof of state-family convergence. Activity-history reads belong to the activity family.
+- **Operation-domain boundaries:** Operation commands own cross-family
+  orchestration, update workflows, and request profiling diagnostics.
+- **Operation-domain exclusions:** Operation commands do not own durable
+  operation configuration, invent operation-family drift, replace family doctor
+  contracts, grant node access, create product-family records, or treat update
+  or profile success as proof of state-family convergence.
+- **Operation activity boundary:** Activity-history reads belong to the
+  activity family.

@@ -53,7 +53,7 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 - **Gateway**
 - **Control node**
 - **App node**
-- **Local caller role**
+- **Caller role**
 - **Node identity**
 - **First-gateway bootstrap**
 - **Control-node enrollment**
@@ -144,6 +144,7 @@ Source: [Process Concepts](commands/7_process/process-concepts.md).
 - **Process identity slug**
 - **Process order**
 - **Runtime unit**
+- **Runtime unit expansion**
 - **Runtime unit filename**
 - **Runtime unit environment**
 - **Supervisor program**
@@ -243,6 +244,9 @@ Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
 - **Doctor orchestration**
 - **Doctor scope**
 - **Doctor mode**
+- **Doctor verify mode**
+- **Doctor interactive mode**
+- **Doctor force modes**
 - **Family doctor contract**
 - **Doctor issue kind**
 - **Doctor action**
@@ -252,6 +256,8 @@ Source: [Operation Concepts](commands/11_operation/operation-concepts.md).
 - **Toolbar enrichment**
 - **Toolbar auth mode**
 - **Operation-domain boundaries**
+- **Operation-domain exclusions**
+- **Operation activity boundary**
 <!-- /concept-index -->
 
 ## Cloudflare Concepts
@@ -278,6 +284,7 @@ Source: [Cloudflare Concepts](commands/12_cf/cf-concepts.md).
 - **Flexible SSL exclusion**
 - **Origin certificate boundary**
 - **Cloudflare-domain boundaries**
+- **Cloudflare-domain exclusions**
 <!-- /concept-index -->
 
 ## VPN Concepts

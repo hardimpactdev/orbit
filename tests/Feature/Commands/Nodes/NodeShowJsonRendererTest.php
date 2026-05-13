@@ -23,11 +23,9 @@ function nodeShowJsonRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'agent_ide_config' => null,
@@ -38,11 +36,12 @@ function nodeShowJsonRow(array $overrides = []): array
 
 function setupNodeShowJsonGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeShowJsonRow([
         'name' => 'local-gateway',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -407,26 +406,5 @@ describe('node:show JSON renderer contract', function (): void {
         expect($error['code'])->toBe('gateway_unavailable')
             ->and($error['message'])->toBe('Gateway connection is required to show node details.')
             ->and($error['meta'])->toBe([]);
-    });
-
-    it('returns local_context_invalid error with correct metadata', function (): void {
-        $result = invokeNodeShowFailCommand(
-            json: true,
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        $payload = json_decode($result['output'], associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($result['exitCode'])->toBe(1)
-            ->and($payload)->toHaveKey('error')
-            ->and($payload)->not->toHaveKey('success');
-
-        $error = $payload['error'];
-
-        expect($error['code'])->toBe('local_context_invalid')
-            ->and($error['message'])->toBe('Local node role setting is invalid.')
-            ->and($error['meta'])->toBe(['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown']);
     });
 });

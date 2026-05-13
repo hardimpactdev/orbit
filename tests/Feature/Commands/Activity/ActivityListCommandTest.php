@@ -25,7 +25,6 @@ function createActivityListLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -74,6 +73,8 @@ describe('activity:list command', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createActivityListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

@@ -27,10 +27,8 @@ function nodeListRow(array $overrides = []): array
         'name' => 'app-1',
         'role' => 'app',
         'host' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
@@ -40,11 +38,15 @@ function nodeListRow(array $overrides = []): array
 }
 
 describe('node:list base contract', function (): void {
+    beforeEach(function (): void {
+        config(['orbit.is_gateway' => true]);
+    });
+
     it('sorts nodes by role then name', function (): void {
         DB::table('nodes')->insert([
             nodeListRow(['name' => 'zebra-app', 'role' => 'app']),
             nodeListRow(['name' => 'alpha-app', 'role' => 'app']),
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
             nodeListRow(['name' => 'control-1', 'role' => 'control', 'environment' => null]),
         ]);
 
@@ -65,12 +67,13 @@ describe('node:list base contract', function (): void {
 
 describe('node:list filters', function (): void {
     beforeEach(function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             nodeListRow([
                 'name' => 'gateway-1',
                 'role' => 'gateway',
                 'environment' => null,
-                'is_local' => true,
             ]),
             nodeListRow([
                 'name' => 'dev-app',
@@ -226,9 +229,13 @@ describe('node:list validation', function (): void {
 });
 
 describe('node:list read-only guarantee', function (): void {
+    beforeEach(function (): void {
+        config(['orbit.is_gateway' => true]);
+    });
+
     it('makes no DB writes during base list', function (): void {
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
             nodeListRow(['name' => 'app-1', 'role' => 'app']),
         ]);
 
@@ -244,7 +251,7 @@ describe('node:list read-only guarantee', function (): void {
         Process::preventStrayProcesses();
 
         DB::table('nodes')->insert([
-            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null, 'is_local' => true]),
+            nodeListRow(['name' => 'gateway-1', 'role' => 'gateway', 'environment' => null]),
             nodeListRow(['name' => 'app-1']),
         ]);
 
@@ -260,10 +267,8 @@ describe('node:list control-caller forwarding', function (): void {
             'name' => 'local-control',
             'role' => 'control',
             'host' => '10.6.0.2',
-            'ssh_user' => 'nckrtl',
             'orbit_path' => '/home/nckrtl/orbit',
             'status' => 'active',
-            'is_local' => true,
             'environment' => null,
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.2',
@@ -278,6 +283,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards to gateway and renders gateway response', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
                 'success' => [
@@ -312,6 +319,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards role filter to gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => function ($pendingRequest) {
                 $request = $pendingRequest->getRequest();
@@ -349,6 +358,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('forwards doctor flag to gateway request and renders returned meta', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => function ($pendingRequest) {
                 $request = $pendingRequest->getRequest();
@@ -401,6 +412,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('handles forwarding error with JSON envelope', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
                 'error' => [
@@ -419,6 +432,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('preserves authorization failures from the gateway', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
                 'error' => [
@@ -445,6 +460,8 @@ describe('node:list control-caller forwarding', function (): void {
     });
 
     it('handles forwarding error with human message', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
                 'error' => [

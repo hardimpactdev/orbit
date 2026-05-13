@@ -10,9 +10,12 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 describe('workspace:list human renderer contract', function (): void {
     it('renders grouped workspace tables by owning node and app', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
 
@@ -34,8 +37,6 @@ describe('workspace:list human renderer contract', function (): void {
     });
 
     it('renders empty result prose', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('workspace:list');
         $output = Artisan::output();
 

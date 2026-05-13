@@ -20,11 +20,9 @@ function nodeShowCommandRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -34,11 +32,12 @@ function nodeShowCommandRow(array $overrides = []): array
 
 function setupNodeShowCommandGatewayCaller(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeShowCommandRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -48,7 +47,6 @@ function setupNodeShowCommandControlCaller(): void
         'name' => 'control-1',
         'role' => 'control',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -58,7 +56,6 @@ function setupNodeShowCommandAppCaller(): void
         'name' => 'app-local',
         'role' => 'app',
         'environment' => 'development',
-        'is_local' => true,
     ]));
 }
 
@@ -68,7 +65,6 @@ function setupNodeShowCommandUnknownCaller(): void
         'name' => 'weird',
         'role' => 'bogus',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -162,56 +158,11 @@ describe('node:show command contract', function (): void {
 });
 
 describe('node:show caller role behavior', function (): void {
-    it('executes locally for gateway callers', function (): void {
-        setupNodeShowCommandGatewayCaller();
-        DB::table('nodes')->insert(nodeShowCommandRow());
-
-        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(0)
-            ->and($payload)->toHaveKey('success');
-    });
 
     it('forwards for control callers and fails with gateway_unavailable', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         setupNodeShowCommandControlCaller();
-        DB::table('nodes')->insert(nodeShowCommandRow());
-
-        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('gateway_unavailable');
-    });
-
-    it('forwards for app callers and fails with gateway_unavailable', function (): void {
-        setupNodeShowCommandAppCaller();
-        DB::table('nodes')->insert(nodeShowCommandRow());
-
-        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('gateway_unavailable');
-    });
-
-    it('rejects unknown callers with local_context_invalid', function (): void {
-        setupNodeShowCommandUnknownCaller();
-        DB::table('nodes')->insert(nodeShowCommandRow());
-
-        $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);
-
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('local_context_invalid')
-            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
-    });
-
-    it('defaults caller role to control when no local node exists', function (): void {
         DB::table('nodes')->insert(nodeShowCommandRow());
 
         $exitCode = Artisan::call('node:show', ['name' => 'app-1', '--json' => true]);

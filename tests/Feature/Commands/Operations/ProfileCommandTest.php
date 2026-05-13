@@ -19,6 +19,10 @@ use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 afterEach(function (): void {
     MockClient::destroyGlobal();
 });
@@ -27,7 +31,6 @@ it('profiles an app target resolved from gateway state as baseline json', functi
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -96,7 +99,6 @@ it('logs profile activity', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -157,7 +159,6 @@ it('infers an app target from the gateway caller current working directory', fun
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $appPath = sys_get_temp_dir().'/orbit-profile-cwd-'.bin2hex(random_bytes(4));
@@ -219,10 +220,11 @@ it('infers an app target from the gateway caller current working directory', fun
 });
 
 it('resolves a control caller target through the gateway before profiling', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -289,157 +291,10 @@ it('resolves a control caller target through the gateway before profiling', func
         ])
         ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/login');
 });
-
-it('asks the gateway to profile targets for app callers', function (): void {
-    Node::factory()->create([
-        'name' => 'app-local',
-        'role' => 'app',
-        'is_local' => true,
-    ]);
-
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
-
-    MockClient::global([
-        ShowProfileRequest::class => MockResponse::make([
-            'success' => [
-                'data' => [
-                    'source' => 'baseline',
-                    'instrumented' => false,
-                    'auth_mode' => 'first-user',
-                    'request_id' => 'profile-request-id',
-                    'origin' => 'gateway',
-                    'target' => [
-                        'app' => 'docs',
-                        'workspace' => null,
-                        'node' => 'app-dev-1',
-                        'domain' => 'docs.test',
-                    ],
-                    'request' => [
-                        'method' => 'GET',
-                        'url' => 'https://docs.test/login',
-                        'uri' => '/login',
-                        'status' => 200,
-                        'bytes' => 1200,
-                        'completed' => true,
-                    ],
-                    'timings' => [
-                        'dns_ms' => 1.0,
-                        'connect_ms' => 3.0,
-                        'tls_ms' => 7.0,
-                        'ttfb_ms' => 50.0,
-                        'download_ms' => 2.0,
-                        'total_ms' => 52.0,
-                    ],
-                    'error' => null,
-                    'response_headers' => [],
-                ],
-            ],
-        ], 200),
-    ]);
-
-    app()->instance(RequestProfiler::class, new class implements RequestProfiler
-    {
-        public function profile(string $url, array $headers = []): array
-        {
-            throw new RuntimeException('App callers must not profile from the caller process.');
-        }
-    });
-
-    $exitCode = Artisan::call('profile', [
-        'target' => 'docs',
-        '--uri' => '/login',
-        '--as-first-user' => true,
-        '--json' => true,
-    ]);
-    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-    expect($exitCode)->toBe(0)
-        ->and($payload['success']['data']['origin'])->toBe('gateway')
-        ->and($payload['success']['data']['target']['app'])->toBe('docs')
-        ->and($payload['success']['data']['request']['url'])->toBe('https://docs.test/login');
-});
-
-it('sends the current working directory as the app caller profile target when target is omitted', function (): void {
-    Node::factory()->create([
-        'name' => 'app-local',
-        'role' => 'app',
-        'is_local' => true,
-    ]);
-
-    LocalGatewaySettings::current()->fill([
-        'gateway_url' => 'https://10.6.0.1',
-        'ca_pem_path' => '/dev/null',
-    ])->save();
-
-    MockClient::global([
-        ShowProfileRequest::class => MockResponse::make([
-            'success' => [
-                'data' => [
-                    'source' => 'baseline',
-                    'instrumented' => false,
-                    'auth_mode' => 'guest',
-                    'request_id' => 'profile-request-id',
-                    'origin' => 'gateway',
-                    'target' => [
-                        'app' => 'docs',
-                        'workspace' => null,
-                        'node' => 'app-dev-1',
-                        'domain' => 'docs.test',
-                    ],
-                    'request' => [
-                        'method' => 'GET',
-                        'url' => 'https://docs.test/',
-                        'uri' => '/',
-                        'status' => 200,
-                        'bytes' => 1200,
-                        'completed' => true,
-                    ],
-                    'timings' => [
-                        'dns_ms' => 1.0,
-                        'connect_ms' => 3.0,
-                        'tls_ms' => 7.0,
-                        'ttfb_ms' => 50.0,
-                        'download_ms' => 2.0,
-                        'total_ms' => 52.0,
-                    ],
-                    'error' => null,
-                    'response_headers' => [],
-                ],
-            ],
-        ], 200),
-    ]);
-
-    $appPath = sys_get_temp_dir().'/orbit-profile-app-cwd-'.bin2hex(random_bytes(4));
-    mkdir($appPath, 0777, true);
-    $originalCwd = getcwd();
-
-    try {
-        chdir($appPath);
-
-        $exitCode = Artisan::call('profile', [
-            '--json' => true,
-        ]);
-    } finally {
-        if (is_string($originalCwd)) {
-            chdir($originalCwd);
-        }
-    }
-
-    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-    expect($exitCode)->toBe(0)
-        ->and($payload['success']['data']['origin'])->toBe('gateway')
-        ->and($payload['success']['data']['target']['app'])->toBe('docs');
-});
-
 it('prompts for an app when an interactive gateway caller omits the target outside an app path', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
     $firstNode = Node::factory()->create(['name' => 'app-dev-1', 'role' => 'app']);
     $secondNode = Node::factory()->create(['name' => 'app-dev-2', 'role' => 'app']);
@@ -506,10 +361,11 @@ it('prompts for an app when an interactive gateway caller omits the target outsi
 });
 
 it('falls back to gateway-origin profiling for control callers when caller-origin profiling fails', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -609,7 +465,6 @@ it('treats a completed non-2xx response as a successful profile result', functio
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -677,7 +532,6 @@ it('infers a workspace target from the gateway caller cwd inside a workspace pat
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -743,7 +597,6 @@ it('falls back to app target when cwd is inside app but not inside any workspace
     $gateway = Node::factory()->create([
         'name' => 'gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([

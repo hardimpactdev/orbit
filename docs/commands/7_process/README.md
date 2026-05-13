@@ -9,14 +9,29 @@ The gateway is the source of truth for process configuration. When node-side wor
 - The gateway owns process configuration.
 - Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters.
 - Runtime units are the process-family product noun: app-owned runtime units derived from app, optional workspace, and process configuration. They are not gateway state rows.
-- Each process definition renders one runtime unit for the main app instance and one runtime unit for each workspace of that app. Each rendered runtime unit is a separate Supervisor program with its own program name, working directory, environment, and log paths. The process definition supplies the shared fields (command, restart policy, crash notification policy); the rendering context (main vs. workspace, resolved app or workspace path and URL) supplies the per-instance fields.
+- Each process definition renders one runtime unit for the main app instance
+  and one runtime unit for each workspace of that app.
+- Each rendered runtime unit is a separate Supervisor program with its own
+  program name, working directory, environment, and log paths.
+- The process definition supplies shared fields such as command, restart policy,
+  and crash notification policy. The rendering context supplies per-instance
+  fields such as main vs. workspace, path, and URL.
 - Process definitions have a stable app-local order. `process:add` appends new definitions after existing definitions. Read and bulk lifecycle commands use that order.
 - Runtime unit names use `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks Orbit ownership; underscores are reserved as backend segment delimiters and are not allowed in identity slugs. The rendered Supervisor program uses the same name.
 - Restart policy is process configuration. Each derived main-app or workspace runtime unit uses the process definition's `never`, `on_failure`, or `always` policy. Manual `process:restart` actions do not change that policy.
 - Process definitions are edited at the app level, not per workspace.
 - Process definitions may opt in to crash notification. When enabled, a `crashed` process event resolves the effective agent IDE for the app or workspace and notifies the active session when one is available. Delivery is best-effort and must not prevent the event from being recorded.
-- Crash events come from a narrow internal app-node-to-gateway intake path emitted by Orbit-managed runtime hooks for process definitions whose crash-notification policy requires crash reporting. The intake accepts only authenticated active app-node identities, only `crashed` events, and is idempotent by event id. That intake path is not a CLI command contract.
-- Process lifecycle events are durable history, not process-unit configuration. Orbit records `started`, `stopped`, and `crashed` events so SSE consumers, CLI streams, and automation can react without storing runtime units as state rows. `started` and `stopped` events are recorded by successful gateway runtime lifecycle actions; `crashed` events are recorded when an app-node runtime hook reports an exit.
+- Crash events come from a narrow internal app-node-to-gateway intake path
+  emitted by Orbit-managed runtime hooks.
+- Crash intake accepts only authenticated active app-node identities, only
+  `crashed` events, and is idempotent by event id. That intake path is not a CLI
+  command contract.
+- Process lifecycle events are durable history, not process-unit configuration.
+  Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
+  CLI streams, and automation.
+- `started` and `stopped` events are recorded by successful gateway runtime
+  lifecycle actions. `crashed` events are recorded when an app-node runtime hook
+  reports an exit.
 - Default process read commands report gateway configuration plus latest durable process events. They do not synchronously SSH to app nodes or run live process manager probes. Live runtime verification belongs to [`doctor --family=process`](process-doctor.md); live event delivery belongs to the internal event stream.
 - Runtime lifecycle commands start, stop, restart, and inspect derived units. When `[name]` is omitted, `process:start`, `process:stop`, and `process:restart` operate on all process definitions for the resolved app or workspace context in process order.
 - Logs come from Supervisor's stdout/stderr capture for the rendered Supervisor program.

@@ -24,6 +24,9 @@ require_once __DIR__.'/E2E/Support/Pest.php';
 */
 
 pest()->extend(TestCase::class)
+    ->beforeEach(function (): void {
+        config(['orbit.is_gateway' => true]);
+    })
     ->in('Feature');
 
 pest()->extend(TestCase::class, RefreshDatabase::class)

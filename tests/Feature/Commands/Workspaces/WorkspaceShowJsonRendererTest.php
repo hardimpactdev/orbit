@@ -10,9 +10,12 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 describe('workspace:show JSON renderer contract', function (): void {
     it('selects JSON renderer and returns registry-only metadata', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
         $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app', 'tld' => 'test']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
@@ -29,8 +32,6 @@ describe('workspace:show JSON renderer contract', function (): void {
     });
 
     it('returns not found in the documented JSON shape', function (): void {
-        Node::factory()->create(['name' => 'local-gateway', 'role' => 'gateway', 'is_local' => true]);
-
         $exitCode = Artisan::call('workspace:show', ['name' => 'missing', '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 

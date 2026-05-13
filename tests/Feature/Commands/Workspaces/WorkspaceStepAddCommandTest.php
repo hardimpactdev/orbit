@@ -21,12 +21,13 @@ afterEach(function (): void {
 
 function createWorkspaceStepAddLocalNode(string $role = 'gateway'): Node
 {
+    config(['orbit.is_gateway' => $role === 'gateway']);
+
     return Node::factory()->create([
         'name' => "local-{$role}",
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -152,22 +153,6 @@ describe('workspace step add commands', function (): void {
         expect($exitCode)->toBe(1)
             ->and($payload['error']['code'])->toBe('workspace.step_not_found')
             ->and($payload['error']['meta']['phase'])->toBe('setup');
-    });
-
-    it('rejects app-node callers before writing', function (): void {
-        createWorkspaceStepAddLocalNode('app');
-        createWorkspaceStepAddApp();
-
-        $exitCode = Artisan::call('workspace-setup-step:add', [
-            '--app' => 'docs',
-            '--command' => 'composer install',
-            '--json' => true,
-        ]);
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and(WorkspaceStep::query()->count())->toBe(0);
     });
 
     it('forwards control callers through the typed gateway request', function (): void {

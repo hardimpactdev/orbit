@@ -11,12 +11,15 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => true]);
+});
+
 function createWorkspaceTeardownStepListHumanApp(): App
 {
     Node::factory()->create([
         'name' => 'local-gateway',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
     $node = Node::factory()->create(['role' => 'app']);
 

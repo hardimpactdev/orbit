@@ -24,7 +24,6 @@ it('adopts an existing app path and enacts runtime artifacts from a gateway call
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
@@ -84,7 +83,6 @@ it('converges an already registered app without changing repository metadata', f
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
@@ -126,7 +124,6 @@ it('reports production domain activation as a retryable proxy warning', function
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -167,7 +164,6 @@ it('renders production activation warnings in human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -195,7 +191,6 @@ it('rejects unmanaged registration without a path before remote work', function 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -225,7 +220,6 @@ it('rejects path collisions before registry writes', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $targetNode = Node::factory()->create([
@@ -263,15 +257,46 @@ it('rejects path collisions before registry writes', function (): void {
         ]);
 });
 
-it('denies app callers before prompts or side effects', function (): void {
+it('forwards app-node CLI callers through the typed gateway request without local side effects', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'app-local',
         'role' => 'app',
-        'is_local' => true,
     ]);
+
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.1',
+        'ca_pem_path' => '/dev/null',
+    ])->save();
 
     $remoteShell = new AppRegisterSequencedRemoteShell([]);
     app()->instance(RemoteShell::class, $remoteShell);
+
+    MockClient::global([
+        RegisterAppRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'result' => ['action' => 'adopted'],
+                    'app' => [
+                        'name' => 'docs',
+                        'node' => 'app-1',
+                        'environment' => 'development',
+                        'url' => 'https://docs.test',
+                        'path' => '/home/orbit/apps/docs',
+                        'root' => 'public',
+                        'repository' => null,
+                        'php_version' => '8.5',
+                        'adopted' => true,
+                    ],
+                ],
+                'meta' => [
+                    'node' => 'app-1',
+                    'warnings' => [],
+                ],
+            ],
+        ], 200),
+    ]);
 
     $exitCode = Artisan::call('app:register', [
         'name' => 'docs',
@@ -282,16 +307,17 @@ it('denies app callers before prompts or side effects', function (): void {
 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
+    expect($exitCode)->toBe(0)
         ->and($remoteShell->scripts)->toBe([])
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed');
+        ->and($payload['success']['data']['app']['name'])->toBe('docs');
 });
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -347,7 +373,6 @@ it('renders the documented human progress tree and adopted success line', functi
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([
@@ -383,7 +408,6 @@ it('prompts for missing interactive input before adopting an app path', function
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     Node::factory()->create([

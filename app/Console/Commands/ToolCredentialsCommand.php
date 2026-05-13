@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Tools\CredentialsToolRequest;
 use App\Http\Gateway\Responses\Tools\ToolCredentialsResponse;
-use App\Models\Node;
 use App\Services\Tools\ToolCredentialsReader;
 use App\Services\Tools\ToolRegistryFailure;
 use Illuminate\Console\Attributes\Description;
@@ -97,25 +96,7 @@ class ToolCredentialsCommand extends Command
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function stringArgument(string $name): ?string

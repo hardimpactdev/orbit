@@ -22,6 +22,10 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
 beforeEach(fn (): null => MockClient::destroyGlobal());
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -220,7 +224,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -270,7 +274,7 @@ describe('node:new', function (): void {
                 'ca_sha256' => hash('sha256', $mockCaCert),
             ])
             ->and($payload['success']['data']['next_steps'])->toBe([])
-            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('ssh_user')
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('user')
             ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('gateway:add')
             ->and($payload)->not->toHaveKey('error');
 
@@ -283,14 +287,11 @@ describe('node:new', function (): void {
             ->and($gateway->host)->toBe('192.0.2.10')
             ->and($gateway->wireguard_address)->toBe('10.6.0.2')
             ->and($gateway->gateway_endpoint)->toBe('192.0.2.10')
-            ->and($gateway->ssh_user)->toBe('provisioner')
             ->and($gateway->user)->toBe('orbit')
             ->and($gateway->orbit_path)->toBe('/home/orbit/orbit')
-            ->and((bool) $gateway->is_local)->toBeFalse()
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
-            ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform())
-            ->and((bool) $control->is_local)->toBeTrue();
+            ->and($control->platform)->toBe(nodeNewExpectedLocalPlatform());
 
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
 
@@ -368,7 +369,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -386,7 +387,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -411,7 +412,7 @@ describe('node:new', function (): void {
             ->and($payload['success']['data']['gateway_trust']['status'])->toBe('already_trusted')
             ->and($payload['success']['data']['gateway_trust']['ca_sha256'])->toBe(hash('sha256', $mockCaCert))
             ->and($payload['success']['data']['next_steps'])->toBe([])
-            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('ssh_user')
+            ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('user')
             ->and(json_encode($payload['success']['data'], JSON_THROW_ON_ERROR))->not->toContain('gateway:add')
             ->and($this->fakeInstaller->trustCalls)->toHaveCount(1)
             ->and(file_get_contents($trustPath))->toBe($firstPem)
@@ -428,13 +429,12 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
 
-        DB::table('nodes')->where('name', 'mini')->update(['is_local' => false]);
-        DB::table('nodes')->where('name', 'gateway-1')->update(['is_local' => true]);
+        config(['orbit.is_gateway' => true]);
 
         $gatewayExitCode = Artisan::call('node:show', ['name' => 'gateway-1', '--json' => true]);
         $gatewayPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -459,7 +459,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-platform-fail',
             '--role' => 'gateway',
             '--host' => '192.0.2.15',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -492,7 +492,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-platform-fail',
             '--role' => 'gateway',
             '--host' => '192.0.2.15',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
         ]);
 
@@ -509,7 +509,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '192.0.2.10',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -541,7 +541,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-trust-fail',
             '--role' => 'gateway',
             '--host' => '192.0.2.77',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -570,7 +570,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-invalid',
             '--role' => 'gateway',
             '--host' => '192.0.2.99',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -602,7 +602,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-malformed',
             '--role' => 'gateway',
             '--host' => '192.0.2.88',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--control-name' => 'mini',
             '--json' => true,
         ]);
@@ -660,6 +660,8 @@ describe('node:new', function (): void {
     });
 
     it('provisions a development app node from a gateway caller', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -669,11 +671,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -689,7 +688,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.20',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -721,10 +720,8 @@ describe('node:new', function (): void {
             ->and($node->host)->toBe('192.0.2.20')
             ->and($node->wireguard_address)->toBe('10.6.0.3')
             ->and($node->gateway_endpoint)->toBe('10.6.0.2')
-            ->and($node->ssh_user)->toBe('provisioner')
             ->and($node->user)->toBe('orbit')
-            ->and($node->orbit_path)->toBe('/home/orbit/orbit')
-            ->and((bool) $node->is_local)->toBeFalse();
+            ->and($node->orbit_path)->toBe('/home/orbit/orbit');
 
         expect(File::get(storage_path('app/orbit/node-development-dns.d/test.conf')))
             ->toContain('orbit-managed=node-development-dns')
@@ -740,6 +737,8 @@ describe('node:new', function (): void {
     });
 
     it('provisions a production app node without a development tld from a gateway caller', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -749,11 +748,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -768,7 +764,7 @@ describe('node:new', function (): void {
             '--role' => 'app',
             '--host' => '192.0.2.21',
             '--environment' => 'production',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -790,6 +786,8 @@ describe('node:new', function (): void {
     });
 
     it('adopts a compatible existing app node from proven live WireGuard peer reality', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -799,11 +797,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -817,11 +812,9 @@ describe('node:new', function (): void {
             'host' => '192.0.2.30',
             'wireguard_address' => '10.6.0.8',
             'gateway_endpoint' => '10.6.0.2',
-            'ssh_user' => 'provisioner',
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'decommissioned',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -844,7 +837,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.30',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -880,6 +873,8 @@ describe('node:new', function (): void {
     });
 
     it('fails app-node adoption without proven live WireGuard peer reality', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -889,11 +884,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -907,11 +899,10 @@ describe('node:new', function (): void {
             'host' => '192.0.2.31',
             'wireguard_address' => '10.6.0.8',
             'gateway_endpoint' => '10.6.0.2',
-            'ssh_user' => 'provisioner',
+            'user' => 'provisioner',
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'decommissioned',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -934,7 +925,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.31',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -961,6 +952,8 @@ describe('node:new', function (): void {
     });
 
     it('adopts a compatible active app node from proven missing WireGuard peer reality', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -970,11 +963,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -988,11 +978,10 @@ describe('node:new', function (): void {
             'host' => '192.0.2.32',
             'wireguard_address' => '10.6.0.8',
             'gateway_endpoint' => '10.6.0.2',
-            'ssh_user' => 'provisioner',
+            'user' => 'provisioner',
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1022,7 +1011,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.32',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1049,6 +1038,8 @@ describe('node:new', function (): void {
     });
 
     it('materializes a compatible unknown app host from proven identity reality', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -1058,11 +1049,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1102,7 +1090,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.33',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1136,6 +1124,8 @@ describe('node:new', function (): void {
     });
 
     it('requires a tld for development app nodes before side effects', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -1145,11 +1135,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1185,11 +1172,10 @@ describe('node:new', function (): void {
             'host' => '127.0.0.1',
             'wireguard_address' => '10.6.0.3',
             'gateway_endpoint' => '10.6.0.2',
-            'ssh_user' => get_current_user(),
+            'user' => get_current_user(),
             'user' => get_current_user(),
             'orbit_path' => base_path(),
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1203,11 +1189,8 @@ describe('node:new', function (): void {
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => null,
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1256,7 +1239,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.20',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1273,7 +1256,7 @@ describe('node:new', function (): void {
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
+                'user' => 'provisioner',
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1323,7 +1306,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.20',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1340,7 +1323,7 @@ describe('node:new', function (): void {
                 'host' => '192.0.2.20',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
+                'user' => 'provisioner',
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1390,7 +1373,7 @@ describe('node:new', function (): void {
             '--host' => '192.0.2.30',
             '--environment' => 'development',
             '--tld' => 'test',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1408,7 +1391,7 @@ describe('node:new', function (): void {
                 'host' => '192.0.2.30',
                 'environment' => 'development',
                 'tld' => 'test',
-                'ssh_user' => 'provisioner',
+                'user' => 'provisioner',
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1478,7 +1461,7 @@ describe('node:new', function (): void {
                 'host' => null,
                 'environment' => null,
                 'tld' => null,
-                'ssh_user' => null,
+                'user' => null,
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
@@ -1528,7 +1511,7 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             '--role' => 'gateway',
             '--host' => '203.0.113.2',
-            '--ssh-user' => 'provisioner',
+            '--user' => 'provisioner',
             '--json' => true,
         ]);
 
@@ -1545,23 +1528,22 @@ describe('node:new', function (): void {
                 'host' => '203.0.113.2',
                 'environment' => null,
                 'tld' => null,
-                'ssh_user' => 'provisioner',
+                'user' => 'provisioner',
             ]);
 
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
     it('enrolls a control node locally on a gateway without SSH side effects', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
             'host' => '10.6.0.2',
             'wireguard_address' => '10.6.0.2',
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1621,8 +1603,7 @@ describe('node:new', function (): void {
             ])
             ->and($control)->not->toBeNull()
             ->and($control->role)->toBe('control')
-            ->and($control->wireguard_address)->toBe('10.6.0.3')
-            ->and((bool) $control->is_local)->toBeFalse();
+            ->and($control->wireguard_address)->toBe('10.6.0.3');
 
         $controlPeer = WireGuardPeer::query()->where('node_id', $control->id)->first();
 
@@ -1635,6 +1616,8 @@ describe('node:new', function (): void {
     });
 
     it('converges an already provisioned gateway locally without SSH side effects', function (): void {
+        config(['orbit.is_gateway' => true]);
+
         DB::table('nodes')->insert([
             'name' => 'gateway-1',
             'role' => 'gateway',
@@ -1642,11 +1625,8 @@ describe('node:new', function (): void {
             'wireguard_address' => '10.6.0.2',
             'gateway_endpoint' => '203.0.113.2',
             'platform' => 'ubuntu_24-04',
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1700,11 +1680,8 @@ describe('node:new', function (): void {
             'name' => 'gateway-1',
             'role' => 'gateway',
             'host' => '10.6.0.2',
-            'ssh_user' => 'orbit',
-            'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => 'active',
-            'is_local' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

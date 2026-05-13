@@ -36,7 +36,7 @@ final readonly class CreateAppSourceOnNode
             return "/home/{$name}/app";
         }
 
-        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
+        $user = $node->user ?: 'orbit';
         $home = $user === 'root' ? '/root' : "/home/{$user}";
 
         return "{$home}/apps/{$name}";

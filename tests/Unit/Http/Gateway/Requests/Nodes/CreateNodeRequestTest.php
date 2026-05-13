@@ -31,7 +31,7 @@ it('resolves to POST /api/nodes with node creation body', function (): void {
         host: '192.0.2.20',
         environment: 'development',
         tld: 'test',
-        sshUser: 'provisioner',
+        user: 'provisioner',
     );
 
     expect($request->resolveEndpoint())->toBe('/api/nodes');
@@ -42,7 +42,7 @@ it('resolves to POST /api/nodes with node creation body', function (): void {
         'host' => '192.0.2.20',
         'environment' => 'development',
         'tld' => 'test',
-        'ssh_user' => 'provisioner',
+        'user' => 'provisioner',
     ]);
 });
 

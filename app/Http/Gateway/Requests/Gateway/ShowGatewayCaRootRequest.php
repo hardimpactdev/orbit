@@ -17,6 +17,7 @@ final class ShowGatewayCaRootRequest extends GatewayRequest
         return '/api/ca/root';
     }
 
+    #[\Override]
     public function hasRequestFailed(Response $response): ?bool
     {
         return false;

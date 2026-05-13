@@ -8,7 +8,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Activity\ShowActivityRequest;
 use App\Http\Gateway\Responses\Activity\ActivityShowResponse;
-use App\Models\Node;
 use App\Services\Activity\ActivityHistory;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -24,18 +23,7 @@ class ActivityShowCommand extends Command
 {
     public function handle(ActivityHistory $history): int
     {
-        $callerRole = $this->callerRole();
-
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'local_context_invalid',
-                message: 'Local node role setting is invalid.',
-                meta: [
-                    'field' => 'general.local_node_role',
-                    'reason' => 'unsupported_value',
-                ],
-            );
-        }
+        $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $id = $this->validatedId();
 
@@ -136,24 +124,6 @@ class ActivityShowCommand extends Command
             'related' => $dto->related,
             'meta' => $dto->meta,
         ];
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
     }
 
     /**

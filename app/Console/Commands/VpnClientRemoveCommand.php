@@ -65,7 +65,7 @@ final class VpnClientRemoveCommand extends VpnCommandSupport
             }
         }
 
-        if ($this->callerRole() === 'control') {
+        if (! (bool) config('orbit.is_gateway', false)) {
             $this->activityForwardedToGateway = true;
             $payload = $this->forwardToGateway('vpn-client:remove', [$name], [
                 'force' => true,

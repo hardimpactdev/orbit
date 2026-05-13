@@ -163,9 +163,7 @@ it('does not fall back to active gateway node when local settings are empty', fu
         'status' => 'active',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
 
     Http::fake();
@@ -190,18 +188,14 @@ it('ignores registry gateway candidates when local settings are empty', function
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.2',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
     Node::query()->create([
         'name' => 'gw2',
         'role' => 'gateway',
         'status' => 'active',
         'host' => '10.6.0.3',
-        'ssh_user' => 'orbit',
         'orbit_path' => '/home/orbit/orbit',
-        'is_local' => false,
     ]);
 
     $this->artisan('gateway:trust')

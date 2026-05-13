@@ -34,14 +34,6 @@ class ProcessRestartCommand extends Command
     {
         $callerRole = $callerRoleResolver->resolve();
 
-        if ($callerRole === 'unknown') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'The local Orbit caller role could not be resolved.',
-                meta: ['caller_role' => 'unknown'],
-            );
-        }
-
         try {
             if ($callerRole !== 'gateway') {
                 return $this->forwardRestart();

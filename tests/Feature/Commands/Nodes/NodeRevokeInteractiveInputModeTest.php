@@ -60,11 +60,9 @@ function nodeRevokeInteractiveRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -74,11 +72,12 @@ function nodeRevokeInteractiveRow(array $overrides = []): array
 
 function setupNodeRevokeGatewayCallerInteractive(): void
 {
+    config(['orbit.is_gateway' => true]);
+
     DB::table('nodes')->insert(nodeRevokeInteractiveRow([
         'name' => 'gateway-1',
         'role' => 'gateway',
         'environment' => null,
-        'is_local' => true,
     ]));
 }
 
@@ -169,26 +168,6 @@ describe('node:revoke interactive input mode contract', function (): void {
             ->assertExitCode(1);
 
         expect(DB::table('node_access')->count())->toBe(1);
-    });
-
-    it('rejects app-node callers before prompts in interactive mode', function (): void {
-        DB::table('nodes')->insert(nodeRevokeInteractiveRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-        DB::table('nodes')->insert(nodeRevokeInteractiveRow());
-
-        $exitCode = Artisan::call('node:revoke', [
-            'consuming_node' => 'control-1',
-            'serving_node' => 'app-1',
-        ]);
-
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1);
-        expect($output)->toContain('This command may only be run from a control or gateway node.');
     });
 
     it('renders normal confirmation message via reflection', function (): void {

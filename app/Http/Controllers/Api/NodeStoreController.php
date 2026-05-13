@@ -37,7 +37,7 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--host', $request, 'host');
         $this->addStringOption($arguments, '--environment', $request, 'environment');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
-        $this->addStringOption($arguments, '--ssh-user', $request, 'ssh_user');
+        $this->addStringOption($arguments, '--user', $request, 'user');
 
         $exitCode = Artisan::call('node:new', $arguments);
 

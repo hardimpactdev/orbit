@@ -116,9 +116,9 @@ endpoint.
 | `node.cli_php_default_mismatch` | A node-level CLI PHP default in gateway configuration is absent on the selected node or the target node's default `php` binary differs from gateway configuration. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
-## Node Restore Map
+## Node Fix Map
 
-| Code | `doctor --family=node --restore` behavior |
+| Code | `doctor --fix --family=node --restore` behavior |
 | --- | --- |
 | `node.gateway_api_unreachable` | Restart or restore gateway runtime only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |

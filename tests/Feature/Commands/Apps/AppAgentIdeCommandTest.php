@@ -60,7 +60,6 @@ it('sets an app-level agent ide adapter from a gateway caller', function (): voi
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -102,7 +101,6 @@ it('reports converged when the app-level adapter already matches', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -127,7 +125,6 @@ it('preserves adapter-specific app config when setting an app adapter', function
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -158,7 +155,6 @@ it('preserves adapter-specific app config when clearing to inheritance', functio
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -189,7 +185,6 @@ it('clears the app override and inherits the owning node default', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -225,7 +220,6 @@ it('stores none as an explicit app-level disable', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -249,11 +243,12 @@ it('stores none as an explicit app-level disable', function (): void {
         ]);
 });
 
-it('denies app callers before side effects', function (): void {
+it('does not mutate local app state for non-gateway callers without gateway settings', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'app-local',
         'role' => 'app',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -269,7 +264,7 @@ it('denies app callers before side effects', function (): void {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(1)
-        ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
+        ->and($payload['error']['code'])->toBe('gateway_unavailable')
         ->and(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
 });
 
@@ -277,7 +272,6 @@ it('rejects unsupported adapters with the supported value list', function (): vo
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -304,7 +298,6 @@ it('validates missing required non-interactive inputs', function (?string $app, 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $exitCode = Artisan::call('app:agent-ide', [
@@ -324,10 +317,11 @@ it('validates missing required non-interactive inputs', function (?string $app, 
 ]);
 
 it('forwards configured control callers through the typed gateway request', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -384,10 +378,11 @@ it('forwards configured control callers through the typed gateway request', func
 });
 
 it('queries gateway adapter choices before prompting configured control callers', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -455,10 +450,11 @@ it('queries gateway adapter choices before prompting configured control callers'
 });
 
 it('fails before adapter prompt when configured control callers cannot fetch adapter choices', function (): void {
+    config(['orbit.is_gateway' => false]);
+
     Node::factory()->create([
         'name' => 'control-1',
         'role' => 'control',
-        'is_local' => true,
     ]);
 
     LocalGatewaySettings::current()->fill([
@@ -486,7 +482,6 @@ it('prompts for missing human input and renders the progress tree', function ():
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -515,7 +510,6 @@ it('renders inherited and explicit none human success states', function (string 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $node = Node::factory()->create([
@@ -542,7 +536,6 @@ it('renders converged human output', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -559,7 +552,6 @@ it('prunes stale workspaces when switching adapters with --force', function (): 
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([
@@ -595,7 +587,6 @@ it('skips workspace cleanup when no previous adapter', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     App::factory()->create([
@@ -619,7 +610,6 @@ it('prompts for workspace cleanup consent in interactive mode', function (): voi
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
-        'is_local' => true,
     ]);
 
     $app = App::factory()->create([

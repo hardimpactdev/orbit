@@ -31,7 +31,6 @@ function createProcessListLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -127,6 +126,8 @@ describe('process:list base contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProcessListLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -166,6 +167,8 @@ describe('process:list base contract', function (): void {
     });
 
     it('preserves structured gateway authorization failures', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createProcessListLocalNode('app');
 
         LocalGatewaySettings::current()->fill([
@@ -191,15 +194,15 @@ describe('process:list base contract', function (): void {
             ->and($payload['error']['meta']['caller_role'])->toBe('app');
     });
 
-    it('rejects unknown local caller roles before gateway calls', function (): void {
+    it('validates required context before gateway calls', function (): void {
         createProcessListLocalNode('weird');
 
         $exitCode = Artisan::call('process:list', ['--json' => true, '--app' => 'docs']);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('caller_role_not_allowed')
-            ->and($payload['error']['meta']['caller_role'])->toBe('unknown');
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('app');
     });
 
     it('renders validation and gateway unavailable failures', function (): void {
@@ -220,7 +223,8 @@ describe('process:list base contract', function (): void {
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('gateway_unavailable');
+            ->and($payload['error']['code'])->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])->toBe('app');
     });
 
     it('does not mutate process registry state or run external processes', function (): void {

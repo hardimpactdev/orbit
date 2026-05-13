@@ -29,7 +29,6 @@ function createToolLogsLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -126,6 +125,8 @@ describe('tool:logs command contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createToolLogsLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -158,6 +159,8 @@ describe('tool:logs command contract', function (): void {
     });
 
     it('streams followed logs for non-gateway callers through the gateway', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createToolLogsLocalNode('control');
         $stream = new ToolLogsRecordingGatewayStream;
         app()->instance(ToolLogGatewayStream::class, $stream);

@@ -12,6 +12,10 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    config(['orbit.is_gateway' => false]);
+});
+
 /**
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -23,11 +27,9 @@ function nodeDefaultHumanRow(array $overrides = []): array
         'role' => 'app',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
-        'ssh_user' => 'nckrtl',
         'user' => 'nckrtl',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'is_local' => false,
         'environment' => 'development',
         'platform' => 'ubuntu_24-04',
         'created_at' => now(),
@@ -234,43 +236,6 @@ describe('node:default human renderer contract', function (): void {
 
         expect($result['exitCode'])->not->toBe(0);
         expect($result['output'])->toContain('Gateway connection is required to set a default node.');
-    });
-
-    it('renders caller-role-not-allowed prose error for app caller', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow([
-            'name' => 'mini',
-            'role' => 'app',
-            'is_local' => true,
-            'environment' => 'development',
-        ]));
-
-        $this->artisan('node:default')
-            ->expectsOutputToContain('This command may only be run from a control node.')
-            ->assertFailed();
-    });
-
-    it('renders caller-role-not-allowed prose error for gateway caller', function (): void {
-        DB::table('nodes')->insert(nodeDefaultHumanRow([
-            'name' => 'gateway-1',
-            'role' => 'gateway',
-            'is_local' => true,
-            'environment' => null,
-        ]));
-
-        $this->artisan('node:default')
-            ->expectsOutputToContain('This command may only be run from a control node.')
-            ->assertFailed();
-    });
-
-    it('renders local-context-invalid prose error', function (): void {
-        $result = invokeNodeDefaultFailCommandHuman(
-            code: 'local_context_invalid',
-            message: 'Local node role setting is invalid.',
-            meta: ['setting' => 'general.local_node_role', 'reason' => 'unsupported_value', 'caller_role' => 'unknown'],
-        );
-
-        expect($result['exitCode'])->not->toBe(0);
-        expect($result['output'])->toContain('Local node role setting is invalid.');
     });
 
     it('renders authorization-failed prose error', function (): void {

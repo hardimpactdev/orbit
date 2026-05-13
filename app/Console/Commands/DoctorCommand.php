@@ -29,8 +29,8 @@ use Throwable;
     {--self : Limit to the calling node identity}
     {--family=* : Scope to one or more state families}
     {--fix : Enter resolution mode}
-    {--restore : Bulk restore gateway intent to nodes (requires --fix)}
-    {--adopt : Bulk adopt node reality into gateway (requires --fix)}
+    {--restore : Bulk restore gateway configuration to nodes}
+    {--adopt : Bulk adopt node reality into gateway configuration}
     {--json : Output JSON}')]
 #[Description('Check Orbit health and diagnose drift')]
 class DoctorCommand extends Command implements Loggable
@@ -65,19 +65,17 @@ class DoctorCommand extends Command implements Loggable
         $families = $this->families();
         $this->activityMode = $mode;
 
-        if ((bool) $this->option('restore') && (bool) $this->option('adopt')) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: '--restore and --adopt are mutually exclusive.',
-                meta: ['fields' => ['restore', 'adopt']],
-            );
-        }
+        $resolutionFlags = array_values(array_filter([
+            (bool) $this->option('fix') ? 'fix' : null,
+            (bool) $this->option('restore') ? 'restore' : null,
+            (bool) $this->option('adopt') ? 'adopt' : null,
+        ]));
 
-        if (! (bool) $this->option('fix') && ((bool) $this->option('restore') || (bool) $this->option('adopt'))) {
+        if (count($resolutionFlags) > 1) {
             return $this->failCommand(
                 code: 'validation_failed',
-                message: '--restore and --adopt require --fix.',
-                meta: ['fields' => ['fix']],
+                message: '--fix, --restore, and --adopt are mutually exclusive.',
+                meta: ['fields' => $resolutionFlags],
             );
         }
 
@@ -86,17 +84,6 @@ class DoctorCommand extends Command implements Loggable
                 code: 'validation_failed',
                 message: '--self and --node are mutually exclusive.',
                 meta: ['fields' => ['self', 'node']],
-            );
-        }
-
-        if ($mode !== 'verify' && $this->callerRole() === 'app') {
-            return $this->failCommand(
-                code: 'caller_role_not_allowed',
-                message: 'App-node callers may not run doctor --fix for this scope.',
-                meta: [
-                    'caller_role' => 'app',
-                    'mode' => $mode,
-                ],
             );
         }
 
@@ -114,11 +101,7 @@ class DoctorCommand extends Command implements Loggable
                 );
             }
 
-            return $this->failCommand(
-                code: 'scope_not_found',
-                message: 'No local node identity is registered yet. Run `orbit gateway:add` to register this machine, then try `orbit doctor` again.',
-                meta: ['node' => null],
-            );
+            $target = Node::query()->where('role', 'gateway')->where('status', 'active')->first();
         }
 
         if ($target instanceof Node) {
@@ -443,16 +426,15 @@ class DoctorCommand extends Command implements Loggable
 
     private function localNode(): ?Node
     {
-        $node = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->first();
-
-        return $node instanceof Node ? $node : null;
+        return Node::query()->where('role', 'gateway')->where('status', 'active')->first();
     }
 
     private function resolveTargetNode(): ?Node
     {
+        if (! $this->isGatewayCaller()) {
+            return null;
+        }
+
         $name = $this->stringOption('node');
 
         if ($name !== null) {
@@ -480,7 +462,7 @@ class DoctorCommand extends Command implements Loggable
     {
         return ! (bool) $this->option('self')
             && $this->stringOption('node') === null
-            && $this->callerRole() === 'control';
+            && ! $this->isGatewayCaller();
     }
 
     private function localDefaultNodeName(): ?string
@@ -492,33 +474,11 @@ class DoctorCommand extends Command implements Loggable
 
     private function isGatewayCaller(): bool
     {
-        return $this->callerRole() === 'gateway';
-    }
-
-    private function callerRole(): string
-    {
-        $localRole = Node::query()
-            ->where('is_local', true)
-            ->where('status', 'active')
-            ->value('role');
-
-        if (! is_string($localRole) || $localRole === '') {
-            return 'control';
-        }
-
-        if (! in_array($localRole, ['gateway', 'app', 'control'], true)) {
-            return 'unknown';
-        }
-
-        return $localRole;
+        return (bool) config('orbit.is_gateway', false);
     }
 
     private function mode(): string
     {
-        if (! (bool) $this->option('fix')) {
-            return 'verify';
-        }
-
         if ((bool) $this->option('restore')) {
             return 'restore';
         }
@@ -527,7 +487,11 @@ class DoctorCommand extends Command implements Loggable
             return 'adopt';
         }
 
-        return 'interactive';
+        if ((bool) $this->option('fix')) {
+            return 'interactive';
+        }
+
+        return 'verify';
     }
 
     /**

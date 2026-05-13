@@ -27,6 +27,8 @@ beforeEach(function (): void {
 
 function createRoleAwareLocalNode(string $role, string $name = 'local-node'): Node
 {
+    config(['orbit.is_gateway' => $role === 'gateway']);
+
     return Node::factory()->create([
         'name' => $name,
         'role' => $role,
@@ -34,7 +36,6 @@ function createRoleAwareLocalNode(string $role, string $name = 'local-node'): No
         'wireguard_address' => '10.6.0.1',
         'platform' => 'linux',
         'environment' => $role === 'app' ? 'development' : null,
-        'is_local' => true,
     ]);
 }
 
@@ -93,8 +94,9 @@ describe('doctor role-aware categories', function (): void {
 
     it('rejects a family outside the target role category set before probes', function (): void {
         createRoleAwareLocalNode('control', 'local-control');
+        config(['orbit.is_gateway' => true]);
 
-        $exitCode = Artisan::call('doctor', ['--family' => ['app'], '--json' => true]);
+        $exitCode = Artisan::call('doctor', ['--node' => 'local-control', '--family' => ['app'], '--json' => true]);
         $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
@@ -107,8 +109,9 @@ describe('doctor role-aware categories', function (): void {
 
     it('renders categories derived from the target role rather than the full family list', function (): void {
         createRoleAwareLocalNode('control', 'local-control');
+        config(['orbit.is_gateway' => true]);
 
-        Artisan::call('doctor');
+        Artisan::call('doctor', ['--node' => 'local-control']);
         $output = Artisan::output();
 
         expect($output)->toContain('Node')

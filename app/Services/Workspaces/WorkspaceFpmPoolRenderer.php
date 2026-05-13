@@ -105,6 +105,6 @@ CONF;
     {
         $workspace->loadMissing('app.node');
 
-        return $workspace->app?->node?->user ?: ($workspace->app?->node?->ssh_user ?: 'orbit');
+        return $workspace->app?->node?->user ?: 'orbit';
     }
 }

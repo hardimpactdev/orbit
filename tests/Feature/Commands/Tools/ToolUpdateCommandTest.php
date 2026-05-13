@@ -27,7 +27,6 @@ function createToolUpdateLocalNode(string $role = 'gateway'): Node
         'role' => $role,
         'host' => '10.6.0.1',
         'wireguard_address' => '10.6.0.1',
-        'is_local' => true,
     ]);
 }
 
@@ -171,6 +170,8 @@ describe('tool:update command contract', function (): void {
     });
 
     it('forwards non-gateway callers through the typed gateway request', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createToolUpdateLocalNode('control');
 
         LocalGatewaySettings::current()->fill([
@@ -228,6 +229,8 @@ describe('tool:update command contract', function (): void {
     });
 
     it('forwards bulk update for non-gateway callers', function (): void {
+        config(['orbit.is_gateway' => false]);
+
         createToolUpdateLocalNode('control');
 
         LocalGatewaySettings::current()->fill([

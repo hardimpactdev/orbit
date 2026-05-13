@@ -28,11 +28,9 @@ final class NodeRegistryWriter
                 'host' => $host,
                 'wireguard_address' => $wireguardAddress,
                 'gateway_endpoint' => $gatewayEndpoint,
-                'ssh_user' => $sshUser,
                 'user' => $user,
                 'orbit_path' => "/home/{$user}/orbit",
                 'status' => 'active',
-                'is_local' => false,
             ],
         );
     }

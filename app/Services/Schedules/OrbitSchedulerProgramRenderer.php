@@ -26,7 +26,7 @@ final readonly class OrbitSchedulerProgramRenderer
 
     public function definition(Node $node, ?int $sleepSeconds = null): SupervisorProgramDefinition
     {
-        $user = $node->user ?: ($node->ssh_user ?: 'orbit');
+        $user = $node->user ?: 'orbit';
         $home = $user === 'root' ? '/root' : "/home/{$user}";
         $command = 'php artisan orbit-scheduler';
 
