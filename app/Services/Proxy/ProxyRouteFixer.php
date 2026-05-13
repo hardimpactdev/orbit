@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -16,6 +17,7 @@ final readonly class ProxyRouteFixer
         private RemoteShell $remoteShell,
         private ProxyRouteRenderer $renderer,
         private OrbitCaService $ca,
+        private SiteCertificateInstaller $siteCertificateInstaller,
     ) {}
 
     /**
@@ -51,6 +53,7 @@ final readonly class ProxyRouteFixer
         }
 
         $content = $this->renderer->render($route);
+        $this->ensureSiteCertificateForOwnedPhpRoute($route);
         $this->remoteShell->run($route->node, $this->installScript($route->domain, $content), ['throw' => true]);
 
         $route->forceFill([
@@ -73,6 +76,10 @@ final readonly class ProxyRouteFixer
 
     private function repairTls(ProxyRoute $route): void
     {
+        if ($this->ensureSiteCertificateForOwnedPhpRoute($route)) {
+            return;
+        }
+
         $leaf = $this->ca->issueLeaf($route->domain);
 
         $this->remoteShell->run(
@@ -84,6 +91,17 @@ final readonly class ProxyRouteFixer
             ),
             ['throw' => true],
         );
+    }
+
+    private function ensureSiteCertificateForOwnedPhpRoute(ProxyRoute $route): bool
+    {
+        if (! in_array($route->kind, ['app', 'workspace'], true)) {
+            return false;
+        }
+
+        $this->siteCertificateInstaller->ensureFor($route->node, $route->domain);
+
+        return true;
     }
 
     private function installScript(string $domain, string $content): string

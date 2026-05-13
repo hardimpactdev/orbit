@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Models\App;
 use App\Models\ProxyRoute;
 use RuntimeException;
+use Throwable;
 
 final readonly class EnsureAppProxyRoute
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private SiteCertificateInstaller $siteCertificateInstaller,
     ) {}
 
     /**
@@ -27,10 +30,14 @@ final readonly class EnsureAppProxyRoute
         }
 
         $domain = $this->domain($app);
+        $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($app->node, $domain);
         $config = [
             'document_root' => $app->documentRootPath(),
             'php_socket' => $this->socketPath($app),
-            'tls' => 'internal',
+            'tls' => [
+                'cert_path' => $certificatePaths['cert'],
+                'key_path' => $certificatePaths['key'],
+            ],
         ];
         $content = $this->renderCaddySite($app, $domain, $config);
 
@@ -45,6 +52,17 @@ final readonly class EnsureAppProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
+
+        try {
+            $this->siteCertificateInstaller->ensureFor($app->node, $domain);
+        } catch (Throwable) {
+            return [[
+                'code' => 'proxy.enactment_failed',
+                'family' => 'proxy',
+                'message' => "Proxy route '{$domain}' was recorded, but TLS material could not be installed. Run doctor to converge proxy artifacts.",
+                'next_command' => 'doctor --fix --family=proxy --restore',
+            ]];
+        }
 
         $result = $this->remoteShell->run($app->node, $this->renderInstallScript($domain, $content));
 
@@ -78,7 +96,11 @@ final readonly class EnsureAppProxyRoute
     }
 
     /**
-     * @param  array{document_root: string, php_socket: string, tls: string}  $config
+     * @param  array{
+     *     document_root: string,
+     *     php_socket: string,
+     *     tls: array{cert_path: string, key_path: string},
+     * }  $config
      */
     private function renderCaddySite(App $app, string $domain, array $config): string
     {
@@ -88,7 +110,7 @@ final readonly class EnsureAppProxyRoute
 
         return <<<CADDY
 {$domain} {
-    tls {$config['tls']}
+    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
     root * {$config['document_root']}
     encode gzip
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
 use App\Models\App;
@@ -13,8 +14,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+});
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
@@ -238,7 +244,9 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
+    $certificates = new SiteCertificateInstallerFake;
     app()->instance(RemoteShell::class, $remoteShell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
 
     $exitCode = Artisan::call('app:new', [
         'name' => 'docs',
@@ -257,11 +265,15 @@ it('records and enacts an app-owned proxy route after app intent is durable', fu
         ->and($route?->config)->toMatchArray([
             'document_root' => '/home/orbit/apps/docs/public',
             'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-            'tls' => 'internal',
+            'tls' => [
+                'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+            ],
         ])
+        ->and($certificates->hosts)->toBe(['docs.test'])
         ->and($remoteShell->scripts[3])->toContain('/etc/caddy/sites/docs.test.caddy')
         ->and($caddySite)->toContain('docs.test {')
-        ->and($caddySite)->toContain('tls internal')
+        ->and($caddySite)->toContain('tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key')
         ->and($caddySite)->toContain('root * /home/orbit/apps/docs/public')
         ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite))

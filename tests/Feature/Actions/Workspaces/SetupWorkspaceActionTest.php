@@ -86,7 +86,9 @@ it('enacts workspace PHP-FPM pools with runtime directories and reload-or-restar
     $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
@@ -112,15 +114,23 @@ it('registers workspace proxy routes against the rendered workspace PHP-FPM sock
     $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
     $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $route = $workspace->proxyRoutes()->first();
 
-    expect($caddySite)->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+    expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
+        ->and($caddySite)->toContain('php_fastcgi unix//home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
         ->and($route?->config['php_socket'])->toBe('/home/gateway/.config/orbit/php/orbit-demo-feature-a.sock')
+        ->and($route?->config['tls'])->toBe([
+            'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
+            'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
+        ])
+        ->and($certificates->hosts)->toBe(['feature-a.demo'])
         ->and($route?->source_hash)->toBe(hash('sha256', $caddySite));
 });
 
@@ -155,7 +165,7 @@ it('starts configured app processes for the workspace after rendering runtime un
         'count' => 1,
         'names' => ['vite'],
     ])
-        ->and($certificates->hosts)->toBe(['feature-a.demo.beast'])
+        ->and($certificates->hosts)->toBe(['feature-a.demo', 'feature-a.demo.beast'])
         ->and(collect($shell->scripts)->contains(
             fn (string $script): bool => str_contains($script, '/etc/supervisor/conf.d/orbit_demo_feature-a_vite.conf')
         ))->toBeTrue()

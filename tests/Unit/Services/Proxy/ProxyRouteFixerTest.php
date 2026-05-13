@@ -13,6 +13,7 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -32,7 +33,7 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
         $renderer = new ProxyRouteRenderer;
 
-        $action = (new ProxyRouteFixer($shell, $renderer, new ProxyFixerFakeCa))->fix($route, new DriftEntry(
+        $action = (new ProxyRouteFixer($shell, $renderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
             family: 'proxy',
             key: 'proxy.route_missing',
             kind: DriftKind::Missing,
@@ -64,7 +65,7 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
-        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa))->fix($route, new DriftEntry(
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fix($route, new DriftEntry(
             family: 'proxy',
             key: 'proxy.tls_missing',
             kind: DriftKind::Missing,
@@ -107,8 +108,9 @@ describe('ProxyRouteFixer', function (): void {
             ],
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
 
-        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa))->fix($route, new DriftEntry(
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, $certificates))->fix($route, new DriftEntry(
             family: 'proxy',
             key: 'proxy.route_mismatch',
             kind: DriftKind::Divergent,
@@ -123,10 +125,53 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'completed',
         ])
             ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
-            ->and($caddySite)->toContain('tls internal')
+            ->and($caddySite)->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
             ->and($caddySite)->toContain('php_fastcgi unix//home/orbit/.config/orbit/php/docs.sock')
+            ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)->toBe((new ProxyRouteRenderer)->sourceHash($route));
+    });
+
+    it('repairs app route TLS through the site certificate installer', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'document_root' => '/home/orbit/apps/docs/public',
+                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                'tls' => [
+                    'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                    'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                ],
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+
+        $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, $certificates))->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.tls_missing',
+            kind: DriftKind::Missing,
+            summary: 'tls missing',
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'proxy',
+            'node' => 'app-1',
+            'key' => 'proxy.tls_missing',
+            'status' => 'completed',
+        ])
+            ->and($certificates->hosts)->toBe(['docs.test'])
+            ->and($shell->scripts)->toBe([]);
     });
 });
 

@@ -72,7 +72,7 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
         $documentRoot = $config['document_root'] ?? null;
         $phpSocket = $config['php_socket'] ?? null;
-        $tls = $config['tls'] ?? 'internal';
+        $tls = $this->tlsDirective($route);
 
         if (! is_string($documentRoot) || $documentRoot === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a document root.");
@@ -82,17 +82,13 @@ CADDY;
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a PHP socket.");
         }
 
-        if (! is_string($tls) || $tls === '') {
-            throw new RuntimeException("Proxy route '{$route->domain}' is missing TLS intent.");
-        }
-
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
         return <<<CADDY
 {$route->domain} {
-    tls {$tls}
+    {$tls}
     root * {$documentRoot}
     encode gzip
 
