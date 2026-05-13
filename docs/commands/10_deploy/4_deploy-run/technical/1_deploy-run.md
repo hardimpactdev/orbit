@@ -7,9 +7,8 @@
 **Effects:** `write, stream`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- App-node callers are denied before prompts or side effects because deployment runs mutate app-owned gateway history and execute node-side deployment steps.
+- The CLI caller can reach the Orbit gateway.
+- App-node callers are denied by the gateway before prompts or side effects because deployment runs mutate app-owned gateway history and execute node-side deployment steps.
 - The gateway can reach the selected production app's owning node.
 
 ## Signature
@@ -28,14 +27,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `detach` | `--detach` | `Optional.` | `Never.` | `false` | Boolean flag. Starts the run and returns without streaming output. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
+
+The gateway authenticates the WireGuard peer and authorizes the request by
+caller role. The CLI does not resolve or assert caller role locally.
 
 | Role | Validity | Consequence |
 | --- | --- | --- |
-| `control` | `valid` | Resolve input locally, then forward the deployment request to the gateway when authorized. |
-| `gateway` | `valid` | Create history locally and execute deployment steps on the app's owning node when authorized. |
-| `app` | `invalid` | Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
-| `unknown` | `invalid` | Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
+| `control` | `valid` | The gateway accepts the deployment request when the caller is authorized. |
+| `gateway` | `valid` | The gateway creates history and executes deployment steps on the app's owning node when the caller is authorized. |
+| `app` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
+| `unknown` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
 
 ## Input Mode Contracts
 
@@ -46,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Run Lifecycle
 
-- Resolves the selected app through gateway app intent.
+- Resolves the selected app through gateway app configuration.
 - Uses one gateway API action, `POST /api/deploy/run`. JSON callers receive the
   normal JSON response; interactive control-node callers request that same
   action with `Accept: text/event-stream` and render streamed progress locally.

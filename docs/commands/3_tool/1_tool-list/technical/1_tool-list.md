@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect tool state for the resolved node or app.
 
 ## Signature
@@ -27,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
 All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible tool state when authorized; `tool:list` never grants write permission or local state authority.
 
@@ -37,11 +36,11 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 ## Behavior Contract
 
-### Tool Intent And Enactment Rules
+### Tool Configuration And Apply Rules
 
-- Reads gateway tool intent visible to the caller.
+- Reads gateway tool configuration visible to the caller.
 - Applies node and app filters at the gateway.
-- Does not inspect nodes or mutate intent.
+- Does not inspect nodes or mutate configuration.
 
 ### Scope Boundaries
 
@@ -62,7 +61,7 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 ## Doctor Relationship
 
-`tool-list` reads gateway tool intent only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-list` reads gateway tool configuration only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Activity Logging
 

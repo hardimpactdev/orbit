@@ -45,7 +45,7 @@ supports the activity command contracts; it does not override the
   target.
 - **Causer (actor):** Node identity that initiated the action, resolved from
   the WireGuard identity middleware on every gateway API call. The causer
-  answers "who did this." For gateway-internal enactment that no operator
+  answers "who did this." For gateway-internal apply work that no operator
   initiated directly, causer is the gateway node identity.
 - **Properties:** Structured audit fields declared by the command or
   controller. Properties never include secrets, raw command argv, raw
@@ -110,8 +110,8 @@ through one shared contract.
 - All gateway API endpoints that read state (lists, shows, status). Effect
   `read`. Default-on; matches the historical convention from the old repo
   where most read controllers were Loggable.
-- CLI commands that perform CLI-only state changes (e.g. local node role
-  setup) emit through the CLI helper.
+- CLI commands that perform CLI-only state changes (e.g. local gateway
+  connection setup) emit through the CLI helper.
 
 Never logged:
 
@@ -145,8 +145,7 @@ same logical action must agree.
 
 - **Activity visibility:** Gateway-owned authorization filter that controls
   which activity rows and correlated entries a caller may read. Visibility
-  is computed against the caller's node identity, not against the local
-  caller role.
+  is computed against the caller's WireGuard-resolved node identity.
 - **Filter denial versus empty:** When a caller filters by an entity it
   cannot see, the gateway returns an authorization failure rather than an
   empty result. This prevents leaking the existence of hidden activity
@@ -156,12 +155,12 @@ same logical action must agree.
 
 - **Activity-domain boundaries:** Activity commands own the doctrine for
   emission, the durable read surface, and the correlation contract. They do
-  not own product-family intent, do not define drift, do not replace family
-  doctor contracts, do not adopt reality, and do not grant or revoke node
-  access. Activity success or failure is not proof of state-family
+  not own product-family configuration, do not define drift, do not replace
+  family doctor contracts, do not adopt reality, and do not grant or revoke
+  node access. Activity success or failure is not proof of state-family
   convergence.
 - **Activity is not metrics:** Activity is discrete operational events.
   Continuous performance, latency, or throughput data belongs to the
-  profile command and runtime backends, not to activity history.
+  profile command and the process manager, not to activity history.
 - **Activity is not the live state:** Activity describes what happened.
   Doctor and family probes describe what is true now.

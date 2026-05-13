@@ -1,20 +1,24 @@
-# `app:new` on Control Node
+# `app:new` From A Control Node
 
 [Back to technical contract](1_app-new.md)
 
-This is the standard caller path for `app:new`. The control node gathers input,
-calls the gateway API, and renders the progress tree or JSON response.
+This is the standard caller path for `app:new`. The CLI on a control-role peer
+gathers input, calls the gateway API, and renders the progress tree or JSON
+response.
 
 ## Behavior
 
-- **Input Resolution:** Gathers all arguments and options. Performs local
-  validation (slug regex, length) before calling the gateway.
+- **Input Resolution:** Gathers all arguments and options. Performs only the
+  local input shape validation the command's input contract documents (slug
+  regex, length) before calling the gateway. Authorization is the gateway's
+  responsibility.
 - **Gateway Call:** Executes an HTTPS POST request to the gateway's `app:new`
-  endpoint.
-- **Enactment:** The gateway orchestrates all remote work (SSH to app node)
-  and local work (SQLite write).
-- **Progress:** The control node consumes the gateway's progress stream and
-  renders the human-facing tree or JSON envelope.
+  endpoint. The gateway identifies the WireGuard peer and decides whether the
+  request is allowed.
+- **Apply:** The gateway writes app configuration locally and orchestrates all
+  remote work to the target app node over SSH via `RemoteShell`.
+- **Progress:** The CLI consumes the gateway's progress stream and renders the
+  human-facing tree or JSON envelope.
 
 ## Connectivity
 
@@ -27,5 +31,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Control-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH enactment routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-node SSH from the control caller. |
+| `tests/Feature/Commands/Apps/AppNewOnControlNodeContractTest.php` | Control-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct app-node SSH from the control caller. |
 | `tests/E2E/Ephemeral/AppNewControlForwardingTest.php` | Real-environment smoke coverage proving `app:new` invoked from a control node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |

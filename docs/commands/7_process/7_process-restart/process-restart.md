@@ -2,11 +2,9 @@
 
 [Back to Process commands.](../README.md)
 
-**Purpose:** Restart one process, or all processes, in an app or workspace
-runtime context.
+**Purpose:** Restart one process, or all processes, in an app or workspace runtime context.
 
-**Description:** Cycles derived runtime units through the gateway on the owning
-app node and records lifecycle events for the transition.
+**Description:** Cycles derived runtime units through the gateway on the owning app node and records lifecycle events for the transition.
 
 **Technical contract:** [`technical/1_process-restart.md`](technical/1_process-restart.md)
 
@@ -23,13 +21,10 @@ orbit process:restart --app=docs --workspace=feature-docs
 
 - Resolves the app or workspace runtime context.
 - When `[name]` is supplied, restarts that process only.
-- When `[name]` is omitted, restarts all process definitions for the selected
-  context in process order.
+- When `[name]` is omitted, restarts all process definitions for the selected context in process order.
 - Restarts the derived runtime units through the gateway.
-- Records and publishes lifecycle events for the stopped and started runtime
-  transitions.
-- Does not change process intent and does not repair divergent runtime-unit
-  files.
+- Records and publishes lifecycle events for the stopped and started runtime transitions.
+- Does not change process configuration and does not repair divergent runtime-unit files.
 
 ## Related
 

@@ -10,9 +10,7 @@ model for ingress, apps, TLS, or DNS.
 
 ## State Ownership
 
-The `cf` command domain does not own a state family. Cloudflare provider state
-supports app and proxy behavior but does not replace gateway-owned Orbit
-intent.
+The `cf` command domain does not own a state family. Cloudflare provider state supports app and proxy behavior but does not replace gateway-owned Orbit configuration.
 
 [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns Orbit ingress route
 health. [`doctor --family=app`](../5_app/app-doctor.md) owns app-domain and
@@ -33,9 +31,7 @@ There is no `doctor --family=cf` contract.
   Cloudflare targets.
 - Cloudflare DNS writes are limited to `A` and `AAAA` records. CNAME, TXT, MX,
   CAA, SRV, and general DNS administration are outside Orbit's current scope.
-- [`proxy`](../8_proxy/README.md) is the canonical Orbit ingress registry for
-  Orbit-owned hostnames. Cloudflare DNS records and cache rules are provider
-  enactment, not durable Orbit route intent.
+- [`proxy`](../8_proxy/README.md) is the canonical Orbit ingress registry for Orbit-owned hostnames. Cloudflare DNS records and cache rules are provider-side application, not durable Orbit route configuration.
 - `app:new --domain=<host>` and app-owned ingress flows are the normal path for
   Orbit-managed hostname ingress.
 - Cache rules created by Orbit tell Cloudflare to respect origin

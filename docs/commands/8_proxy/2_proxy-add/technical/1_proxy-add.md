@@ -7,9 +7,8 @@
 **Effects:** `write, stream`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to manage custom proxy routes for the resolved serving node.
+- The CLI caller can reach the Orbit gateway.
+- The caller identity is authorized by the gateway to manage custom proxy routes for the resolved serving node.
 
 ## Signature
 
@@ -24,19 +23,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Hostname or documented host/path route identity not owned by app, workspace, gateway, or tool routes. |
-| `node` | `--node` | `Required when no local default node resolves the serving node.` | `Never.` | `local node:default when configured` | Visible active Ubuntu node with proxy capability. |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active Ubuntu node with proxy capability. |
 | `upstream` | `--upstream` | `Required when `redirect` is absent.` | `Forbidden with `redirect` or `code`.` | `None.` | HTTP or HTTPS upstream URL reachable from the serving node. |
 | `redirect` | `--redirect` | `Required when `upstream` is absent.` | `Forbidden with `upstream`.` | `None.` | Absolute HTTP or HTTPS redirect URL. |
 | `code` | `--code` | `Optional with `redirect`.` | `Forbidden with `upstream`.` | `302` | `301`, `302`, `307`, or `308`. |
-| `force` | `--force` | `Required in non-interactive mode when replacing an existing custom route with different target intent.` | `Never.` | `false` | Explicit replacement consent; does not permit overwriting non-custom routes. |
+| `force` | `--force` | `Required in non-interactive mode when replacing an existing custom route with different target configuration.` | `Never.` | `false` | Explicit replacement consent; does not permit overwriting non-custom routes. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may add custom proxy routes only when their node identity has
-explicit proxy route management authorization for the resolved serving node.
-Management remains gateway-owned and enacted through gateway-to-node transport.
+The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may add custom proxy routes only when the gateway authorizes their identity to manage proxy routes for the resolved serving node. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -50,27 +46,19 @@ Management remains gateway-owned and enacted through gateway-to-node transport.
 - Resolves a proxy-capable serving node.
 - Validates that exactly one of `--upstream` or `--redirect` is selected.
 - Creates or updates a custom gateway proxy route row.
-- Stores upstream routes with owner `custom`, kind `proxy`, and target type
-  `upstream`.
-- Stores redirect routes with owner `custom`, kind `redirect`, target type
-  `redirect`, and a redirect code.
-- Enacts the proxy backend route and Orbit-managed TLS material through the
-  gateway.
+- Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
+- Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
+- Applies the proxy backend route and Orbit-managed TLS material through the gateway.
 
 ### Ownership Boundary Rules
 
-- Fails before side effects when the domain is owned by an app, workspace,
-  gateway, or tool route.
+- Fails before side effects when the domain is owned by an app, workspace, gateway, or tool route.
 - Never uses `--force` to overwrite a non-custom route.
-- Updating an existing custom route with a different target requires explicit
-  replacement consent: an interactive confirmation prompt or `--force`.
+- Updating an existing custom route with a different target requires explicit replacement consent: an interactive confirmation prompt or `--force`.
 
 ### Scope Boundaries
 
-`proxy-add` must not create apps, workspaces, tools, nodes, firewall rules, DNS
-records, or process definitions. It must not infer tool ownership from a port;
-future tool-owned routes belong to tool-family commands and are only visible in
-`proxy:list`.
+`proxy-add` must not create apps, workspaces, tools, nodes, firewall rules, DNS records, or process definitions. It must not infer tool ownership from a port; future tool-owned routes belong to tool-family commands and are only visible in `proxy:list`.
 
 ## Renderer Contracts
 
@@ -79,8 +67,7 @@ future tool-owned routes belong to tool-family commands and are only visible in
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed
-intent writes.
+The gateway API endpoint emits an activity entry for successful and failed configuration writes.
 
 | Field | Value |
 | --- | --- |
@@ -99,13 +86,11 @@ intent writes.
 | Authorization failed | The caller is not authorized to manage custom proxy routes for the selected serving node. | `error.code=authorization_failed` |
 | Domain conflict | The selected domain is owned by an app, workspace, gateway, or tool route. | `error.code=proxy.domain_conflict` |
 | Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy.replacement_consent_required` |
-| Enactment failed | Gateway intent was written, but proxy or TLS backend enactment failed. | `error.code=proxy.enactment_failed` |
+| Apply failed | Gateway configuration was written, but proxy or TLS backend apply failed. | `error.code=proxy.enactment_failed` |
 
 ## Doctor Relationship
 
-`proxy-add` changes custom gateway proxy route intent and performs command-owned
-enactment only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
-`proxy` probe, issue codes, fix map, and adopt map.
+`proxy-add` changes custom gateway proxy route configuration and performs command-owned apply only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

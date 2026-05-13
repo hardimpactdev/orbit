@@ -38,7 +38,7 @@ Target context is required when neither `--node`, `--app`, nor local
 
 1. Resolves the target node and registered tool row.
 2. Verifies the tool is managed and has a stop action.
-3. Updates gateway intent so the expected state is `installed`.
+3. Updates gateway configuration so the expected state is `installed`.
 4. Stops the tool through its lifecycle backend on the target node.
 5. Reports the resulting state.
 

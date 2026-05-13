@@ -1,22 +1,26 @@
-# Technical Contract: `orbit app:register` (Gateway Node)
+# Technical Contract: `orbit app:register` From A Gateway Node
 
-This contract defines behavior when `app:register` is invoked from a **gateway node**.
+This contract defines gateway-side behavior when `app:register` is invoked from
+a peer the gateway identifies as a **gateway node**.
 
 [Back to the canonical contract.](1_app-register.md)
 
 ## Behavior
 
-- **Direct orchestration:** The gateway caller executes the app registration
-  flow locally without forwarding through the gateway API.
+- **Allowed:** The gateway authorizes the request based on the authenticated
+  WireGuard peer identity.
 - **Target eligibility:** The resolved target must be an active app node. The
-  gateway is never a valid app target.
+  gateway is never a valid app target. `--node=<gateway-slug>` is rejected with
+  `app.ineligible_node`.
 - **Path resolution:** `--path` is resolved on the target app node through
-  gateway-owned SSH inspection and enactment, not on the gateway filesystem.
-- **Enactment:** The gateway writes app intent locally and enacts app-node
-  artifacts over SSH via `RemoteShell`.
+  gateway-owned SSH inspection and application, not on the gateway filesystem.
+- **Apply:** The gateway writes app configuration locally and applies app-node
+  artifacts over SSH to the target app node via `RemoteShell` — even when the
+  CLI invocation originated on the gateway host. The CLI still calls the
+  gateway API; there is no client-side bypass.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway caller local orchestration without HTTPS forwarding, active app-node target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-node path resolution over gateway-owned SSH, and app-node artifact enactment through `RemoteShell`. |
+| `tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Gateway-peer authorization without a client-side shortcut, active app-node target requirement, `--node=gateway-1` rejection with `app.ineligible_node`, app-node path resolution over gateway-owned SSH, and app-node artifact application through `RemoteShell`. |

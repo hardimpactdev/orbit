@@ -14,8 +14,7 @@ orbit proxy:remove <domain> [--force] [--json]
 
 ## Description
 
-`proxy:remove` removes user-authored custom proxy routes and custom redirect
-routes. It does not remove app, workspace, gateway, or tool-owned routes.
+`proxy:remove` removes user-authored custom proxy routes and custom redirect routes. It does not remove app, workspace, gateway, or tool-owned routes.
 
 Redirects are removed through the same command as custom upstream routes.
 
@@ -29,15 +28,12 @@ orbit proxy:remove old.test --force --json
 
 ## Output
 
-Human output renders a destructive confirmation in interactive mode, then a
-progress tree and a summary naming the removed domain and serving node. JSON
-output returns `success.data.route` with the removed route.
+Human output renders a destructive confirmation in interactive mode, then a progress tree and a summary naming the removed domain and serving node. JSON output returns `success.data.route` with the removed route.
 
 ## Requirements
 
 - The caller can reach the Orbit gateway.
-- The caller is authorized to manage custom proxy routes on the route's serving
-  node.
+- The caller is authorized to manage custom proxy routes on the route's serving node.
 - The selected domain resolves to a custom upstream or custom redirect route.
 - Destructive consent is provided before side effects.
 

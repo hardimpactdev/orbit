@@ -7,10 +7,10 @@
 **Effects:** `write`, `destructive` (during adapter switch).
 
 **Prerequisites:**
-- The CLI caller role is `control` or `gateway`. App-node callers are denied
-  before prompts or side effects.
-- The current node identity is authorized to manage the app.
-- The target app exists in gateway intent.
+- The CLI caller can reach the Orbit gateway. The gateway identifies the
+  WireGuard peer and rejects app-node peers before prompts or side effects.
+- The authenticated peer is authorized to manage the app.
+- The target app exists in gateway configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
   installed Orbit extensions through the gateway-side extension registration
@@ -37,44 +37,45 @@ This command follows the shared
 | `force` | `--force` | Optional. | Never. | `false`. | Skips destructive consent prompt. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
+
+`app:agent-ide` authorization is owned by the gateway. The CLI does not branch
+on client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call.
 
 `app:agent-ide` is an app-level preference write that may remove stale
-workspaces during adapter switches. It is not executable from app nodes. App
-nodes remain restricted to read paths and explicitly documented local workflow
-exceptions such as `workspace:setup`.
+workspaces during adapter switches. It is not executable from app-node peers.
+App nodes remain restricted to read paths and explicitly documented local
+workflow exceptions such as `workspace:setup`.
 
-| Caller role | Behavior |
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Forwards the request to the gateway over HTTPS through WireGuard when configured and authorized. |
-| `gateway` | Executes the preference write and any workspace cleanup locally on the gateway when authorized. |
-| `app` | Denied before prompts or side effects. |
-| `unknown` | Invalid local context. Fail before prompts or side effects. |
+| `control` | Allowed when authorized. The gateway performs the preference write and any workspace cleanup, applying app-node work over SSH via `RemoteShell`. |
+| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell` for workspace cleanup. |
+| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
-1. Resolve caller role. Deny `app` and `unknown` before prompts or side effects.
-2. Resolve `app` from `[app]`.
-3. Validate `app` immediately. Must exist in gateway intent. The lookup checks
+1. Resolve `app` from `[app]`.
+2. Validate `app` immediately. Must exist in gateway configuration. The lookup checks
    app name first; the hostname match is consulted only when no name match
    exists.
-4. Resolve `agent_ide` from `[agent_ide]`. The prompt
-     presents `inherit`, `none`, and every adapter registered with the
-     gateway-owned adapter registry. Gateway callers read the registry
-     locally; configured control callers query the gateway over HTTPS through
-     WireGuard before rendering the prompt.
-5. Validate `agent_ide` immediately.
+3. Resolve `agent_ide` from `[agent_ide]`. The prompt presents `inherit`,
+   `none`, and every adapter registered with the gateway-owned adapter
+   registry. The CLI queries the gateway for choices before rendering the
+   prompt; it never consults a local adapter manifest.
+4. Validate `agent_ide` immediately.
    - Must be `inherit`, `none`, or appear in the gateway-owned adapter registry.
-   - Validation is synchronous. The CLI caller does not consult a local
-     adapter manifest, scan installed extensions on the control machine, or
-     fall back to a hard-coded core list. Trust-on-first-set with later
-     doctor adoption is rejected; unsupported adapters fail at command time
-     with `app.unsupported_adapter`.
-6. Identify potential destructive side effects.
+   - Validation is synchronous. The CLI does not consult a local adapter
+     manifest, scan installed extensions on the CLI host, or fall back to a
+     hard-coded core list. Trust-on-first-set with later doctor adoption is
+     rejected; unsupported adapters fail at command time with
+     `app.unsupported_adapter`.
+5. Identify potential destructive side effects.
    - If `agent_ide` differs from the current effective adapter, check the
      previous adapter for app workspaces that no longer exist for the app.
    - If workspaces would be removed, require destructive consent.
-7. Select the output renderer and begin the side-effect flow.
+6. Select the output renderer and begin the side-effect flow.
 
 ## Input Mode Contracts
 
@@ -92,10 +93,10 @@ exceptions such as `workspace:setup`.
    gateway-owned adapter registry. The gateway is the sole authority. If the
    adapter is not registered (and is not the reserved `inherit` or `none`
    value), fail before side effects with `app.unsupported_adapter`.
-   Configured control callers use the typed gateway adapter choices request for
-   prompt choices and still send the write request to the gateway for final
-   authorization and validation. The control caller must not validate against a
-   local hard-coded adapter list.
+   The CLI uses the typed gateway adapter choices request for prompt choices
+   and still sends the write request to the gateway for final authorization
+   and validation. The CLI must not validate against a local hard-coded adapter
+   list.
 3. **Idempotence check.** Compare the requested adapter against the current
    app default.
    - If they match, return success with `action: "converged"`.
@@ -105,9 +106,9 @@ exceptions such as `workspace:setup`.
    - Identify workspaces that exist for the app under the previous adapter
      but not under the new adapter.
    - If workspaces are identified, require destructive consent (`--force` or
-     interactive confirmation) before writing app intent.
-5. **Write intent.** Store the adapter as the app-level default in gateway
-   app intent.
+     interactive confirmation) before writing app configuration.
+5. **Write configuration.** Store the adapter as the app-level default in gateway
+   app configuration.
    - If `agent_ide` is `inherit`, clear the app override. `agent_ide.adapter`
      becomes `null` and `agent_ide.source` becomes `"node"` when the owning
      node has a default, or `"default"` when the chain resolves to no
@@ -119,8 +120,8 @@ exceptions such as `workspace:setup`.
      `agent_ide.adapter` becomes the adapter name, `agent_ide.source`
      becomes `"app"`, and `agent_ide.effective_adapter` is the same value.
 6. **Cleanup execution.** Remove identified stale workspaces through normal
-   `app:prune` / `workspace:remove` semantics after the app intent write.
-   Cleanup failures after the app intent write are non-fatal: the command
+   `app:prune` / `workspace:remove` semantics after the app configuration write.
+   Cleanup failures after the app configuration write are non-fatal: the command
    returns success and reports structured warnings under
    `success.meta.warnings[]` using the same warning vocabulary as
    `app:prune` and `workspace:remove`.
@@ -129,9 +130,9 @@ exceptions such as `workspace:setup`.
    (`set` when the value changed, `converged` when it already matched), and
    any cleanup results.
 
-`app:agent-ide` is an intent write with the single explicit destructive side
+`app:agent-ide` is a configuration write with the single explicit destructive side
 effect of removing app-owned workspaces under the previous adapter when the
-adapter changes. The app intent write is not rolled back if post-write cleanup
+adapter changes. The app configuration write is not rolled back if post-write cleanup
 cannot finish; cleanup drift is reported as success with warnings and repaired
 by the same `app:prune`, `workspace:remove`, and doctor paths used elsewhere.
 This cleanup is deliberately app-scoped. `node:agent-ide` may change the
@@ -139,7 +140,7 @@ inherited effective adapter for apps on a node, but it does not prune
 workspaces; callers that want cleanup after changing a node default run
 `app:prune` for each affected app. Beyond app-scoped cleanup, downstream
 consumers resolve their effective agent IDE per-event using the current
-inheritance chain (`app → node → none`); the blueprint reserves a future
+inheritance chain (`app → node → none`); the architecture reserves a future
 workspace-level override slot above app scope. The writer does not push a
 notification to consumers. A change to the app default is naturally picked up
 at the next consumer-side resolution event.
@@ -167,11 +168,11 @@ at the next consumer-side resolution event.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | Failure |
-| Caller role not allowed | The caller role is `app` or `unknown`. | Failure |
+| Caller role not allowed | The gateway identifies the caller as an app-node peer. | Failure |
 | Unsupported adapter | The requested adapter is not present in the gateway-owned adapter registry. | Failure |
 | Missing destructive consent | Workspaces would be removed but `--force` is missing in non-interactive mode or confirmation is denied in interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Gateway unavailable | A configured control caller cannot reach the gateway during validation or choices gathering. | Failure |
-| Cleanup failed after intent write | App intent was updated but workspace removal could not finish. | Success with structured `success.meta.warnings[]`. |
+| Gateway unavailable | The CLI cannot reach the gateway during validation or choices gathering. | Failure |
+| Cleanup failed after configuration write | App configuration was updated but workspace removal could not finish. | Success with structured `success.meta.warnings[]`. |
 
 No-op sets (already matching) are successful with `action: "converged"`, not
 failure.
@@ -204,7 +205,7 @@ Primary test owners:
 | --- | --- |
 | `tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php` | Action contract: setting/clearing adapter, `inherit` semantics, adapter validation, and workspace cleanup side effects. |
 | `tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php` | Command contract: signature, input resolution, destructive consent logic, success/failure reporting, JSON alignment, and warning payload shape for `success.meta.warnings[]`. |
-| `tests/Feature/Commands/Apps/AppAgentIdeCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, unknown-role failure, and forwarded control caller authorization failure. |
+| `tests/Feature/Commands/Apps/AppAgentIdeCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, and forwarded caller authorization failure. |
 
 Input-mode-specific test mapping lives in:
 

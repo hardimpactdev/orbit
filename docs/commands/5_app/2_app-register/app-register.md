@@ -32,7 +32,7 @@ orbit app:register my-app --domain=example.com
 - `--node=<name>`: The target app node. Defaults to the existing app owner, the local default development node, or an interactive prompt.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
 - `--php-version=<version>`: The app PHP-FPM version to store in gateway app
-  intent. When omitted, existing apps keep their stored value and newly adopted
+  configuration. When omitted, existing apps keep their stored value and newly adopted
   apps use Orbit's app runtime default (`8.5`), not the owning node's CLI PHP
   default.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
@@ -49,22 +49,22 @@ repository value. Adopting an unmanaged path through `app:register` stores
 ## What Happens
 
 `app:register` ensures that an application is correctly recorded in the Orbit
-gateway and that its runtime artifacts are properly enacted on the target app
+gateway and that its runtime artifacts are properly applied on the target app
 node.
 
-1. **Resolution**: Identifies the app and target node from the provided name, options, or local context.
-2. **Registration/Adoption**: Writes the app's intent to the gateway database. If the path already exists but isn't managed by Orbit, it is "adopted."
-3. **Enactment**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route intent for the `proxy` family to converge.
+1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development app node.
+2. **Registration/Adoption**: Writes the app's configuration to the gateway database. If the path already exists but isn't managed by Orbit, it is "adopted."
+3. **Apply**: Connects to the app node over SSH to configure PHP-FPM and install runtime configuration, then records app-owned proxy route configuration for the `proxy` family to converge.
 4. **Production Activation**: If a domain is supplied, it performs DNS and TLS checks to activate production routing. If DNS or TLS prerequisites are pending, the registration still succeeds and the inactive domain is reported as a non-fatal warning; retry the same command once propagation completes.
 
 This command is idempotent. Re-running on an already-managed app re-renders
-artifacts and verifies command-owned enactment; if nothing changes, the command
+artifacts and verifies command-owned application; if nothing changes, the command
 still succeeds. The result reports which path the run took (`registered`,
 `adopted`, or `converged`) so operators and agents can see what changed.
 
 ## Output
 
-- **Human**: A multi-step progress tree showing each phase of the registration and enactment process, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
+- **Human**: A multi-step progress tree showing each phase of the registration and apply process, followed by a success line keyed to the result (`registered`, `adopted`, or `converged`) and any non-fatal warnings.
 - **JSON**: A `success` envelope with `success.data.result.action` and the app's registry data, including a durable `adopted` flag set when the path was first adopted via registration.
 
 ## Requirements

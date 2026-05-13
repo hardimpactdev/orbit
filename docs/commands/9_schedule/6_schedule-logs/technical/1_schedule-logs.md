@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect schedule run history for the selected scope.
 
 ## Signature
@@ -30,36 +29,27 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `lines` | `--lines` | `Optional.` | `Never.` | `renderer default` | Positive integer line limit. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read visible schedule run history when authorized;
-`schedule:logs` never grants write permission or local state authority.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible schedule run history when authorized; `schedule:logs` never grants write permission.
 
 ## Input Mode Contracts
 
-No input-mode-specific contracts are required. The command does not prompt;
-missing required input and invalid filters fail according to the shared
-invocation model.
+No input-mode-specific contracts are required. The command does not prompt; missing required input and invalid filters fail according to the shared invocation model.
 
 ## Behavior Contract
 
 ### Run History Read Rules
 
-- Reads one schedule from gateway intent by name and optional app or node
-  disambiguation.
+- Reads one schedule from gateway configuration by name and optional app or node disambiguation.
 - Reads one durable run-history record for that schedule.
 - Defaults to the latest run when `--run` is absent.
 - Applies the line limit independently to captured stdout and stderr.
-- Does not inspect live Orbit Scheduler state or scheduler-captured
-  stdout/stderr that has not yet been reported as run history.
+- Does not inspect live Orbit Scheduler state or scheduler-captured stdout/stderr that has not yet been reported as run history.
 
 ### Scope Boundaries
 
-`schedule-logs` must not create, update, remove, run, fix, adopt, or enact
-schedules. It must not stream live runtime backend logs directly. Live
-scheduler state and run-history hook drift belong to
-[`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-logs` must not create, update, remove, run, fix, adopt, or apply schedules. It must not stream live process manager (Supervisor) logs directly. Live scheduler state and run-history hook drift belong to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -79,9 +69,7 @@ scheduler state and run-history hook drift belong to
 
 ## Doctor Relationship
 
-`schedule-logs` explains past schedule behavior from gateway history.
-[`schedule-doctor.md`](../../schedule-doctor.md) verifies current Orbit
-Scheduler state against gateway intent.
+`schedule-logs` explains past schedule behavior from gateway history. [`schedule-doctor.md`](../../schedule-doctor.md) verifies current Orbit Scheduler state against gateway configuration.
 
 ## Activity Logging
 

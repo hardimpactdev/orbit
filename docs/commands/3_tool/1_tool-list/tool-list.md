@@ -2,7 +2,7 @@
 
 [Back to Tool commands.](../README.md)
 
-List registered tool state from gateway intent.
+List registered tool state from gateway configuration.
 
 `tool:list` shows the tools Orbit expects, manages, or observes on nodes in the
 fleet. It is an inventory and audit command. It does not probe nodes unless a
@@ -61,7 +61,7 @@ under `success.meta`.
 ## Related Commands
 
 - [`tool:show`](../2_tool-show/tool-show.md) - inspect one registered tool
-- [`doctor --family=tool`](../tool-doctor.md) - compare tool intent with node reality
+- [`doctor --family=tool`](../tool-doctor.md) - compare tool configuration with node reality
 
 ## Technical Contract
 

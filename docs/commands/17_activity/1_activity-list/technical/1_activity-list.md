@@ -7,8 +7,6 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation local-node
-  role contract.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to read gateway activity history for
@@ -34,37 +32,32 @@ This command follows the shared
 | `limit` | `--limit` | Optional. | Never. | `25`. | Integer from `1` through `200`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`activity:list` resolves the caller role from the local node role setting before
-it reads command inputs or renders output.
+The CLI always sends the request to the gateway over HTTPS through WireGuard.
+The gateway authenticates the WireGuard peer, resolves the caller's node
+identity, and authorizes every history read against that identity and the
+requested filters.
 
 | Caller role | Behavior |
 | --- | --- |
-| `control` | Forwards the request to the gateway over HTTPS through WireGuard. |
-| `gateway` | Executes the gateway history read locally. |
-| `app` | Forwards the request to the gateway over HTTPS through WireGuard. App-node context does not grant additional history visibility. |
-| `unknown` | Invalid local context. Fail before input validation or gateway requests. |
+| `control` | Gateway returns history visible to the calling control node. |
+| `gateway` | Gateway returns history visible to itself. |
+| `app` | Gateway returns history visible to the calling app node. App-node context does not grant additional history visibility. |
 
-Caller role only selects local execution versus gateway-client transport. The
-gateway authorizes every history read against the current node identity and the
-requested filters.
+Caller role is gateway-resolved metadata, not a CLI-side branch. The CLI does
+not inspect or depend on caller role.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If the local role setting is unset or `null`, resolve caller role as
-     `control`.
-   - If the local role setting contains an unsupported value or cannot be read,
-     fail before input validation or gateway requests.
-2. Select the output renderer.
-3. Resolve filters from supplied options.
-4. Validate field-local input.
+1. Select the output renderer.
+2. Resolve filters from supplied options.
+3. Validate field-local input.
    - `correlation` must be a UUID when present.
    - `limit` must be an integer from `1` through `200`.
    - `app` and `node` must be non-empty when present.
    - `effect` must be one of `read`, `write`, `destructive` when present.
-5. Request visible activity history from the gateway.
+4. Request visible activity history from the gateway.
 
 No input-mode-specific contracts are required. All inputs are optional, and the
 command does not prompt.
@@ -80,7 +73,7 @@ command does not prompt.
 - Return an empty successful result when no visible activity matches the
   filters.
 - Preserve each entry's `correlation_id` so automation can group related
-  command, API, and gateway enactment records.
+  command, API, and gateway apply records.
 - Report the recorded entry effect as `read`, `write`, or `destructive`.
 
 ### Authorization Rules
@@ -95,8 +88,8 @@ command does not prompt.
 ### Scope Boundaries
 
 `activity:list` must not:
-- Mutate gateway intent, local settings, or node reality.
-- Inspect live node state, app runtimes, runtime backend programs, process
+- Mutate gateway configuration, local settings, or node reality.
+- Inspect live node state, app runtimes, process manager programs, process
   logs, Caddy, or filesystem state.
 - Fix drift, adopt reality, or enqueue repair work.
 - Collapse correlated activity into one synthetic row; correlation is metadata,
@@ -112,7 +105,6 @@ command does not prompt.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | A filter is malformed or `limit` is outside the allowed range. | Failure before gateway history read |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before gateway history read |
 | Gateway unavailable | The caller cannot reach the configured gateway API. | Failure |
 | Authorization failed | The gateway denies access to the requested history scope. | Failure |
 
@@ -138,7 +130,7 @@ produce an entry recording the failure outcome under the same correlation id.
 ## Doctor Relationship
 
 - `activity:list` reads historical gateway records.
-- `doctor` verifies current gateway-tracked configuration against enacted
+- `doctor` verifies current gateway-tracked configuration against applied
   reality. It does not use activity history as a substitute for current probes.
 
 ## Test Mapping
@@ -147,6 +139,6 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Activity/ActivityListCommandTest.php` | Gateway-history read behavior, caller-role transport selection, filter validation, authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
+| `tests/Feature/Commands/Activity/ActivityListCommandTest.php` | Gateway-history read behavior, filter validation, gateway-side authorization behavior, empty result success, newest-first ordering, read-only guarantee, no live probes, and no repair side effects. |
 | `tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php` | JSON renderer selection, success envelope, activity DTO shape, filter metadata, empty result shape, every `error.code` value, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php` | Human renderer table, empty result prose, no-progress-tree behavior, validation failure prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |

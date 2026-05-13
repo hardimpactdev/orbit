@@ -1,7 +1,6 @@
 # Proxy Commands
 
-Proxy commands expose Orbit's HTTP ingress registry. The command family is
-`proxy:*`; the durable state family and doctor key is `proxy`.
+Proxy commands expose Orbit's HTTP ingress registry. The command family is `proxy:*`; the durable state family and doctor key is `proxy`.
 
 Caddy is the current proxy backend. It is not the product model.
 
@@ -29,7 +28,7 @@ Caddy is the current proxy backend. It is not the product model.
 - Redirects are custom proxy routes with kind `redirect`; they are created by
   `proxy:add --redirect=<url>`, listed through `proxy:list --filter=redirect`,
   and removed by `proxy:remove`.
-- Proxy writes mutate gateway-tracked configuration first, then enact proxy and
+- Proxy writes mutate gateway-tracked configuration first, then apply proxy and
   TLS artifacts on the owning node.
 - Orbit-managed TLS means gateway-issued route leaf certificate and key
   material on the serving node. Those certificates chain to the gateway root
@@ -43,10 +42,10 @@ Caddy is the current proxy backend. It is not the product model.
 - For DNS hostname routes, Orbit-managed TLS also includes app-node
   compatibility material that lets common Laravel Vite TLS detection paths find
   the route certificate. This belongs to proxy convergence because it is
-  derived from route TLS intent. It is not a separate app command.
+  derived from route TLS configuration. It is not a separate app command.
 - Internal IP-only routes receive gateway-issued leaf certificates for the IP
   target and do not require hostname compatibility material.
-- Proxy reads use gateway intent by default. Live proxy backend reality belongs
+- Proxy reads use gateway configuration by default. Live proxy backend reality belongs
   to `doctor --family=proxy`.
 - Backend discovery/import is not part of the proxy command surface. Adoption
   of observed backend routes must use explicit
@@ -54,8 +53,7 @@ Caddy is the current proxy backend. It is not the product model.
 
 ## App And Workspace Ingress Baseline
 
-App and workspace proxy routes are not generic reverse proxies. They provide the
-standard Orbit browser ingress contract for PHP-backed apps and workspaces:
+App and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed apps and workspaces:
 
 - terminate Orbit-managed TLS for the app or workspace host;
 - route PHP requests to the resolved app/workspace PHP runtime;
@@ -68,49 +66,25 @@ standard Orbit browser ingress contract for PHP-backed apps and workspaces:
 - cache versioned build assets under `/build/*` with long-lived immutable cache
   headers.
 
-Document-root policy is part of the route contract. Apps or workspaces that
-serve from a public document root keep project-root files outside the web root
-and still block adjacent sensitive files such as environment files, VCS
-metadata, and local entrypoints. Apps or workspaces that intentionally serve
-from the project root receive the stronger project-root blocking policy for
-framework config, storage, dependencies, source metadata, and local entrypoints.
+Document-root policy is part of the route contract. Apps or workspaces that serve from a public document root keep project-root files outside the web root and still block adjacent sensitive files such as environment files, VCS metadata, and local entrypoints. Apps or workspaces that intentionally serve from the project root receive the stronger project-root blocking policy for framework config, storage, dependencies, source metadata, and local entrypoints.
 
-Custom, redirect, and tool routes are separate route kinds. They may share TLS,
-DNS, and inventory behavior with app/workspace routes, but they do not inherit
-the PHP document-root contract unless their own command docs say so.
+Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
 ## TLS Authority Model
 
-The gateway is the only Orbit certificate authority. For each managed route, it
-issues a leaf certificate whose SAN matches that route host or IP, then enacts
-the certificate and private key on the serving node as route-scoped TLS
-material. The serving node configures Caddy with that explicit certificate and
-key; it does not use Caddy's local CA for Orbit-managed routes.
+The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures Caddy with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
 
-Orbit does not delegate intermediate CA authority to app nodes. That delegation
-would make disconnected node-local certificate minting easier, but it would
-also expand the blast radius of a compromised app node: the node could sign
-trusted certificates for hosts it should not control. Per-route gateway-issued
-leaf certificates keep signing authority centralized on the gateway while still
-letting every node terminate HTTPS locally.
+Orbit does not delegate intermediate CA authority to app nodes. That delegation would make disconnected node-local certificate minting easier, but it would also expand the blast radius of a compromised app node: the node could sign trusted certificates for hosts it should not control. Per-route gateway-issued leaf certificates keep signing authority centralized on the gateway while still letting every node terminate HTTPS locally.
 
 ## Gateway Internal Ingress
 
-Gateway-owned internal routes are proxy inventory, but their product purpose is
-the gateway API. Internal gateway ingress must bind to the gateway's Orbit
-network address, not become a public application route. It must preserve the
-WireGuard identity model by removing forwarded-client identity headers before
-the request reaches the gateway API.
+Gateway-owned internal routes are proxy inventory, but their product purpose is the gateway API. Internal gateway ingress must bind to the gateway's Orbit network address, not become a public application route. It must preserve the WireGuard identity model by removing forwarded-client identity headers before the request reaches the gateway API.
 
-Long-lived gateway streams, such as progress or log streams, must not consume
-the same execution lane as short command/API requests. The current backend may
-implement that with separate runtime sockets, but the product contract is that
-streaming traffic cannot starve ordinary gateway API execution.
+Long-lived gateway streams, such as progress or log streams, must not consume the same execution lane as short command/API requests. The current backend may implement that with separate runtime sockets, but the product contract is that streaming traffic cannot starve ordinary gateway API execution.
 
 ## Proxy Route JSON Entity
 
-Proxy JSON renderers that return one route entity embed this shape under
-`success.data.route`, or directly under `success.data.routes[]` for list items.
+Proxy JSON renderers that return one route entity embed this shape under `success.data.route`, or directly under `success.data.routes[]` for list items.
 
 ```json
 {
@@ -145,7 +119,7 @@ Proxy JSON renderers that return one route entity embed this shape under
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
-| `status` | string | Gateway-intent status, not live backend verification. |
+| `status` | string | Gateway configuration status, not live backend verification. |
 
 ## Commands
 

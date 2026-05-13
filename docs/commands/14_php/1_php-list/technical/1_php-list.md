@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect the resolved app, workspace, or node.
 
 ## Signature
@@ -29,11 +28,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live installed-version inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use gateway-owned access policy. App-node callers
-may read PHP runtime selections visible to their node identity, but local app
-or workspace context is not authorization.
+The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may read only PHP runtime selections visible to their authenticated identity. Local cwd app or workspace context is used as input hint only and never grants read authority.
 
 ## Input Mode Contracts
 
@@ -47,7 +44,7 @@ missing required target context fails according to the shared invocation model.
 - Resolves target context from explicit options, cwd app/workspace context,
   app ownership, workspace ownership, local `node:default`, or gateway-local
   node identity.
-- Reads gateway intent for app PHP version, workspace override or inheritance,
+- Reads gateway configuration for app PHP version, workspace override or inheritance,
   and node CLI PHP default when those scopes are resolved.
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.
 - Reads gateway-tracked installed-version facts by default.
@@ -56,7 +53,7 @@ missing required target context fails according to the shared invocation model.
 
 ### Scope Boundaries
 
-`php:list` must not install PHP runtimes, change PHP version intent, re-apply
+`php:list` must not install PHP runtimes, change PHP version configuration, re-apply
 PHP-FPM artifacts, change node CLI defaults, edit project files, read
 `.php-version`, mutate Composer constraints, or SSH to a node unless `--live`
 is supplied.
@@ -73,7 +70,6 @@ is supplied.
 | Validation failed | Supplied input is missing, invalid, or ambiguous. | `error.code=validation_failed` |
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to inspect the resolved target. | `error.code=authorization_failed` |
-| Local context invalid | Cwd markers or path ownership resolve to stale app/workspace context. | `error.code=local_context_invalid` |
 
 ## Doctor Relationship
 

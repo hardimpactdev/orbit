@@ -15,7 +15,7 @@ it does not override the [Architecture](../../ARCHITECTURE.md).
 - **Deployment policy:** App-owned gateway state that defines the ordered
   deployment steps for one production app.
 - **Deployment pipeline:** Ordered deployment step list for one production app.
-  It is gateway state owned by the app, not global deployment intent.
+  It is gateway state owned by the app, not global deployment configuration.
 
 ## Steps
 
@@ -52,7 +52,7 @@ it does not override the [Architecture](../../ARCHITECTURE.md).
 - **Deployment run history:** Durable app-owned gateway history of deployment
   runs. Read commands use stored history and do not inspect live node state.
 - **Deployment log:** Stored per-step deployment output for a previous run. It
-  is captured gateway history, not live streaming output, runtime backend
+  is captured gateway history, not live streaming output, process manager
   log output, or a node filesystem read.
 - **Latest deployment status:** App-owned gateway state recording the newest
   deployment outcome used by app doctor when evaluating production app health.

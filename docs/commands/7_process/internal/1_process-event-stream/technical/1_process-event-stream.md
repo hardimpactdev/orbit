@@ -8,8 +8,7 @@
 
 **Prerequisites:**
 - The CLI or API caller can reach the Orbit gateway.
-- The current node identity is authorized to inspect the selected app,
-  workspace, node, or process scope.
+- The current node identity is authorized to inspect the selected app, workspace, node, or process scope.
 
 ## Signature
 
@@ -19,8 +18,7 @@ orbit process-event:stream [--app=<app>] [--workspace=<workspace>] [--node=<node
 
 ## Input Contract
 
-This command follows the shared
-[Invocation Model](../../../../README.md#invocation-model).
+This command follows the shared [Invocation Model](../../../../README.md#invocation-model).
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
@@ -33,13 +31,9 @@ This command follows the shared
 
 ## Stream Output Contract
 
-`process-event:stream --json` is an internal stream contract, not a single JSON
-response. It is exempt from the standard `success`/`error` command envelope
-after the stream opens because it emits multiple newline-delimited JSON frames.
+`process-event:stream --json` is an internal stream contract, not a single JSON response. It is exempt from the standard `success`/`error` command envelope after the stream opens because it emits multiple newline-delimited JSON frames.
 
-Failures before the stream opens use the standard command error envelope. After
-the stream opens, terminal stream failures emit one error frame and close the
-stream.
+Failures before the stream opens use the standard command error envelope. After the stream opens, terminal stream failures emit one error frame and close the stream.
 
 Every stream frame is one JSON object with a `type` discriminator:
 
@@ -49,21 +43,17 @@ Every stream frame is one JSON object with a `type` discriminator:
 | `event` | `id`, `event`, `scope`, `process`, `occurred_at` | Durable lifecycle event read from `process_events`. `event` is one of `started`, `stopped`, or `crashed`. |
 | `error` | `code`, `message`, `meta` | Terminal stream failure after the stream has opened. |
 
-`scope` contains the stable filters applied to the stream: `app`, `workspace`,
-`node`, and `process`, with absent filters omitted. Stream frames do not include
-top-level `success` or `error` keys.
+`scope` contains the stable filters applied to the stream: `app`, `workspace`, `node`, and `process`, with absent filters omitted. Stream frames do not include top-level `success` or `error` keys.
 
 ## Behavior Contract
 
 1. Resolve the requested event scope.
-2. Send an initial snapshot for the selected runtime scope by deriving process
-   units and probing live status.
-3. Stream later `started`, `stopped`, and `crashed` events from durable process
-   event history.
+2. Send an initial snapshot for the selected runtime scope by deriving process units and probing live status.
+3. Stream later `started`, `stopped`, and `crashed` events from durable process event history.
 4. Resume after `after_id` when supplied.
 5. Keep the stream open until the client disconnects or the stream fails.
 
-This internal command does not mutate process intent or runtime state.
+This internal command does not mutate process configuration or runtime state.
 
 ## Failure Semantics
 
@@ -73,15 +63,11 @@ This internal command does not mutate process intent or runtime state.
 | Authorization failed | The caller cannot inspect the requested process event scope. | Failure (`error.code=authorization_failed`). |
 | Stream failed | The event stream cannot be opened or resumed. | Failure (`error.code=process.event_stream_failed`). |
 
-If the live snapshot cannot probe one runtime unit, the stream emits an
-unverifiable snapshot item for that unit when possible instead of dropping the
-whole stream.
+If the live snapshot cannot probe one runtime unit, the stream emits an unverifiable snapshot item for that unit when possible instead of dropping the whole stream.
 
 ## Doctor Relationship
 
-[`process-doctor.md`](../../../process-doctor.md) verifies rendered runtime
-artifacts and lifecycle event notifier material. Event history itself is not
-desired state.
+[`process-doctor.md`](../../../process-doctor.md) verifies rendered runtime artifacts and lifecycle event notifier material. Event history itself is not desired state.
 
 ## Test Mapping
 
@@ -89,4 +75,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Processes/ProcessEventStreamCommandTest.php` | Internal stream contract, scope filters, resume behavior, initial snapshot, durable event streaming, unverifiable snapshot items, pre-stream error envelopes, terminal `process.event_stream_failed` frames, authorization failure, and no process intent mutation. |
+| `tests/Feature/Commands/Processes/ProcessEventStreamCommandTest.php` | Internal stream contract, scope filters, resume behavior, initial snapshot, durable event streaming, unverifiable snapshot items, pre-stream error envelopes, terminal `process.event_stream_failed` frames, authorization failure, and no process configuration mutation. |

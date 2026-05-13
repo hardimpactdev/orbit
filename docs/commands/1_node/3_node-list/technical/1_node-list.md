@@ -8,9 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
-- The current node identity is authorized to read visible node registry intent.
+- The current node identity is authorized to read visible node registry configuration.
 
 ## Signature
 
@@ -38,27 +36,21 @@ not part of the initial contract. Operators who need to query multiple roles or
 environments at once should run `node:list --json` without that filter and
 post-filter the result, or run separate scoped invocations.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:list` resolves the caller role before querying the gateway. After the
-caller role is resolved, behavior does not vary by role. All authenticated
-callers with visible registry access receive the same command contract.
-Visibility scoping is access-policy-driven, not role-driven.
-
-App-node callers are not rejected; they receive the nodes visible to their
-authenticated identity according to gateway-owned access policy.
+The gateway authenticates the CLI's WireGuard identity and serves the list of
+nodes visible to that identity. All roles (`control`, `gateway`, `app`) may
+read `node:list`; the response is scoped by gateway-owned access policy, not
+gated by role. App-role callers are not rejected.
 
 ## Input Resolution
 
-1. Resolve caller role for local path selection.
-   - If `general.local_node_role` is unreadable or unsupported, fail before
-     gateway reads or side effects with `local_context_invalid`.
-2. Resolve `node_list.role` from `--role` when present. Validate immediately.
-3. Resolve `node_list.environment` from `--environment` when present. Validate immediately.
-4. Resolve `node_list.doctor` from `--doctor`. Default `false`.
-5. Select the output renderer and query the gateway for visible node registry
-   intent.
-6. If `--doctor` is present, run node doctor checks as an explicit secondary
+1. Resolve `node_list.role` from `--role` when present. Validate immediately.
+2. Resolve `node_list.environment` from `--environment` when present. Validate immediately.
+3. Resolve `node_list.doctor` from `--doctor`. Default `false`.
+4. Select the output renderer and query the gateway for visible node registry
+   configuration.
+5. If `--doctor` is present, run node doctor checks as an explicit secondary
    operation after the list query succeeds. Attach doctor summaries to the
    output.
 
@@ -72,7 +64,7 @@ interactive and non-interactive modes.
 
 ### Visibility Rules
 
-- Read visible node registry intent scoped to the current consuming node's
+- Read visible node registry configuration scoped to the current consuming node's
   access policy.
 - Filter visibility at the gateway as set membership against gateway-owned node
   access policy.
@@ -109,7 +101,7 @@ interactive and non-interactive modes.
 `node:list` must not:
 - SSH into nodes.
 - Probe host reachability or health in the base operation.
-- Modify gateway intent, node records, access grants, or WireGuard state.
+- Modify gateway configuration, node records, access grants, or WireGuard state.
 - Mint identity, write peer material, or grant access.
 - Touch downstream family state.
 
@@ -125,7 +117,6 @@ interactive and non-interactive modes.
 | Invalid filter value | `--role` or `--environment` contains an unsupported value, including comma-separated input. | Failure |
 | Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
 | Authorization failed | The caller identity is not authorized to read the node registry. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
 
 Doctor findings are not failures of `node:list`. When `--doctor` is present
 and the secondary doctor probe reports drift on one or more nodes, the
@@ -137,7 +128,7 @@ instead of relying on `--doctor` here.
 
 ## Doctor Relationship
 
-- `node:list` reports intent. `doctor --family=node` verifies reality.
+- `node:list` reports configuration. `doctor --family=node` verifies reality.
 - `--doctor` is an explicit secondary operation that runs node doctor checks and
   includes their summaries. It must remain explicit because it can be slow.
 - `--doctor` is a node-family-only convenience flag, not a shared list-command
@@ -146,7 +137,7 @@ instead of relying on `--doctor` here.
 - Node doctor checks may report drift, missing peers, or readiness issues. These
   are summarized in the output but do not cause the list command to fail.
 - See [`node-doctor.md`](../../node-doctor.md) for the authoritative node-family
-  probe, drift, fix, and adopt contract.
+  probe, drift, restore, and adopt contract.
 
 ## Activity Logging
 
@@ -167,7 +158,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, environment filtering, combined filters, `--doctor` secondary operation, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no intent mutation). |
+| `tests/Feature/Commands/Nodes/NodeListCommandTest.php` | Command contract: listing all visible nodes, role filtering, environment filtering, combined filters, `--doctor` secondary operation, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee (no SSH, no configuration mutation). |
 | `tests/Feature/Commands/Nodes/NodeListJsonRendererTest.php` | JSON envelope shape, success payload with node array, `--doctor` meta attachment, filter error JSON shape, and enum values. |
 | `tests/Feature/Commands/Nodes/NodeListHumanRendererTest.php` | Human renderer selection, table grouping by role, success prose, filter error prose, and `--doctor` summary prose. |
 

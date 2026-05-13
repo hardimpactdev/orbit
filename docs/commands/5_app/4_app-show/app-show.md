@@ -6,7 +6,7 @@ Show one app's gateway registry details.
 
 Use `app:show` when you need an app's gateway-owned registry record: owning
 node, repository, paths, PHP version, agent IDE configuration, and the durable
-intent it owns in related families (`workspace`, `process`, and app-owned
+configuration it owns in related families (`workspace`, `process`, and app-owned
 `proxy`). Live runtime drift, readiness, and repair belong to
 [`doctor --family=app`](../app-doctor.md).
 
@@ -47,17 +47,17 @@ already addresses an app uniquely; `app:show` does not accept a `--node` flag.
 
 1. Resolves the target app from input, current directory context, or
    interactive prompt.
-2. Reads the app record from gateway-owned app intent: name, owning node,
+2. Reads the app record from gateway-owned app configuration: name, owning node,
    repository, paths, PHP version, agent IDE configuration.
 3. Validates that the current caller is authorized to inspect the target app
    through gateway-owned access policy.
-4. Aggregates the durable gateway intent the app owns: workspaces, processes,
+4. Aggregates the durable gateway configuration the app owns: workspaces, processes,
    and app-owned proxy routes.
 5. Returns the registry-backed app detail view.
 
 `app:show` does not:
 
-- Mutate gateway intent or node state.
+- Mutate gateway configuration or node state.
 - Fix drift or adopt node reality (use [`doctor --family=app`](../app-doctor.md)).
 - Create new release or deployment artifacts.
 - SSH into the owning app node directly from the caller.

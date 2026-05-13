@@ -4,8 +4,7 @@
 
 **Purpose:** Show or follow logs for a process runtime context.
 
-**Description:** Reads process logs from the owning node runtime backend through
-the gateway for a resolved app or workspace context.
+**Description:** Reads process logs from the owning node process manager through the gateway for a resolved app or workspace context.
 
 **Technical contract:** [`technical/1_process-logs.md`](technical/1_process-logs.md)
 
@@ -20,10 +19,9 @@ orbit process:logs queue --app=docs --lines=200 --json
 ## Behavior
 
 - Resolves the process and app/workspace runtime context.
-- Streams or returns runtime backend logs through the gateway.
-- Does not mutate process intent.
-- Uses JSON output only for non-follow mode. `--json --follow` is rejected
-  before opening the log stream with `error.code=validation_failed`.
+- Streams or returns Supervisor logs through the gateway.
+- Does not mutate process configuration.
+- Uses JSON output only for non-follow mode. `--json --follow` is rejected before opening the log stream with `error.code=validation_failed`.
 
 ## Related
 

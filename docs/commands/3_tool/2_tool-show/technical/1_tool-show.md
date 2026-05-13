@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect tool state for the resolved node or app.
 
 ## Signature
@@ -24,12 +23,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Tool name from Orbit's tool catalog.` |
-| `node` | `--node` | `Required when no app or local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible node slug.` |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `live` | `--live` | `Optional.` | `Never.` | `false` | `Request gateway live inspection.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
 All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible tool state when authorized; `tool:show` never grants write permission or local state authority.
 
@@ -39,12 +38,12 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 ## Behavior Contract
 
-### Tool Intent And Enactment Rules
+### Tool Configuration And Apply Rules
 
 - Resolves the target node.
-- Reads the selected tool row from gateway intent.
+- Reads the selected tool row from gateway configuration.
 - Requests live state only when --live is present.
-- Does not mutate gateway intent or node artifacts.
+- Does not mutate gateway configuration or node artifacts.
 
 ### Scope Boundaries
 
@@ -64,11 +63,11 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 | Authorization failed | The caller is not authorized to inspect the selected tool target. | `error.code=authorization_failed` |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Remote action failed | Gateway intent was readable, but node inspection or enactment failed. | `error.code=tool.remote_action_failed` |
+| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
 
-`tool-show` reads gateway tool intent and may request live node inspection only when `--live` is present. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-show` reads gateway tool configuration and may request live node inspection only when `--live` is present. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Activity Logging
 

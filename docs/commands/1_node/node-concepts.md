@@ -17,9 +17,10 @@ override the [Architecture](../../ARCHITECTURE.md).
 - **App node:** Workload host for apps, workspaces, and managed runtime
   artifacts. It may run the Orbit CLI as a stateless gateway client, but it is
   not a control plane.
-- **Local caller role:** The local `general.local_node_role` setting. Unset or
-  `null` resolves to `control`; gateway and app nodes must write explicit
-  values after identity and readiness are established.
+- **Caller role:** The role recorded on the gateway-owned node record that
+  authenticates a CLI request (`control`, `gateway`, or `app`). The gateway
+  derives the caller role from the presented WireGuard peer identity and uses
+  it for authorization. The CLI does not store or check this role locally.
 
 ## Role Platform Support
 
@@ -29,7 +30,7 @@ override the [Architecture](../../ARCHITECTURE.md).
 | `gateway` | Ubuntu |
 | `app` | Ubuntu |
 
-Commands that provision a host or enact node-side artifacts must verify that the
+Commands that provision a host or apply node-side artifacts must verify that the
 observed host platform is supported for the node's role before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
@@ -54,7 +55,7 @@ platform checks; platform drift belongs to `doctor --family=node`.
 - **CLI-to-gateway edge:** HTTPS over WireGuard from control nodes, app-node CLI
   clients, or the gateway-local CLI to the gateway API.
 - **Gateway-to-app-node edge:** SSH through `RemoteShell` for node-side
-  enactment.
+  applying.
 - **App-node event ingestion:** Narrow app-node-to-gateway callbacks for
   purpose-built lifecycle events, not app-node control-plane authority.
 - **Node reality:** Observed role, platform, WireGuard, SSH, reachability, and
@@ -71,22 +72,22 @@ do not grant SSH, and do not replace WireGuard authentication.
 
 ## Development DNS Mapping
 
-- **Gateway-owned development DNS mapping:** Node-family gateway intent and
-  gateway-local resolver reality that maps `*.{nodes.tld}` for an active
+- **Gateway-owned development DNS mapping:** Node-family gateway configuration
+  and gateway-local resolver reality that maps `*.{nodes.tld}` for an active
   development app node to that node's WireGuard address.
-- **Development DNS intent model:** Derived from the active app-node row. A
-  mapping exists only when the node row is an active development app node,
+- **Development DNS configuration model:** Derived from the active app-node row.
+  A mapping exists only when the node row is an active development app node,
   `nodes.tld` is non-empty, and the node row has a non-empty WireGuard address.
   The canonical domain is `*.{nodes.tld}` and the canonical target is the
   node's WireGuard address.
-- **Development DNS enactor:** Internal node-family gateway service that
+- **Development DNS applier:** Internal node-family gateway service that
   converges or removes gateway-local development DNS resolver artifacts from
-  the derived intent model. It is used by app-node provisioning, app-node
-  adoption/materialization, node removal, and `doctor --fix --family=node --restore`.
+  the derived configuration model. It is used by app-node provisioning, app-node
+  adoption/materialization, node removal, and `doctor --family=node --restore`.
 - **Development DNS probe:** Internal node-family gateway service that reads
-  gateway-local resolver reality for derived development DNS intent and reports
-  node-family drift when the mapping is absent, points at another target, or is
-  publicly exposed.
+  gateway-local resolver reality for derived development DNS configuration and
+  reports node-family drift when the mapping is absent, points at another
+  target, or is publicly exposed.
 
 Development DNS mappings are not a public `dns:*` command surface and do not
 create a `dns` state family. The `dns:*` commands own caller-local resolver
@@ -103,4 +104,4 @@ node lifecycle checks.
 The node family does not own app registration, workspace registration, process
 or schedule definitions, proxy route lifecycle, tool registration, or editable
 firewall policy beyond role bootstrap requirements. Those domains may depend on
-nodes, but their intent belongs to their own command families.
+nodes, but their configuration belongs to their own command families.

@@ -8,7 +8,7 @@ Repair local trust for the configured Orbit gateway root CA.
 gateway's root CA public certificate, installs it into the caller machine's OS
 trust store, and records local trust metadata for later verification. It does
 not onboard a control node, verify node identity, or mutate gateway fleet
-intent.
+configuration.
 
 The trusted root is the Orbit network trust anchor. The gateway owns the root
 CA and issues Orbit-managed leaf certificates for app, workspace, proxy,
@@ -47,10 +47,10 @@ orbit gateway:trust --json
    and trust timestamp.
 
 The command is idempotent. If the same gateway CA is already trusted locally, it
-reports success without changing gateway intent.
+reports success without changing gateway configuration.
 
 `gateway:trust` does not create or distribute route certificates. App,
-workspace, proxy, gateway, and tool route enactment own the gateway-issued
+workspace, proxy, gateway, and tool route applying owns the gateway-issued
 leaf certificates and the serving-node TLS files they require.
 
 Use [`gateway:add`](../1_gateway-add/gateway-add.md) for first-time

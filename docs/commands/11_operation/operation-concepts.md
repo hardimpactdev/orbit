@@ -1,95 +1,43 @@
 # Operation Concepts
 
-This document defines operation-command-domain vocabulary and invariants. It
-supports the operation command contracts; it does not override the
-[Architecture](../../ARCHITECTURE.md).
+This document defines operation-command-domain vocabulary and invariants. It supports the operation command contracts; it does not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Scope
 
-- **Operation command domain:** The cross-cutting command domain for updating
-  Orbit installations, orchestrating doctor convergence, and running request
-  profiling diagnostics. It does not create a separate state family.
-  Operational history reads live in the activity family.
-- **Cross-family workflow:** Operation command path that reads, writes,
-  verifies, fixes, or adopts state owned by one or more product families while
-  preserving those families as the owners of intent, reality, issue codes, and
-  repair or adoption behavior.
-- **Local operation command:** Operation command whose side effects are limited
-  to the caller machine unless the command explicitly documents a
-  gateway-mediated fleet path.
-- **Fleet-changing operation command:** Operation command that changes Orbit
-  installations beyond the caller machine. It runs through gateway-owned
-  authority, node access policy, and documented gateway-to-node execution
-  paths.
+- **Operation command domain:** The cross-cutting command domain for updating Orbit installations, orchestrating doctor convergence, and running request profiling diagnostics. It does not create a separate state family. Operational history reads live in the activity family.
+- **Cross-family workflow:** Operation command path that reads, writes, verifies, restores, or adopts state owned by one or more product families while preserving those families as the owners of configuration, reality, issue codes, and repair or adoption behavior.
+- **Local operation command:** Operation command whose side effects are limited to the caller machine unless the command explicitly documents a gateway-mediated fleet path.
+- **Fleet-changing operation command:** Operation command that changes Orbit installations beyond the caller machine. It runs through gateway-owned authority, node access policy, and documented gateway-to-node execution paths.
 
 ## Updates
 
-- **Local update:** `update` sequence that changes only the current Orbit
-  checkout: fast-forward source pull, dependency installation, and local Orbit
-  migrations.
-- **Fleet update:** `update:all` sequence that updates the caller-local
-  checkout and selected active non-local managed Orbit installations through
-  gateway-owned authority. Remote execution uses gateway-to-app-node
-  `RemoteShell`; control nodes are never remote update targets.
-- **Update target:** One selected Orbit installation in an update workflow,
-  such as the caller-local checkout, the gateway checkout, or an app-node
-  checkout selected from gateway node intent.
-- **Update step:** Ordered local checkout update action, currently source pull,
-  dependency installation, or migration execution. A target succeeds only when
-  all required update steps succeed.
-- **Target result:** Per-update-target outcome preserved for renderers,
-  including successful targets and failed targets when a fleet update partially
-  fails.
+- **Local update:** `update` sequence that changes only the current Orbit checkout: fast-forward source pull, dependency installation, and local Orbit migrations.
+- **Fleet update:** `update:all` sequence that updates the caller-local checkout and selected active non-local managed Orbit installations through gateway-owned authority. Remote execution uses gateway-to-app-node `RemoteShell`; control nodes are never remote update targets.
+- **Update target:** One selected Orbit installation in an update workflow, such as the caller-local checkout, the gateway checkout, or an app-node checkout selected from gateway node configuration.
+- **Update step:** Ordered local checkout update action, currently source pull, dependency installation, or migration execution. A target succeeds only when all required update steps succeed.
+- **Target result:** Per-update-target outcome preserved for renderers, including successful targets and failed targets when a fleet update partially fails.
 
 ## Doctor
 
-- **Doctor orchestration:** Global `doctor` command responsibility for scope
-  resolution, authorization, mode selection, family dispatch, output envelopes,
-  generic issue kinds, and generic failure behavior.
-- **Doctor scope:** Resolved and authorized filter set for a doctor run,
-  including selected families, node or self scope, app scope, and workspace
-  scope.
-- **Doctor mode:** One of `verify`, `fix`, or `adopt`. Verify compares only;
-  fix reapplies family-declared safe gateway intent to node reality; adopt
-  records family-declared compatible node reality into gateway intent.
-- **Family doctor contract:** Family-owned contract for probe layers, concrete
-  issue codes, diagnostic details, fix action maps, adopt action maps, and
-  family-specific test mapping.
-- **Doctor issue kind:** Generic relationship between gateway intent and
-  observed reality: `missing`, `extra`, `divergent`, or `unverifiable`.
-  Families own the concrete issue codes that produce these kinds.
-- **Doctor action:** Recorded fix or adopt attempt owned by a family doctor
-  contract. Actions may complete, skip, fail, or conflict, and remaining drift
-  must stay visible after action execution.
+- **Doctor orchestration:** Global `doctor` command responsibility for scope resolution, authorization, mode selection, family dispatch, output envelopes, generic issue kinds, and generic failure behavior.
+- **Doctor scope:** Resolved and authorized filter set for a doctor run, including selected families, node or self scope, app scope, and workspace scope.
+- **Doctor mode:** One of `verify`, `interactive`, `restore`, or `adopt`. Verify (no flag) compares only. Interactive (`--fix`) walks each finding and prompts the operator to restore, adopt, skip, or view details. Restore (`--restore`) bulk-applies family-declared safe gateway configuration to node reality. Adopt (`--adopt`) bulk-records family-declared compatible node reality into gateway configuration. `--fix`, `--restore`, and `--adopt` are mutually exclusive. The two directions are restore (gateway to node) and adopt (node to gateway); `fix` itself is the interactive driver, not a direction.
+- **Family doctor contract:** Family-owned contract for probe layers, concrete issue codes, diagnostic details, restore action maps, adopt action maps, and family-specific test mapping.
+- **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`. Families own the concrete issue codes that produce these kinds.
+- **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract. Actions may complete, skip, fail, or conflict, and remaining drift must stay visible after action execution.
 
 ## Activity
 
-Activity logging and history reads live in the activity family. See
-[`docs/commands/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).
+Activity logging and history reads live in the activity family. See [`docs/commands/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Profiling
 
-- **Profile target:** Orbit-managed app or workspace route resolved from a
-  target argument, app option, URL, hostname, absolute path, or local
-  app/workspace context. Arbitrary internet URLs are outside the profile
-  command contract.
-- **Profile request origin:** Location that performs the timed HTTP request,
-  currently the caller or the gateway depending on caller role and route
-  reachability.
-- **Baseline profile result:** One timed HTTP `GET` result with network timing,
-  response status, byte count, effective URL, headers, completion state, and
-  request failure diagnostics when applicable.
-- **Toolbar enrichment:** Optional profile data decoded from an app response's
-  Toolbar summary header. It augments the baseline profile result without
-  changing baseline timing measurements.
-- **Toolbar auth mode:** Explicit profile authentication mode carried by
-  request headers: guest, first user, or a specific user id.
+- **Profile target:** Orbit-managed app or workspace route resolved from a target argument, app option, URL, hostname, absolute path, or local app/workspace context. Arbitrary internet URLs are outside the profile command contract.
+- **Profile request origin:** Location that performs the timed HTTP request, currently the caller machine or the gateway, selected by the gateway-identified calling peer role and route reachability.
+- **Baseline profile result:** One timed HTTP `GET` result with network timing, response status, byte count, effective URL, headers, completion state, and request failure diagnostics when applicable.
+- **Toolbar enrichment:** Optional profile data decoded from an app response's Toolbar summary header. It augments the baseline profile result without changing baseline timing measurements.
+- **Toolbar auth mode:** Explicit profile authentication mode carried by request headers: guest, first user, or a specific user id.
 
 ## Boundaries
 
-- **Operation-domain boundaries:** Operation commands own cross-family
-  orchestration, update workflows, and request profiling diagnostics. They do
-  not own durable operation intent, invent operation-family drift, replace
-  family doctor contracts, grant node access, create product-family records,
-  or treat update or profile success as proof of state-family convergence.
-  Activity-history reads belong to the activity family.
+- **Operation-domain boundaries:** Operation commands own cross-family orchestration, update workflows, and request profiling diagnostics. They do not own durable operation configuration, invent operation-family drift, replace family doctor contracts, grant node access, create product-family records, or treat update or profile success as proof of state-family convergence. Activity-history reads belong to the activity family.

@@ -7,9 +7,8 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to inspect deployment policy for the selected app.
+- The CLI caller can reach the Orbit gateway.
+- The gateway authorizes the WireGuard peer to inspect deployment policy for the selected app.
 
 ## Signature
 
@@ -26,12 +25,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read deployment policy when authorized for the resolved
-production app; `deploy:step-list` never grants write permission or local state
-authority.
+The gateway authenticates the WireGuard peer and authorizes the request by
+caller role. The CLI does not resolve or assert caller role locally. All
+authenticated caller roles use the same gateway-owned access policy. App-node
+callers may read deployment policy when the gateway authorizes them for the
+resolved production app; `deploy:step-list` never grants write permission.
 
 ## Input Mode Contracts
 
@@ -44,7 +44,7 @@ invocation model.
 ### Deployment Policy Visibility Rules
 
 - Reads deployment step definitions for one production app from gateway app
-  intent.
+  configuration.
 - Returns steps ordered by `order` ascending.
 - Returns an empty list for production apps with no configured deployment
   steps.

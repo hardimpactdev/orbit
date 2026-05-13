@@ -17,10 +17,10 @@ the workspace command contracts and the
   its own DNS label to the parent app's primary hostname. For development apps
   this yields `{workspace}.{app}.{tld}`.
 - **Workspace path:** Absolute path on the owning app node where workspace
-  files live. Derived from gateway intent and enacted over SSH.
-- **Workspace lifecycle status:** Registry intent lifecycle field, currently
-  `expected` or `setup-pending`. It is not setup-run status and not a live
-  readiness result.
+  files live. Derived from gateway configuration and applied over SSH.
+- **Workspace lifecycle status:** Registry configuration lifecycle field,
+  currently `expected` or `setup-pending`. It is not setup-run status and not a
+  live readiness result.
 
 ## PHP Version
 
@@ -49,7 +49,7 @@ the workspace command contracts and the
   `adopted=true`.
 - **Workspace history:** Durable record of workspace setup and teardown step
   runs, read through `workspace:history` and `workspace:log`. It is not
-  workspace-unit intent.
+  workspace-unit configuration.
 
 ## Boundaries
 
@@ -57,6 +57,6 @@ the workspace command contracts and the
   workspace and surfaced as inventory by the `proxy` family.
 - **Workspace-family boundaries:** Workspace commands own workspace identity,
   setup and teardown policy, workspace PHP override, workspace history, and
-  workspace-derived hostname intent. They do not own proxy route convergence,
-  inherited process-unit convergence, app intent, or node-level firewall
-  policy.
+  workspace-derived hostname configuration. They do not own proxy route
+  convergence, inherited process-unit convergence, app configuration, or
+  node-level firewall policy.

@@ -1,13 +1,13 @@
-# Technical Contract: `node:revoke` On A Gateway Node
+# Technical Contract: `node:revoke` Authorized For Gateway Callers
 
 [Back to `node:revoke` technical contract.](1_node-revoke.md)
 
-This page describes caller-role behavior when `orbit node:revoke` is invoked on
-the gateway node.
+This page describes what the gateway authorizes for callers whose
+authenticated node record has role `gateway`, including gateway-local CLI
+execution.
 
 **Prerequisites:**
-- `general.local_node_role` is explicitly set to `gateway`.
-- The gateway can read and write gateway-owned node intent.
+- The gateway can read and write gateway-owned node configuration.
 
 ## Allowed Paths
 
@@ -26,7 +26,7 @@ the gateway node.
 
 1. Resolve `node_revoke.consuming_node`.
 2. Resolve `node_revoke.serving_node`.
-3. Validate both nodes exist in gateway intent.
+3. Validate both nodes exist in gateway configuration.
 4. Apply destructive consent.
 5. Delete the `node_access` record for consuming_node → serving_node.
 6. Return the result.

@@ -37,12 +37,13 @@ missing input and does not resolve `<run>` from the current working directory.
 or from the `latest_setup_run.run_id` field returned by
 [`orbit workspace:show`](../../4_workspace-show/workspace-show.md).
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace:log` behavior is access-policy-driven, not role-driven. All
-authenticated callers with visible workspace access receive the same command
-contract. App-node callers may inspect captured output for runs whose owning
-workspace is visible to them through gateway-owned access policy.
+The CLI forwards `workspace:log` to the gateway, which authenticates the
+caller's WireGuard peer identity and applies authorization. Behavior is
+access-policy-driven on the gateway, not role-driven on the CLI. App-node
+peers may inspect captured output for runs whose owning workspace is visible
+to them through gateway-owned access policy.
 
 ## Input Resolution
 
@@ -63,7 +64,7 @@ workspace is visible to them through gateway-owned access policy.
 1. **Historical audit read.** Read the run record and its captured per-step
    output from the gateway database. The command surfaces stored
    `stdout`/`stderr`/`exit_code` plus per-step and per-run timing data
-   captured during enactment. No live process inspection is performed.
+   captured during application. No live process inspection is performed.
 2. **Run wrapper timing.** Each run carries `started_at`, `finished_at`, and
    `duration_ms` for the whole run, mirroring the per-run timing already
    stored by [`workspace:history`](../../6_workspace-history/workspace-history.md).
@@ -76,12 +77,12 @@ workspace is visible to them through gateway-owned access policy.
    defined in
    [`6_workspace/README.md`](../../README.md#lifecycle-step-environment)
    are **not** captured into per-step metadata. They are derivable from
-   gateway-tracked workspace intent (workspace path, parent app, effective
-   PHP version, derived URL) and from
+   gateway-tracked workspace configuration (workspace path, parent app,
+   effective PHP version, derived URL) and from
    [`workspace:history`](../../6_workspace-history/workspace-history.md)
    lifecycle actions such as `php_update`. Snapshotting them on every step
    row would create a redundant projection of state that already lives in
-   workspace intent.
+   workspace configuration.
 5. **Truncation policy.** If a step's `stdout` or `stderr` exceeds the
    gateway storage cap (1 MB per stream per run), the captured stream is
    truncated and ends with the literal `[TRUNCATED]` marker. Per-step
@@ -92,11 +93,11 @@ workspace is visible to them through gateway-owned access policy.
 
 `workspace:log` must not:
 
-- Connect to running processes, tail runtime backend logs, or otherwise
+- Connect to running processes, tail process manager logs, or otherwise
   stream live output. Live process logs belong to
   [`orbit process:logs`](../../../7_process/8_process-logs/process-logs.md).
 - SSH into the owning app node. The command is gateway-only.
-- Modify gateway intent or node artifacts.
+- Modify gateway configuration or node artifacts.
 - Rewrite or repair historical run rows or captured output.
 
 ### Status Taxonomy
@@ -162,7 +163,7 @@ plus zero-length stdout/stderr is a valid result, not a failure).
 - [`doctor --family=workspace`](../../workspace-doctor.md) verifies
   **current reality** and owns repair behavior. `doctor` does not rewrite
   or repair captured `workspace:log` history; it converges live workspace
-  reality against current intent.
+  reality against current configuration.
 
 ## Activity Logging
 

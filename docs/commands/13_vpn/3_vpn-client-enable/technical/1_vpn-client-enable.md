@@ -7,8 +7,6 @@
 **Effects:** `write`, `gateway-admin`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
 - The caller is a gateway node, or an authorized control node with SSH access
   to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
@@ -31,12 +29,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-Gateway callers enable the backend client locally. Control callers open the
-gateway-local execution path over SSH through Orbit/WireGuard, then enable the
-client on the gateway. App-node and unknown callers are denied before backend
-authentication or side effects.
+Authorization is enforced by the gateway. Gateway callers enable the backend
+client locally. Control callers open the gateway-local execution path over SSH
+through Orbit/WireGuard, then enable the client on the gateway. App-node and
+unknown callers are denied by the gateway before backend authentication or side
+effects.
 
 ## Input Mode Contracts
 
@@ -86,5 +85,5 @@ WireGuard identity and gateway-managed node peer drift.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, existing disabled client enablement, already-enabled success, missing client failure, active node peer protection, and no node intent writes. |
+| `tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php` | Command contract: caller-role denial, control-caller gateway-local SSH execution, gateway execution, TOTP handling, existing disabled client enablement, already-enabled success, missing client failure, active node peer protection, and no node configuration writes. |
 | `tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |

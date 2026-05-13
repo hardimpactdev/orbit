@@ -6,7 +6,7 @@ List caller-local Orbit DNS resolver overrides.
 
 `dns:list` reads Orbit-managed local resolver configuration for development
 TLDs on the calling control node. It is a troubleshooting command for local
-hostname resolution and does not query or mutate gateway intent.
+hostname resolution and does not query or mutate gateway configuration.
 
 ## Usage
 
@@ -29,9 +29,8 @@ orbit dns:list --json
 
 `dns:list`:
 
-1. Resolves the local caller role.
-2. Reads Orbit-managed local resolver overrides on the caller machine.
-3. Reports configured development TLD targets and resolver backend status when
+1. Reads Orbit-managed local resolver overrides on the caller machine.
+2. Reports configured development TLD targets and resolver backend status when
    available.
 
 The command is read-only. It does not create, update, or remove local resolver

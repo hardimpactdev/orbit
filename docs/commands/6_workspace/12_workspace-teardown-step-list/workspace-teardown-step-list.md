@@ -37,7 +37,7 @@ orbit workspace-teardown-step:list --json
 for the resolved app:
 
 1. Resolves the parent app from `--app` or the shared cwd-inference chain.
-2. Validates that the resolved app exists in gateway intent.
+2. Validates that the resolved app exists in gateway configuration.
 3. Reads the ordered teardown-step policy for `(app, phase=teardown)` from
    the gateway database.
 4. Returns the steps in execution order with their durable IDs, commands,
@@ -46,7 +46,7 @@ for the resolved app:
 `workspace-teardown-step:list` does not:
 - SSH into nodes.
 - Probe step artifact health (use [`doctor --family=workspace`](../workspace-doctor.md)).
-- Mutate gateway intent or execute teardown steps.
+- Mutate gateway configuration or execute teardown steps.
 
 ## Output
 
@@ -71,7 +71,7 @@ for the exact payload shape.
 
 - The CLI caller can reach the Orbit gateway.
 - The caller is authorized to read teardown-step policy for the resolved app.
-- The resolved app exists in gateway intent.
+- The resolved app exists in gateway configuration.
 
 ## Related Commands
 

@@ -7,16 +7,16 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
-- The caller role is not `app`.
-- Gateway callers can read and write gateway-owned node intent.
+- The gateway authenticates the CLI and authorizes `node:grant` only when the
+  caller's gateway-known role is `control` or `gateway`. App-role callers are
+  rejected.
+- Gateway callers can read and write gateway-owned node configuration.
 - Control callers have configured gateway access as defined in
   [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md).
 
 **Post-input path eligibility:**
 - Both `consuming_node` and `serving_node` resolve to existing active node
-  records in gateway intent. Records with `node.status = provisioning` are
+  records in gateway configuration. Records with `node.status = provisioning` are
   rejected as `node.not_found`.
 - The requested grant does not violate node access policy.
 - Self-grant (`consuming_node == serving_node`) is treated as a policy
@@ -35,63 +35,50 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `consuming_node` | `[consuming_node]` | Always. | Never. | None. | Must match an existing active node record in gateway intent. |
-| `serving_node` | `[serving_node]` | Always. | Never. | None. | Must match an existing active node record in gateway intent. |
+| `consuming_node` | `[consuming_node]` | Always. | Never. | None. | Must match an existing active node record in gateway configuration. |
+| `serving_node` | `[serving_node]` | Always. | Never. | None. | Must match an existing active node record in gateway configuration. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:grant` resolves the caller role before command inputs are read. App-node
-callers are denied before prompts, forwarding, local writes, SSH, WireGuard
-changes, or other side effects. Configured control callers resolve input locally
-and forward the grant request to the gateway over HTTPS through WireGuard.
+The CLI sends a typed grant request to the gateway. The gateway authenticates
+the WireGuard peer identity, derives the caller's gateway-known role, and
+applies the rules below.
 
-| Caller role | Behavior |
+| Caller role | Gateway authorizes |
 | --- | --- |
-| `control` | With configured gateway access, forward to the gateway over HTTPS through WireGuard. Without configured gateway access, fail before side effects. See [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md). |
-| `gateway` | Executes locally on the gateway. See [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md). |
-| `app` | Not allowed. Fail before prompts or side effects with `This command may only be run from a control or gateway node.` See [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md). |
+| `control` | The grant write when the caller also has access to the gateway node. See [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md). |
+| `gateway` | The grant write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md). |
+| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md). |
 
-Role-specific behavior is defined in these companion contracts:
+Companion contracts describe behavior in detail:
 
 - [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md):
-  control caller gateway-forwarding behavior.
+  control-caller gateway-forwarding behavior.
 - [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md):
   gateway-local execution behavior.
-- [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md): app caller
-  behavior.
+- [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md): app-caller
+  rejection.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If `general.local_node_role` is `app`, apply
-     [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md) and fail
-     before reading command arguments, rendering prompts, forwarding, local
-     writes, SSH, WireGuard changes, or other side effects.
-   - If `general.local_node_role` is unreadable or unsupported, fail before
-     prompts or side effects.
-2. Resolve execution context.
-   - If the caller role is `gateway`, execute locally on the gateway.
-   - If the caller role is `control`, require configured gateway access and
-     prepare a typed gateway request.
-3. Resolve `node_grant.consuming_node` from `[consuming_node]`.
-4. Validate `node_grant.consuming_node` immediately: must match an existing active
-   node record in gateway intent. Records with `node.status = provisioning` are
+1. Resolve `node_grant.consuming_node` from `[consuming_node]`.
+2. Validate `node_grant.consuming_node` immediately: must match an existing active
+   node record in gateway configuration. Records with `node.status = provisioning` are
    rejected as `node.not_found`.
-5. Resolve `node_grant.serving_node` from `[serving_node]`.
-6. Validate `node_grant.serving_node` immediately: must match an existing active
-   node record in gateway intent. Records with `node.status = provisioning` are
+3. Resolve `node_grant.serving_node` from `[serving_node]`.
+4. Validate `node_grant.serving_node` immediately: must match an existing active
+   node record in gateway configuration. Records with `node.status = provisioning` are
    rejected as `node.not_found`.
-7. Evaluate node access policy.
+5. Evaluate node access policy.
    - If `consuming_node == serving_node`, fail before side effects with a policy
      violation carrying `error.meta.reason = self_grant`.
    - If the requested relationship violates any other node access policy rule,
      fail before side effects with `error.meta.reason = unspecified` until that
      rule is named in the JSON renderer's `error.meta.reason` enum.
-6. If running from a control node, forward the typed request to the gateway over
-   HTTPS through WireGuard. The gateway authenticates the control node identity
-   and authorizes the request through gateway-owned node access policy before
-   gateway-owned side effects begin.
+6. Send the typed request to the gateway over HTTPS through WireGuard. The
+   gateway authenticates the caller's WireGuard identity and authorizes the
+   request through gateway-owned access policy before any side effects.
 
 ## Behavior Contract
 
@@ -144,13 +131,12 @@ Role-specific behavior is defined in these companion contracts:
 | Caller role not allowed | The caller role is `app`. | Failure |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
 | Authorization failed | A forwarded control caller is not authorized to operate on the gateway node. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
 
 ## Doctor Relationship
 
 - Invalid grants where a referenced node no longer exists are reported by
   `doctor --family=node`. See [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --fix --family=node --restore` may clean up grants that reference removed nodes.
+- `doctor --family=node --restore` may clean up grants that reference removed nodes.
 - `node:grant` does not repair drift or adopt node reality; those are doctor
   responsibilities.
 

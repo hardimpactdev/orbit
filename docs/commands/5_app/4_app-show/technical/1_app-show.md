@@ -8,11 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract.
-- The target app is visible to the current node identity through gateway-owned
-  access policy.
+- The target app is visible to the authenticated WireGuard peer through
+  gateway-owned access policy.
 
 **Post-input path eligibility:**
 - The resolved app must match an existing app record visible to the caller.
@@ -30,33 +27,31 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | When no default or local context can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or app hostname visible to the caller. Name match wins when a string matches both an app name and a different app's hostname. |
+| `app` | `[app]` | When no default can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or app hostname visible to the caller. Name match wins when a string matches both an app name and a different app's hostname. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
 `app:show` does not accept a `--node` flag. App slugs are globally unique in
 the gateway app registry, so the positional already addresses an app uniquely.
 Supplying an unknown option fails with `error.code=validation_failed`.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`app:show` behavior is access-policy-driven, not role-driven. App-node callers
-may inspect apps they are authorized to see through gateway-owned access
-policy. No role-specific companion contracts are needed.
+`app:show` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call and applies access policy.
 
-| Caller role | Behavior |
+Command behavior is access-policy-driven, not role-driven. App-node peers may
+inspect apps they are authorized to see through gateway-owned access policy.
+
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Forwards the request to the gateway over HTTPS through WireGuard when configured. |
-| `gateway` | Executes locally on the gateway. |
-| `app` | Forwards the request to the gateway over HTTPS through WireGuard. May inspect apps visible through access policy. |
-| `unknown` | Invalid local context. Used only when `general.local_node_role` contains an unsupported value or cannot be read. Fail before prompts or side effects with a local context error. Missing `general.local_node_role` does not produce `unknown`; it defaults to `control`. |
+| `control` | Allowed. May inspect apps visible through access policy. |
+| `gateway` | Allowed. Same gateway-side behavior as a control caller. |
+| `app` | Allowed. May inspect apps visible through access policy. |
 
 ## Input Resolution
 
-1. **Resolve caller role** from the local node role setting.
-   - If `general.local_node_role` is unset or `null`, resolve as `control`.
-   - If unsupported or unreadable, resolve as `unknown` and fail before prompts
-     or side effects with a local context error.
-2. **Resolve `app_show.app`** from `[app]`, current working directory, or input
+1. **Resolve `app_show.app`** from `[app]`, current working directory, or input
    mode.
    - If `[app]` is provided:
      - Check if it matches an app **name (slug)** visible to the caller.
@@ -71,27 +66,27 @@ policy. No role-specific companion contracts are needed.
        [`5.1_app-show_input-mode_interactive.md`](5.1_app-show_input-mode_interactive.md).
      - Non-interactive mode fails if CWD resolution fails. See
        [`5.2_app-show_input-mode_non-interactive.md`](5.2_app-show_input-mode_non-interactive.md).
-3. **Validate result.**
+2. **Validate result.**
    - Must resolve to exactly one visible app record.
    - The caller must be authorized to inspect the target app through
      gateway-owned access policy.
-4. **Select renderer** and begin the read flow.
+3. **Select renderer** and begin the read flow.
 
 ## Behavior Contract
 
 ### App Registry Read Rules
 
-1. **Lookup.** Read the app record from gateway-owned app intent by the
+1. **Lookup.** Read the app record from gateway-owned app configuration by the
    resolved name. If no visible app record matches, fail before side effects.
 2. **Authorization.** Verify the caller is authorized to inspect the target
    app through gateway-owned access policy. If not authorized, fail before
    side effects.
-3. **Result assembly.** Return the app record and the durable gateway intent
+3. **Result assembly.** Return the app record and the durable gateway configuration
    the app owns:
    - app registry: name, environment, owning app node, repository, app path,
      document root, PHP version, primary domain;
    - agent IDE configuration: effective adapter and resolution source;
-   - related intent owned by the app: workspaces, processes, and app-owned
+   - related configuration owned by the app: workspaces, processes, and app-owned
      proxy routes (registry-shaped, not live status).
 
    Default `app:show` is a registry read, not a live readiness command.
@@ -99,7 +94,7 @@ policy. No role-specific companion contracts are needed.
 ### Scope Boundaries
 
 `app:show` must not:
-- Mutate gateway intent or node state.
+- Mutate gateway configuration or node state.
 - Fix drift or adopt node reality.
 - SSH into the owning app node directly from the caller.
 - Run live PHP-FPM, document-root, route, or process probes.
@@ -120,8 +115,7 @@ Output renderer behavior is split out of the canonical command contract:
 | --- | --- | --- |
 | App not found | No visible app record matches the resolved name or hostname. | Failure |
 | Not authorized | The caller is not allowed to inspect the target app. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
-| Gateway unavailable | A control or app caller has no configured gateway or cannot reach the gateway API. | Failure |
+| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
 
 `app:show` exits zero whenever the registry read succeeds. Runtime drift and
 unverifiable live checks are not part of this command's default read path.
@@ -157,7 +151,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppShowCommandTest.php` | Command contract: input resolution (name vs hostname tiebreak), CWD-default fallback chain, caller-role resolution, app lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `tests/Feature/Commands/Apps/AppShowCommandTest.php` | Command contract: input resolution (name vs hostname tiebreak), CWD-default fallback chain, app lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
 
 Input-mode-specific test mapping lives in:
 

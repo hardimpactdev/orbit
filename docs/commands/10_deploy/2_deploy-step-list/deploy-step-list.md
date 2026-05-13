@@ -27,7 +27,7 @@ orbit deploy:step-list docs --json
 
 ## What Happens
 
-`deploy:step-list` reads deployment step definitions from gateway app intent. It
+`deploy:step-list` reads deployment step definitions from gateway app configuration. It
 does not inspect node state, execute steps, or read deployment run history.
 
 ## Output

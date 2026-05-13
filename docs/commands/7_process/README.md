@@ -1,106 +1,46 @@
 # Process Commands
 
-Process commands manage app-owned runtime intent. A process definition belongs
-to one app, is stored on the gateway, and is inherited by every workspace for
-that app.
+Process commands manage app-owned runtime configuration. A process definition belongs to one app, is stored on the gateway, and is inherited by every workspace for that app.
 
-The gateway is the source of truth for process intent. When node-side work is
-required, the gateway renders and enacts derived runtime units on the owning app
-node.
+The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the owning app node.
 
 ## Domain Rules
 
-- The gateway owns process intent.
-- Process names are identity slugs: lowercase letters, digits, and hyphens only;
-  they cannot start or end with a hyphen and are limited to 64 characters.
-- Runtime units are the process-family product noun: app-owned runtime units
-  derived from app, optional workspace, and process intent. They are not gateway
-  state rows.
-- Each process definition renders one runtime unit for the main app
-  instance and one runtime unit for each workspace of that app. Each
-  rendered runtime unit is a separate Supervisor program with its own
-  program name, working directory, environment, and log paths. The
-  process definition supplies the shared fields (command, restart policy,
-  crash notification policy); the rendering context (main vs. workspace,
-  resolved app or workspace path and URL) supplies the per-instance
-  fields.
-- Process definitions have a stable app-local order. `process:add` appends new
-  definitions after existing definitions. Read and bulk lifecycle commands use
-  that order.
-- Runtime unit names use
-  `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks
-  Orbit ownership; underscores are reserved as backend segment delimiters and
-  are not allowed in identity slugs. The rendered Supervisor program uses the
-  same name.
-- Restart policy is process intent. Each derived main-app or workspace runtime
-  unit uses the process definition's `never`, `on_failure`, or `always` policy.
-  Manual `process:restart` actions do not change that policy.
+- The gateway owns process configuration.
+- Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters.
+- Runtime units are the process-family product noun: app-owned runtime units derived from app, optional workspace, and process configuration. They are not gateway state rows.
+- Each process definition renders one runtime unit for the main app instance and one runtime unit for each workspace of that app. Each rendered runtime unit is a separate Supervisor program with its own program name, working directory, environment, and log paths. The process definition supplies the shared fields (command, restart policy, crash notification policy); the rendering context (main vs. workspace, resolved app or workspace path and URL) supplies the per-instance fields.
+- Process definitions have a stable app-local order. `process:add` appends new definitions after existing definitions. Read and bulk lifecycle commands use that order.
+- Runtime unit names use `orbit_<app>_<workspace|main>_<process>`. The `orbit_` prefix marks Orbit ownership; underscores are reserved as backend segment delimiters and are not allowed in identity slugs. The rendered Supervisor program uses the same name.
+- Restart policy is process configuration. Each derived main-app or workspace runtime unit uses the process definition's `never`, `on_failure`, or `always` policy. Manual `process:restart` actions do not change that policy.
 - Process definitions are edited at the app level, not per workspace.
-- Process definitions may opt in to crash notification. When enabled, a
-  `crashed` process event resolves the effective agent IDE for the app or
-  workspace and notifies the active session when one is available. Delivery is
-  best-effort and must not prevent the event from being recorded.
-- Crash events come from a narrow internal app-node-to-gateway intake path
-  emitted by Orbit-managed runtime hooks for process definitions whose
-  crash-notification policy requires crash reporting. The intake accepts only
-  authenticated active app-node identities, only `crashed` events, and is
-  idempotent by event id. That intake path is not a CLI command contract.
-- Process lifecycle events are durable history, not process-unit intent. Orbit
-  records `started`, `stopped`, and `crashed` events so SSE consumers, CLI
-  streams, and automation can react without storing runtime units as state rows.
-  `started` and `stopped` events are recorded by successful gateway runtime
-  lifecycle actions; `crashed` events are recorded when an app-node runtime hook
-  reports an exit.
-- Default process read commands report gateway intent plus latest durable
-  process events. They do not synchronously SSH to app nodes or run live
-  runtime backend probes. Live runtime verification belongs to
-  [`doctor --family=process`](process-doctor.md); live event delivery belongs
-  to the internal event stream.
-- Runtime lifecycle commands start, stop, restart, and inspect derived units.
-  When `[name]` is omitted, `process:start`, `process:stop`, and
-  `process:restart` operate on all process definitions for the resolved app or
-  workspace context in process order.
-- Logs come from the runtime backend's stdout/stderr capture for the
-  rendered Supervisor program.
-- Create commands may use positional arguments for required identity or payload
-  fields. Edit commands use named options for editable fields so omitted fields
-  can mean "preserve the current value." This is why `process:add` accepts the
-  required `[command]` positionally, while `process:edit` uses
-  `--command=<command>` as one optional edit field among several.
+- Process definitions may opt in to crash notification. When enabled, a `crashed` process event resolves the effective agent IDE for the app or workspace and notifies the active session when one is available. Delivery is best-effort and must not prevent the event from being recorded.
+- Crash events come from a narrow internal app-node-to-gateway intake path emitted by Orbit-managed runtime hooks for process definitions whose crash-notification policy requires crash reporting. The intake accepts only authenticated active app-node identities, only `crashed` events, and is idempotent by event id. That intake path is not a CLI command contract.
+- Process lifecycle events are durable history, not process-unit configuration. Orbit records `started`, `stopped`, and `crashed` events so SSE consumers, CLI streams, and automation can react without storing runtime units as state rows. `started` and `stopped` events are recorded by successful gateway runtime lifecycle actions; `crashed` events are recorded when an app-node runtime hook reports an exit.
+- Default process read commands report gateway configuration plus latest durable process events. They do not synchronously SSH to app nodes or run live process manager probes. Live runtime verification belongs to [`doctor --family=process`](process-doctor.md); live event delivery belongs to the internal event stream.
+- Runtime lifecycle commands start, stop, restart, and inspect derived units. When `[name]` is omitted, `process:start`, `process:stop`, and `process:restart` operate on all process definitions for the resolved app or workspace context in process order.
+- Logs come from Supervisor's stdout/stderr capture for the rendered Supervisor program.
+- Create commands may use positional arguments for required identity or payload fields. Edit commands use named options for editable fields so omitted fields can mean "preserve the current value." This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
 
-Implementation-shape details for Supervisor, runtime backend rendering, and the
-Orbit Scheduler live in
-[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler).
+Implementation-shape details for Supervisor and the Orbit Scheduler live in [BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager) and [BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler).
 
-## Process Caller Role Rule
+## Authorization By Caller Role
 
-Process commands use gateway-owned access policy for visibility,
-authorization, and runtime operations. Caller role is resolved before prompts
-or command side effects.
+Process commands describe gateway-side authorization, not local CLI behavior. The gateway identifies the caller from the authenticated WireGuard peer and applies the rules below; the CLI does not detect or branch on the caller's role.
 
-- Control and gateway callers may run process read, runtime-lifecycle, and
-  intent-mutation commands when authorized.
-- App-node callers may run `process:list`, `process:logs`, `process:start`,
-  `process:stop`, and `process:restart` when authorized for the resolved app or
-  workspace context.
-- App-node callers may not run app-owned process intent mutation commands:
-  `process:add`, `process:edit`, or `process:remove`.
-- Unknown caller roles are denied before prompts or side effects.
-- Local app-node context may resolve app or workspace defaults, but it is not
-  authorization.
-- Allowed app-node process commands still call the gateway typed API. The
-  app-node CLI never writes process intent, reads runtime backend logs
-  directly, or operates the runtime backend directly.
+- `control` and `gateway` callers may run process read, runtime-lifecycle, and configuration-mutation commands when authorized.
+- `app` callers may run `process:list`, `process:logs`, `process:start`, `process:stop`, and `process:restart` when authorized for the resolved app or workspace context.
+- `app` callers may not run app-owned process configuration mutation commands: `process:add`, `process:edit`, or `process:remove`.
+- `unknown` callers are denied for every process command.
+- Every process command is a request to the gateway typed API. The CLI never writes process configuration, reads Supervisor logs directly, or operates the process manager directly.
 
 ## Runtime Unit Environment
 
-Derived process runtime units expose a runtime environment that is separate from
-workspace setup and teardown step environment. Runtime units do not receive
-`ORBIT_*` lifecycle variables by contract.
+Derived process runtime units expose a runtime environment that is separate from workspace setup and teardown step environment. Runtime units do not receive `ORBIT_*` lifecycle variables by contract.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `PATH` | Predictable command lookup path including user-local tool directories | Lets commands resolve tools such as `vp`, `bun`, and project-local binaries under the runtime backend. |
+| `PATH` | Predictable command lookup path including user-local tool directories | Lets commands resolve tools such as `vp`, `bun`, and project-local binaries under Supervisor. |
 | `HOME` | Runtime user's home directory | Lets tools find home-relative config and caches. |
 | `APP_URL` | Resolved app or workspace HTTPS URL | Gives Laravel/runtime code the canonical public URL. |
 | `VITE_APP_URL` | Resolved app or workspace HTTPS URL | Keeps Vite-aware processes aligned with the runtime URL. |
@@ -108,53 +48,27 @@ workspace setup and teardown step environment. Runtime units do not receive
 | `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 | `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
 
-`VITE_VALET_HOST` is exposed for the same compatibility reason as workspace
-setup: existing Laravel Vite and Vite Plus configurations use it while deriving
-development-server TLS and hot-file URLs. Orbit still supplies canonical
-`APP_URL`, `VITE_APP_URL`, and certificate paths so newer app configs can key
-off Orbit-owned fields directly.
+`VITE_VALET_HOST` is exposed for the same compatibility reason as workspace setup: existing Laravel Vite and Vite Plus configurations use it while deriving development-server TLS and hot-file URLs. Orbit still supplies canonical `APP_URL`, `VITE_APP_URL`, and certificate paths so newer app configs can key off Orbit-owned fields directly.
 
 ## Development Server Runtime
 
-Process commands store the operator-provided command and do not rewrite it for a
-specific frontend server. A development server that must be reachable from a
-control node browser or support HMR across the Orbit network must bind to a
-node-reachable interface instead of loopback. For Vite-backed processes, the
-expected command shape is:
+Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a control node browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
 
 ```text
 npm run dev -- --host=0.0.0.0
 ```
 
-Equivalent package-manager or framework adapter commands are valid when they
-produce the same non-loopback bind behavior. Orbit supplies `APP_URL`,
-`VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
-`VITE_DEV_SERVER_CERT` so the process can serve the app/workspace URL over
-Orbit-managed HTTPS and keep browser HMR connected through the network path.
+Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the app/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.
 
-Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by
-their respective families. The process family owns the stored command, runtime
-unit environment, and process lifecycle, not public exposure policy.
+Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
 
 ## Crash Event Delivery
 
-Orbit-managed crash hooks post `crashed` events from app nodes back to the
-gateway when a process definition's crash-notification policy requires crash
-reporting. No crash hook is required for `crash_notification=none`. The payload
-includes a stable event id, runtime unit name, exit code, exit status, and
-occurrence time. Duplicate event ids return the original record instead of
-creating duplicate history.
+Orbit-managed crash hooks post `crashed` events from app nodes back to the gateway when a process definition's crash-notification policy requires crash reporting. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
 
-When the runtime unit name resolves to active process intent, the event is linked
-to the process, app, workspace, and node. Unmatched units are still recorded with
-their raw runtime-unit name so operators do not lose crash history while doctor
-or process intent is being repaired.
+When the runtime unit name resolves to active process configuration, the event is linked to the process, app, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
 
-Agent IDE crash notification is a consumer of the recorded crash event. For
-`agent_ide`, Orbit reads a short recent journal tail for the runtime unit and
-sends a crash report to the effective app or workspace Agent IDE session when
-one is available. Failure to read the log tail or deliver the notification does
-not fail event ingestion.
+Agent IDE crash notification is a consumer of the recorded crash event. For `agent_ide`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
 
 ## Commands
 

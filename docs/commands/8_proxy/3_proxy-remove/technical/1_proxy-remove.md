@@ -7,9 +7,8 @@
 **Effects:** `write, destructive, stream`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to manage custom proxy routes for the route's serving node.
+- The CLI caller can reach the Orbit gateway.
+- The caller identity is authorized by the gateway to manage custom proxy routes for the route's serving node.
 
 ## Signature
 
@@ -27,12 +26,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may remove custom proxy routes only when their node identity has
-explicit proxy route management authorization for the route's serving node.
-Management remains gateway-owned and enacted through gateway-to-node transport.
+The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may remove custom proxy routes only when the gateway authorizes their identity to manage proxy routes for the route's serving node. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -43,25 +39,21 @@ Management remains gateway-owned and enacted through gateway-to-node transport.
 
 ### Custom Route Removal Rules
 
-- Resolves the route by domain from gateway proxy route intent.
+- Resolves the route by domain from gateway proxy route configuration.
 - Fails before side effects unless the route owner is `custom`.
-- Removes the custom proxy route row from gateway intent.
+- Removes the custom proxy route row from gateway configuration.
 - Removes the backend route artifact from the serving node.
-- Removes Orbit-managed TLS material only when it is route-scoped and not
-  shared by any remaining proxy route.
+- Removes Orbit-managed TLS material only when it is route-scoped and not shared by any remaining proxy route.
 
 ### Destructive Consent Rules
 
-- Interactive mode requires an explicit confirmation prompt before gateway
-  intent is removed.
+- Interactive mode requires an explicit confirmation prompt before gateway configuration is removed.
 - Non-interactive mode requires `--force`.
 - `--json` does not imply destructive consent.
 
 ### Scope Boundaries
 
-`proxy-remove` must not remove app, workspace, gateway, or tool-owned routes.
-It must not delete app files, workspaces, tools, DNS records, firewall rules, or
-service processes. Owned-route removal belongs to the owner domain.
+`proxy-remove` must not remove app, workspace, gateway, or tool-owned routes. It must not delete app files, workspaces, tools, DNS records, firewall rules, or service processes. Owned-route removal belongs to the owner domain.
 
 ## Renderer Contracts
 
@@ -70,8 +62,7 @@ service processes. Owned-route removal belongs to the owner domain.
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed
-destructive removals.
+The gateway API endpoint emits an activity entry for successful and failed destructive removals.
 
 | Field | Value |
 | --- | --- |
@@ -91,13 +82,11 @@ destructive removals.
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
 | Owned route denied | The selected route is owned by app, workspace, gateway, or tool. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
-| Cleanup failed | Gateway intent was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
+| Cleanup failed | Gateway configuration was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
 
 ## Doctor Relationship
 
-`proxy-remove` removes custom gateway proxy route intent and performs
-command-owned cleanup only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the
-authoritative `proxy` probe, issue codes, fix map, and adopt map.
+`proxy-remove` removes custom gateway proxy route configuration and performs command-owned cleanup only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

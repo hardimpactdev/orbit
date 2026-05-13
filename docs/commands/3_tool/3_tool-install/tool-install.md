@@ -5,7 +5,7 @@
 Install or configure a managed tool on a node.
 
 `tool:install` bootstraps a supported tool capability on a target node and
-records gateway intent for that node. It is for first install or re-applying a
+records gateway configuration for that node. It is for first install or re-applying a
 missing managed tool, not for changing an already managed version.
 
 ## Usage
@@ -42,18 +42,18 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Creates or updates the gateway tool row for the node.
 4. Generates managed credentials when the selected tool declares a credential
    contract.
-5. Creates or updates tool-owned service endpoint intent when the selected tool
+5. Creates or updates tool-owned service endpoint configuration when the selected tool
    declares one.
-6. Enacts the managed install/configuration through the gateway.
+6. Applies the managed install/configuration through the gateway.
 7. Starts the tool when the expected state is `running`.
-8. Reports the resulting intended state and command-owned enactment outcome.
+8. Reports the resulting expected state and command-owned apply outcome.
 
 If the tool is already managed and the operator wants to change its version,
 use [`tool:update`](../9_tool-update/tool-update.md).
 
 ## Output
 
-Human output is a progress tree for intent write, install/configuration, and
+Human output is a progress tree for configuration write, install/configuration, and
 optional start steps.
 
 JSON output returns the tool entity under `success.data.tool` and command

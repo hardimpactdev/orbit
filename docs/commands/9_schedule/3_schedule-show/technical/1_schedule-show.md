@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect the selected schedule scope.
 
 ## Signature
@@ -28,33 +27,27 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read visible schedules when authorized; `schedule:show`
-never grants write permission or local state authority.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible schedules when authorized; `schedule:show` never grants write permission.
 
 ## Input Mode Contracts
 
-No input-mode-specific contracts are required. The command does not prompt;
-missing required input and invalid filters fail according to the shared
-invocation model.
+No input-mode-specific contracts are required. The command does not prompt; missing required input and invalid filters fail according to the shared invocation model.
 
 ## Behavior Contract
 
 ### Schedule Detail Rules
 
-- Reads one gateway schedule-intent row visible to the caller.
+- Reads one gateway schedule-configuration row visible to the caller.
 - Applies optional app or node disambiguation at the gateway.
 - Includes latest durable run-history summary when available.
-- Distinguishes gateway-intent status from live scheduler verification.
+- Distinguishes gateway-configuration status from live scheduler verification.
 - Does not inspect live Orbit Scheduler state.
 
 ### Scope Boundaries
 
-`schedule-show` must not create, update, remove, run, fix, adopt, or enact
-schedules. It must not read scheduler-side state directly. Drift belongs to
-[`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-show` must not create, update, remove, run, fix, adopt, or apply schedules. It must not read scheduler-side state directly. Drift belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -72,9 +65,7 @@ schedules. It must not read scheduler-side state directly. Drift belongs to
 
 ## Doctor Relationship
 
-`schedule-show` reads gateway schedule intent only.
-[`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative
-`schedule` probe, issue codes, fix map, and adopt map.
+`schedule-show` reads gateway schedule configuration only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative `schedule` probe, issue codes, fix map, and adopt map.
 
 ## Activity Logging
 

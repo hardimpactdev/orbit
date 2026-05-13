@@ -2,10 +2,10 @@
 
 [Back to Workspaces commands.](../README.md)
 
-**Purpose:** Show workspace registry intent and runtime expectations.
+**Purpose:** Show workspace registry configuration and runtime expectations.
 
 **Description:** Provides a detailed view of a workspace's gateway-tracked
-intent. This includes its parent app and owning node, branch, path and
+configuration. This includes its parent app and owning node, branch, path and
 canonical URL, runtime expectations (effective PHP version and inheritance
 source, FPM pool, derived hostname), effective agent IDE resolution,
 inherited process definitions, the workspace-owned proxy route, and a summary
@@ -36,7 +36,7 @@ orbit workspace:show [name] [--app=<app>] [--json]
 
 ## Behavior Summary
 
-- Reads workspace intent and related gateway history from the gateway
+- Reads workspace configuration and related gateway history from the gateway
   database.
 - Displays the workspace identity (name, parent app, branch, path, URL),
   owning node, runtime expectations with PHP version inheritance source,

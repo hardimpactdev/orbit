@@ -7,16 +7,10 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract and the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
-- The CLI caller can reach the Orbit gateway when gateway app resolution,
-  authorization, or gateway-origin profiling is required.
-- The current node identity is authorized to read the resolved app.
+- The CLI caller can reach the Orbit gateway when gateway app resolution, authorization, or gateway-origin profiling is required.
+- The gateway identifies the calling WireGuard peer and authorizes that peer to read the resolved app.
 - The target app route is reachable from the selected request origin.
-- Authenticated profiles require app-side support for the explicit Toolbar auth
-  header contract.
+- Authenticated profiles require app-side support for the explicit Toolbar auth header contract.
 
 ## Signature
 
@@ -39,20 +33,18 @@ This command follows the shared
 | `user` | `--user` | Never. | `--as-first-user` is present. | `null`. | Non-empty user primary key string. Selects Toolbar auth mode `user`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`profile` resolves the caller role before target prompts, gateway reads, or HTTP
-requests.
+The CLI is a thin gateway client. It does not classify its own role; it gathers input, calls the gateway, and renders the result. The gateway identifies the calling WireGuard peer, applies authorization, and answers. The peer role the gateway identifies governs request-origin selection and which working-directory hints are forwarded.
 
-| Caller role | Behavior |
+| Peer role identified by gateway | Behavior |
 | --- | --- |
-| `control` | Resolves target and authorization through the gateway when needed. Uses caller-origin profiling when the resolved URL is reachable from the control node; otherwise uses gateway-origin profiling when the gateway can reach the route. |
-| `gateway` | Executes gateway-owned target resolution and performs a gateway-origin HTTP profile request. |
-| `app` | May infer local app/workspace context, then calls the gateway for target resolution and authorization. The profile request is gateway-origin unless the command later adds an explicit local-origin mode. |
-| `unknown` | Invalid local context. Fail before prompts, gateway requests, or HTTP requests. |
+| `control` peer | The gateway resolves the target and authorization. The CLI uses caller-origin profiling when the resolved URL is reachable from the control machine; otherwise the gateway performs gateway-origin profiling when the route is reachable from the gateway. |
+| `gateway` peer | The gateway resolves the target and performs a gateway-origin HTTP profile request. |
+| `app` peer | The CLI may forward working-directory hints, then the gateway resolves the target and authorizes. The profile request is gateway-origin unless the command later adds an explicit local-origin mode. |
 
-Caller role does not grant app visibility. The gateway authorizes the resolved
-app read for every caller.
+Peer role does not grant app visibility. The gateway authorizes the resolved
+app read for every calling peer.
 
 ## Input Mode Contracts
 
@@ -61,32 +53,30 @@ app read for every caller.
 
 ## Input Resolution
 
-1. Resolve caller role before prompts or gateway requests.
-2. Select the output renderer.
-3. Validate mutually exclusive inputs:
+1. Select the output renderer.
+2. Validate mutually exclusive inputs:
    - `[target]` and `--app` cannot be combined.
    - `--as-first-user` and `--user` cannot be combined.
-4. If `[target]` is a full URL, parse the host into `target` and, when
+3. If `[target]` is a full URL, parse the host into `target` and, when
    `--uri` was not supplied, parse the URL path and query into `uri`.
-5. Resolve app target:
+4. Resolve app target through the gateway:
    - `--app=<app>` resolves an existing app by name or hostname.
    - absolute `[target]` resolves the app owning that path.
    - domain `[target]` resolves an app by name, hostname, or workspace hostname.
-   - omitted `[target]` resolves from current app/workspace directory context.
+   - omitted `[target]` forwards working-directory hints; the gateway resolves the app/workspace context.
    - unresolved omitted target in interactive mode opens the app selector.
-6. Apply `--node=<node>` as a node constraint during app resolution or app
+5. Apply `--node=<node>` as a node constraint during app resolution or app
    selection.
-7. Authorize the current node identity for the resolved app.
-8. Resolve request origin:
-   - `caller` when a control caller can reach the resolved URL directly;
-   - `gateway` for gateway callers, app-node callers, and control callers whose
-     environment cannot resolve or reach the route but whose gateway can.
-9. Generate a per-run request id.
-10. Resolve Toolbar auth headers:
+6. The gateway authorizes the calling peer for the resolved app.
+7. Resolve request origin:
+   - `caller` when the CLI's calling peer is identified as a control peer and the resolved URL is reachable from that machine;
+   - `gateway` for gateway peers, app peers, and control peers whose environment cannot resolve or reach the route but whose gateway can.
+8. Generate a per-run request id.
+9. Resolve Toolbar auth headers:
     - no auth flags: `X-TOOLBAR-AUTH: guest`;
     - `--as-first-user`: `X-TOOLBAR-AUTH: first-user`;
     - `--user=<id>`: `X-TOOLBAR-AUTH: user` and `X-TOOLBAR-USER: <id>`.
-11. Start the selected renderer and perform the HTTP profile request.
+10. Start the selected renderer and perform the HTTP profile request.
 
 ## Behavior Contract
 
@@ -136,8 +126,7 @@ app read for every caller.
 ### Scope Boundaries
 
 `profile` must not:
-- Mutate gateway app intent, proxy route intent, process definitions, schedule
-  definitions, deployment state, or local settings.
+- Mutate gateway app configuration, proxy route configuration, process definitions, schedule definitions, deployment state, or local settings.
 - Repair app, proxy, or node drift.
 - Run repeated requests, averages, load tests, warmup requests, benchmarks, or
   arbitrary shell commands in the app.
@@ -154,9 +143,8 @@ app read for every caller.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | Mutually exclusive inputs are combined, `uri` is invalid, `user` is empty, `node` is invalid, or required target input is unavailable in non-interactive mode. | Failure before HTTP request |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before prompts or gateway requests |
 | Gateway unavailable | Target resolution, authorization, or gateway-origin profiling requires the gateway and it cannot be reached. | Failure before HTTP request when possible |
-| Authorization failed | The current node identity is not authorized to read the resolved app. | Failure before HTTP request |
+| Authorization failed | The gateway denies the calling peer authorization to read the resolved app. | Failure before HTTP request |
 | Target not found | No visible Orbit app or workspace matches the resolved target. | Failure before HTTP request |
 | Profile request failed | The timed HTTP request could not complete. | Failure with request/timing diagnostics |
 
@@ -196,7 +184,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, caller-role behavior, authorization behavior, request-origin selection, request completion semantics, non-2xx success, request failure diagnostics, read-only guarantee, and doctor handoff guidance. |
+| `tests/Feature/Commands/Operations/ProfileCommandTest.php` | Target resolution from cwd, absolute path, app/domain/URL target, `--node` scoping, auth-mode validation, gateway authorization by peer role, request-origin selection, request completion semantics, non-2xx success, request failure diagnostics, read-only guarantee, and doctor handoff guidance. |
 | `tests/Unit/Services/CurlRequestProfilerTest.php` | Baseline HTTP timing extraction, request status/bytes/effective URL, response-header capture, completed non-2xx handling, failed request diagnostics, timeout behavior, and stable millisecond conversion. |
 
 Input-mode-specific test mapping lives in:

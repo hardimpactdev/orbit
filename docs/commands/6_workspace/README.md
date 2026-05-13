@@ -1,13 +1,13 @@
 # Workspace Commands
 
-Workspace commands manage gateway-owned workspace intent and the app-node
-artifacts derived from that intent. A workspace belongs to an app, has a
-canonical name, and owns one workspace route lifecycle.
+Workspace commands manage gateway-owned workspace configuration and the
+app-node artifacts derived from that configuration. A workspace belongs to an
+app, has a canonical name, and owns one workspace route lifecycle.
 
 ## Domain Rules
 
-- The gateway owns workspace intent.
-- Workspace artifacts are enacted by the gateway over SSH on the owning app
+- The gateway owns workspace configuration.
+- Workspace artifacts are applied by the gateway over SSH on the owning app
   node.
 - Workspace name is the canonical Orbit workspace identity. Source-control
   branch/ref metadata is optional and may be absent; when recorded, it is
@@ -15,9 +15,9 @@ canonical name, and owns one workspace route lifecycle.
 - Workspace names are identity slugs: lowercase letters, digits, and hyphens
   only. They cannot start or end with a hyphen and are limited to 63
   characters.
-- Workspace PHP version is gateway-tracked intent. A workspace inherits the
-  parent app PHP version unless a workspace override is stored on the workspace
-  row.
+- Workspace PHP version is gateway-tracked configuration. A workspace inherits
+  the parent app PHP version unless a workspace override is stored on the
+  workspace row.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
 - During `doctor --fix --family=workspace --adopt`, project files are adoption hints
@@ -25,13 +25,13 @@ canonical name, and owns one workspace route lifecycle.
   version hints, and only when the workspace is a PHP project.
 - Workspace hostnames are represented in `proxy` as workspace-owned
   route records. Workspace commands create, update, and remove the workspace
-  intent that owns those routes; proxy route registry and backend artifact
-  convergence belong to the `proxy` family.
+  configuration that owns those routes; proxy route registry and backend
+  artifact convergence belong to the `proxy` family.
 - A workspace hostname is the workspace slug prepended to the parent app's
   primary hostname. For a development app this yields
   `{workspace}.{app}.{tld}`.
 - Workspaces inherit app process definitions as runtime units. Each
-  inherited runtime unit is rendered by the runtime backend as a separate
+  inherited runtime unit is rendered by the process manager as a separate
   Supervisor program owned by the workspace, with its own program name,
   working directory, environment block, and log paths — distinct from the
   main app instance and from sibling workspaces. The parent app's process
@@ -51,9 +51,9 @@ canonical name, and owns one workspace route lifecycle.
 ## Workspace Source Drivers
 
 Workspace source creation is driver-owned. `workspace:new` resolves the parent
-app's effective agent IDE adapter from app intent, then node defaults, then no
-adapter. The selected source driver creates the source directory and returns
-the physical path that Orbit stores on the gateway workspace record.
+app's effective agent IDE adapter from app configuration, then node defaults,
+then no adapter. The selected source driver creates the source directory and
+returns the physical path that Orbit stores on the gateway workspace record.
 
 - **Generic worktree driver:** used when no effective adapter exists. It
   creates a Git worktree at `<app path>/.worktrees/<workspace>` using branch
@@ -79,15 +79,16 @@ the workspace row.
 Read commands over workspace registry state are fast gateway database reads
 unless their command contract explicitly opts into live inspection. Workspace
 runtime drift belongs to [`workspace-doctor.md`](workspace-doctor.md).
-Implementation-shape details for runtime backends, Supervisor programs, and
-gateway-to-app-node enactment live in
-[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler)
-and [BUILDING-BLOCKS.md#transport](../../BUILDING-BLOCKS.md#transport).
+Implementation-shape details for the process manager, Supervisor programs, and
+gateway-to-app-node application live in
+[BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager),
+[BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler), and
+[BUILDING-BLOCKS.md#gateway-to-app-node](../../BUILDING-BLOCKS.md#gateway-to-app-node).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
 `workspace:list`, and `workspace:log` for stored history — do not require a
-live runtime backend. `workspace:new`, `workspace:setup`, and
-`workspace:remove` require a live runtime backend on the owning app node
+live process manager. `workspace:new`, `workspace:setup`, and
+`workspace:remove` require a live process manager on the owning app node
 when they create, update, remove, or verify inherited runtime units.
 
 ## Workspace JSON Entity
@@ -122,11 +123,11 @@ than inside it.
 | `node` | string | Owning app-node slug inherited from the parent app. |
 | `path` | string | Absolute workspace path on the owning app node. |
 | `url` | string | Primary intended workspace URL. |
-| `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for intent, observed node versions, and framework metadata. |
+| `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
 | `agent_ide` | object | Adapter metadata captured for the workspace source. `agent_ide.adapter` is `null` for generic worktrees; `agent_ide.workspace_id` stores the adapter-side workspace id when one exists. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
-| `lifecycle_status` | string | Registry intent lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
+| `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
 whose value is inapplicable, such as generic worktrees without an adapter-side
@@ -142,19 +143,27 @@ workspace id.
 - **`phase=setup_steps`:** JSON enum value used when a setup step execution
   fails during the setup steps phase.
 
-## Workspace Caller Role Rule
+## Authorization By Caller Role
 
-- Control and gateway callers may run workspace read and write commands when
-  authorized by gateway-owned access policy.
-- App-node callers may run workspace read commands when authorized.
-- `workspace:setup` is the only workspace write command currently allowed from
-  an app-node caller, as defined by
-  [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node). It is a local workflow
-  exception for preparing the workspace the caller is already working inside.
-- App-node callers may not run `workspace:new`, `workspace:remove`, setup-step
-  mutation, teardown-step mutation, or other gateway-owned workspace policy
-  mutations unless a command explicitly documents a future exception.
-- Local app-node context may resolve defaults, but it is not authorization.
+The CLI is a thin gateway client that gathers input and forwards to the
+gateway. Authorization is enforced by the gateway, which authenticates the
+caller's WireGuard peer identity and applies gateway-owned access policy.
+
+- Callers from control or gateway peers may run workspace read and write
+  commands when authorized by gateway-owned access policy.
+- Callers from app-node peers may run workspace read commands when authorized.
+- `workspace:setup` is the only workspace write command the gateway currently
+  authorizes from an app-node peer; it is a local workflow exception for
+  preparing the workspace the caller is already working inside. When invoked
+  from an app node, the gateway still applies setup steps by opening an SSH
+  connection back to that same app node through RemoteShell — the CLI never
+  applies artifacts locally.
+- The gateway denies app-node peers running `workspace:new`,
+  `workspace:remove`, setup-step mutation, teardown-step mutation, or other
+  gateway-owned workspace policy mutations unless a command explicitly
+  documents a future exception.
+- Local context on the caller filesystem may resolve defaults (parent app,
+  workspace identity), but it is never used as authorization.
 
 ## Lifecycle Step Environment
 
@@ -162,9 +171,9 @@ Workspace setup and teardown steps run in the workspace path on the owning app
 node. They receive a lifecycle environment that is separate from process runtime
 environment.
 
-Lifecycle step command text is stored as supplied and is not a template. Scripts
-that need Orbit context should read the environment variables below instead of
-depending on command-string substitution.
+Lifecycle step command text is stored as supplied and is not a template.
+Scripts that need Orbit context should read the environment variables below
+instead of depending on command-string substitution.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |

@@ -25,20 +25,20 @@ orbit node:grant app-1 gateway-1 --json
 ## Arguments And Options
 
 - `consuming_node`: node receiving permission to make Orbit requests against the
-  serving node. Must match an existing active node record in gateway intent.
+  serving node. Must match an existing active node record in gateway configuration.
 - `serving_node`: node that may be accessed by those requests. Must match an
-  existing active node record in gateway intent.
+  existing active node record in gateway configuration.
 - `--json`: Output JSON.
 
 ## What Happens
 
-`node:grant` writes gateway-owned grant intent in `node_access` from
+`node:grant` writes gateway-owned grant configuration in `node_access` from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
 control callers forward the request to the gateway over HTTPS through WireGuard.
 
 The command:
 
-1. Validates that both nodes exist in gateway intent.
+1. Validates that both nodes exist in gateway configuration.
 2. Validates that the requested relationship does not violate node access policy.
 3. Writes the grant record when it does not already exist.
 4. Reports whether the grant was newly created or already present.
@@ -64,7 +64,7 @@ newly created or already present.
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before side effects.
-- Both nodes must have active records in gateway node intent. Records still
+- Both nodes must have active records in gateway node configuration. Records still
   in `provisioning` are rejected as not found; live reachability is not
   probed and belongs to `doctor --family=node`.
 - The grant must not violate node access policy. Self-grant is rejected.

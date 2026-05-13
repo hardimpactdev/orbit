@@ -4,8 +4,7 @@
 
 Show stored output for schedule runs.
 
-Use `schedule:logs` to inspect durable schedule run history captured by the
-gateway. The command is for past run output, not live scheduler inspection.
+Use `schedule:logs` to inspect durable schedule run history captured by the gateway. The command is for past run output, not live scheduler inspection.
 
 ## Usage
 
@@ -27,17 +26,14 @@ orbit schedule:logs backups --node=app-1 --lines=200
 - `--app`: disambiguate an app-scoped schedule.
 - `--node`: disambiguate a node-scoped schedule.
 - `--run`: specific run id. Defaults to the latest run.
-- `--lines`: maximum captured output lines to render. Defaults to the command
-  renderer limit.
+- `--lines`: maximum captured output lines to render. Defaults to the command renderer limit.
 - `--json`: Output JSON.
 
 `--app` and `--node` are mutually exclusive filters.
 
 ## What Happens
 
-`schedule:logs` reads the selected schedule and stored run output from gateway
-history. It does not SSH to nodes, inspect runtime backend logs directly,
-repair drift, or mutate schedule intent.
+`schedule:logs` reads the selected schedule and stored run output from gateway history. It does not SSH to nodes, inspect process manager (Supervisor) logs directly, repair drift, or mutate schedule configuration.
 
 ## Output
 
@@ -47,10 +43,8 @@ JSON output returns the selected run and captured output.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller is authorized to inspect schedule run history for the selected
-  scope.
+- The CLI caller can reach the Orbit gateway, or the command runs on the gateway.
+- The caller is authorized to inspect schedule run history for the selected scope.
 
 ## Related
 

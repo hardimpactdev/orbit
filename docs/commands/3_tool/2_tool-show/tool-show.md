@@ -5,7 +5,7 @@
 Show one registered tool's configuration and optional live state.
 
 `tool:show` is the detail view for a tool on a target node. By default it reads
-gateway intent only. Use `--live` when the operator needs the gateway to inspect
+gateway configuration only. Use `--live` when the operator needs the gateway to inspect
 current node reality.
 
 ## Usage
@@ -39,11 +39,11 @@ Target context is required when neither `--node`, `--app`, nor local
 `tool:show`:
 
 1. Resolves the target node.
-2. Reads the registered tool row and configuration from gateway intent.
+2. Reads the registered tool row and configuration from the gateway.
 3. Optionally asks the gateway to inspect live state on the target node.
 4. Renders the tool details.
 
-The command does not mutate gateway intent or node artifacts.
+The command does not mutate gateway configuration or node artifacts.
 
 ## Output
 
@@ -68,7 +68,7 @@ endpoint metadata may be included under `success.data.tool.endpoints`.
 
 ## Related Commands
 
-- [`tool:list`](../1_tool-list/tool-list.md) - list registered tool intent
+- [`tool:list`](../1_tool-list/tool-list.md) - list registered tool configuration
 - [`tool:logs`](../8_tool-logs/tool-logs.md) - read logs for log-capable managed tools
 - [`doctor --family=tool`](../tool-doctor.md) - verify expected tool state
 

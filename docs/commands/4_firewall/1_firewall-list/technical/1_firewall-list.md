@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect firewall policy for the selected scope.
 
 ## Signature
@@ -26,31 +25,26 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | `Visible active Ubuntu node with role `gateway` or `app`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read visible firewall policy when authorized;
-`firewall:list` never grants write permission or local state authority.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible firewall policy when authorized; `firewall:list` never grants write permission or local state authority.
 
 ## Input Mode Contracts
 
-No input-mode-specific contracts are required. The command does not prompt;
-invalid filters fail according to the shared invocation model.
+No input-mode-specific contracts are required. The command does not prompt; invalid filters fail according to the shared invocation model.
 
 ## Behavior Contract
 
-### Firewall Intent Visibility Rules
+### Firewall Configuration Visibility Rules
 
-- Reads gateway firewall-rule intent visible to the caller.
+- Reads gateway firewall-rule configuration visible to the caller.
 - Applies the optional node filter at the gateway.
 - Returns only registered firewall-rule rows.
 - Does not inspect live firewall backend state.
 
 ### Scope Boundaries
 
-`firewall-list` must not create, update, delete, fix, adopt, or enact firewall
-rules. It must not read backend firewall state directly. Drift belongs to
-[`firewall-doctor.md`](../../firewall-doctor.md).
+`firewall-list` must not create, update, delete, fix, adopt, or apply firewall rules. It must not read backend firewall state directly. Drift belongs to [`firewall-doctor.md`](../../firewall-doctor.md).
 
 ## Renderer Contracts
 
@@ -67,8 +61,7 @@ rules. It must not read backend firewall state directly. Drift belongs to
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed
-registry reads.
+The gateway API endpoint emits an activity entry for successful and failed registry reads.
 
 | Field | Value |
 | --- | --- |
@@ -80,9 +73,7 @@ registry reads.
 
 ## Doctor Relationship
 
-`firewall-list` reads gateway firewall-rule intent only.
-[`firewall-doctor.md`](../../firewall-doctor.md) owns the authoritative
-`firewall_rule` probe, drift, fix map, and adopt map.
+`firewall-list` reads gateway firewall-rule configuration only. [`firewall-doctor.md`](../../firewall-doctor.md) owns the authoritative `firewall_rule` probe, drift, fix map, and adopt map.
 
 ## Test Mapping
 

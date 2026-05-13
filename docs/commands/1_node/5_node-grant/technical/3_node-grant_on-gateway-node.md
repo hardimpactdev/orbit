@@ -1,13 +1,13 @@
-# Technical Contract: `node:grant` On A Gateway Node
+# Technical Contract: `node:grant` Authorized For Gateway Callers
 
 [Back to `node:grant` technical contract.](1_node-grant.md)
 
-This page describes caller-role behavior when `orbit node:grant` is invoked on
-the gateway node.
+This page describes what the gateway authorizes for callers whose
+authenticated node record has role `gateway`, including gateway-local CLI
+execution.
 
 **Prerequisites:**
-- `general.local_node_role` is explicitly set to `gateway`.
-- The gateway can read and write gateway-owned node intent.
+- The gateway can read and write gateway-owned node configuration.
 
 ## Allowed Paths
 
@@ -27,7 +27,7 @@ the gateway node.
 1. Resolve `node_grant.consuming_node`.
 2. Resolve `node_grant.serving_node`.
 3. Validate both nodes resolve to existing active node records in gateway
-   intent. Reject `provisioning` records as `node.not_found`. Live
+   configuration. Reject `provisioning` records as `node.not_found`. Live
    reachability is not probed; that belongs to `doctor --family=node`.
 4. Evaluate node access policy (including self-grant prohibition, surfaced as
    `error.meta.reason = self_grant`).

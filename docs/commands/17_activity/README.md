@@ -34,11 +34,11 @@ doctor contracts.
 - Every state-changing command and API endpoint MUST emit an activity entry
   through the gateway-owned activity logger. See
   [`activity-concepts.md`](activity-concepts.md) for the contract.
-- Activity logging records intent and outcome, not raw request or command
+- Activity logging records configuration and outcome, not raw request or command
   arguments. Properties are declared per command; secrets are never logged.
 - A single operation may produce multiple activity entries that share one
   correlation id (CLI command, gateway API call, gateway-orchestrated node
-  enactment). Correlation is metadata; it does not collapse those entries.
+  apply). Correlation is metadata; it does not collapse those entries.
 - Activity history is gateway-owned. The gateway authorizes every read against
   the caller's node identity and the requested filters.
 - Activity is historical evidence, not a substitute for live `doctor` probes.

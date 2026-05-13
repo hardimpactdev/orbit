@@ -40,7 +40,7 @@ Target context is required when neither `--node`, `--app`, nor local
 `tool:credentials`:
 
 1. Resolves the target node and credential-bearing tool.
-2. Reads credential metadata from gateway intent or the tool's managed secret
+2. Reads credential metadata from gateway configuration or the tool's managed secret
    store.
 3. Renders the tool's declared credential fields.
 

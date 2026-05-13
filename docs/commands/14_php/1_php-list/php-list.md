@@ -35,11 +35,11 @@ orbit php:list --node=app-1 --json
 
 `php:list` resolves a node, app, or workspace context from explicit options,
 caller context, app ownership, workspace ownership, or local `node:default`.
-It reads gateway intent and gateway-tracked PHP runtime facts for the resolved
+It reads gateway configuration and gateway-tracked PHP runtime facts for the resolved
 node. With `--live`, it also asks the gateway to inspect the target node for
 installed PHP versions.
 
-The command does not install PHP, remove PHP, change app intent, change
+The command does not install PHP, remove PHP, change app configuration, change
 workspace overrides, change node CLI defaults, or edit project files.
 
 ## Output

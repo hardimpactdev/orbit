@@ -24,7 +24,7 @@ orbit node:agent-ide app-1 polyscope --json
 
 ## Arguments And Options
 
-- `name`: node name. Must exist in gateway node intent.
+- `name`: node name. Must exist in gateway node configuration.
 - `agent_ide`: agent IDE input value. Core adapter names are `opencode` and
   `polyscope`. Installed Orbit extensions may register additional adapters with
   the gateway. `none` is a reserved node-scope token that clears the node
@@ -37,24 +37,24 @@ orbit node:agent-ide app-1 polyscope --json
 ## What Happens
 
 `node:agent-ide` writes the node-default agent-IDE adapter into gateway node
-intent. Gateway callers execute locally; configured control callers forward the
-request to the gateway over HTTPS through WireGuard.
+configuration. Gateway callers execute locally; configured control callers
+forward the request to the gateway over HTTPS through WireGuard.
 
 The command:
 
-1. Validates that the target node exists in gateway intent.
+1. Validates that the target node exists in gateway configuration.
 2. Validates that the requested adapter is supported.
 3. Stores the adapter as the node-level default when it differs from the current
    value.
 4. Reports whether the adapter was set or was already the current value.
 
-`node:agent-ide` is a pure intent write. Apps and current workspaces resolve
-their effective agent IDE per-event using the current inheritance chain
-(`app → node → none`); the blueprint reserves a future workspace-level override
-slot above app scope. A change to the node default is naturally picked up at the
-next consumer-side resolution event without a push from this command. Workspace
-cleanup remains app-scoped: changing a node default does not prune workspaces
-for inheriting apps. Run
+`node:agent-ide` is a pure configuration write. Apps and current workspaces
+resolve their effective agent IDE per-event using the current inheritance chain
+(`app → node → none`); the architecture reserves a future workspace-level
+override slot above app scope. A change to the node default is naturally picked
+up at the next consumer-side resolution event without a push from this command.
+Workspace cleanup remains app-scoped: changing a node default does not prune
+workspaces for inheriting apps. Run
 [`app:prune`](../../5_app/7_app-prune/app-prune.md) for each affected app when
 stale workspace cleanup is wanted after a node-default change.
 
@@ -90,9 +90,9 @@ payload shape.
 ## Requirements
 
 - Must run on the gateway host or from a configured control node.
-- Control callers must be authorized to update node registry intent.
+- Control callers must be authorized to update node registry configuration.
 - App-node callers are rejected before prompts or side effects.
-- The target node must exist in gateway intent.
+- The target node must exist in gateway configuration.
 - The adapter must be present in the gateway-owned adapter registry. Adapters
   shipped by installed Orbit extensions become valid only after the extension
   has registered them with the gateway.

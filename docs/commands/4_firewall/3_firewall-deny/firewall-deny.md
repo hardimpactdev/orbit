@@ -4,9 +4,7 @@
 
 Deny traffic matching a firewall policy.
 
-`firewall:deny` creates or updates an Orbit-owned firewall rule with action
-`deny`, stores the rule as gateway intent, and enacts it on the target node
-through the gateway.
+`firewall:deny` creates or updates an Orbit-owned firewall rule with action `deny`, stores the rule as gateway configuration, and applies it on the target node through the gateway.
 
 ## Usage
 
@@ -24,8 +22,7 @@ orbit firewall:deny old-admin --node=gateway --port=8080 --json
 
 ## Arguments And Options
 
-- `name`: Rule name, unique on the target node. In interactive mode, Orbit
-  prompts when omitted.
+- `name`: Rule name, unique on the target node. In interactive mode, Orbit prompts when omitted.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--direction`: Traffic direction. Defaults to `incoming`.
 - `--from`: Source CIDR. Defaults to `any`.
@@ -42,27 +39,23 @@ orbit firewall:deny old-admin --node=gateway --port=8080 --json
 1. Resolves the target node and firewall-rule fields.
 2. Verifies the target node is firewall eligible.
 3. Rejects rules that conflict with node bootstrap policy.
-4. Writes gateway firewall-rule intent with action `deny`.
-5. Enacts the backend firewall rule through the gateway.
-6. Reports the expected rule and enactment outcome.
+4. Writes gateway firewall-rule configuration with action `deny`.
+5. Applies the backend firewall rule through the gateway.
+6. Reports the expected rule and apply outcome.
 
 ## Output
 
-Human output is a progress tree for validation, gateway intent, and backend
-enactment.
+Human output is a progress tree for validation, gateway configuration, and backend apply.
 
 JSON output returns the rule entity under `success.data.rule`.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command is running on the
-  gateway.
-- The current node identity is authorized to manage firewall policy for the
-  selected node.
+- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
+- The current node identity is authorized to manage firewall policy for the selected node.
 - The target node is a registered active Ubuntu `gateway` or `app` node.
 - The rule does not attempt to edit node bootstrap policy.
-- The gateway can reach the target node through Orbit's node execution
-  primitive.
+- The gateway can reach the target node through Orbit's node execution primitive.
 
 ## Related Commands
 

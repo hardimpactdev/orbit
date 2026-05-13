@@ -1,7 +1,7 @@
 # Technical Contract: `orbit workspace:setup` (Control Node)
 
 This contract defines behavior when `workspace:setup` is invoked from a
-**control node**.
+**control-node peer**.
 
 [Back to the canonical technical contract.](1_workspace-setup.md)
 
@@ -13,12 +13,12 @@ This contract defines behavior when `workspace:setup` is invoked from a
   with the gateway.
 - **Local context resolution**: Attempts to resolve the parent app and
   workspace identity from local Orbit configuration or current directory
-  before forwarding intent.
-- **Progress streaming**: Streams the step tree and enactment progress from
+  before forwarding configuration.
+- **Progress streaming**: Streams the step tree and apply progress from
   the gateway to the local TTY.
 - **Local config update**: If successful and not previously tracked locally,
   updates local workspace tracking.
-- **Enactment**: The gateway performs the actual SSH enactment to the owning
+- **Apply**: The gateway performs the actual SSH application to the owning
   app node.
 
 ## Authorization

@@ -2,11 +2,9 @@
 
 [Back to Process commands.](../README.md)
 
-**Purpose:** List process intent and last known runtime state for an app or
-workspace.
+**Purpose:** List process configuration and last known runtime state for an app or workspace.
 
-**Description:** Reads app-owned process definitions and latest durable
-lifecycle events from the gateway without performing live node inspection.
+**Description:** Reads app-owned process definitions and latest durable lifecycle events from the gateway without performing live node inspection.
 
 **Technical contract:** [`technical/1_process-list.md`](technical/1_process-list.md)
 
@@ -20,7 +18,7 @@ orbit process:list --app=docs --json
 
 ## Behavior
 
-- Reads process definitions from gateway intent.
+- Reads process definitions from gateway configuration.
 - Resolves an app or workspace context.
 - Derives expected runtime unit identities for that context.
 - Shows the latest durable process lifecycle event when one exists.

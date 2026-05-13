@@ -4,9 +4,9 @@
 
 **Purpose:** Create a new workspace for an app.
 
-**Description:** Writes initial gateway workspace intent for an application,
-creates the workspace source through the effective workspace source driver, and
-then runs the workspace setup pipeline.
+**Description:** Writes initial gateway workspace configuration for an
+application, creates the workspace source through the effective workspace
+source driver, and then runs the workspace setup pipeline.
 Used to organize development environments and establish a scope for shared
 resources and configurations.
 
@@ -20,7 +20,7 @@ resources and configurations.
 - The gateway can reach the owning app node over SSH.
 
 **Behavior:**
-- Creates initial workspace intent on the gateway.
+- Creates initial workspace configuration on the gateway.
 - Creates a new workspace source for the parent app on the owning app node.
   Generic and OpenCode-backed sources use git worktrees; Polyscope-backed
   sources are provisioned through the Polyscope SDK.

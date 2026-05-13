@@ -2,15 +2,9 @@
 
 [Back to Operation commands.](../README.md)
 
-Verify gateway intent against observed node reality for one node at a time,
-and optionally repair or adopt supported drift.
+Verify gateway configuration against observed node reality for one node at a time, and optionally repair or adopt supported drift.
 
-`doctor` is Orbit's convergence command. Each run targets a single node. It
-orchestrates state-family probes for families such as `node`, `app`,
-`workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`.
-The global command owns scope resolution, mode selection, authorization,
-exit status, and output envelopes. Family doctor contracts own concrete
-probe facts, issue codes, and safe restore/adopt maps.
+`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`. The global command owns scope resolution, mode selection, authorization, exit status, and output envelopes. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's role:
 
@@ -27,7 +21,7 @@ diagnostic source exists; until then DNS-related findings stay inside the
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix] [--restore|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--restore|--adopt] [--json]
 ```
 
 ## Examples
@@ -35,8 +29,9 @@ orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--f
 ```bash
 orbit doctor
 orbit doctor --family=node --self
-orbit doctor --fix --family=app --app=docs --restore
-orbit doctor --fix --family=workspace --app=docs --workspace=feature-api --adopt --json
+orbit doctor --fix --family=app --app=docs
+orbit doctor --restore --family=app --app=docs
+orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
 ```
 
 ## Arguments And Options
@@ -46,25 +41,20 @@ orbit doctor --fix --family=workspace --app=docs --workspace=feature-api --adopt
 - `--self`: Limit the run to the caller's gateway-known node identity.
 - `--app`: Limit the run to one app and the family facts owned by that app.
 - `--workspace`: Limit the run to one workspace and its owned facts.
-- `--fix`: Enter resolution mode to interactively or bulk-restore drift.
-- `--restore`: Non-interactively restore all supported findings from gateway intent to node reality. Requires `--fix`.
-- `--adopt`: Non-interactively adopt all supported findings from node reality into gateway intent. Requires `--fix`.
+- `--fix`: Enter interactive resolution mode. Walks each finding and prompts for restore, adopt, skip, or details. Mutually exclusive with `--restore` and `--adopt`.
+- `--restore`: Non-interactively restore all supported findings (gateway configuration to node reality). Mutually exclusive with `--fix` and `--adopt`.
+- `--adopt`: Non-interactively adopt all supported findings (node reality into gateway configuration). Mutually exclusive with `--fix` and `--restore`.
 - `--json`: Output JSON.
 
 ## What Happens
 
-`doctor` resolves a single-node scope, authorizes that scope on the gateway,
-runs the matching family probes for the target node's role, and reports the
-final diagnostic. Without `--self` or `--node`, the target defaults to the
-local caller's node.
+`doctor` resolves a single-node scope, asks the gateway to authorize that scope and run the matching family probes for the target node's role, and reports the final diagnostic. The CLI is a thin gateway client; the gateway identifies the calling WireGuard peer and applies authorization. Without `--self` or `--node`, the target defaults to the calling peer's node as the gateway identifies it.
 
-In verify mode (no `--fix`), it compares only and does not mutate gateway intent or node reality.
+The command supports four modes. Verify mode (no flag) compares only and does not mutate gateway configuration or node reality. Interactive mode (`--fix`) walks each finding and prompts for restore, adopt, skip, or details. Restore mode (`--restore`) bulk-applies gateway configuration to node reality for all supported findings. Adopt mode (`--adopt`) bulk-records compatible observed node reality into gateway configuration.
 
-With `--fix`, it enters resolution mode. Without `--restore` or `--adopt`, the command is interactive: it walks each finding and prompts for restore, adopt, skip, or details. With `--restore`, it bulk-applies gateway intent to all supported findings on nodes. With `--adopt`, it bulk-applies compatible observed node reality into gateway intent.
+`--fix` is the interactive driver, not a direction. The two directions are restore (gateway to node) and adopt (node to gateway). `--restore` and `--adopt` are mutually exclusive. `--restore` is explicit repair-mode consent for family-declared safe actions. `--adopt` is explicit adoption-mode consent and the only doctor mode that mutates gateway configuration.
 
-`--restore` and `--adopt` are mutually exclusive. `--restore` is explicit repair-mode consent for family-declared safe actions. `--adopt` is explicit adoption-mode consent and the only doctor mode that mutates gateway intent.
-
-App-node callers may run authorized verify-mode doctor checks. App-node callers may not initiate `--fix` or `--adopt` unless a family doctor contract documents a narrow app-node write exception.
+The gateway authorizes verify-mode runs for app-node peers. It denies `--fix`, `--restore`, or `--adopt` from app-node peers unless a family doctor contract documents a narrow app-node write exception.
 
 ## Output
 

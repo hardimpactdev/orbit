@@ -30,14 +30,9 @@ options are optional.
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`update` is local-only. Caller role does not change the command path. Control,
-gateway, and app callers may update their own local Orbit checkout.
-
-When invoked on the gateway host, local migrations may update the gateway
-database schema. That is still local application update behavior, not a fleet
-intent write.
+`update` is local-only. It does not call the gateway and does not consult the gateway for authorization. Any machine with a writable Orbit checkout may run it; the gateway plays no role in this command. When invoked on the gateway host, local migrations may update the gateway database schema. That is still local application update behavior, not a fleet configuration write.
 
 ## Input Resolution
 
@@ -62,17 +57,15 @@ fields and does not prompt.
 ### Local Migration Rules
 
 - Apply migrations with non-interactive production-safe semantics.
-- When the local checkout is a gateway installation, migrations may update the
-  gateway database schema.
-- Migrations must not create or mutate fleet intent beyond normal schema/data
-  migrations owned by the application version.
+- When the local checkout is a gateway installation, migrations may update the gateway database schema.
+- Migrations must not create or mutate fleet configuration beyond normal schema/data migrations owned by the application version.
 
 ### Scope Boundaries
 
 `update` must not:
 - Update other nodes.
 - SSH to the gateway or app nodes.
-- Query or mutate gateway fleet intent as a command behavior.
+- Query or mutate gateway fleet configuration as a command behavior.
 - Repair node, app, workspace, process, proxy route, schedule, tool, or
   firewall drift.
 - Replace `doctor` verification after an update.

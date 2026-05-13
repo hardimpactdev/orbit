@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to manage firewall policy for the resolved node.
 
 ## Signature
@@ -28,12 +27,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive input mode.` | `Never.` | `false` | `Explicit destructive consent.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may manage firewall rules only when their node identity has
-explicit firewall-management authorization for the resolved target. Management
-remains gateway-owned and enacted through gateway-to-node transport.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage firewall rules only when their node identity has explicit firewall-management authorization for the resolved target. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -42,24 +38,19 @@ remains gateway-owned and enacted through gateway-to-node transport.
 
 ## Behavior Contract
 
-### Firewall Intent And Cleanup Rules
+### Firewall Configuration And Cleanup Rules
 
 - Resolves a firewall-eligible target node.
-- Reads gateway firewall-rule intent for the selected node and name.
+- Reads gateway firewall-rule configuration for the selected node and name.
 - Requires destructive consent before side effects.
-- Removes the managed backend firewall rule through the gateway when intent exists.
-- Removes gateway firewall-rule intent after backend cleanup succeeds.
-- If backend cleanup fails, Orbit keeps gateway firewall-rule intent and reports
-  doctor/manual recovery instead of forgetting an expected rule while node
-  reality may still contain it.
-- Succeeds idempotently when the rule is already absent from gateway intent.
+- Removes the managed backend firewall rule through the gateway when configuration exists.
+- Removes gateway firewall-rule configuration after backend cleanup succeeds.
+- If backend cleanup fails, Orbit keeps gateway firewall-rule configuration and reports doctor/manual recovery instead of forgetting an expected rule while node reality may still contain it.
+- Succeeds idempotently when the rule is already absent from gateway configuration.
 
 ### Scope Boundaries
 
-`firewall-remove` must not remove node bootstrap policy, delete unmanaged backend
-rules, infer app/proxy ownership from ports, mutate app/proxy/process/tool state,
-or adopt observed backend rules. Leftover backend drift belongs to the firewall
-doctor.
+`firewall-remove` must not remove node bootstrap policy, delete unmanaged backend rules, infer app/proxy ownership from ports, mutate app/proxy/process/tool state, or adopt observed backend rules. Leftover backend drift belongs to the firewall doctor.
 
 ## Renderer Contracts
 
@@ -87,14 +78,11 @@ destructive removals.
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to manage firewall policy for the selected target. | `error.code=authorization_failed` |
 | Baseline conflict | The selected rule is node bootstrap policy, not an Orbit-owned firewall rule. | `error.code=firewall_rule.baseline_conflict` |
-| Cleanup failed | Backend firewall cleanup failed before intent could be removed safely. | `error.code=firewall_rule.cleanup_failed` |
+| Cleanup failed | Backend firewall cleanup failed before configuration could be removed safely. | `error.code=firewall_rule.cleanup_failed` |
 
 ## Doctor Relationship
 
-`firewall-remove` changes gateway firewall-rule intent and performs
-command-owned cleanup only. [`firewall-doctor.md`](../../firewall-doctor.md)
-owns the authoritative `firewall_rule` probe, issue codes, fix map, and adopt
-map.
+`firewall-remove` changes gateway firewall-rule configuration and performs command-owned cleanup only. [`firewall-doctor.md`](../../firewall-doctor.md) owns the authoritative `firewall_rule` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

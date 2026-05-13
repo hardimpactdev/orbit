@@ -43,8 +43,8 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 ## What Happens
 
 `node:default` reads and writes local control-node configuration only. It does
-not mutate gateway node intent, grant access to the default node, or change the
-gateway endpoint configured by `gateway:add`.
+not mutate gateway node configuration, grant access to the default node, or
+change the gateway endpoint configured by `gateway:add`.
 
 ### Choose or set
 

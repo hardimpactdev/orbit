@@ -142,16 +142,15 @@ Reality drifts. The gateway tracks configuration; a node is meant to match it; o
 
 `orbit doctor` is how you catch and resolve all of those. It runs across a single family, a single node, or the whole fleet, and reports everything that isn't in the expected state.
 
-Every drifted item can be resolved in one of two directions:
+Without any flag, doctor only reports. To act on what it finds, pass one of three mutually-exclusive flags:
 
-| Direction | Flag | Meaning |
+| Mode | Flag | Meaning |
 |---|---|---|
-| Restore | `--restore` | The gateway is right. Re-apply gateway configuration on the node. |
-| Adopt | `--adopt` | The node is right. Record observed node reality into gateway configuration. |
+| Fix | `--fix` | Interactive resolution. For each drifted item, doctor asks you to restore or adopt. |
+| Restore | `--restore` | Force-restore non-interactively. The gateway is right; re-apply gateway configuration on every drifted item. |
+| Adopt | `--adopt` | Force-adopt non-interactively. The node is right; record observed node reality into gateway configuration for every drifted item. |
 
 Restore is the common case: you fix a node by pushing the gateway's version of the world back onto it. Adopt is the recovery case — a manual host setup, a migration, a disaster recovery — where the node holds the right answer and the gateway needs to learn it.
-
-`orbit doctor --fix` runs an interactive resolution flow. For each drifted item, doctor shows you the difference and asks whether to restore or adopt. To skip the prompts, pass `--restore` or `--adopt` to force one direction across all items.
 
 Doctor is safe to run often, and safe to scope. Running it after every deploy and on a daily schedule is the simplest way to catch problems early.
 

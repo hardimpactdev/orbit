@@ -28,7 +28,7 @@ family.
 ## Orbit Notes
 
 Docker is infrastructure for `postgres`, `mysql`, `redis`, `mailpit`, `reverb`,
-and `dns`. It is not itself a database, cache, mail, or DNS intent owner.
+and `dns`. It is not itself a database, cache, mail, or DNS configuration owner.
 
 ## Doctor Relationship
 

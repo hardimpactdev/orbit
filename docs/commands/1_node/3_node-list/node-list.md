@@ -67,7 +67,7 @@ envelope shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to read visible node registry intent.
+- The current node identity is authorized to read visible node registry configuration.
 
 ## Related Commands
 

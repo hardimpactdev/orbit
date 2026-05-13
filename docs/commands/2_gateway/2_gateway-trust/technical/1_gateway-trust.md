@@ -28,17 +28,17 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`gateway:trust` resolves the caller role from the shared node-family
-[Local Caller Role](../../../1_node/README.md#local-caller-role) setting for
-diagnostics, but caller role does not change the command path. Control,
-gateway, and app callers may repair gateway CA trust on their own caller
-machine.
+`gateway:trust` is a caller-local trust-store repair and does not call gateway
+endpoints that require gateway-side authorization beyond the bootstrap-safe
+trust path. Control, gateway, and app callers may all repair gateway CA trust
+on their own caller machine.
 
-For app-node callers, `gateway:trust` is only a caller-local trust-store repair.
-It does not grant app-node write authority, create gateway intent, or replace
-gateway-managed app-node bootstrap artifacts.
+For callers whose gateway-owned role is `app`, `gateway:trust` remains only a
+caller-local trust-store repair. It does not grant app-node write authority,
+create gateway configuration, or replace gateway-managed app-node bootstrap
+artifacts.
 
 ## Input Resolution
 
@@ -86,8 +86,8 @@ same root.
 
 The gateway remains the only node that owns root CA private material and route
 certificate issuance. Serving nodes may hold only the route-scoped certificate
-and key material required to serve HTTPS for routes enacted on that node. App,
-workspace, proxy, gateway, and tool route enactment owns leaf certificate
+and key material required to serve HTTPS for routes applied on that node. App,
+workspace, proxy, gateway, and tool route applying owns leaf certificate
 creation, upload, renewal, cleanup, and backend TLS drift repair.
 `gateway:trust` owns only caller-local installation of the public root.
 
@@ -133,7 +133,7 @@ authority on app nodes or control nodes.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Gateway missing | No configured gateway exists. | Failure before network or trust-store side effects |
-| Local context invalid | Local gateway settings cannot be read. | Failure before network or trust-store side effects |
+| Local settings unreadable | Local gateway settings cannot be read. | Failure before network or trust-store side effects |
 | Gateway endpoint invalid | The configured gateway endpoint cannot be normalized to a gateway URL. | Failure before network or trust-store side effects |
 | Gateway unavailable | The root CA endpoint cannot be reached or returns a non-success response. | Failure before trust-store side effects |
 | Trust material invalid | The gateway response does not contain a valid PEM root CA certificate. | Failure before trust-store side effects |
@@ -174,7 +174,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway intent writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
+| `tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured gateway endpoint resolution, no-prompt missing gateway failure, root CA fetch, PEM validation, local trust-store side effect, local metadata persistence, idempotent already-trusted success, no gateway configuration writes, no `/api/me` identity verification, no public gateway override, and no public `--export` option. |
 | `tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
 | `tests/E2E/GatewayTrustTest.php` | Real local trust installation against an ephemeral gateway CA on a supported control-node platform, including local metadata persistence and idempotent convergence. |

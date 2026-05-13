@@ -8,7 +8,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage workspace policy for the
   target app.
-- The target app exists in gateway intent.
+- The target app exists in gateway configuration.
 
 [Back to the public command page.](../workspace-teardown-step-add.md)
 
@@ -37,13 +37,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-| Role | Validity | Consequence |
+The CLI forwards `workspace-teardown-step:add` to the gateway, which
+authenticates the caller's WireGuard peer identity and applies authorization.
+
+| Caller peer | Gateway authorization | Consequence |
 | --- | --- | --- |
-| `control` | `valid` | Forwards intent to the gateway over HTTPS through WireGuard. |
-| `gateway` | `valid` | Direct gateway registry write. |
-| `app` | `invalid` | App-node callers are denied before prompts or side effects with `error.code=caller_role_not_allowed`. App nodes do not own workspace policy. |
+| Control peer | Allowed when authorized | The CLI forwards configuration to the gateway over HTTPS through WireGuard. |
+| Gateway peer | Allowed when authorized | The CLI invokes the local registry write on the gateway. |
+| App-node peer | Denied | The gateway returns `error.code=caller_role_not_allowed` before any side effects. App nodes do not own workspace policy. |
 
 ## Input Resolution
 
@@ -83,7 +86,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `workspace-teardown-step:add` writes a single gateway-owned teardown step
 record for an app's workspace lifecycle. The step is *not* executed during
-this command; it is enacted by `workspace:remove` and `app:prune` at the
+this command; it is applied by `workspace:remove` and `app:prune` at the
 teardown phase, before destructive workspace cleanup.
 
 1. **Registry Write**: Creates one new record in the gateway workspace
@@ -118,7 +121,7 @@ teardown phase, before destructive workspace cleanup.
    snapshot the runner read at teardown-phase entry. Recovery from
    policy/runtime drift is the doctor's job, not this command's.
 7. **No Filesystem Side Effects**: The command writes only to gateway
-   intent. App nodes are not contacted.
+   configuration. App nodes are not contacted.
 8. **Consumer Failure Semantics**: When a teardown step fails during
    `workspace:remove` or `app:prune`, the failure is reported as a
    structured non-fatal warning under `success.meta.warnings[]` of the
@@ -146,11 +149,11 @@ teardown phase, before destructive workspace cleanup.
   `--timeout` (including `0`), unresolved `--app`. Reported as
   `error.code=validation_failed` with `error.meta.field` naming the
   offending input. Fails before side effects.
-- **Caller Role Not Allowed**: App-node callers are rejected with
-  `error.code=caller_role_not_allowed` before prompts.
+- **Caller Role Not Allowed**: The gateway denies an app-node peer with
+  `error.code=caller_role_not_allowed` before any side effects.
 - **Authorization Failed**: The caller is not authorized to manage workspace
   policy for the target app (`error.code=authorization_failed`).
-- **App Not Found**: Resolved app slug does not exist in gateway intent
+- **App Not Found**: Resolved app slug does not exist in gateway configuration
   (`error.code=workspace.app_not_found`, `error.meta.app`).
 - **Invalid Position**: Both `--before` and `--after` supplied
   (`error.code=workspace.invalid_position`,
@@ -194,5 +197,5 @@ teardown-step creation attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php` | Registry write for `(app, phase=teardown, command, timeout_seconds)`, freshly assigned `id`, append-by-default order calculation, `--before` / `--after` insertion with subsequent-step renumbering, and rejection of step-record fields (`name`, `working_directory`, `env_overrides`, `on_failure`). |
 | `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php` | Input resolution (explicit `--app`, `.orbit/config` marker, gateway path lookup, interactive prompt, non-interactive failure), mutual exclusivity of `--before` / `--after`, strict positive `--timeout` validation including `0` rejection, additive (non-converging) re-run behavior, warning payload shape for `success.meta.warnings[]`, and absence of runtime lock against in-flight `workspace:remove`. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCallerRoleTest.php` | Control / gateway acceptance and app-node `caller_role_not_allowed` rejection before prompts. |
+| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCallerRoleTest.php` | Control / gateway peer acceptance and app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php` | Real gateway write against a registered app, append/insert/order verification for `phase=teardown`, and JSON envelope alignment. |

@@ -7,9 +7,8 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to inspect deployment history for the selected app.
+- The CLI caller can reach the Orbit gateway.
+- The gateway authorizes the WireGuard peer to inspect deployment history for the selected app.
 
 ## Signature
 
@@ -27,12 +26,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `limit` | `--limit` | `Optional.` | `Never.` | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read deployment history when authorized for the resolved
-production app; `deploy:history` never grants write permission or local state
-authority.
+The gateway authenticates the WireGuard peer and authorizes the request by
+caller role. The CLI does not resolve or assert caller role locally. All
+authenticated caller roles use the same gateway-owned access policy. App-node
+callers may read deployment history when the gateway authorizes them for the
+resolved production app; `deploy:history` never grants write permission.
 
 ## Input Mode Contracts
 

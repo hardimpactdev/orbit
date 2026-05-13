@@ -4,7 +4,7 @@
 
 Restart a managed tool service.
 
-`tool:restart` cycles a managed tool's service without changing version intent
+`tool:restart` cycles a managed tool's service without changing the expected version
 or rerunning the tool's setup flow.
 
 ## Usage
@@ -38,7 +38,7 @@ Target context is required when neither `--node`, `--app`, nor local
 1. Resolves the target node and registered tool row.
 2. Verifies the tool is managed and has a restart path.
 3. Restarts the tool through its lifecycle backend on the target node.
-4. Preserves existing gateway configuration and version intent.
+4. Preserves existing gateway configuration and expected version.
 5. Reports the resulting state.
 
 The command does not repair divergent configuration. Use

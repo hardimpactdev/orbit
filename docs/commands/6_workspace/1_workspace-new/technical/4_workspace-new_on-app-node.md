@@ -1,23 +1,24 @@
 # Technical Contract: `orbit workspace:new` (App Node)
 
-**Caller Role:** `app`.
+**Caller peer:** App node.
 
 [Back to the canonical technical contract.](1_workspace-new.md)
 
 ## Validity
 
-- **Rejected.** App nodes are not permitted to initiate workspace creation.
-  Workspace intent and cross-node SSH enactment are gateway-only
-  responsibilities.
+- **Denied by the gateway.** Gateway-owned authorization rejects
+  `workspace:new` from an app-node peer. Workspace configuration and
+  cross-node SSH application are gateway-only responsibilities.
 
 ## Behavior
 
-- **Pre-flight Rejection:** The CLI rejects the command before prompts,
-  forwarding, SSH, or any side effects when the local node role is `app`.
-- **Reason:** `workspace:new` orchestrates gateway intent and SSH enactment
-  to the owning app node. App nodes are targets of enactment, not
-  originators of workspace creation. This mirrors `app:new` and
-  `workspace:setup` rejection semantics.
+- **Gateway Rejection:** The CLI forwards the request like any other client;
+  the gateway authenticates the app-node peer, applies authorization, and
+  rejects the command before prompts, SSH, or any other side effects.
+- **Reason:** `workspace:new` orchestrates gateway configuration and SSH
+  application to the owning app node. App nodes are targets of application,
+  not originators of workspace creation. This mirrors `app:new` and
+  `workspace:setup` rejection semantics for non-permitted callers.
 
 ## Failure Mode
 
@@ -28,4 +29,4 @@
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewOnAppNodeRejectionTest.php` | App-node caller rejection: `workspace:new` exits before prompts, side effects, or registry reads when `general.local_node_role=app`, with `error.code=caller_role_not_allowed` in JSON output and the documented human message in TTY output. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewOnAppNodeRejectionTest.php` | App-node caller rejection: `workspace:new` returns `error.code=caller_role_not_allowed` before any side effects when the gateway authenticates the caller's WireGuard peer identity as an app node, with the documented human message in TTY output. |

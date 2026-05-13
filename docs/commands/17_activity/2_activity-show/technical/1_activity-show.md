@@ -7,8 +7,6 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation local-node
-  role contract.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to read gateway activity history.
@@ -33,37 +31,32 @@ This command follows the shared
 | `id` | `[id]` | Required. Interactive input mode may prompt when omitted. | Never. | None. | Positive integer activity id. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`activity:show` resolves the caller role from the local node role setting before
-it reads command inputs or renders prompts.
+The CLI always sends the request to the gateway over HTTPS through WireGuard.
+The gateway authenticates the WireGuard peer, resolves the caller's node
+identity, and authorizes the history read against that identity and the
+resolved activity id.
 
 | Caller role | Behavior |
 | --- | --- |
-| `control` | Forwards the request to the gateway over HTTPS through WireGuard. |
-| `gateway` | Executes the gateway history read locally. |
-| `app` | Forwards the request to the gateway over HTTPS through WireGuard. App-node context does not grant additional history visibility. |
-| `unknown` | Invalid local context. Fail before prompts, input validation, or gateway requests. |
+| `control` | Gateway returns the entry when visible to the calling control node. |
+| `gateway` | Gateway returns the entry when visible to itself. |
+| `app` | Gateway returns the entry when visible to the calling app node. App-node context does not grant additional history visibility. |
 
-Caller role only selects local execution versus gateway-client transport. The
-gateway authorizes the history read against the current node identity and the
-resolved activity id.
+Caller role is gateway-resolved metadata, not a CLI-side branch. The CLI does
+not inspect or depend on caller role.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If the local role setting is unset or `null`, resolve caller role as
-     `control`.
-   - If the local role setting contains an unsupported value or cannot be read,
-     fail before prompts, input validation, or gateway requests.
-2. Resolve `activity_show.id` from `[id]` or the selected input mode.
+1. Resolve `activity_show.id` from `[id]` or the selected input mode.
    - Interactive mode prompts when `[id]` is absent. See
      [`5.1_activity-show_input-mode_interactive.md`](5.1_activity-show_input-mode_interactive.md).
    - Non-interactive mode fails when `[id]` is absent. See
      [`5.2_activity-show_input-mode_non-interactive.md`](5.2_activity-show_input-mode_non-interactive.md).
-3. Validate `activity_show.id` as a positive integer.
-4. Select the output renderer.
-5. Request the visible activity entry and correlated entries from the gateway.
+2. Validate `activity_show.id` as a positive integer.
+3. Select the output renderer.
+4. Request the visible activity entry and correlated entries from the gateway.
 
 ## Input Mode Contracts
 
@@ -95,9 +88,9 @@ resolved activity id.
 ### Scope Boundaries
 
 `activity:show` must not:
-- Mutate gateway intent, local settings, or node reality.
+- Mutate gateway configuration, local settings, or node reality.
 - Replay, revert, repair, adopt, or retry the selected activity.
-- Inspect live node state, app runtimes, runtime backend programs, process
+- Inspect live node state, app runtimes, process manager programs, process
   logs, Caddy, or filesystem state.
 - Treat activity details as current readiness or drift diagnostics.
 
@@ -112,7 +105,6 @@ resolved activity id.
 | --- | --- | --- |
 | Validation failed | `id` is missing in non-interactive mode or is not a positive integer. | Failure before gateway history read |
 | Activity not found | No visible activity entry matches the resolved id. | Failure |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before gateway history read |
 | Gateway unavailable | The caller cannot reach the configured gateway API. | Failure |
 | Authorization failed | The gateway denies activity-history access for the caller. | Failure |
 
@@ -136,7 +128,7 @@ also produce an entry recording the outcome.
 ## Doctor Relationship
 
 - `activity:show` reads historical gateway records.
-- `doctor` verifies current gateway-tracked configuration against enacted
+- `doctor` verifies current gateway-tracked configuration against applied
   reality. It does not use activity history as a substitute for current probes.
 
 ## Test Mapping
@@ -145,7 +137,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Activity/ActivityShowCommandTest.php` | Gateway-history detail behavior, caller-role transport selection, id validation, not-found behavior, authorization behavior, related-entry visibility, read-only guarantee, no live probes, and no repair side effects. |
+| `tests/Feature/Commands/Activity/ActivityShowCommandTest.php` | Gateway-history detail behavior, id validation, not-found behavior, gateway-side authorization behavior, related-entry visibility, read-only guarantee, no live probes, and no repair side effects. |
 | `tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php` | TTY selection, prompt behavior when `id` is missing, prompt ID, label, primitive, validation, prompt abort behavior, and `--json` opt-out. |
 | `tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php` | No-prompt selection without a TTY, `--json` forcing non-interactive mode, missing-id failure, invalid-id failure, and no prompt rendering. |
 | `tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php` | JSON renderer selection, success envelope, activity detail DTO shape, related entry shape, every `error.code` value, and `--json` forcing non-interactive mode. |

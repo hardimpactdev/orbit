@@ -31,14 +31,14 @@ orbit app:remove my-app --force
 
 ## Behavior Summary
 
-1. **Intent Removal:** Deletes the gateway app intent record. This is the point of no return.
-2. **Dependent Cleanup:** Removes app-owned records from `proxy`, schedules, workspace intent, and process artifacts.
+1. **Configuration Removal:** Deletes the gateway app configuration record. This is the point of no return.
+2. **Dependent Cleanup:** Removes app-owned records from `proxy`, schedules, workspace configuration, and process artifacts.
 3. **Artifact Cleanup:** Cleans node-side runtime artifacts (FPM config, app-owned directories) over SSH where possible.
-4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 (gateway intent removal) succeeds, any failure during dependent or node-side cleanup is reported as a non-fatal warning that points at the affected `doctor --fix --family=<family> --restore`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
+4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 (gateway configuration removal) succeeds, any failure during dependent or node-side cleanup is reported as a non-fatal warning that points at the affected `doctor --fix --family=<family> --restore`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
 
 ## Output Summary
 
-- **Human:** Framed destructive confirmation followed by a step tree. Drift after gateway intent removal renders as a footer with one line per affected family doctor.
+- **Human:** Framed destructive confirmation followed by a step tree. Drift after gateway configuration removal renders as a footer with one line per affected family doctor.
 - **JSON:** A single top-level `success` or `error` envelope. Partial cleanup is `success` with structured warnings under `success.meta.warnings[]` (each carrying `code`, `family`, `message`, and `next_command`).
 
 ## Requirements
@@ -46,7 +46,7 @@ orbit app:remove my-app --force
 - CLI caller must reach the Orbit gateway.
 - Authorized node identity for the target app or node.
 - Gateway SSH access to the app node is used for artifact cleanup when
-  available. If cleanup cannot finish after app intent removal, the command
+  available. If cleanup cannot finish after app configuration removal, the command
   still succeeds and reports warnings with repair commands.
 
 ## Related

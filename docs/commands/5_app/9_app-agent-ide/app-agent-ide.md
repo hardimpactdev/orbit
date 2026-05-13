@@ -41,23 +41,23 @@ orbit app:agent-ide my-app polyscope --json
 ## What Happens
 
 `app:agent-ide` writes the app-default agent-IDE adapter into gateway app
-intent.
+configuration.
 
 The command:
 
-1. Validates that the target app exists in gateway intent.
+1. Validates that the target app exists in gateway configuration.
 2. Validates that the requested adapter is supported.
 3. When switching away from a previous effective adapter, identifies
    workspaces that no longer exist for the app under the new adapter. This
    operation requires explicit consent (`--force` or interactive confirmation)
-   before any intent is written.
+   before any configuration is written.
 4. Stores the adapter as the app-level default.
 5. Removes stale workspaces through `app:prune` / `workspace:remove`
    semantics.
 6. Reports the configured app default, effective resolution, and any workspace
    cleanup that ran.
 
-`app:agent-ide` is an intent write with potential side effects. `inherit`
+`app:agent-ide` is a configuration write with potential side effects. `inherit`
 clears the app override so the effective adapter falls back to the owning node
 default. `none` disables agent IDE resolution for the app and its workspaces
 unless a future workspace-level override exists. Cleanup is intentionally
@@ -86,7 +86,7 @@ Human output summarizes the configured app default, effective resolution, and
 lists any workspaces removed during an adapter switch.
 
 JSON output returns the app name, the resulting adapter configuration, and any
-cleanup results. Cleanup that fails after the app intent write is reported as
+cleanup results. Cleanup that fails after the app configuration write is reported as
 success with structured warnings under `success.meta.warnings[]`. See the
 [JSON renderer contract](technical/6.2_app-agent-ide_output-render_json.md) for the exact
 payload shape.

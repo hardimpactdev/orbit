@@ -7,8 +7,9 @@
 **Effects:** `destructive`, `write`, `stream`.
 
 **Prerequisites:**
-- The CLI caller role is `control` or `gateway`. App-node callers are denied
-  before prompts or side effects with `error.code=caller_role_not_allowed`.
+- The CLI caller can reach the Orbit gateway. The gateway identifies the
+  WireGuard peer and rejects app-node peers with
+  `error.code=caller_role_not_allowed`.
 - The target app name or hostname must resolve to exactly one gateway app record.
 - The caller is authorized to manage the target app.
 - At least one agent IDE adapter is configured for the app (directly, inherited from the node, or as an extension).
@@ -30,21 +31,23 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | Non-interactive mode (without `--dry-run`). | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-| Caller role | Behavior |
+`app:prune` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call.
+
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Resolves app locally, then forwards the prune request to the gateway. |
-| `gateway` | Executes the pruning logic locally. |
-| `app` | App-node callers are denied. Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
-| `unknown` | Unsupported or unreadable local caller role. Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
+| `control` | Allowed when authorized. The gateway runs the pruning logic, and any workspace removal applies app-node cleanup over SSH via `RemoteShell`. |
+| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell` for workspace removal cleanup. |
+| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
-1. **Resolve Caller Role:** Deny `app` and `unknown` callers.
-2. **Resolve App:** From `[app]` or current context. Prompt in interactive mode if missing.
-3. **Resolve Dry Run:** From `--dry-run`.
-4. **Resolve Destructive Consent:**
+1. **Resolve App:** From `[app]` or current context. Prompt in interactive mode if missing.
+2. **Resolve Dry Run:** From `--dry-run`.
+3. **Resolve Destructive Consent:**
    - If `dry_run` is `true`, no destructive consent is needed. `--force` is ignored.
    - If `dry_run` is `false`:
      - In interactive mode, prompt for confirmation unless `--force` is present.
@@ -67,12 +70,12 @@ generic dry-run contract.
 
 ### 1. Source Discovery
 - Resolve the currently effective agent IDE adapters for the app using the
-  blueprint resolution chain (app explicit setting → owning node default →
+  architecture resolution chain (app explicit setting → owning node default →
   none). Workspace-level overrides are not part of the current resolution.
 - `app:prune` does not consult any "previous adapter" state. Adapter switches
   are owned by `app:agent-ide`, which identifies previous-adapter cleanup
   targets before writing the new app adapter and then removes those stale
-  workspaces after the intent write. The app-scoped lock (see Concurrency)
+  workspaces after the configuration write. The app-scoped lock (see Concurrency)
   prevents an adapter switch from observing or being observed by `app:prune`.
 - Query the resolved adapters for the current list of active workspaces.
   When more than one adapter is effective for the app (for example, when an
@@ -100,7 +103,7 @@ If `dry_run` is `false`:
     inherited processes, run teardown steps, remove the workspace FPM pool, and
     remove the worktree.
   - App-node SSH cleanup reachability is not a pre-prune prerequisite. If Phase
-    B cannot finish after workspace intent removal, the workspace removal still
+    B cannot finish after workspace configuration removal, the workspace removal still
     succeeds with warnings.
   - Partial Phase B failures become `success.meta.warnings[]` using the same
     family warning vocabulary and `next_command` handoffs as
@@ -108,7 +111,7 @@ If `dry_run` is `false`:
   - **Database Cleanup Current Limitation:** Databases are not removed by this
     contract revision. Per `ARCHITECTURE.md` §Apps, database cleanup is allowed only
     for databases explicitly tracked by Orbit as workspace-owned, and no
-    such tracking mechanism exists in gateway intent today. Every database
+    such tracking mechanism exists in gateway configuration today. Every database
     encountered must be reported as `skipped` (manual cleanup) regardless
     of name, environment file, convention, or setup-step side effect.
     User-authored database removal can be expressed as a workspace
@@ -137,12 +140,12 @@ If `dry_run` is `false`:
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | `app` does not match any record. | Failure (`error.code=app.not_found`). |
-| Caller role not allowed | Caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
+| Caller role not allowed | The gateway identifies the caller as an app-node peer. | Failure (`error.code=caller_role_not_allowed`). |
 | Authorization failed | Caller is not authorized to manage the app. | Failure (`error.code=authorization_failed`). |
 | No adapters | No agent IDE adapters configured for the app. | Failure (`error.code=app.no_agent_ide_adapter`). |
 | Adapter query failed | Error communicating with a source-of-truth adapter. | Failure (`error.code=app.agent_ide_query_failed`). |
 | Destructive consent missing | Non-interactive mode, no `--dry-run`, and `--force` is missing. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Partial removal | One or more `workspace:remove` Phase B cleanup steps failed after gateway intent removal. | Success with structured `success.meta.warnings[]` using `workspace:remove` warning semantics. |
+| Partial removal | One or more `workspace:remove` Phase B cleanup steps failed after gateway configuration removal. | Success with structured `success.meta.warnings[]` using `workspace:remove` warning semantics. |
 
 ## Doctor Relationship
 

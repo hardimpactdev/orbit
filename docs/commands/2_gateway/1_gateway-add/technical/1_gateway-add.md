@@ -31,22 +31,18 @@ This command follows the shared
 | `gateway_ip` | `[gateway_ip]` | Never; derived from network or fails. | Never. | Derived from active WireGuard network when unambiguous. | Valid IPv4 gateway WireGuard API address in Orbit's `10.6.0.0/16` range. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`gateway:add` resolves the caller role from the active local node registry row
-before it reads command inputs, renders prompts, or starts side effects. See the
-node-family [Local Caller Role](../../../1_node/README.md#local-caller-role)
-contract.
+`gateway:add` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call and rejects requests from peers whose
+gateway-owned node role is not allowed to drive `gateway:add` local onboarding.
 
-If no active local node row exists, the caller role is `control`. Gateway and
-app callers must be represented by an active local node registry row.
-
-| Caller role | Behavior |
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Normal operation. Derive or verify gateway address, fetch and trust CA, verify identity, store local config. See [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md). |
-| `gateway` | Invalid. The gateway does not need to add itself. Fail before prompts or side effects with `This command may only be run from a control node.` See [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md). |
-| `app` | Invalid. App-node gateway-client endpoint and trust artifacts are gateway-managed node bootstrap artifacts, not `gateway:add` local onboarding state. Fail before prompts or side effects with `This command may only be run from a control node.` See [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md). |
-| `unknown` | Invalid local context. Used only when the active local node row contains an unsupported role or cannot be read. Fail before prompts or side effects with a local context error. A missing local node row does not produce `unknown`; it defaults to `control`. |
+| `control` | Allowed. Normal operation. Derive or verify gateway address, fetch and trust CA, verify identity, store local config. See [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md). |
+| `gateway` | Rejected by the gateway. The gateway does not need to add itself. The CLI surfaces the rejection with `This command may only be run from a control node.` See [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md). |
+| `app` | Rejected by the gateway. App-node gateway-client endpoint and trust artifacts are gateway-managed node bootstrap artifacts, not `gateway:add` local onboarding state. The CLI surfaces the rejection with `This command may only be run from a control node.` See [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md). |
 
 Role-specific behavior is defined in these companion contracts:
 
@@ -63,23 +59,9 @@ categories, doctor relationship, and test mapping.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - Read the active local node registry row before reading command arguments,
-     rendering prompts, or starting side effects.
-   - If no active local node row exists, resolve caller role as `control`.
-   - If the active local node row role is `control`, `gateway`, or `app`, use
-     that value for local path selection.
-   - If the active local node row role contains an unsupported value,
-     resolve caller role as `unknown` and fail before prompts or side effects.
-   - If the caller is a gateway node, apply
-     [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md) and
-     fail before resolving `gateway_add.gateway_ip`.
-   - If the caller is an app node, apply
-     [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md) and fail
-     before resolving `gateway_add.gateway_ip`.
-2. Resolve `gateway_add.gateway_ip` from `[gateway_ip]`. Derive from the active
+1. Resolve `gateway_add.gateway_ip` from `[gateway_ip]`. Derive from the active
    WireGuard network when omitted.
-3. Validate `gateway_add.gateway_ip` immediately.
+2. Validate `gateway_add.gateway_ip` immediately.
    - Must be a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`.
    - Must be reachable as a gateway API endpoint.
 
@@ -166,8 +148,7 @@ gateway, or tool route leaf certificates.
 | Identity unknown | `/api/me` returns 403; the local peer is not registered. | Failure |
 | Gateway API error | `/api/me` returns a successful HTTP response with an invalid identity payload. | Failure |
 | Local config write failure | Gateway is reachable but local settings or CA file cannot be written. | Failure |
-| Caller role not allowed | Invoked from a gateway or app node. | Failure |
-| Local context invalid | The active local node registry row contains an unsupported role. | Failure |
+| Caller role not allowed | The gateway rejects the caller's WireGuard peer identity because its gateway-owned role is `gateway` or `app`. | Failure |
 
 Already-configured convergence is success, not failure.
 
@@ -210,5 +191,5 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures, and caller-role denial rules. |
 | `tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, node-shaped verified references, `added` and `converged` success payloads, error codes, and enum values. |
 | `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
-| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Caller role behavior: control caller allowed, gateway caller denied, app caller denied, and local context error handling. |
+| `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: gateway authorizes control callers and rejects `gateway` and `app` callers; CLI surfaces the gateway's rejection without client-side branching. |
 | `tests/E2E/GatewayAddTest.php` | Real-node end-to-end control-node join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |

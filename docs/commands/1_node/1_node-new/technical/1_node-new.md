@@ -7,12 +7,10 @@
 **Effects:** `write`, `stream`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract and the node-family
-  [Local Caller Role](../../README.md#local-caller-role) contract.
-- `node:new` is invoked from a control or gateway caller. App-node callers are
-  rejected before prompts, forwarding, or side effects.
+- The gateway authorizes `node:new` for callers whose authenticated node record
+  has role `control` or `gateway`. App-role callers are rejected by the
+  gateway. First-gateway bootstrap is the one no-gateway path: an unconfigured
+  CLI runs the SSH bootstrap directly.
 - Role-specific network, platform, topology, and authorization prerequisites
   are applied as post-input path eligibility in the role companion contracts
   once the requested role and required fields are known.
@@ -20,7 +18,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--ssh-user=<user>] [--json]
+orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 ```
 
 ## Input Contract
@@ -30,79 +28,60 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Caller role = `control` or `gateway`. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
-| `role` | `--role` | Caller role = `control` or `gateway`. | Never. | None. | One of `gateway`, `app`, `control`. |
+| `name` | `[name]` | Always. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
+| `role` | `--role` | Always. | Never. | None. | One of `gateway`, `app`, `control`. |
 | `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. |
-| `control_name` | `--control-name` | Caller role = `control`, requested role = `gateway`, and no gateway is configured locally. | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
+| `control_name` | `--control-name` | Requested role = `gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
 | `environment` | `--environment` | Requested role = `app`. | Requested role = `gateway` or `control`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Requested role = `app` and `environment=development`. | Requested role = `gateway`, requested role = `control`, or requested role = `app` and `environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
-| `ssh_user` | `--ssh-user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap-only SSH user. It is not the steady-state `RemoteShell` user. |
+| `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap SSH user. The gateway stores it as the steady-state `nodes.user` after provisioning sets up the gateway-managed SSH user. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:new` resolves the caller role from the local node role setting before it
-reads command inputs, renders prompts, forwards requests, or starts side
-effects. See the node-family [Local Caller Role](../../README.md#local-caller-role)
-contract and the foundation
-[local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-contract.
+The CLI sends the request to the gateway. The gateway authenticates the
+presented WireGuard peer identity, derives the caller's gateway-known role from
+that identity, and authorizes accordingly. The CLI does not check or store the
+caller role locally.
 
-If `general.local_node_role` is unset or `null`, the caller role is `control`.
-Gateway and app callers must be explicit through `general.local_node_role`.
-Gateway configuration is separate from caller-role resolution: a control caller
-with no gateway configuration is still a control caller, but only the
-first-gateway bootstrap path is eligible.
-
-| Caller role | Behavior |
+| Caller role | Gateway authorizes |
 | --- | --- |
-| `control` | Client call to the gateway for normal operation. May bootstrap the first gateway over SSH when no gateway exists yet. See [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md). |
-| `gateway` | Authority path. May enroll control nodes, provision or adopt app nodes, and converge gateway intent. See [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md). |
-| `app` | Not allowed. Fail before prompts or side effects with `This command may only be run from a control or gateway node.` See [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md). |
-| `unknown` | Invalid local context. Used only when `general.local_node_role` contains an unsupported value or cannot be read. Fail before prompts or side effects with a local context error. Missing `general.local_node_role` does not produce `unknown`; it defaults to `control`. |
+| `control` | Enrolling control nodes, provisioning or adopting app nodes, and converging gateway configuration when the caller has access to the gateway node. See [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md). |
+| `gateway` | The same write paths as `control`. Gateway-local execution does not require WireGuard forwarding. See [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md). |
+| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md). |
 
-Role-specific behavior is defined in these companion contracts:
+First-gateway bootstrap is the no-authorization path: there is no gateway to
+authenticate against yet, so the CLI runs the SSH bootstrap directly.
+
+Companion contracts describe behavior in detail:
 
 - [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md): first-gateway
-  bootstrap and gateway-forwarded operation from control nodes.
+  bootstrap and gateway-forwarded operation from control callers.
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md): gateway-owned
   enrollment, provisioning, adoption, and convergence rules.
-- [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md): app-node denial and
-  exact error contract.
+- [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md): app-role rejection
+  and exact error contract.
 
-The role-specific companion pages are authoritative for caller-role behavior.
-This canonical page owns shared inputs, shared behavior, output links, failure
-categories, doctor relationship, and test mapping.
+The role-specific companion pages are authoritative for how the gateway
+authorizes each role. This canonical page owns shared inputs, shared behavior,
+output links, failure categories, doctor relationship, and test mapping.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - Read `general.local_node_role` before reading command arguments,
-     rendering prompts, forwarding requests, or starting side effects.
-   - If `general.local_node_role` is unset or `null`, resolve caller role as
-     `control`.
-   - If `general.local_node_role` is `control`, `gateway`, or `app`, use that
-     value for local path selection.
-   - If the local role setting contains an unsupported value or cannot be read,
-     resolve caller role as `unknown` and fail before prompts, forwarding, or
-     side effects.
-   - If the caller is an app node, apply
-     [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md) and fail before
-     resolving `node_new.name` or `node_new.role`.
-2. Resolve `node_new.name` from `[name]`. Validate it immediately.
-3. Resolve `node_new.role` from `--role`. Validate it before resolving role-specific fields.
-4. Resolve role-specific inputs.
+1. Resolve `node_new.name` from `[name]`. Validate it immediately.
+2. Resolve `node_new.role` from `--role`. Validate it before resolving role-specific fields.
+3. Resolve role-specific inputs.
    - For `app`, resolve `node_new.environment`, `node_new.host`, and
-     `node_new.ssh_user`.
+     `node_new.user`.
    - If `node_new.environment` is `development`, also resolve `node_new.tld`.
    - If `node_new.environment` is `production`, do not ask for `node_new.tld`.
    - For `gateway`, resolve `node_new.host` always.
    - For first-gateway bootstrap, also resolve `node_new.control_name`.
-   - For `gateway`, resolve `node_new.ssh_user` when SSH bootstrap or adoption
+   - For `gateway`, resolve `node_new.user` when SSH bootstrap or adoption
      is used.
    - For `control`, do not ask for host, control name, environment, TLD, or
      SSH user.
-5. Validate required, forbidden, and path-eligibility rules as soon as the
+4. Validate required, forbidden, and path-eligibility rules as soon as the
    fields needed for each rule are known.
    - Field-local validation runs when the field is supplied or submitted.
    - Path eligibility runs immediately when the requested path can be
@@ -111,14 +90,14 @@ categories, doctor relationship, and test mapping.
      current corrective prompt when the user can safely choose a different path.
      Otherwise they stop the command before asking for later inputs that cannot
      affect the blocker.
-6. Apply any remaining post-input path eligibility before side effects.
-   - For control callers, apply
-     [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md) using
-     the resolved requested role and role-specific inputs.
-   - For gateway callers, apply
-     [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) using
-     the resolved requested role and role-specific inputs.
-7. Select the output renderer and begin the side-effect flow. The human
+5. Send the typed request to the gateway. The gateway authenticates the
+   presented WireGuard identity and applies the authorization rules described
+   in [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md),
+   [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md), or
+   [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md) before any
+   gateway-owned side effects. First-gateway bootstrap is the exception
+   described in [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md).
+6. Select the output renderer and begin the side-effect flow. The human
    renderer owns progress output; the JSON renderer owns the final JSON
    envelope.
 
@@ -137,7 +116,7 @@ Input mode behavior is split out of the canonical command contract:
 
 ### Shared Registry Rules
 
-- Check the gateway registry before creating node intent.
+- Check the gateway registry before creating node configuration.
 - If the requested node already exists with compatible role, host,
   environment, and node identity, converge or confirm it.
 - If the requested node exists with incompatible role, host, environment, or
@@ -156,8 +135,6 @@ Input mode behavior is split out of the canonical command contract:
 
 - Provision the target host over SSH only when the host has not already been
   provisioned for the requested identity.
-- Gateway bootstrap writes `general.local_node_role=gateway` on the gateway host
-  after gateway state and reachability are established.
 - First-gateway bootstrap stores the resolved `node_new.host` as the initial
   gateway endpoint used in generated WireGuard peer configs. The endpoint is a
   connectivity fact and may be DNS, public IP, private IP, or any address
@@ -172,7 +149,7 @@ Input mode behavior is split out of the canonical command contract:
   already-provisioned convergence is reported.
 - If a compatible existing gateway is drifted or incomplete, do not reprovision
   it from `node:new`; report the drift or incomplete provisioning and point to
-  `doctor --fix --family=node --restore`.
+  `doctor --family=node --restore`.
 
 ### App Node Provisioning
 
@@ -181,8 +158,6 @@ Input mode behavior is split out of the canonical command contract:
   app-node installation.
 - Provision the target host over SSH only when the host has not already been
   provisioned for the requested identity.
-- App-node provisioning writes `general.local_node_role=app` on the app host
-  after app-node identity and readiness are established.
 - For development app nodes, persist `nodes.tld`, configure the app node's local
   TLD default, and create the gateway-owned development DNS mapping so
   `*.tld` resolves to the app node's WireGuard IP.
@@ -193,24 +168,22 @@ Input mode behavior is split out of the canonical command contract:
 
 ### Shared Provisioning Details
 
-- The `node_new.ssh_user` value is a bootstrap credential only. Successful
+- The `node_new.user` value is the bootstrap SSH credential. Successful
   gateway and app-node provisioning creates or verifies the Orbit-managed SSH
-  user, normally `orbit`, stores that steady-state user in gateway node intent
-  as `nodes.user`, and `RemoteShell` uses that stored user for later
-  gateway-to-node enactment.
-- Control nodes may leave `general.local_node_role` unset because unset resolves
-  to `control`.
+  user, normally `orbit`, stores that steady-state user in gateway node
+  configuration as `nodes.user`, and `RemoteShell` uses that stored user for
+  later gateway-to-node applying.
 
 ### Adoption And Drift Boundaries
 
 - `node:new` is an explicit node-membership adoption and convergence path. It may
-  adopt compatible app hosts into gateway intent as part of adding that node and
-  may converge an already-known gateway. Missing gateway-row materialization is
-  outside `node:new` because gateway caller authority is derived from an active
-  local gateway node row. Broader drift adoption, disaster recovery, and
-  adoption of observed node reality outside this explicit membership flow remain
-  owned by a future explicit recovery path or `doctor --fix --family=node --adopt`
-  where the doctor contract already allows it.
+  adopt compatible app hosts into gateway configuration as part of adding that
+  node and may converge an already-known gateway. Missing gateway-row
+  materialization is outside `node:new` because gateway caller authority is
+  derived from an active local gateway node row. Broader drift adoption,
+  disaster recovery, and adoption of observed node reality outside this
+  explicit membership flow remain owned by a future explicit recovery path or
+  `doctor --family=node --adopt` where the doctor contract already allows it.
 - Apply only role bootstrap requirements. Other state families own their own
   artifacts, except node-owned bootstrap artifacts such as minimum app-node
   runtime readiness, node identity readiness, and development TLD mapping.
@@ -270,24 +243,24 @@ contract.
   supported for the requested role. Supported role/platform pairs are defined in
   [`node-concepts.md`](../../node-concepts.md#role-platform-support).
 - Fail when SSH bootstrap cannot reach the host or loses access mid-run.
-- Report partial provisioning when gateway intent was written and a usable
-  gateway exists, but host enactment did not complete. That node appears as
-  drift until provisioning is repaired by `doctor --fix --family=node --restore`, adopted
-  where safe, or removed.
-- First-gateway bootstrap failures that happen before gateway intent and API
-  access exist cannot be handed to doctor yet. Report the failed step and the
-  manual retry or cleanup path through the selected output renderer.
+- Report partial provisioning when gateway configuration was written and a
+  usable gateway exists, but host applying did not complete. That node appears
+  as drift until provisioning is repaired by `doctor --family=node --restore`,
+  adopted where safe, or removed.
+- First-gateway bootstrap failures that happen before gateway configuration and
+  API access exist cannot be handed to doctor yet. Report the failed step and
+  the manual retry or cleanup path through the selected output renderer.
 
 ## Doctor Relationship
 
 See [Node Doctor](../../node-doctor.md) for the authoritative node-family
-probe, drift, fix, and adopt contract.
+probe, drift, restore, and adopt contract.
 
-`node:new` can create or resolve node-family drift by writing gateway intent
-before host enactment completes, installing gateway/control/app bootstrap
-artifacts, and creating development TLD readiness artifacts. Drift in tools,
-firewall rules, apps, workspaces, processes, schedules, and proxy routes is
-verified by those family contracts after the node exists.
+`node:new` can create or resolve node-family drift by writing gateway
+configuration before host applying completes, installing gateway/control/app
+bootstrap artifacts, and creating development TLD readiness artifacts. Drift in
+tools, firewall rules, apps, workspaces, processes, schedules, and proxy
+routes is verified by those family contracts after the node exists.
 
 ## Test Mapping
 
@@ -295,7 +268,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Primary owner for the canonical input contract table: fields, sources, required conditions, forbidden conditions, defaults, value validation, `control_name` being required only for first-gateway bootstrap, caller-role resolution from `general.local_node_role` with unset/null defaulting to `control`, caller-role resolution timing, and post-input path eligibility timing/delegation. It asserts resolved input and validation outcomes, not resolver classes or handler internals. Input-mode-specific prompting/failure behavior and role-specific path eligibility contents/outcomes are owned by the split contracts. |
+| `tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Primary owner for the canonical input contract table: fields, sources, required conditions, forbidden conditions, defaults, value validation, `control_name` being required only for first-gateway bootstrap, and post-input path eligibility timing/delegation. It asserts resolved input and validation outcomes, not resolver classes or handler internals. Input-mode-specific prompting/failure behavior and gateway-side authorization-by-role contents/outcomes are owned by the split contracts. |
 
 Input-mode-specific test mapping lives in:
 

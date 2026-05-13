@@ -58,7 +58,7 @@ Example JSON shape:
 ## Orbit Notes
 
 Mailpit is a managed development mail capability. App mailer configuration
-remains app intent.
+remains app configuration.
 
 ## Doctor Relationship
 

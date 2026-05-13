@@ -33,9 +33,10 @@ This command follows the shared
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
 app-level default branch is not supported because the apps domain does not yet
-track a `default_branch` field on app intent. Adding gateway-tracked
-default-branch support is a future explicit feature on `app:update`/app intent;
-until then `workspace:new` does not consult app intent for this default.
+track a `default_branch` field on app configuration. Adding gateway-tracked
+default-branch support is a future explicit feature on `app:update`/app
+configuration; until then `workspace:new` does not consult app configuration
+for this default.
 
 ### Input Resolution
 
@@ -78,22 +79,25 @@ until then `workspace:new` does not consult app intent for this default.
    Orbit's supported PHP version set with
    `error.code=validation_failed`/`error.meta.field=php_version` before any
    side effects. Node-side runtime availability is verified during
-   enactment, not during input resolution. If omitted, the workspace row
+   applying, not during input resolution. If omitted, the workspace row
    stores `null`, which the gateway interprets as "inherit parent app PHP
    version."
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace:new` follows the [Workspace Caller Role Rule](../../README.md). The
-parent app is already pinned to a specific app node, so `workspace:new`
-inherits that target node automatically. App-node callers are denied before
-prompts, forwarding, SSH, gateway intent writes, or other side effects.
+`workspace:new` follows the
+[workspace authorization rule](../../README.md#authorization-by-caller-role).
+The CLI always gathers input and forwards to the gateway; the gateway
+authenticates the caller's WireGuard peer identity and applies authorization.
+The parent app is already pinned to a specific app node, so the gateway
+inherits that target node automatically when applying setup work over SSH via
+RemoteShell.
 
-| Caller role | Validity | Consequence |
+| Caller peer | Gateway authorization | Consequence |
 | --- | --- | --- |
-| `control` | `valid` | Resolve input locally, then forward to the gateway over HTTPS through WireGuard. See [`2_workspace-new_on-control-node.md`](2_workspace-new_on-control-node.md). |
-| `gateway` | `valid` | Execute locally on the gateway and enact app-node work over SSH. See [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md). |
-| `app` | `invalid` | Rejected before prompts or side effects. See [`4_workspace-new_on-app-node.md`](4_workspace-new_on-app-node.md). |
+| Control peer | Allowed when authorized | The CLI forwards over HTTPS through WireGuard. See [`2_workspace-new_on-control-node.md`](2_workspace-new_on-control-node.md). |
+| Gateway peer | Allowed when authorized | The CLI on the gateway invokes the local workspace creation flow; the gateway then applies app-node work via RemoteShell. See [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md). |
+| App-node peer | Denied | The gateway rejects `workspace:new` from an app-node peer before any side effects. See [`4_workspace-new_on-app-node.md`](4_workspace-new_on-app-node.md). |
 
 ## Input Mode Contracts
 
@@ -151,7 +155,7 @@ register an existing path use
      `workspace:setup`. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
 4. **Drift Awareness (Success-with-Warnings):** Once the gateway workspace
-   row is written, downstream remote enactment failures are reported as
+   row is written, downstream remote apply failures are reported as
    non-fatal entries in `success.meta.warnings[]` with the canonical
    `{code, family, message, next_command}` shape (codes drawn from the
    `workspace` family, primarily `workspace.path_missing`,
@@ -159,8 +163,8 @@ register an existing path use
    `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`,
    plus `proxy` handoffs for workspace route drift). The command exits `0` and the
    operator repairs drift via `doctor --fix --family=workspace --restore`. This
-   matches the `app:new`/`app:register` pattern: once intent is durable,
-   enactment drift is convergence work, not a hard failure.
+   matches the `app:new`/`app:register` pattern: once configuration is durable,
+   apply drift is convergence work, not a hard failure.
    Setup-time HTTP probe failures use the command-owned
    `workspace.http_probe_unhealthy` warning with `family: null`, matching
    `workspace:setup`.
@@ -176,21 +180,23 @@ register an existing path use
   workspace-name collision under the parent app, unresolved parent app, or
   unsupported `--php-version` (`error.code=validation_failed`,
   `error.meta.field=<name|php_version|app>`). Fails before any side effects.
-- **Caller role not allowed** — app-node callers are rejected before prompts
-  or side effects (`error.code=caller_role_not_allowed`).
+- **Caller role not allowed** — the gateway denies an app-node peer before
+  any side effects (`error.code=caller_role_not_allowed`).
 - **Authorization failure** — caller is not authorized to manage the parent
   app or its node (`error.code=authorization_failed`).
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
   (`error.code=workspace.parent_app_invalid`).
-- **SSH failure (pre-intent)** — gateway cannot reach the app node *before*
-  the gateway workspace row is written (`error.code=workspace.ssh_failure`).
-- **Workspace source failure (pre-intent)** — the selected workspace source
-  driver cannot create the physical source path or external IDE workspace
-  before the gateway row is written (`error.code=workspace.source_create_failed`
-  for generic worktrees or `workspace.agent_ide_create_failed` for adapter
-  failures). No workspace intent row is retained.
-- **Hard enactment failure** — gateway workspace row was written but a
+- **SSH failure (pre-configuration)** — gateway cannot reach the app node
+  *before* the gateway workspace row is written
+  (`error.code=workspace.ssh_failure`).
+- **Workspace source failure (pre-configuration)** — the selected workspace
+  source driver cannot create the physical source path or external IDE
+  workspace before the gateway row is written
+  (`error.code=workspace.source_create_failed` for generic worktrees or
+  `workspace.agent_ide_create_failed` for adapter failures). No workspace
+  configuration row is retained.
+- **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
   `error.meta.step`/`error.meta.reason`). Retryable conditions surface as
@@ -204,7 +210,7 @@ register an existing path use
 
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
 - **Probe:** `doctor --family=workspace --workspace=<name> --app=<app>`
-  verifies registry intent and runtime artifacts.
+  verifies registry configuration and runtime artifacts.
 - **Convergence:** `doctor --fix --family=workspace --restore` repairs missing or
   divergent FPM, runtime configuration, and source path drift surfaced by
   `workspace:new` warnings.
@@ -216,5 +222,5 @@ register an existing path use
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway intent write, generic worktree provisioning dispatch, OpenCode and Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
+| `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway configuration write, generic worktree provisioning dispatch, OpenCode and Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
 | `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |

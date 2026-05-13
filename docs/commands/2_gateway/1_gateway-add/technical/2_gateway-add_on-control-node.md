@@ -6,8 +6,8 @@ This page describes caller-role behavior when `orbit gateway:add` is invoked fro
 a control node.
 
 **Prerequisites:**
-- The caller role has resolved to `control` per the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
+- The gateway has authorized the caller's WireGuard peer identity as a
+  `control` node.
 
 **Post-input path eligibility:**
 - The control node has an active gateway-issued WireGuard identity.

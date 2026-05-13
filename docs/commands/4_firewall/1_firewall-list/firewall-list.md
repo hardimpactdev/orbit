@@ -2,10 +2,9 @@
 
 [Back to Firewall commands.](../README.md)
 
-List expected firewall rules from gateway intent.
+List expected firewall rules from gateway configuration.
 
-`firewall:list` displays active Orbit firewall policy recorded on the gateway.
-It does not inspect live node firewall state.
+`firewall:list` displays active Orbit firewall policy recorded on the gateway. It does not inspect live node firewall state.
 
 ## Usage
 
@@ -35,23 +34,19 @@ orbit firewall:list --json
 3. Reads visible gateway firewall-rule rows.
 4. Groups rules by node for human output.
 
-The command does not probe node firewall reality and does not mutate intent.
+The command does not probe node firewall reality and does not mutate configuration.
 
 ## Output
 
 Human output is a table grouped by node.
 
-JSON output returns firewall rule entities under `success.data.rules` and the
-applied node filter under `success.meta`.
+JSON output returns firewall rule entities under `success.data.rules` and the applied node filter under `success.meta`.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command is running on the
-  gateway.
-- The current node identity is authorized to inspect firewall policy for the
-  selected node scope.
-- Filtered target nodes must be registered active Ubuntu `gateway` or `app`
-  nodes.
+- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
+- The current node identity is authorized to inspect firewall policy for the selected node scope.
+- Filtered target nodes must be registered active Ubuntu `gateway` or `app` nodes.
 
 ## Related Commands
 

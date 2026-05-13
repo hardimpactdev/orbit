@@ -14,15 +14,14 @@ initiating control node and stores the local gateway configuration.
 ## Usage
 
 ```bash
-orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--ssh-user=<user>] [--json]
+orbit node:new [name] [--role=gateway|app|control] [--host=<host>] [--control-name=<name>] [--environment=development|production] [--tld=<tld>] [--user=<user>] [--json]
 orbit node:new
 ```
 
-`node:new` determines the local caller role from `general.local_node_role`.
-Unset or `null` means `control`; gateway and app nodes must set the value
-explicitly to `gateway` or `app`. See the foundation
-[local node role setting](../../../ARCHITECTURE.md#local-node-role-setting)
-contract.
+The CLI calls the gateway; the gateway authenticates the presented WireGuard
+peer identity and authorizes the request based on the caller's gateway-known
+role. First-gateway bootstrap is the exception, because no gateway exists yet
+to authenticate against.
 
 ## Examples
 
@@ -46,7 +45,8 @@ orbit node:new gateway-1 --role=gateway --host=203.0.113.2 --control-name=contro
   first-gateway bootstrap.
 - `--environment`: app-node environment: `development` or `production`.
 - `--tld`: development TLD for a development app node, without a leading dot.
-- `--ssh-user`: SSH user for provisioning. Defaults to `root`.
+- `--user`: SSH user for provisioning. Defaults to `root`. Stored as the
+  steady-state `nodes.user` after the gateway-managed SSH user is set up.
 - `--json`: Output JSON.
 
 ## Node Roles
@@ -75,7 +75,7 @@ development DNS mapping for the TLD to the app node's WireGuard address.
 
 **Gateway node**
 
-Bootstraps or adopts the gateway node that owns fleet intent, WireGuard
+Bootstraps or adopts the gateway node that owns fleet configuration, WireGuard
 identity, gateway APIs, and node access policy.
 
 When a control node with no configured gateway bootstraps the first gateway,
@@ -93,7 +93,7 @@ the requested gateway is already provisioned and active, and the supplied host i
 compatible with that gateway identity, Orbit converges idempotently without
 reprovisioning and reports the already-provisioned status. If the gateway is
 compatible but drifted or incomplete, `node:new` reports the drift and points to
-`doctor --fix --family=node --restore`. Destructive gateway reset is outside `node:new`
+`doctor --family=node --restore`. Destructive gateway reset is outside `node:new`
 and requires a future explicit reset contract.
 
 ## What Happens
@@ -116,7 +116,7 @@ local targeting preference.
 
 It does not configure tools, user apps, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
-and by `doctor --fix --restore` or `doctor --fix --adopt`.
+and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt`.
 
 ## Output
 

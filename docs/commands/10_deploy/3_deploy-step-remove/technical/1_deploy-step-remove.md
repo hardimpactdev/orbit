@@ -7,9 +7,8 @@
 **Effects:** `write, destructive`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- App-node callers are denied before prompts or side effects because deployment policy is app-owned gateway intent.
+- The CLI caller can reach the Orbit gateway.
+- App-node callers are denied by the gateway before prompts or side effects because deployment policy is app-owned gateway configuration.
 
 ## Signature
 
@@ -28,14 +27,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
+
+The gateway authenticates the WireGuard peer and authorizes the request by
+caller role. The CLI does not resolve or assert caller role locally.
 
 | Role | Validity | Consequence |
 | --- | --- | --- |
-| `control` | `valid` | Resolve input locally, then forward the policy write to the gateway when authorized. |
-| `gateway` | `valid` | Execute the policy write locally on the gateway when authorized. |
-| `app` | `invalid` | Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
-| `unknown` | `invalid` | Fail before prompts or side effects with `error.code=caller_role_not_allowed`. |
+| `control` | `valid` | The gateway accepts the policy write when the caller is authorized. |
+| `gateway` | `valid` | The gateway executes the policy write when the caller is authorized. |
+| `app` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
+| `unknown` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
 
 ## Input Mode Contracts
 
@@ -46,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Policy Removal Rules
 
-- Resolves the selected app through gateway app intent.
+- Resolves the selected app through gateway app configuration.
 - Fails before side effects unless the selected app is production.
 - Resolves one deployment step by id or exact title.
 - Requires destructive consent before removing gateway policy.

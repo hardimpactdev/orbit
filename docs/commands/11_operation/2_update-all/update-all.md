@@ -30,22 +30,19 @@ orbit update:all --json
 
 `update:all` performs a gateway-authorized fleet update:
 
-1. Resolve the caller role and authorize the fleet update. App-node callers are
-   rejected before any side effects.
+1. Ask the gateway to authorize the fleet update. The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
 2. Update the caller's local Orbit checkout.
-3. Resolve active non-local managed Orbit installations from gateway node
-   intent. A control caller reads this intent from the Gateway API, never from
-   any local node table. A gateway caller reads it from local gateway state.
-4. Update each selected remote installation through the gateway-owned node
+3. The gateway resolves active non-local managed Orbit installations from gateway node configuration.
+4. The gateway updates each selected remote installation through its node
    execution path. The gateway is the only node that opens SSH connections to
-   app nodes; control callers never SSH to app nodes themselves.
+   app nodes; the CLI never SSHes to other nodes itself.
 5. Report every per-installation result, including partial failures.
 
 `update:all` updates the local checkout, the gateway, and active app nodes.
 **Control nodes other than the caller are never remote update targets.** Each
 control node is an operator workstation and updates through `orbit update` on
-that machine. When invoked on the gateway, the command therefore updates the
-gateway checkout and selected app nodes only.
+that machine. When the gateway is the calling peer, the command therefore
+updates the gateway checkout and selected app nodes only.
 
 The command does not create nodes, deploy apps, change app runtime artifacts, or
 repair unrelated family drift. Run doctor after the update when the operator
@@ -63,12 +60,9 @@ included as command-specific error data.
 
 ## Requirements
 
-- The caller is a control node or the gateway. App-node callers are rejected.
-- The CLI caller can reach the Orbit gateway, unless invoked directly on the
-  gateway.
-- The current node identity is authorized to update Orbit installations.
-- The gateway can reach every selected app node through its gateway-owned node
-  execution path (SSH via `RemoteShell`).
+- The CLI caller can reach the Orbit gateway.
+- The gateway authorizes the calling WireGuard peer to update Orbit installations. App-node peers are rejected.
+- The gateway can reach every selected app node through its node execution path (SSH via `RemoteShell`).
 - Each selected installation has a writable Orbit checkout, Git remote,
   Composer, and PHP runtime capable of running migrations.
 

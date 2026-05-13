@@ -7,9 +7,8 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to inspect deployment history for the selected app.
+- The CLI caller can reach the Orbit gateway.
+- The gateway authorizes the WireGuard peer to inspect deployment history for the selected app.
 
 ## Signature
 
@@ -29,12 +28,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `lines` | `--lines` | `Optional.` | `Never.` | `500`. | Positive integer output line limit per stream. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read deployment logs when authorized for the resolved
-production app; `deploy:log` never grants write permission or local state
-authority.
+The gateway authenticates the WireGuard peer and authorizes the request by
+caller role. The CLI does not resolve or assert caller role locally. All
+authenticated caller roles use the same gateway-owned access policy. App-node
+callers may read deployment logs when the gateway authorizes them for the
+resolved production app; `deploy:log` never grants write permission.
 
 ## Input Mode Contracts
 
@@ -46,7 +46,7 @@ shared invocation model.
 
 ### Deployment Log Visibility Rules
 
-- Resolves the selected app through gateway app intent.
+- Resolves the selected app through gateway app configuration.
 - Fails before reading logs unless the selected app is production.
 - Resolves the run id against deployment history for the selected app.
 - Reads stored per-step stdout, stderr, exit code, and timing from gateway
@@ -57,8 +57,8 @@ shared invocation model.
 ### History Boundary Rules
 
 `deploy:log` reads past captured deployment output only. It must not stream
-live deployment output, SSH into the owning app node, read runtime backend
-logs, mutate gateway intent, mutate deployment history, or repair failed
+live deployment output, SSH into the owning app node, read process manager
+logs, mutate gateway configuration, mutate deployment history, or repair failed
 deployments.
 
 ## Renderer Contracts
@@ -90,5 +90,5 @@ health checks and may reference latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract for production app lookup, authorization, run lookup, step filtering, line filtering, stored-output read behavior, read-only side-effect boundary, no live SSH or runtime backend log reads, failure codes, and app-doctor handoff behavior. |
+| `tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract for production app lookup, authorization, run lookup, step filtering, line filtering, stored-output read behavior, read-only side-effect boundary, no live SSH or process manager log reads, failure codes, and app-doctor handoff behavior. |
 | `tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, per-step output shape, run-to-app ownership validation, step lookup rules, line filtering, and stored output mapping. |

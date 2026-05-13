@@ -6,8 +6,8 @@ Remove a node access grant between a consuming node and a serving node.
 
 Use `node:revoke` when decommissioning services, rotating security credentials,
 or hardening network policy by removing unnecessary access. The command deletes
-gateway-owned grant intent; it does not change historical activity logs or mutate
-serving-node host state.
+gateway-owned grant configuration; it does not change historical activity logs
+or mutate serving-node host state.
 
 ## Usage
 
@@ -26,23 +26,23 @@ orbit node:revoke control-1 app-1 --force --json
 ## Arguments And Options
 
 - `consuming_node`: node losing permission to make Orbit requests. Must exist in
-gateway node intent.
+gateway node configuration.
 - `serving_node`: node that was accessible through the grant. Must exist in
-gateway node intent.
+gateway node configuration.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt.
 - `--json`: Output JSON.
 
 ## What Happens
 
-`node:revoke` deletes a gateway-owned `node_access` grant intent from
+`node:revoke` deletes a gateway-owned `node_access` grant configuration from
 `consuming_node` to `serving_node`. Gateway callers execute locally; configured
 control callers forward the request to the gateway over HTTPS through WireGuard.
 
-1. Validates that both nodes exist in gateway node intent.
+1. Validates that both nodes exist in gateway node configuration.
 2. Validates that the caller is authorized to manage node access grants.
 3. Applies destructive consent.
-4. Deletes the gateway-owned grant intent.
+4. Deletes the gateway-owned grant configuration.
 5. Reports success, including whether the grant was already absent and whether
    the revocation locks the caller out of the gateway.
 
@@ -74,7 +74,7 @@ status.
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before prompts or side effects.
-- Both target nodes must exist in gateway intent.
+- Both target nodes must exist in gateway configuration.
 - Revoking a grant that is already absent succeeds idempotently when both nodes
 exist. The endpoint node identities are still validated; only the grant
 relationship row may already be absent.

@@ -1,25 +1,25 @@
 # App Commands
 
-App commands manage gateway-owned app intent and the app-node artifacts derived
-from that intent. Apps belong to app nodes. Gateway and control nodes are not
+App commands manage gateway-owned app configuration and the app-node artifacts derived
+from that configuration. Apps belong to app nodes. Gateway and control nodes are not
 valid app targets.
 
 ## Domain Rules
 
 - The gateway owns app registry, runtime policy, deployment policy, and app
-  health intent.
+  health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
-- App-node artifacts are enacted by the gateway over SSH.
+- App-node artifacts are applied by the gateway over SSH.
 - Apps may be development or production apps.
 - App hostnames are represented in `proxy` as app-owned route records.
-  App commands create, update, and remove the app intent that owns those
+  App commands create, update, and remove the app configuration that owns those
   routes; proxy route registry and backend artifact convergence belong to the
   `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
   local `node:default` development app node when configured.
 - `app:new` creates or clones app source/path and then uses `app:register`
-  behavior to converge app intent and node artifacts.
+  behavior to converge app configuration and node artifacts.
 - `app:register` is idempotent. It can adopt an existing app path, re-apply
   Orbit management for an existing app, or retry production domain activation.
 - Apps may configure an agent IDE adapter through `app:agent-ide`. This
@@ -37,16 +37,16 @@ valid app targets.
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
 belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
-gateway-to-app-node enactment and runtime backends live in
-[BUILDING-BLOCKS.md#transport](../../BUILDING-BLOCKS.md#transport) and
-[BUILDING-BLOCKS.md#runtime-backend-and-scheduler](../../BUILDING-BLOCKS.md#runtime-backend-and-scheduler).
+gateway-to-app-node application and process managers live in
+[BUILDING-BLOCKS.md#gateway-to-app-node](../../BUILDING-BLOCKS.md#gateway-to-app-node) and
+[BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager).
 
 ## App Identity Arguments
 
 App command signatures use two positional names intentionally:
 
 - `[name]` is an app identity slug for commands that create, adopt, or
-  re-converge app intent. It is not a hostname selector.
+  re-converge app configuration. It is not a hostname selector.
 - `[app]` is an existing-app selector for commands that read, update, prune, or
   remove an app. It may be an app name or app hostname when the command
   contract says hostname resolution is supported. Name matches win over
@@ -88,7 +88,7 @@ canonical app entity.
 | `path` | string | Absolute app path on the owning app node. |
 | `root` | string | Document root relative to `path`. |
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
-| `php_version` | string | PHP version recorded in gateway app intent. This remains flat until Orbit defines a broader version-reporting object for intent, observed node versions, and framework metadata. |
+| `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `adopted` | boolean | `true` once the app path was adopted through `app:register`; `false` for app records created by `app:new` or first registered without adoption. |
 
 Structural fields are always present. Use `null` only for structural fields

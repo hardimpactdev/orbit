@@ -7,7 +7,7 @@
 **Effects:** `read`, `write`, `destructive`, `local-only`, `stream`.
 
 **Prerequisites:**
-- The local caller role can be resolved as `control`.
+- The caller is authorized as a `control` role peer.
 - The caller platform has an Orbit-supported local resolver backend.
 - The process has the local OS privileges required to update resolver
   configuration and refresh the resolver backend.
@@ -35,35 +35,27 @@ This command follows the shared
 | `force` | `--force` | Required for `--reset` in non-interactive input mode. | `--reset` is absent. | `false`. | Destructive consent for reset. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`dns:resolve-tld` resolves the caller role from the local node role setting
-before it reads command inputs or renders prompts.
+The gateway authorizes the WireGuard peer's role for `dns:resolve-tld`.
 
 | Caller role | Behavior |
 | --- | --- |
 | `control` | Allowed. Mutates only caller-local resolver state. |
 | `gateway` | Invalid. Gateway development DNS mappings are gateway-owned node readiness, not local control-node resolver overrides. |
 | `app` | Invalid. App nodes receive gateway-managed runtime and DNS artifacts; this command does not create an app-node write exception. |
-| `unknown` | Invalid local context. Fail before prompts, input validation, or side effects. |
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If the local role setting is unset or `null`, resolve caller role as
-     `control`.
-   - If caller role is `gateway` or `app`, fail before prompts or side effects.
-   - If the local role setting contains an unsupported value or cannot be read,
-     fail before prompts or side effects.
-2. Resolve `dns_resolve_tld.tld` from `[tld]` or the selected input mode.
-3. Resolve the selected path.
+1. Resolve `dns_resolve_tld.tld` from `[tld]` or the selected input mode.
+2. Resolve the selected path.
    - If `--reset` is absent, resolve `dns_resolve_tld.target`.
    - If `--reset` is present, reject any supplied `target`.
-4. Validate field-local input.
-5. For reset, resolve destructive consent.
+3. Validate field-local input.
+4. For reset, resolve destructive consent.
    - Interactive input mode prompts unless `--force` is supplied.
    - Non-interactive input mode requires `--force`.
-6. Select the output renderer and start local resolver work.
+5. Select the output renderer and start local resolver work.
 
 ## Input Mode Contracts
 
@@ -93,7 +85,7 @@ before it reads command inputs or renders prompts.
 - Gateway-owned development DNS mappings for `*.nodes.tld` are created by
   `node:new --role=app --environment=development` and repaired by
   `doctor --fix --family=node --restore`.
-- This command must not write gateway intent, node records, app routes, proxy
+- This command must not write gateway configuration, node records, app routes, proxy
   routes, Cloudflare records, or public DNS.
 
 ### Destructive Reset Rules
@@ -108,7 +100,7 @@ before it reads command inputs or renders prompts.
 ### Scope Boundaries
 
 `dns:resolve-tld` must not:
-- Mutate gateway intent or node reality.
+- Mutate gateway configuration or node reality.
 - Inspect or repair gateway-owned development DNS mappings.
 - Create arbitrary per-host DNS mappings.
 - Query or mutate Cloudflare or public DNS.
@@ -124,7 +116,6 @@ before it reads command inputs or renders prompts.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Caller role not allowed | Invoked from a gateway or app caller. | Failure before prompts or side effects |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before prompts or side effects |
 | Validation failed | Required input is missing, forbidden input is supplied, or a field value is malformed. | Failure before side effects |
 | Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | Failure before side effects |
 | Unsupported platform | The caller platform has no supported local resolver backend. | Failure before resolver writes |
@@ -158,7 +149,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: caller-role eligibility, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway intent writes, no public DNS writes, and no arbitrary per-host mappings. |
+| `tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php` | Command contract: caller-role eligibility, field validation, local resolver write behavior, reset behavior, idempotent convergence, unsupported-platform failure, no gateway configuration writes, no public DNS writes, and no arbitrary per-host mappings. |
 | `tests/Feature/Commands/Dns/DnsResolveTldInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, prompt order, prompt IDs, labels, primitives, field validation, reset confirmation, `--force` confirmation bypass, and prompt abort behavior. |
 | `tests/Feature/Commands/Dns/DnsResolveTldNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing input failures, forbidden target with `--reset`, `--reset` requiring `--force`, and invalid value failures. |
 | `tests/Feature/Commands/Dns/DnsResolveTldJsonRendererTest.php` | JSON renderer selection, success envelope, resolved/reset/already-converged statuses, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |

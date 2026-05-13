@@ -7,8 +7,6 @@
 **Effects:** `read`, `gateway-admin`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
 - The caller is a gateway node, or an authorized control node with SSH access
   to the gateway over Orbit/WireGuard.
 - The gateway VPN backend is installed and reachable on the gateway host.
@@ -30,12 +28,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-Gateway callers execute the backend read locally. Control callers open the
-gateway-local execution path over SSH through Orbit/WireGuard, then run the
-backend read on the gateway. App-node and unknown callers are denied before
-backend authentication or side effects.
+Authorization is enforced by the gateway. Gateway callers execute the backend
+read locally. Control callers open the gateway-local execution path over SSH
+through Orbit/WireGuard, then run the backend read on the gateway. App-node and
+unknown callers are denied by the gateway before backend authentication or side
+effects.
 
 ## Input Mode Contracts
 

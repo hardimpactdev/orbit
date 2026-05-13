@@ -9,8 +9,8 @@
 - The target app exists in the gateway app registry.
 - The current node identity is authorized to remove the resolved app.
 - The gateway uses SSH to the owning app node for artifact cleanup when
-  available. SSH reachability is not a pre-intent prerequisite; if cleanup
-  cannot finish after app intent removal, the command succeeds with structured
+  available. SSH reachability is not a pre-configuration prerequisite; if cleanup
+  cannot finish after app configuration removal, the command succeeds with structured
   warnings.
 
 This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
@@ -30,26 +30,26 @@ This command follows the shared
 | `force` | `--force` | Optional. | Never. | `false`. | Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`app:remove` is destructive cleanup, not an app-context workflow. App-node
-callers are denied before prompts or side effects. Control and gateway callers
-may remove an app only when authorized by gateway-owned access policy.
+`app:remove` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call. `app:remove` is destructive cleanup,
+not an app-context workflow: app-node peers are rejected before prompts or side
+effects. Control and gateway peers may remove an app only when authorized by
+gateway-owned access policy.
 
-| Caller role | Behavior |
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Forwards the removal request to the gateway over HTTPS through WireGuard when configured and authorized. |
-| `gateway` | Executes the removal flow locally on the gateway when authorized. |
-| `app` | Denied before prompts or side effects. |
-| `unknown` | Invalid local context. Fail before prompts or side effects. |
+| `control` | Allowed when authorized. The gateway runs the removal flow and applies app-node cleanup over SSH via `RemoteShell`. |
+| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell`. |
+| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
-1. **Caller Role:** Resolve local caller role. Deny `app` and `unknown` before
-   prompts or side effects.
-2. **App Resolution:** Resolve `app` against gateway app registry (name or hostname).
-3. **Caller Context:** Identify workspace context to detect self-targeting.
-4. **Consent Check:** Identify interactive presence or `--force` flag.
+1. **App Resolution:** Resolve `app` against gateway app registry (name or hostname).
+2. **Caller Context:** Identify workspace context to detect self-targeting.
+3. **Consent Check:** Identify interactive presence or `--force` flag.
 
 ## Input Mode Contracts
 
@@ -70,8 +70,8 @@ may remove an app only when authorized by gateway-owned access policy.
 - Interactive prompt must list major dependent artifacts (proxy routes, workspaces, processes).
 
 ### 3. Execution Sequence
-- **Step 1: Gateway App Intent:** Delete the gateway app record. This is the point of no return.
-- **Step 2: Dependent Intent Cleanup:**
+- **Step 1: Gateway App Configuration:** Delete the gateway app record. This is the point of no return.
+- **Step 2: Dependent Configuration Cleanup:**
     - Delete app-owned proxy route records.
     - Delete app-owned `schedule`.
     - Delete app-owned `workspace` rows.
@@ -86,7 +86,7 @@ may remove an app only when authorized by gateway-owned access policy.
       app path when that path is eligible for deletion.
 
 ### 4. Convergence and Drift
-- Once gateway intent is removed, the app record is gone from gateway app
+- Once gateway configuration is removed, the app record is gone from gateway app
   registry scope.
 - Remaining Orbit-owned app artifacts that failed to clean up are reported as
   orphaned app drift by [`app-doctor.md`](../../app-doctor.md).
@@ -99,19 +99,19 @@ may remove an app only when authorized by gateway-owned access policy.
 | App not found | `app` does not match an existing app record. Already-absent removal is not idempotent. | Failure (`error.code=app.not_found`). |
 | Caller role not allowed | The caller role is not permitted to invoke `app:remove`. | Failure (`error.code=caller_role_not_allowed`). |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
-| Authorization failed | A forwarded control caller is not authorized to operate on the resolved app. | Failure (`error.code=authorization_failed`). |
-| Step 1 (gateway intent) failure | Deleting the gateway app record itself fails. No dependent or node-side side effects have occurred. | Failure (`error.code=app.removal_failed`). |
+| Authorization failed | The authenticated peer is not authorized to operate on the resolved app. | Failure (`error.code=authorization_failed`). |
+| Step 1 (gateway configuration) failure | Deleting the gateway app record itself fails. No dependent or node-side side effects have occurred. | Failure (`error.code=app.removal_failed`). |
 
-Partial cleanup is **not** a command failure. Once Step 1 (gateway app intent
+Partial cleanup is **not** a command failure. Once Step 1 (gateway app configuration
 removal) succeeds, the app record is gone from gateway app registry scope by
-definition. Any failure during Step 2 (dependent gateway intent) or Step 3
+definition. Any failure during Step 2 (dependent gateway configuration) or Step 3
 (node-side artifact cleanup) is reported as `success` with a structured warning
 per affected family in `success.meta.warnings[]`. Each warning carries `code`,
 `family`, `message`, and `next_command` (typically
 `doctor --fix --family=<family> --restore`). The exit code remains `0`; the warnings are
 the machine-readable signal.
 
-Gateway-owned intent removal is the point of no return. Leftover dependent or
+Gateway-owned configuration removal is the point of no return. Leftover dependent or
 node-side artifacts are convergence drift owned by the affected family doctor,
 not a removal failure.
 
@@ -141,7 +141,7 @@ removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Intent removal, dependent artifact deletion logic, and self-targeting detection. |
+| `tests/Feature/Actions/Apps/RemoveAppActionTest.php` | Configuration removal, dependent artifact deletion logic, and self-targeting detection. |
 | `tests/Unit/Concerns/ResolvesAppFromPathTest.php` | App resolution from name, hostname, and current working directory context. |
-| `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, unknown-role failure, and forwarded control caller authorization failure. |
+| `tests/Feature/Commands/Apps/AppRemoveCallerRoleTest.php` | Control and gateway caller allowance when authorized, app-node caller denial before prompts or side effects, and forwarded caller authorization failure. |
 | `tests/E2E/Ephemeral/AppRemoveTest.php` | Real `app:remove` execution with/without `--force`, dependent cleanup verification, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |

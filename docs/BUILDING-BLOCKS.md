@@ -111,7 +111,7 @@ The gateway-to-app-node primitive is the `RemoteShell` contract:
 - `upload` — write a file atomically
 - `download` — read a file
 
-`RemoteShell` connects as the steady-state SSH user stored on the node record (`nodes.user`). The `node:new --ssh-user=<user>` argument is a one-time bootstrap credential; once Orbit creates or verifies the managed SSH user (normally `orbit`), it stores that user on the node record and uses it for all later work.
+`RemoteShell` connects as the steady-state SSH user stored on the node record (`nodes.user`). The `node:new --user=<user>` argument is a one-time bootstrap credential; once Orbit creates or verifies the managed SSH user (normally `orbit`), it stores that user on the node record and uses it for all later work.
 
 Scripts are composed on the gateway. Remote shell work is non-interactive — prompts happen on the CLI caller or the gateway API layer, before any side effects begin.
 
@@ -203,6 +203,10 @@ Gateway and app nodes are created through `orbit node:new [name]`. `node:new --r
 
 Gateways and app nodes are Ubuntu. Control nodes are macOS or Ubuntu. macOS is not an app-hosting platform.
 
-Each node knows its own role through the local `general.local_node_role` setting (`control`, `gateway`, or `app`; unset or `null` resolves to `control`). Bootstrap writes this setting only after the node identity and minimum readiness are established. Doctor verifies it against gateway configuration when the expected role is known.
+The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, knows what role the caller is from its own `nodes` table, and decides what to do. When work needs to run on an app node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same app node.
+
+One machine in the network is the gateway. That machine sets `ORBIT_IS_GATEWAY=true` in its `.env`, exposing `config('orbit.is_gateway') === true`. Every other machine leaves the flag unset (defaults to `false`). The gateway uses this flag to short-circuit its own HTTP self-calls and hit the local DB and services directly. It finds its own node row by `where('role', 'gateway')` — unique within its own DB.
+
+Control and app machines hold only gateway rows in their local `nodes` table — the gateways they know how to reach. Initially empty (fresh install), populated by `gateway:add`. There is no self-row on non-gateway machines.
 
 Platform-specific behavior — installing packages, writing config files, controlling services — lives behind handlers and services, so the rest of Orbit doesn't branch on OS.

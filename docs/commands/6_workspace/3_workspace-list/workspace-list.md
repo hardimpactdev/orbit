@@ -4,12 +4,12 @@
 
 List workspaces registered for apps.
 
-`workspace:list` provides a high-level summary of workspace intent, showing
-which workspaces belong to which apps, on which nodes, and their registry
-lifecycle status. For live workspace drift and runtime artifact verification,
-use [`doctor --family=workspace`](../workspace-doctor.md).
-There is intentionally no `workspace:list --doctor` flag; workspace list output
-stays a fast registry read.
+`workspace:list` provides a high-level summary of workspace configuration,
+showing which workspaces belong to which apps, on which nodes, and their
+registry lifecycle status. For live workspace drift and runtime artifact
+verification, use [`doctor --family=workspace`](../workspace-doctor.md).
+There is intentionally no `workspace:list --doctor` flag; workspace list
+output stays a fast registry read.
 
 ## Usage
 
@@ -42,8 +42,8 @@ When both `--app` and `--node` are supplied, results are the intersection
 requested filters:
 
 1. Connects to the gateway API.
-2. Reads workspace registry intent scoped to what the caller is authorized to
-   see.
+2. Reads workspace registry configuration scoped to what the caller is
+   authorized to see.
 3. Filters by app or node when options are supplied (combined with AND).
 4. Returns a list of workspaces with their names, parent apps, host nodes,
    canonical URLs, and registry lifecycle statuses.
@@ -52,7 +52,7 @@ requested filters:
 - SSH into app nodes.
 - Probe workspace artifact health, FPM pools, or filesystem convergence (use
   [`doctor --family=workspace`](../workspace-doctor.md)).
-- Mutate gateway intent or node artifacts.
+- Mutate gateway configuration or node artifacts.
 
 ## Output
 
@@ -75,7 +75,7 @@ the exact payload shape.
 ## Related Commands
 
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — register a workspace
-- [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — enact workspace artifacts on the app node
+- [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — apply workspace artifacts on the app node
 - [`workspace:show`](../4_workspace-show/workspace-show.md) — inspect a single workspace
 - [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — remove a workspace
 - [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift

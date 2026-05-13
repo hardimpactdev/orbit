@@ -4,24 +4,17 @@
 
 **Owner:** `operation`.
 
-**Effects:** `read`, `stream`; `write` when `--fix --restore` or `--fix --adopt` is used.
+**Effects:** `read`, `stream`; `write` when `--fix`, `--restore`, or `--adopt` is used.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract and the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
-- The caller can reach the Orbit gateway when the selected scope requires
-  gateway intent, gateway authorization, or node reality inspection.
-- The current node identity is authorized to inspect the selected scope.
-- App-node callers using `--fix` are rejected before side effects unless the
-  selected family doctor contract documents a narrow app-node write-mode
-  exception.
+- The CLI caller can reach the Orbit gateway.
+- The gateway identifies the calling WireGuard peer and authorizes the selected scope.
+- When the calling peer is identified as an app-node peer, the gateway rejects `--fix`, `--restore`, or `--adopt` before side effects unless the selected family doctor contract documents a narrow app-node write-mode exception.
 
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix] [--restore|--adopt] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--fix|--restore|--adopt] [--json]
 ```
 
 ## Input Contract
@@ -32,34 +25,31 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `family` | `--family` | Never. | Never. | The full category set derived from the target node's role. | Repeatable product family key: `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, or `schedule`. Must intersect with the target role's category set. |
-| `node` | `--node` | Never. | `--self` is present. | The local caller's node (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
-| `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Resolves to the caller's gateway-known node identity. |
+| `node` | `--node` | Never. | `--self` is present. | The calling peer's node as identified by the gateway (equivalent to `--self`). | Gateway-known node name. Selects the single target node. |
+| `self` | `--self` | Never. | `--node` is present. | `true` when neither `--self` nor `--node` is supplied. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
 | `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/app filters. | Gateway-known workspace name, resolved inside app scope when applicable. |
-| `fix` | `--fix` | Never. | Never. | `false`. | Selects resolution mode. Every attempted action must be declared safe by its family doctor contract. |
-| `restore` | `--restore` | Never. | `--adopt` is present. | `false`. | Selects bulk restore direction. Only valid with `--fix`. |
-| `adopt` | `--adopt` | Never. | `--restore` is present. | `false`. | Selects bulk adopt direction. Only valid with `--fix`. |
+| `fix` | `--fix` | Never. | `--restore` or `--adopt` is present. | `false`. | Selects interactive resolution mode. Every attempted action must be declared safe by its family doctor contract. |
+| `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
+| `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`doctor` resolves the caller role before probes, actions, or remote transport.
-Every run targets exactly one node. The caller role governs *who is allowed
-to ask*; the *target* node's role governs the rendered category set.
+The CLI is a thin gateway client. It does not classify its own role; it gathers input, calls the gateway, and renders the result. The gateway identifies the calling WireGuard peer, applies authorization, and answers. Every run targets exactly one node. The peer role the gateway identifies governs *who is allowed to ask*; the *target* node's role governs the rendered category set.
 
-| Caller role | Verify behavior | `--fix` / `--adopt` behavior |
+| Peer role identified by gateway | Verify behavior | `--fix` / `--restore` / `--adopt` behavior |
 | --- | --- | --- |
-| `control` | Calls the gateway for scope authorization, family probe orchestration, and streamed progress for the single-node target. | Allowed when the gateway authorizes the resolved scope and every attempted action is supported by the owning family. |
-| `gateway` | Authority path. May inspect gateway-local facts and use gateway-owned node execution for the target node's reality. | Allowed when every attempted action is supported by the owning family. |
-| `app` | Allowed for authorized verify-mode single-node scopes. Local app/workspace context may help resolve defaults only when a family contract defines that behavior. | Denied before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
-| `unknown` | Invalid local context. Fail before probes or side effects. | Invalid local context. Fail before probes or side effects. |
+| `control` peer | The gateway authorizes the scope, dispatches family probes, and streams progress for the single-node target. | Allowed when the gateway authorizes the resolved scope and every attempted action is supported by the owning family. |
+| `gateway` peer | Authority path. The gateway inspects gateway-local facts and uses its node execution to read the target node's reality. | Allowed when every attempted action is supported by the owning family. |
+| `app` peer | Allowed for gateway-authorized verify-mode single-node scopes. Family contracts may define narrow local-default behavior for the app peer's working directory. | Denied by the gateway before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
 
-Role-specific contract details are documented in companion files:
+Peer-specific contract details are documented in companion files:
 - [Control node](2_doctor_on-control-node.md)
 - [Gateway node](3_doctor_on-gateway-node.md)
 - [App node](4_doctor_on-app-node.md)
 
-The generic role matrix is fully defined here; family contracts may only narrow
+The generic peer-role matrix is fully defined here; family contracts may only narrow
 app-node context behavior for the family they own.
 
 ## Target Role And Category Set
@@ -72,33 +62,23 @@ The rendered category set is derived from the target node's role:
 | `gateway` | `Node` |
 | `app` | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling` |
 
-Families outside the target role's set are rejected before probes. A narrow
-`--family` filter intersects with the target role's set. The renderer never
-shows placeholder rows for families that are not in the target's set.
+Families outside the target role's set are rejected before probes. A narrow `--family` filter intersects with the target role's set. The renderer never shows placeholder rows for families that are not in the target's set.
 
-A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for
-gateway targets. They will render as a slice of the `node` family once a DNS
-diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside
-the `Node` row and produces no separate row.
+A future `DNS/TLD` row is reserved for control/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
 
 ## Input Resolution
 
-1. Resolve caller role before probes or side effects.
-2. Select the output renderer.
-3. Resolve mode: `verify`, `interactive`, `restore`, or `adopt`.
-4. Resolve the single-node target.
-   - `--self` resolves to the caller's gateway-known node identity.
-   - `--node=<node>` resolves to that gateway-known node.
-   - Omitted node scope defaults to `--self` (the local caller's node).
-   - `--self` combined with `--node` is rejected before probes.
-5. Resolve target-role category set. Family filters intersect with that set;
-   families outside the set are rejected before probes.
-6. Resolve app and workspace scope when supplied.
-7. Apply gateway authorization for the resolved scope and mode.
-8. Dispatch selected family probes for the single-node target and optional
-   fix/adopt actions.
+1. Select the output renderer.
+2. Resolve mode: `verify` (no flag), `interactive` (`--fix`), `restore` (`--restore`), or `adopt` (`--adopt`). `--fix`, `--restore`, and `--adopt` are mutually exclusive.
+3. Resolve the single-node target.
+   - `--self` is forwarded to the gateway; the gateway resolves it to the calling peer's identified node.
+   - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
+   - Omitted node scope defaults to `--self`.
+   - `--self` combined with `--node` is rejected before forwarding.
+4. Call the gateway to authorize the scope, derive the target-role category set, dispatch family probes, and (in resolution modes) attempt actions. Family filters intersect with the target-role category set; families outside the set are rejected by the gateway.
+5. Render the gateway's diagnostic.
 
-Input-mode-specific contracts are required for `--fix` resolution:
+Input-mode-specific contracts are required for resolution modes:
 
 - [Interactive input mode](5.1_doctor_input-mode_interactive.md)
 - [Non-interactive input mode (bulk restore/adopt)](5.2_doctor_input-mode_non-interactive.md)
@@ -107,65 +87,50 @@ Input-mode-specific contracts are required for `--fix` resolution:
 
 ### Family Dispatch Rules
 
-- Run only product-family doctor probes. Backend-shaped implementation probes
-  are folded into product families before they become public scope keys.
+- Run only product-family doctor probes. Backend-shaped implementation probes are folded into product families before they become public scope keys.
 - Dispatch each selected family through its family doctor contract.
-- Do not duplicate family issue codes, probe facts, fix actions, or adopt
-  actions in the global command.
+- Do not duplicate family issue codes, probe facts, restore actions, or adopt actions in the global command.
 - Preserve family-owned diagnostic details for the selected output renderer.
 
 ### Mode Direction Rules
 
 | Mode | Selected by | Direction | Meaning |
 | --- | --- | --- | --- |
-| `verify` | No `--fix`. | Compare only. | Report where gateway intent and observed node reality differ. |
-| `interactive` | `--fix` without `--restore` or `--adopt`. | Per-finding choice. | Present each finding and prompt for restore, adopt, skip, or details. |
-| `restore` | `--fix --restore`. | Gateway intent to node reality. | Re-apply gateway intent on nodes when the family declares the repair safe. |
-| `adopt` | `--fix --adopt`. | Node reality to gateway intent. | Ingest compatible observed node reality into gateway intent when the family declares adoption supported. |
+| `verify` | No mode flag. | Compare only. | Report where gateway configuration and observed node reality differ. |
+| `interactive` | `--fix`. | Per-finding choice. | Present each finding and prompt for restore, adopt, skip, or details. |
+| `restore` | `--restore`. | Gateway configuration to node reality. | Re-apply gateway configuration on nodes when the family declares the repair safe. |
+| `adopt` | `--adopt`. | Node reality to gateway configuration. | Ingest compatible observed node reality into gateway configuration when the family declares adoption supported. |
 
-`--restore` is explicit repair-mode consent for family-declared safe actions. It is
-not permission for arbitrary destructive cleanup. Families must leave unsafe or
-ambiguous repair paths as reported issues with manual next steps.
+`--fix` is the interactive driver, not a direction. The two directions are restore and adopt.
 
-`--adopt` is explicit adoption-mode consent for family-declared adoption actions.
-It is the only doctor mode that may intentionally mutate gateway intent.
+`--restore` is explicit repair-mode consent for family-declared safe actions. It is not permission for arbitrary destructive cleanup. Families must leave unsafe or ambiguous repair paths as reported issues with manual next steps.
+
+`--adopt` is explicit adoption-mode consent for family-declared adoption actions. It is the only doctor mode that may intentionally mutate gateway configuration.
 
 ### Scope And Authorization Rules
 
 - Resolve and validate all scope filters before probes or side effects.
-- Resolve a single-node target before probes; multi-node scopes are not
-  supported.
-- Apply gateway-owned authorization to the resolved scope before probes or
-  side effects.
-- Fail before probes when mutually exclusive options are combined:
-  `--fix --restore --adopt` or `--self --node`.
-- Fail before probes when a requested family, node, app, or workspace scope
-  cannot be resolved.
-- Fail before probes when a requested family is outside the target node's
-  role-derived category set.
-- Fail before side effects when the selected family does not support the
-  requested mode for the attempted issue actions.
+- Resolve a single-node target before probes; multi-node scopes are not supported.
+- Apply gateway-owned authorization to the resolved scope before probes or side effects.
+- Fail before probes when mutually exclusive options are combined: any pair of `--fix`, `--restore`, `--adopt`, or `--self` with `--node`.
+- Fail before probes when a requested family, node, app, or workspace scope cannot be resolved.
+- Fail before probes when a requested family is outside the target node's role-derived category set.
+- Fail before side effects when the selected family does not support the requested mode for the attempted issue actions.
 
 ### App-Node Write Boundaries
 
 - App-node CLI availability is not generic doctor write permission.
-- App-node callers may run authorized verify-mode scopes.
-- App-node callers may not initiate `--fix` unless the selected family doctor
-  contract documents a narrow app-node exception.
-- App-node local context may help family-specific verify-mode scope resolution
-  only when the family contract defines that behavior. It is not authorization
-  to mutate gateway intent or node reality.
+- The gateway authorizes verify-mode scopes for app-node peers.
+- The gateway denies `--fix`, `--restore`, or `--adopt` from app-node peers unless the selected family doctor contract documents a narrow app-node exception.
+- App-node working-directory hints may help family-specific verify-mode scope resolution only when the family contract defines that behavior. They are not authorization to mutate gateway configuration or node reality.
 
 ### Result Classification Rules
 
-- Return healthy success when no drift or probe errors remain after the selected
-  mode completes.
+- Return healthy success when no drift or probe errors remain after the selected mode completes.
 - Return a drift failure when issues remain after the selected mode completes.
-- In verify mode, do not change gateway intent or node reality.
-- In fix modes, record every attempted, completed, skipped, failed, or conflicted
-  action.
-- A family probe error prevents a healthy result unless the family contract
-  defines a more specific recoverable behavior.
+- In verify mode, do not change gateway configuration or node reality.
+- In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
+- A family probe error prevents a healthy result unless the family contract defines a more specific recoverable behavior.
 
 ### Scope Boundaries
 
@@ -176,24 +141,20 @@ It is the only doctor mode that may intentionally mutate gateway intent.
 - Create new fleet membership, apps, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.
-- Hide remaining drift after a failed fix/adopt action.
+- Hide remaining drift after a failed restore/adopt action.
 
-Successful update commands are not doctor convergence; `doctor` must run its
-own selected family probes before reporting a healthy result.
+Successful update commands are not doctor convergence; `doctor` must run its own selected family probes before reporting a healthy result.
 
 ## Issue Kinds
 
-Generic doctor issue kinds describe the relationship between gateway intent and
-observed reality:
+Generic doctor issue kinds describe the relationship between gateway configuration and observed reality:
 
-- `missing`: gateway intent expects reality that is absent.
-- `extra`: reality exists without matching active gateway intent.
-- `divergent`: intent and reality both exist but disagree.
-- `unverifiable`: doctor cannot determine reality because a prerequisite is
-  unavailable.
+- `missing`: gateway configuration expects reality that is absent.
+- `extra`: reality exists without matching active gateway configuration.
+- `divergent`: configuration and reality both exist but disagree.
+- `unverifiable`: doctor cannot determine reality because a prerequisite is unavailable.
 
-Family doctor contracts define the family-specific cases that produce these
-kinds.
+Family doctor contracts define the family-specific cases that produce these kinds.
 
 ## Renderer Contracts
 
@@ -204,13 +165,12 @@ kinds.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Mutually exclusive flags or invalid filter values are supplied. | Failure before probes |
-| Caller role not allowed | An app-node caller requests generic `--fix` without a family-owned exception. | Failure before side effects |
-| Local context invalid | The local caller role is unreadable or unsupported. | Failure before probes |
-| Gateway unavailable | The selected scope requires the gateway and the caller cannot reach it. | Failure before probes |
-| Authorization failed | The current node identity is not authorized for the selected scope or mode. | Failure before probes |
+| Validation failed | Mutually exclusive flags or invalid filter values are supplied. | Failure before forwarding |
+| Caller role not allowed | The gateway identifies the calling peer as an app-node peer and rejects `--fix`, `--restore`, or `--adopt` without a family-owned exception. | Failure before side effects |
+| Gateway unavailable | The CLI cannot reach the gateway. | Failure before probes |
+| Authorization failed | The gateway denies the calling peer authorization for the selected scope or mode. | Failure before probes |
 | Scope not found | A requested family, node, app, or workspace scope cannot be resolved. | Failure before probes |
-| Mode not supported | A selected family or issue does not support the requested `--fix --restore` or `--fix --adopt` action. | Failure with diagnostic payload when available |
+| Mode not supported | A selected family or issue does not support the requested `--restore` or `--adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
 
@@ -220,8 +180,7 @@ before Orbit can apply this command contract.
 
 ## Doctor Relationship
 
-The global `doctor` command owns orchestration, scoping, mode semantics, output
-envelopes, generic issue kinds, and generic failure behavior.
+The global `doctor` command owns orchestration, scoping, mode semantics, output envelopes, generic issue kinds, and generic failure behavior.
 
 Family doctor contracts own:
 
@@ -248,7 +207,7 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, caller-role behavior, app-node write-mode denial, exit-code semantics, JSON success/error envelope, and family dispatch boundaries without asserting family implementation internals. |
+| `tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic doctor input contract, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization by peer role, app-node write-mode denial, exit-code semantics, JSON success/error envelope, and family dispatch boundaries without asserting family implementation internals. |
 | `tests/Feature/Commands/Operations/DoctorRoleAwareCategoriesTest.php` | Single-node scope default to `--self`, role-aware category set per target role, `--family` rejection for families outside the target role's set, and per-node probe scoping for app/workspace/proxy families. |
 | `tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
@@ -265,7 +224,7 @@ doctor orchestration requests.
 | Field | Value |
 | --- | --- |
 | Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API verify transport |
-| Effect | `read` for verify-mode runs; `write` for `--fix --restore` and `--fix --adopt` mode orchestration |
+| Effect | `read` for verify-mode runs; `write` for `--fix`, `--restore`, and `--adopt` mode orchestration |
 | Subject | `none` |
-| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. Action counts and status when in fix modes. API transport context is added by middleware. |
-| Description | `Doctor verification run` for local CLI verify mode; `Doctor resolution run` for local CLI fix modes; derived for gateway API |
+| Properties | `mode`, selected `families`, `healthy`, and `issues` when available. Action counts and status when in resolution modes. API transport context is added by middleware. |
+| Description | `Doctor verification run` for local CLI verify mode; `Doctor resolution run` for local CLI resolution modes; derived for gateway API |

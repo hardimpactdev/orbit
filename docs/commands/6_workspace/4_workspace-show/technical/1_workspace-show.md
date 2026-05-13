@@ -8,9 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract.
 - The target workspace is visible to the current node identity through
   gateway-owned access policy.
 
@@ -40,39 +37,36 @@ Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--app` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace:show` behavior is access-policy-driven, not role-driven. App-node
-callers may inspect workspaces they are authorized to see through gateway-owned
-access policy. No role-specific companion contracts are needed.
+The CLI forwards `workspace:show` to the gateway, which authenticates the
+caller's WireGuard peer identity and applies authorization. Behavior is
+access-policy-driven on the gateway, not role-driven on the CLI. App-node
+peers may inspect workspaces they are authorized to see. No role-specific
+companion contracts are needed.
 
-| Caller role | Behavior |
+| Caller peer | Behavior |
 | --- | --- |
-| `control` | Forwards the request to the gateway over HTTPS through WireGuard when configured. |
-| `gateway` | Executes locally on the gateway. |
-| `app` | Forwards the request to the gateway over HTTPS through WireGuard. May inspect workspaces visible through access policy. |
-| `unknown` | Invalid local context. Used only when `general.local_node_role` contains an unsupported value or cannot be read. Fail before prompts or side effects with a local context error. Missing `general.local_node_role` does not produce `unknown`; it defaults to `control`. |
+| Control peer | The CLI forwards the request to the gateway over HTTPS through WireGuard. |
+| Gateway peer | The CLI invokes the local read flow on the gateway. |
+| App-node peer | The CLI forwards the request to the gateway over HTTPS through WireGuard. May inspect workspaces visible through gateway-owned access policy. |
 
 ## Input Resolution
 
-1. **Resolve caller role** from the local node role setting.
-   - If `general.local_node_role` is unset or `null`, resolve as `control`.
-   - If unsupported or unreadable, resolve as `unknown` and fail before prompts
-     or side effects with a local context error.
-2. **Resolve `name`** from `[name]` or current working directory.
+1. **Resolve `name`** from `[name]` or current working directory.
    - Interactive mode prompts if CWD resolution fails. See
      [`5.1_workspace-show_input-mode_interactive.md`](5.1_workspace-show_input-mode_interactive.md).
    - Non-interactive mode fails if CWD resolution fails. See
      [`5.2_workspace-show_input-mode_non-interactive.md`](5.2_workspace-show_input-mode_non-interactive.md).
-3. **Handle ambiguity.**
+2. **Handle ambiguity.**
    - If multiple workspaces match `name` and `--app` is missing, interactive
      mode prompts for the parent app. Non-interactive mode fails with
      `error.code=workspace.ambiguous_name`.
-4. **Validate result.**
+3. **Validate result.**
    - Must resolve to exactly one visible workspace record.
    - The caller must be authorized to inspect the workspace through
      gateway-owned access policy.
-5. **Select renderer** and begin the read flow.
+4. **Select renderer** and begin the read flow.
 
 ## Behavior Contract
 
@@ -82,7 +76,7 @@ access policy. No role-specific companion contracts are needed.
    target workspace through gateway-owned access policy. If not authorized,
    fail before side effects.
 3. **Result Assembly.** Collect the workspace record and the durable gateway
-   intent the workspace owns or inherits:
+   configuration the workspace owns or inherits:
    - workspace registry: name, parent app, branch, workspace path, canonical
      URL;
    - owning app node: name and host (from the parent app's node record);
@@ -98,7 +92,7 @@ access policy. No role-specific companion contracts are needed.
    Default `workspace:show` is a registry read, not a live readiness command.
 
 `workspace:show` must not:
-- Mutate gateway intent or node state.
+- Mutate gateway configuration or node state.
 - Fix drift or trigger setup.
 - SSH into the owning app node directly from the caller.
 - Run live PHP-FPM, document-root, route, or process probes.
@@ -127,8 +121,7 @@ Output renderer behavior is split out of the canonical command contract:
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
 | Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
 | Not authorized | The caller is not allowed to inspect the target workspace. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
-| Gateway unavailable | A control or app caller has no configured gateway or cannot reach the gateway API. | Failure |
+| Gateway unavailable | The CLI has no configured gateway or cannot reach the gateway API. | Failure |
 
 `workspace:show` exits zero whenever the registry read succeeds. Runtime drift
 and unverifiable live checks are not part of this command's default read path.
@@ -163,7 +156,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php` | Command contract: input resolution, ambiguity handling via `--app`, caller-role resolution, workspace lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php` | Command contract: input resolution, ambiguity handling via `--app`, gateway forwarding, workspace lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
 
 Input-mode-specific test mapping lives in:
 

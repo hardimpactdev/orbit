@@ -4,9 +4,7 @@
 
 Show one schedule's target, interval, execution source, and recent run state.
 
-Use `schedule:show` when inspecting the durable configuration of a specific
-recurring task. The command reads gateway intent; live scheduler drift
-belongs to doctor.
+Use `schedule:show` when inspecting the durable configuration of a specific recurring task. The command reads gateway configuration; live scheduler drift belongs to doctor.
 
 ## Usage
 
@@ -32,9 +30,7 @@ orbit schedule:show backups --node=app-1
 
 ## What Happens
 
-`schedule:show` reads one schedule and latest durable run history from the
-gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair
-drift, or adopt scheduler-side state.
+`schedule:show` reads one schedule and latest durable run history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler state, repair drift, or adopt scheduler-side state.
 
 ## Output
 
@@ -44,8 +40,7 @@ JSON output returns one schedule entity.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
+- The CLI caller can reach the Orbit gateway, or the command runs on the gateway.
 - The caller is authorized to inspect the selected schedule scope.
 
 ## Related

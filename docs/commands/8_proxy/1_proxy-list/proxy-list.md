@@ -4,7 +4,7 @@
 
 ## Purpose
 
-List proxy route intent across the Orbit fleet.
+List proxy route configuration across the Orbit fleet.
 
 ## Usage
 
@@ -14,9 +14,7 @@ orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 
 ## Description
 
-`proxy:list` shows the unified HTTP ingress registry. By default it includes
-app routes, workspace routes, gateway/internal routes, tool-owned routes, custom
-upstream routes, and redirects.
+`proxy:list` shows the unified HTTP ingress registry. By default it includes app routes, workspace routes, gateway/internal routes, tool-owned routes, custom upstream routes, and redirects.
 
 Use `--filter` to narrow the list:
 
@@ -30,8 +28,7 @@ Use `--filter` to narrow the list:
 | `custom` | User-authored upstream routes created by `proxy:add --upstream`. |
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |
 
-`proxy:list` reads gateway intent only. It does not probe node proxy backends or
-verify TLS files. Use `doctor --family=proxy` for drift verification.
+`proxy:list` reads gateway configuration only. It does not probe node proxy backends or verify TLS files. Use `doctor --family=proxy` for drift verification.
 
 ## Examples
 
@@ -44,9 +41,7 @@ orbit proxy:list --json
 
 ## Output
 
-Human output renders a table of route domain, kind, owner, node, target, TLS
-summary, and status. JSON output returns `success.data.routes[]` using the
-family proxy route entity shape.
+Human output renders a table of route domain, kind, owner, node, target, TLS summary, and status. JSON output returns `success.data.routes[]` using the family proxy route entity shape.
 
 ## Requirements
 

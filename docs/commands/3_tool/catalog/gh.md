@@ -26,7 +26,7 @@ credentials.
 ## Orbit Notes
 
 Production app flows may depend on `gh` for repository access, but app and
-deployment intent remain owned by their command families.
+deployment configuration remain owned by their command families.
 
 ## Doctor Relationship
 

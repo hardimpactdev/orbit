@@ -65,8 +65,8 @@ Source: [Node Concepts](commands/1_node/node-concepts.md).
 - **Consuming node**
 - **Serving node**
 - **Gateway-owned development DNS mapping**
-- **Development DNS intent model**
-- **Development DNS enactor**
+- **Development DNS configuration model**
+- **Development DNS applier**
 - **Development DNS probe**
 <!-- /concept-index -->
 
@@ -268,7 +268,7 @@ Source: [Cloudflare Concepts](commands/12_cf/cf-concepts.md).
 - **Provider DNS record**
 - **Address record**
 - **Proxied DNS record**
-- **Provider DNS enactment**
+- **Provider DNS application**
 - **Provider cache purge**
 - **Cloudflare cache rule**
 - **Origin Cache-Control respect**
@@ -325,7 +325,7 @@ Source: [PHP Concepts](commands/14_php/php-concepts.md).
 - **Node CLI PHP default**
 - **PHP-FPM artifact**
 - **PHP runtime target**
-- **Partial PHP enactment warning**
+- **Partial PHP application warning**
 - **PHP-domain boundaries**
 <!-- /concept-index -->
 

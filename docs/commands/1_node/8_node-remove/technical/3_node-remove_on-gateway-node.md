@@ -1,13 +1,13 @@
-# Technical Contract: `node:remove` On A Gateway Node
+# Technical Contract: `node:remove` Authorized For Gateway Callers
 
 [Back to `node:remove` technical contract.](1_node-remove.md)
 
-This page describes caller-role behavior when `orbit node:remove` is invoked on
-the gateway node.
+This page describes what the gateway authorizes for callers whose
+authenticated node record has role `gateway`, including gateway-local CLI
+execution.
 
 **Prerequisites:**
-- `general.local_node_role` is explicitly set to `gateway`.
-- The gateway can read and write gateway-owned node intent.
+- The gateway can read and write gateway-owned node configuration.
 - The gateway can access gateway-managed WireGuard state.
 
 ## Allowed Paths

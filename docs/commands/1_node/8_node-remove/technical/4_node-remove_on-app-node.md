@@ -1,28 +1,25 @@
-# Technical Contract: `node:remove` On An App Node
+# Technical Contract: `node:remove` Rejected For App Callers
 
 [Back to `node:remove` technical contract.](1_node-remove.md)
 
-This page describes caller-role behavior when `orbit node:remove` is invoked
-from an app node.
+This page describes how the gateway rejects `node:remove` for callers whose
+authenticated node record has role `app`.
 
-**Effects:** `none`. The command is rejected before prompts or side effects when
-the caller role is `app`.
+**Effects:** `none`. The gateway rejects the request before side effects.
 
 **Prerequisites:**
-- `general.local_node_role` is explicitly set to `app`.
-- The caller role has been resolved before command inputs are read or
-  interactive prompts are rendered.
-- No command argument, option, gateway execution context, SSH target, or
-  WireGuard identity prerequisite can make `node:remove` valid from an app node.
+- The gateway authenticates the caller and resolves its role to `app`.
+- No command argument, option, or WireGuard identity prerequisite can make
+  `node:remove` valid for an app-role caller.
 
 ## Allowed Paths
 
-None. `node:remove` may not run from an app node.
+None. The gateway authorizes nothing for app-role callers.
 
 ## Error Contract
 
-When invoked from an app node, the command must stop immediately and show this
-exact human error:
+When the gateway authenticates an app-role caller, it returns this exact
+human error:
 
 ```text
 This command may only be run from a control or gateway node.
@@ -30,20 +27,17 @@ This command may only be run from a control or gateway node.
 
 JSON mode returns a structured error with the same message.
 
-## App-Node Rules
+## Gateway-Side Rules For App Callers
 
-- Do not prompt for missing command input.
-- Do not forward the command to the gateway.
-- Do not write durable node state locally.
-- Do not SSH to another node.
-- Do not read or mutate gateway node records.
-- Do not remove WireGuard peer material.
+- Do not write durable gateway-owned node state.
+- Do not read or mutate node access grants on behalf of the caller.
+- Do not remove WireGuard peer material on behalf of the caller.
 
 ## Failure Semantics
 
-- Fail before side effects for every app-node invocation.
-- Exit with the standard command failure status.
-- The failure is a caller-role violation, not a validation retry.
+- Reject before gateway-owned side effects for every app-role caller.
+- The CLI exits with the standard command failure status.
+- The failure is a caller-role authorization decision at the gateway.
 
 ## Test Mapping
 
@@ -51,4 +45,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeRemoveOnAppNodeContractTest.php` | Primary owner for app-caller rejection: explicit `general.local_node_role=app` callers fail before prompts, forwarding, local writes, SSH, WireGuard changes, gateway node-record reads, or other side effects. Renderer tests own the human and JSON formatting of that error. |
+| `tests/Feature/Commands/Nodes/NodeRemoveOnAppNodeContractTest.php` | Primary owner for app-caller rejection: app-role callers are rejected by the gateway before gateway-owned writes. Renderer tests own the human and JSON formatting of that error. |

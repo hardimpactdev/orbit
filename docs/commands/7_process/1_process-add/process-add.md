@@ -4,10 +4,7 @@
 
 **Purpose:** Add an app-owned process definition.
 
-**Description:** Defines a managed process for an application, including its
-command, restart policy, and crash-notification policy. Use it for long-running
-services, workers, and development servers that Orbit should render as runtime
-units.
+**Description:** Defines a managed process for an application, including its command, restart policy, and crash-notification policy. Use it for long-running services, workers, and development servers that Orbit should render as runtime units.
 
 **Technical contract:** [`technical/1_process-add.md`](technical/1_process-add.md)
 
@@ -21,12 +18,10 @@ orbit process:add vite "npm run dev" --app=docs --json
 
 ## Behavior
 
-- Creates app-owned process intent on the gateway.
-- Renders one runtime unit for the main app instance and one for each existing
-  workspace.
+- Creates app-owned process configuration on the gateway.
+- Renders one runtime unit for the main app instance and one for each existing workspace.
 - Does not start rendered runtime units unless `--start` is supplied.
-- Reports repairable runtime-unit enactment drift without treating process
-  intent creation as failed after the intent write has succeeded.
+- Reports repairable runtime-unit apply drift without treating process configuration creation as failed after the configuration write has succeeded.
 
 ## Related
 

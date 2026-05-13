@@ -7,10 +7,9 @@
 **Effects:** `read`, `write`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
-- The caller role is not `app` or `gateway`. See role-specific contracts for
-  exact rejection behavior.
+- The gateway authenticates the CLI and authorizes `node:default`-backed
+  reads only for callers whose gateway-known role is `control`. Gateway and
+  app callers are rejected.
 - For the `choose` or `set` sub-action: the CLI caller can reach the Orbit
   gateway, and the target node is a visible development app node.
 
@@ -41,38 +40,30 @@ input:
 | `clear` | `--clear` | Optional. | When `name` is present. | `false`. | Boolean flag. Mutually exclusive with `name`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:default` resolves the caller role before command inputs are read. App-node
-and gateway callers are denied before prompts or side effects.
+`node:default` is local CLI configuration: it stores or clears a preferred
+development app-node target on the calling machine. The gateway is consulted
+only when the `choose` or `set` sub-action validates a target.
 
-| Caller role | Behavior |
+| Caller role | Gateway authorizes |
 | --- | --- |
-| `control` | Primary valid caller. See [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md). |
-| `gateway` | Rejected before prompts or side effects. See [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md). |
-| `app` | Rejected before prompts or side effects. See [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md). |
+| `control` | The primary use case. The gateway returns visible development app nodes for `choose` and validates the selected node for `set`. See [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md). |
+| `gateway` | Rejected. The local CLI default has no meaning on a gateway host. See [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md). |
+| `app` | Rejected. App-node CLIs infer local app or workspace context rather than targeting remote app nodes through a local default. See [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md). |
 
-Role-specific behavior is defined in these companion contracts:
+Companion contracts describe behavior in detail:
 
 - [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md):
-  control caller behavior.
+  control-caller behavior.
 - [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md):
-  gateway caller rejection.
-- [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md): app caller
+  gateway-caller rejection.
+- [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md): app-caller
   rejection.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If `general.local_node_role` is `app`, apply
-     [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md) and fail
-     before reading command arguments or rendering prompts.
-   - If `general.local_node_role` is `gateway`, apply
-     [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md)
-     and fail before reading command arguments or rendering prompts.
-   - If `general.local_node_role` is unreadable or unsupported, fail before
-     prompts or side effects.
-2. Resolve sub-action from input.
+1. Resolve sub-action from input.
    - If `--clear` is present, select `clear`. If `[name]` is also
      present, fail before side effects (mutually exclusive).
    - If `[name]` is present and `--clear` is absent, select `set`.
@@ -80,17 +71,17 @@ Role-specific behavior is defined in these companion contracts:
      `choose`.
    - If no target and no `--clear` is present in non-interactive input mode,
      select `show`.
-3. Resolve `node_default.name`.
+2. Resolve `node_default.name`.
    - For `set`, resolve from `[name]`.
    - For `choose`, prompt from the visible development app-node list. See
      [`5.1_node-default_input-mode_interactive.md`](5.1_node-default_input-mode_interactive.md).
    - For `show` and `clear`, no node target is resolved.
-4. Validate `node_default.name` immediately when the sub-action is `set` or
+3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
    - Must resolve to a visible development app node.
    - Must not be a gateway or control node.
    - The caller must be authorized to see the target node.
-5. Resolve `node_default.json` from `--json`. Default `false`.
+4. Resolve `node_default.json` from `--json`. Default `false`.
 
 ## Input Mode Contracts
 
@@ -133,7 +124,7 @@ interactively, that behavior belongs to the interactive input mode contract.
 ### Scope Boundaries
 
 `node:default` must not:
-- Mutate gateway node intent or node records.
+- Mutate gateway node configuration or node records.
 - Grant access to the default node.
 - Change the gateway endpoint configured by `gateway:add`.
 - SSH into nodes.
@@ -155,7 +146,6 @@ interactively, that behavior belongs to the interactive input mode contract.
 | Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
 | Gateway unavailable | `set` or `choose` sub-action and the CLI cannot reach the gateway API. | Failure |
 | Caller role not allowed | The caller role is `app` or `gateway`. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
 
 The `show` and `clear` sub-actions do not fail when no default is set. The
 `show` sub-action reports the empty state; the `clear` sub-action reports
@@ -166,13 +156,13 @@ sub-action is selected instead.
 
 ## Doctor Relationship
 
-- `node:default` is local control-node configuration, not gateway intent.
+- `node:default` is local control-node configuration, not gateway configuration.
 - `doctor --self` may warn when the configured default no longer resolves or is
   no longer authorized. See `node.local_default_invalid` in
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --family=node` verifies gateway node intent and node reachability,
-  not local target preference.
-- `doctor --fix --self --restore` reports an invalid local default but does not clear or
+- `doctor --family=node` verifies gateway node configuration and node reachability,
+  not the CLI's local target preference.
+- `doctor --self --restore` reports an invalid local default but does not clear or
   replace it. Setting or clearing the local default remains an explicit
   `node:default` action. Recover from `node.local_default_invalid` by running
   `orbit node:default <valid-development-app-node>` or
@@ -197,7 +187,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract: interactive choose sub-action from authorized development app-node choices, show sub-action with and without default in non-interactive mode, set sub-action with positional `name`, set sub-action with invalid node, set sub-action with non-development node, clear sub-action with and without existing default, mutually exclusive input rejection, gateway-unavailable failure for choose/set, authorization failure for choose/set, app-node caller denial, gateway caller denial, local context invalid failure, and local write guarantee (no gateway intent mutation, no grant creation). |
+| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Command contract: interactive choose sub-action from authorized development app-node choices, show sub-action with and without default in non-interactive mode, set sub-action with positional `name`, set sub-action with invalid node, set sub-action with non-development node, clear sub-action with and without existing default, mutually exclusive input rejection, gateway-unavailable failure for choose/set, authorization failure for choose/set, app-caller denial, gateway-caller denial, and local write guarantee (no gateway configuration mutation, no grant creation). |
 | `tests/Feature/Commands/Nodes/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
 | `tests/Feature/Commands/Nodes/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
 

@@ -5,13 +5,13 @@
 `doctor --family=app` verifies whether gateway app records still match the
 app facts that make those records runnable on their owning app nodes. It also
 detects stale Orbit-owned app runtime artifacts whose identity no longer maps
-to active gateway app intent, so post-removal cleanup can be repaired without
+to active gateway app configuration, so post-removal cleanup can be repaired without
 recreating deleted app records.
 
 The app family owns these facts:
 
 - gateway-owned app records: name, environment, owning app node, app path,
-  document root, PHP version, production policy, deployment pipeline intent,
+  document root, PHP version, production policy, deployment pipeline configuration,
   and app-level agent IDE default;
 - app source location: the managed app path exists on the owning app node and
   the configured document root exists inside that path;
@@ -38,22 +38,22 @@ and firewall policy belong to `tool` and `firewall_rule`.
 
 The apps probe reads gateway app records and checks these layers:
 
-1. **Registry intent:** every selected app record has a valid name,
+1. **Registry configuration:** every selected app record has a valid name,
    environment, owning app-node reference, app path, document root, PHP version,
    and lifecycle fields required by the app model.
 2. **Owning node eligibility:** the owning node reference resolves to an active
-   app node in gateway node intent. Node runtime reachability is not diagnosed
+   app node in gateway node configuration. Node runtime reachability is not diagnosed
    here; unreachable nodes are reported by the node family.
 3. **Source path:** the app path exists on the owning app node and is usable as
    the app source directory.
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
 5. **PHP runtime:** the configured PHP version can serve the app runtime on the
-   owning app node, and the app PHP-FPM endpoint matches gateway app intent.
+   owning app node, and the app PHP-FPM endpoint matches gateway app configuration.
 6. **Runtime artifacts:** app environment/runtime configuration and managed
    filesystem ownership match the app environment and production policy.
 7. **Production readiness:** production apps have required production runtime
-   policy, app user isolation where configured, deployment pipeline intent,
+   policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
    run.
 8. **App agent IDE default:** an app-level agent IDE default points at a
@@ -78,15 +78,15 @@ probe results as app-family issue codes.
 | `app.root_outside_path` | The configured document root resolves outside the app path. |
 | `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning app node. |
 | `app.fpm_config_missing` | The app's PHP-FPM configuration or endpoint is absent. |
-| `app.fpm_config_mismatch` | The app's PHP-FPM configuration or endpoint differs from gateway app intent. |
+| `app.fpm_config_mismatch` | The app's PHP-FPM configuration or endpoint differs from gateway app configuration. |
 | `app.runtime_config_missing` | Managed app runtime configuration required by Orbit is absent. |
-| `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app intent. |
-| `app.fpm_config_extra` | An Orbit-owned app PHP-FPM artifact exists on an app node without matching active app intent. |
-| `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on an app node without matching active app intent. |
+| `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app configuration. |
+| `app.fpm_config_extra` | An Orbit-owned app PHP-FPM artifact exists on an app node without matching active app configuration. |
+| `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on an app node without matching active app configuration. |
 | `app.production_user_missing` | A production app that requires app-user isolation has no matching app user or ownership policy. |
-| `app.production_user_mismatch` | Production app user, ownership, or PHP-FPM pool identity differs from gateway app intent. |
+| `app.production_user_mismatch` | Production app user, ownership, or PHP-FPM pool identity differs from gateway app configuration. |
 | `app.production_health_unhealthy` | A configured production app health check fails after app runtime is reachable. |
-| `app.deployment_pipeline_invalid` | Production deployment pipeline intent is incomplete or references unsupported deployment behavior. |
+| `app.deployment_pipeline_invalid` | Production deployment pipeline configuration is incomplete or references unsupported deployment behavior. |
 | `app.latest_deployment_failed` | The latest deployment run for a production app finished as `failed` or `cancelled` and no newer successful deployment exists. |
 | `app.deployment_run_stuck` | The latest deployment run for a production app is still `running` after the deployment staleness threshold. |
 | `app.agent_ide_default_invalid` | The app-level agent IDE default points at a missing or unsupported adapter. |
@@ -96,14 +96,14 @@ probe results as app-family issue codes.
 
 | Code | `doctor --fix --restore` behavior |
 | --- | --- |
-| `app.fpm_config_missing` | Re-render and install the app PHP-FPM configuration from gateway app intent. |
-| `app.fpm_config_mismatch` | Rewrite the app PHP-FPM configuration to match gateway app intent. |
-| `app.runtime_config_missing` | Reinstall managed app runtime configuration from gateway app intent. |
-| `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app intent. |
-| `app.fpm_config_extra` | Remove the stale Orbit-owned app PHP-FPM artifact when its encoded identity no longer maps to active app intent. |
-| `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app intent. |
-| `app.production_user_missing` | Create or restore the production app user and ownership policy when production intent is complete. |
-| `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app intent. |
+| `app.fpm_config_missing` | Re-render and install the app PHP-FPM configuration from gateway app configuration. |
+| `app.fpm_config_mismatch` | Rewrite the app PHP-FPM configuration to match gateway app configuration. |
+| `app.runtime_config_missing` | Reinstall managed app runtime configuration from gateway app configuration. |
+| `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app configuration. |
+| `app.fpm_config_extra` | Remove the stale Orbit-owned app PHP-FPM artifact when its encoded identity no longer maps to active app configuration. |
+| `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity no longer maps to active app configuration. |
+| `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
+| `app.production_user_mismatch` | Re-apply production app user, ownership, and PHP-FPM pool identity from gateway app configuration. |
 
 `doctor --fix --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,
@@ -117,19 +117,19 @@ code, deployment policy changes, failed deployment recovery, stuck deployment
 triage, and agent IDE preference changes remain explicit app or deploy commands
 or operator work. App doctor never creates a new app record, moves an app to
 another node, changes an app name, edits app-owned proxy routes, edits
-workspace/process/schedule intent, runs deployments, clears deployment history,
+workspace/process/schedule configuration, runs deployments, clears deployment history,
 or changes node reachability.
 
 ## App Adopt Map
 
 | Code | `doctor --fix --adopt` behavior |
 | --- | --- |
-| `app.unregistered_path` | Create app intent only when the selected scope provides an explicit app name, app node, and path, and the observed path is compatible with `app:register` adoption rules. |
-| `app.fpm_config_mismatch` | Update app runtime intent only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
-| `app.runtime_config_mismatch` | Update app runtime intent only when the observed runtime configuration proves the same app identity and the observed values are supported. |
+| `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, app node, and path, and the observed path is compatible with `app:register` adoption rules. |
+| `app.fpm_config_mismatch` | Update app runtime configuration only when the observed PHP-FPM configuration proves the same app identity and the observed values are supported. |
+| `app.runtime_config_mismatch` | Update app runtime configuration only when the observed runtime configuration proves the same app identity and the observed values are supported. |
 
 `doctor --fix --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
-virtual hosts, adopt proxy route backend artifacts as app intent, infer database
+virtual hosts, adopt proxy route backend artifacts as app configuration, infer database
 ownership, adopt deployment run outcomes, or adopt workspace/process/schedule
 artifacts as app facts.
 
@@ -153,7 +153,7 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `tests/Feature/Doctor/AppsFamilyDoctorContractTest.php` | Apps-family dispatch, app probe-layer selection, app issue codes including deployment health issue codes, app fix map, app adopt map, denied app fix/adopt cases, related-family handoff behavior, and scope filtering as it affects app probes. |
-| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry intent, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline intent, latest deployment status, app agent IDE defaults, stale Orbit-owned app artifacts, and exclusion of proxy route/workspace/process/schedule/node/tool/firewall drift from apps issue codes. |
+| `tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior for registry configuration, owning node eligibility, source path, document root, PHP runtime, PHP-FPM configuration, runtime configuration, production user policy, production health, deployment pipeline configuration, latest deployment status, app agent IDE defaults, stale Orbit-owned app artifacts, and exclusion of proxy route/workspace/process/schedule/node/tool/firewall drift from apps issue codes. |
 | `tests/E2E/Read/AppsDoctorTest.php` | Real read-only `doctor --family=app --json` against registered development and production apps. |
 | `tests/E2E/Ephemeral/AppsDoctorFixTest.php` | Real `doctor --fix --family=app --restore` repair of safe app runtime drift. |
-| `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime intent adoption. |
+| `tests/E2E/Ephemeral/AppsDoctorAdoptTest.php` | Real `doctor --fix --family=app --adopt` for compatible selected app path adoption and supported runtime configuration adoption. |

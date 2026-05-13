@@ -6,7 +6,7 @@ List recent gateway activity history visible to the caller.
 
 `activity:list` reads durable gateway history for operational review,
 troubleshooting, and audit trails. It shows recent command, API, and gateway
-enactment activity recorded by the gateway, including the correlation id that
+apply activity recorded by the gateway, including the correlation id that
 ties entries from the same operation together.
 
 ## Usage
@@ -40,10 +40,9 @@ orbit activity:list --json
 
 `activity:list`:
 
-1. Resolves the local caller role and gateway connection.
-2. Validates the requested filters.
-3. Asks the gateway for recent activity history visible to the caller.
-4. Renders the matching entries newest first.
+1. Validates the requested filters.
+2. Asks the gateway for recent activity history visible to the caller.
+3. Renders the matching entries newest first.
 
 The command is read-only. It does not inspect live node state, repair drift, or
 query app-node runtimes.

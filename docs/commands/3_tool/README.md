@@ -12,13 +12,13 @@ binaries, containers, and services are backend details.
 - Tool rows include the node, tool name, expected lifecycle state, expected
   version or config when the tool definition tracks them, install paths, and
   backend-specific probe and repair settings.
-- CLI callers resolve input locally, then the gateway reads or writes intent and
-  performs node inspection or enactment.
+- CLI callers resolve input locally, then the gateway reads or writes configuration and
+  performs node inspection or applies changes.
 - Some tools are observational, while others are managed by Orbit.
 - Tool reads use gateway-tracked configuration by default. Live node status is
   included only when a command explicitly requests live inspection or when
   doctor runs.
-- `tool:update` changes version intent or updates a managed tool to the latest
+- `tool:update` changes expected version configuration or updates a managed tool to the latest
   supported version. It is not a generic setup rerun command.
 - `tool:reconfigure` reruns a managed tool's configuration/setup flow without
   changing the intended version.

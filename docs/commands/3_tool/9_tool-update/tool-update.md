@@ -43,8 +43,8 @@ Target context is required when neither `--node`, `--app`, nor local
 
 1. Resolves the target node and selected managed tools.
 2. Verifies each selected tool supports updates and the requested version.
-3. Updates gateway version intent.
-4. Enacts the version update through the gateway.
+3. Updates the gateway expected version.
+4. Applies the version update through the gateway.
 5. Restarts a tool when the update process requires it and the expected state is
    `running`.
 6. Reports updated, skipped, and failed tools.

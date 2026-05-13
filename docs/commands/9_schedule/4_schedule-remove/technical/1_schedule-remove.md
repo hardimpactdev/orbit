@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to manage the selected schedule scope.
 
 ## Signature
@@ -29,12 +28,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may remove schedules only when their node identity has explicit
-schedule-management authorization for the selected scope. Management remains
-gateway-owned and enacted through gateway-to-node transport.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may remove schedules only when their node identity has explicit schedule-management authorization for the selected scope. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -45,30 +41,22 @@ gateway-owned and enacted through gateway-to-node transport.
 
 ### Schedule Removal Rules
 
-- Resolves the schedule by name and optional app or node disambiguation from
-  gateway schedule intent.
+- Resolves the schedule by name and optional app or node disambiguation from gateway schedule configuration.
 - Fails before side effects when no visible schedule matches.
-- Records removal intent on the gateway.
-- Confirms the target node's Orbit Scheduler is reachable so the removal is
-  picked up on the next scheduler tick.
-- Finalizes the schedule as removed once the gateway intent has been
-  written.
-- Retains durable run history unless a future retention command explicitly
-  prunes it.
+- Records removal on the gateway.
+- Confirms the target node's Orbit Scheduler is reachable so the removal is picked up on the next scheduler tick.
+- Finalizes the schedule as removed once the gateway configuration has been written.
+- Retains durable run history unless a future retention command explicitly prunes it.
 
 ### Destructive Consent Rules
 
-- Interactive mode requires an explicit confirmation prompt before gateway
-  removal intent is recorded.
+- Interactive mode requires an explicit confirmation prompt before gateway removal is recorded.
 - Non-interactive mode requires `--force`.
 - `--json` does not imply destructive consent.
 
 ### Scope Boundaries
 
-`schedule-remove` must not remove app code, app process definitions, nodes,
-proxy routes, firewall rules, DNS records, or scripts outside managed
-schedule policy. Scheduler-side state drift belongs to
-[`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-remove` must not remove app code, app process definitions, nodes, proxy routes, firewall rules, DNS records, or scripts outside managed schedule policy. Scheduler-side state drift belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -84,13 +72,11 @@ schedule policy. Scheduler-side state drift belongs to
 | Authorization failed | The caller is not authorized to manage the selected schedule. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
-| Scheduler unreachable | Gateway removal intent was recorded, but the target node's Orbit Scheduler could not be confirmed reachable for prompt pickup. | `error.code=schedule.scheduler_unreachable` |
+| Scheduler unreachable | Gateway removal was recorded, but the target node's Orbit Scheduler could not be confirmed reachable for prompt pickup. | `error.code=schedule.scheduler_unreachable` |
 
 ## Doctor Relationship
 
-`schedule-remove` removes gateway schedule intent and performs command-owned
-cleanup only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the
-authoritative `schedule` probe, issue codes, fix map, and adopt map.
+`schedule-remove` removes gateway schedule configuration and performs command-owned cleanup only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative `schedule` probe, issue codes, fix map, and adopt map.
 
 ## Activity Logging
 

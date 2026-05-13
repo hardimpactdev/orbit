@@ -1,46 +1,24 @@
 # Operation Commands
 
-Operation commands cut across Orbit's command surface. They update Orbit
-installations, verify convergence, and run diagnostic workflows. Activity
-history reads live in their own family; see
-[`docs/commands/17_activity`](../17_activity/README.md).
+Operation commands cut across Orbit's command surface. They update Orbit installations, verify convergence, and run diagnostic workflows. Activity history reads live in their own family; see [`docs/commands/17_activity`](../17_activity/README.md).
 
-The operation domain does not own a state family. Operation commands may read,
-write, verify, or repair state that belongs to other families, but permanent
-drift keys remain the product family keys defined by the blueprint, such as
-`node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and
-`firewall_rule`.
+The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, and `firewall_rule`.
 
 ## State Ownership
 
-The operation command domain does not own a state family. Operation commands are
-cross-family workflows.
+The operation command domain does not own a state family. Operation commands are cross-family workflows.
 
-`doctor` routes concrete probes and issue codes to the family that owns the
-state: `doctor --family=node`, `doctor --family=app`,
-`doctor --family=workspace`, `doctor --family=process`,
-`doctor --family=proxy`, `doctor --family=schedule`,
-`doctor --family=tool`, and `doctor --family=firewall_rule`. Update commands
-may reference those families, but they must not invent operation-family
-drift.
+`doctor` routes concrete probes and issue codes to the family that owns the state: `doctor --family=node`, `doctor --family=app`, `doctor --family=workspace`, `doctor --family=process`, `doctor --family=proxy`, `doctor --family=schedule`, `doctor --family=tool`, and `doctor --family=firewall_rule`. Update commands may reference those families, but they must not invent operation-family drift.
 
 ## Domain Rules
 
-- Operation commands must not invent durable operation-domain intent.
-- Fleet-changing operation commands run through gateway-owned authority and node
-  access policy.
-- Local operation commands affect only the caller machine unless the command
-  explicitly documents a gateway-mediated fleet path.
-- Updates change Orbit installations. They do not replace doctor; run the
-  doctor family that owns the changed artifact when configuration drift or
-  runtime readiness matters.
-- `doctor` owns cross-family verification and resolution. Verify mode is
-  read-only; `--fix` enables interactive, restore, or adopt resolution. Family
-  doctor contracts own concrete probes, issue codes, and restore/adopt action
-  maps.
-- Profiling reads request/runtime data and must not mutate app intent.
-- Operation commands emit activity entries through the cross-cutting Loggable
-  contract. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
+- Operation commands must not invent durable operation-domain configuration.
+- Fleet-changing operation commands run through gateway-owned authority and node access policy.
+- Local operation commands affect only the caller machine unless the command explicitly documents a gateway-mediated fleet path.
+- Updates change Orbit installations. They do not replace doctor; run the doctor family that owns the changed artifact when configuration drift or runtime readiness matters.
+- `doctor` owns cross-family verification and resolution. Verify mode is read-only; `--fix` enables interactive resolution; `--restore` and `--adopt` force a single direction non-interactively. Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
+- Profiling reads request/runtime data and must not mutate app configuration.
+- Operation commands emit activity entries through the cross-cutting Loggable contract. See [`activity-concepts.md`](../17_activity/activity-concepts.md).
 
 ## Commands
 

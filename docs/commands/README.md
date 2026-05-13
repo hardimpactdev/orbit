@@ -3,16 +3,13 @@
 Command contracts define Orbit's stable product surface. They describe ideal
 behavior, not current implementation and not migration history.
 
-The blueprint defines the world commands operate in. Command contracts define
-the command surface inside that world.
+The architecture defines the world commands operate in. Command contracts define the command surface inside that world.
 
 Before adding or changing a command:
 
 1. Update `docs/ARCHITECTURE.md` if the change affects Orbit's architecture or
    domain model.
-2. Update `docs/BUILDING-BLOCKS.md` if the change affects implementation
-   shape, backend boundaries, runtime backends, transport edges, or scheduler
-   mechanics.
+2. Update `docs/BUILDING-BLOCKS.md` if the change affects implementation shape, backend boundaries, process manager behavior, transport edges, or scheduler mechanics.
 3. Update the relevant command contract in this directory.
 4. Confirm the command contracts remain consistent with each other.
 5. Implement code to match the contract.
@@ -59,16 +56,16 @@ then migrate docs until it passes.
   `redis:*`. Database backup and restore should use a future `db:*` family
   with SQLite, MySQL, and PostgreSQL drivers instead of `mysql:*` or
   `postgres:*` command families.
-- Commands must state whether they mutate gateway intent, enact node artifacts,
-  stream runtime data, or only read state.
-- Commands may be invoked from a control node, the gateway, or an app node. A
-  non-gateway invocation is a client call to the gateway over HTTPS; app-node
-  CLI commands may infer local app/workspace context but must not mutate durable
-  Orbit state locally.
-- App-node context is not write permission. App-node callers may run app read
-  commands when authorized, but app-level writes, cross-node creation/adoption,
-  destructive cleanup, pruning, and preference changes must be control/gateway
-  actions unless a command documents a narrow exception.
+- Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
+- The CLI is a thin gateway client. Every command call is a request to the
+  gateway over HTTPS, regardless of which machine the operator runs it on. The
+  gateway authenticates the WireGuard peer, applies authorization, and owns all
+  durable Orbit state. The CLI gathers input, calls the gateway, and renders the
+  response.
+- Authorization is the gateway's responsibility. The CLI does not gate or scope
+  commands by caller role locally. A command may be denied by the gateway based
+  on the authenticated peer's role, but that decision is made server-side and
+  returned to the CLI as a structured failure.
 - `Effects` describe command behavior, not authorization scopes. Authorization
   is node-grant based and belongs in `Prerequisites` and failure semantics.
 - Commands must state how they interact with `orbit doctor`.
@@ -87,8 +84,8 @@ then migrate docs until it passes.
   selects a documented alternate sub-action such as showing current state or
   prompting from authorized choices.
 - Commands that accept an app-node target should resolve it in this order:
-  explicit `--node`, app/workspace ownership, local `node:default`, then
-  interactive input prompt or non-interactive input failure.
+  explicit `--node`, app/workspace ownership, then interactive input prompt or
+  non-interactive input failure.
 - Renderer and prompt primitive selection is governed by
   [`docs/commands/ux/`](ux/README.md). Renderer docs and input-mode docs name
   a primitive from that tree and link to the matching page. Implementation
@@ -111,12 +108,8 @@ then migrate docs until it passes.
   externally visible calls. They must not assert internal services, private
   methods, handler names, or temporary implementation structure.
 - Migration mappings from old commands belong in contraction audits, not here.
-- Backend-shaped import or sync commands are not stable command contracts.
-  Migration adoption must be explicit through `doctor --fix --adopt` or live outside
-  permanent command docs.
-- Upgrade work belongs in Laravel migrations, `orbit doctor --fix --restore`, or
-  explicit `orbit doctor --fix --adopt`. Public versioned migration commands and one-off
-  upgrade helper commands are not part of the stable command surface.
+- Backend-shaped import or sync commands are not stable command contracts. Migration adoption must be explicit through `doctor --adopt` or live outside permanent command docs.
+- Upgrade work belongs in Laravel migrations, `orbit doctor --restore`, or explicit `orbit doctor --adopt`. Public versioned migration commands and one-off upgrade helper commands are not part of the stable command surface.
 
 ## Documentation Structure
 
@@ -139,10 +132,7 @@ Each numbered domain directory contains:
   `6.2_command-name_output-render_json.md`: optional renderer-specific command
   contracts. Use when human output and JSON output have enough behavior or
   tests to deserve separate ownership.
-- `<family-singular>-doctor.md`: optional family-level doctor probe, drift,
-  fix, and adopt contract when the family owns doctor behavior beyond
-  individual commands. Match the family-specific command signature, such as
-  `node-doctor.md` for `doctor --family=node`.
+- `<family-singular>-doctor.md`: optional family-level doctor probe, drift, restore, and adopt contract when the family owns doctor behavior beyond individual commands. Match the family-specific command signature, such as `node-doctor.md` for `doctor --family=node`.
 - `internal/`: optional subdirectory for internal Orbit machinery commands.
 
 The shared [`ux/`](ux/README.md) tree under `docs/commands/` lists the admitted
@@ -155,9 +145,9 @@ Command groups with hidden or internal machinery commands include an `Internal C
 Flat numbered command files are not valid in converted command families. If a
 legacy family is being ported, each public command must be converted into the
 directory shape with at least a public command page, canonical technical
-contract, and renderer contracts. Add companion technical files for caller-role,
-topology, input-mode, destructive consent, cross-node, or E2E behavior when
-those contracts need separate ownership.
+contract, and renderer contracts. Add companion technical files for caller-role
+authorization, topology, input-mode, destructive consent, cross-node, or E2E
+behavior when those contracts need separate ownership.
 
 ### Domains And State Families
 
@@ -191,23 +181,24 @@ Converted documentation domains that are not state families must include a
 the command domain does not own a state family and names the state-family
 doctor handoff for any durable Orbit state or health it affects.
 
-When converting a command, state both the documentation domain that owns the
-user-facing command page and the state family or families whose intent/reality
-the command reads, writes, verifies, fixes, or adopts.
+When converting a command, state both the documentation domain that owns the user-facing command page and the state family or families whose configuration/reality the command reads, writes, verifies, restores, or adopts.
 
-### Caller Role Matrix
+### Authorization By Caller Role
 
-Commands with node-topology behavior should use the node caller-role vocabulary
-from [`1_node/README.md`](1_node/README.md): `control`, `gateway`, `app`, and
-`unknown`.
+Commands that vary by caller role describe gateway-side authorization, not
+local CLI behavior. The gateway identifies the caller from the authenticated
+WireGuard peer and decides what that role is allowed to do. The CLI does not
+detect or branch on the caller's role.
 
-The canonical contract may summarize the caller-role matrix, but role-specific
-files own detailed behavior. Do not repeat the local caller-role detection
-mechanics in every command. Link to the node family README for the shared
-contract and document only the command-specific consequence for each role.
+Authorization vocabulary uses the node caller-role values from
+[`1_node/README.md`](1_node/README.md): `control`, `gateway`, `app`, and
+`unknown`. The canonical contract may summarize the authorization matrix, but
+role-specific files own detailed behavior. Document only the gateway-side
+consequence the contract guarantees for each role (allow, deny, or scoped
+read/write).
 
-If an authoritative node command already decides a caller-role rule, later node
-commands inherit it unless they document a narrower exception.
+If an authoritative node command already establishes an authorization rule for
+a role, later commands inherit it unless they document a narrower exception.
 
 ### Technical Slot Map
 
@@ -216,9 +207,9 @@ When a command uses a `technical/` directory, reserve these slots:
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-control-node.md` | Control caller behavior, when caller role changes command semantics. |
-| `3_command-name_on-gateway-node.md` | Gateway caller behavior, when caller role changes command semantics. |
-| `4_command-name_on-app-node.md` | App caller behavior, when caller role changes command semantics. |
+| `2_command-name_on-control-node.md` | Gateway authorization for `control` callers, when caller role changes command semantics. |
+| `3_command-name_on-gateway-node.md` | Gateway authorization for `gateway` callers, when caller role changes command semantics. |
+| `4_command-name_on-app-node.md` | Gateway authorization for `app` callers, when caller role changes command semantics. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |
 | `5.2_command-name_input-mode_non-interactive.md` | Non-interactive input-mode contract. |
 | `6.1_command-name_output-render_human.md` | Human output renderer contract. |
@@ -289,14 +280,10 @@ explicitly documents a command-specific exception in its canonical technical
 contract and maps tests for that exception.
 
 - `0`: success, including success-with-warnings.
-- `1`: Orbit-handled command failure, including validation, authorization,
-  gateway reachability, domain eligibility, and remote enactment failures.
-- `2`: invalid CLI usage before Orbit can apply the command contract, such as
-  an unknown option or malformed invocation rejected by the console runtime.
+- `1`: Orbit-handled command failure, including validation, authorization, gateway reachability, domain eligibility, and remote apply failures.
+- `2`: invalid CLI usage before Orbit can apply the command contract, such as an unknown option or malformed invocation rejected by the console runtime.
 
-JSON `error.code` is the stable machine-readable classifier for command
-failures. Do not create per-domain numeric exit classes such as "validation
-error = 2" or "remote enactment failure = 3" in command docs.
+JSON `error.code` is the stable machine-readable classifier for command failures. Do not create per-domain numeric exit classes such as "validation error = 2" or "remote apply failure = 3" in command docs.
 
 ### Invocation Matrix
 
@@ -354,9 +341,9 @@ Use shared failure vocabulary unless a domain-specific code is needed:
 | Code | Use for |
 | --- | --- |
 | `validation_failed` | Missing required input, malformed input, unsupported scalar values, and static validation failures. Use `error.meta.field` when one field caused the failure. |
-| `caller_role_not_allowed` | The caller role is not permitted to invoke the command path. Use `error.meta.caller_role`. |
-| `authorization_failed` | The caller role may invoke the command, but the authenticated identity is not authorized for the resolved target. |
-| `gateway_unavailable` | A configured non-gateway caller cannot reach the gateway API required for the command. |
+| `caller_role_not_allowed` | The gateway rejected the authenticated caller's role for this command path. Use `error.meta.caller_role`. |
+| `authorization_failed` | The gateway accepted the caller's role for this command, but the authenticated identity is not authorized for the resolved target. |
+| `gateway_unavailable` | The CLI cannot reach the gateway API required for the command. |
 
 Do not introduce new synonyms such as `missing_input`, `missing_argument`,
 `validation.missing_input`, `unauthorized`, or `auth.unauthorized_role` in new or
@@ -394,10 +381,7 @@ field.
   and performs no slow external work.
 - JSON output renderer contracts own envelopes, payload data shapes, error
   codes, error messages, and error metadata.
-- Family doctor contracts own probe layers, drift kinds, fix behavior, adopt
-  behavior, and doctor test mapping. Command-level doctor sections link to the
-  family doctor contract and describe only command-created drift or repair
-  relationships.
+- Family doctor contracts own probe layers, drift kinds, restore behavior, adopt behavior, and doctor test mapping. Command-level doctor sections link to the family doctor contract and describe only command-created drift or repair relationships.
 - Failure semantics describe command/domain failures after input resolution:
   invalid combinations, authorization failures, network failures, remote
   execution failures, partial provisioning, drift, and exit codes.
@@ -458,10 +442,7 @@ tests can assert command behavior directly from the document.
 **Effects:** Read, write, stream, destructive, internal, local-only,
 gateway-admin, or none.
 
-`write` is an umbrella effect. The canonical behavior contract must state
-whether the command writes gateway intent, local caller settings, node-runtime
-reality, or a combination. Effects are for observable behavior, not permission
-scope.
+`write` is an umbrella effect. The canonical behavior contract must state whether the command writes gateway configuration, CLI client configuration, node-runtime reality, or a combination. Effects are for observable behavior, not permission scope.
 
 **Prerequisites:**
 State that must already exist before command input resolution or side effects
@@ -477,22 +458,24 @@ signature level when interactive input mode can prompt for them.
 Arguments and options with required conditions, forbidden conditions, defaults,
 and validation rules.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-Behavior when invoked from a control node, gateway node, or app node.
+What the gateway authorizes a `control`, `gateway`, or `app` caller to do for
+this command, including denials. The CLI does not enforce these rules locally.
 
 ## Input Resolution
 
 Ordered, mode-neutral resolution of fields and validation. Reference prompt
 IDs instead of repeating terminal prompt details.
 
-If path eligibility depends on resolved command input, split prerequisites into
-pre-input caller eligibility and post-input path eligibility. Apply each
-post-input path eligibility rule as soon as the fields needed for that rule are
-known, and always before side effects. Do not keep prompting after a blocker is
-already knowable. In interactive input mode, correctable blockers should show a
-validation message at the current corrective prompt so the user can change
-course or cancel.
+If path eligibility depends on resolved command input, document the
+post-input path eligibility rules and apply each one as soon as the fields
+needed for that rule are known, and always before side effects. Do not keep
+prompting after a blocker is already knowable. In interactive input mode,
+correctable blockers should show a validation message at the current
+corrective prompt so the user can change course or cancel. Caller-role
+authorization is evaluated by the gateway, not by the CLI's input resolution
+flow.
 
 ## Input Mode Contracts
 
@@ -501,8 +484,7 @@ separate files.
 
 ## Behavior Contract
 
-What the command does, what it does not do, what state it reads or writes, and
-what node artifacts it enacts.
+What the command does, what it does not do, what state it reads or writes, and what node artifacts it applies.
 
 ## Renderer Contracts
 

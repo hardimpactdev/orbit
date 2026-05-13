@@ -41,12 +41,13 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
 `--limit`, `--since`, and `--until` are scalar filters. Multi-value semantics
 are not part of the initial contract.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace:history` behavior is access-policy-driven, not role-driven. All
-authenticated callers with visible workspace access receive the same command
-contract. App-node callers may inspect history for workspaces they are
-authorized to see through gateway-owned access policy.
+The CLI forwards `workspace:history` to the gateway, which authenticates the
+caller's WireGuard peer identity and applies authorization. Behavior is
+access-policy-driven on the gateway, not role-driven on the CLI. App-node
+peers may inspect history for workspaces they are authorized to see through
+gateway-owned access policy.
 
 ## Input Resolution
 
@@ -78,7 +79,7 @@ authorized to see through gateway-owned access policy.
 `workspace:history` must not:
 - SSH into nodes.
 - Probe host reachability or health.
-- Modify gateway intent or node artifacts.
+- Modify gateway configuration or node artifacts.
 - Touch downstream family state.
 - Rewrite or repair historical run rows.
 
@@ -156,7 +157,7 @@ including when the result set is empty.
 - [`doctor --family=workspace`](../../workspace-doctor.md) verifies current
   workspace reality and owns repair behavior. History explains **how** the
   current reality was reached (or why it failed); doctor verifies whether
-  reality matches intent today.
+  reality matches configuration today.
 
 ## Activity Logging
 

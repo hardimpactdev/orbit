@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to manage firewall policy for the resolved node.
 
 ## Signature
@@ -33,12 +32,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `reason` | `--reason` | `Optional.` | `Never.` | `None.` | Operator note. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may manage firewall rules only when their node identity has
-explicit firewall-management authorization for the resolved target. Management
-remains gateway-owned and enacted through gateway-to-node transport.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage firewall rules only when their node identity has explicit firewall-management authorization for the resolved target. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -47,23 +43,19 @@ remains gateway-owned and enacted through gateway-to-node transport.
 
 ## Behavior Contract
 
-### Firewall Intent And Enactment Rules
+### Firewall Configuration And Apply Rules
 
 - Resolves a firewall-eligible target node.
 - Validates the rule shape and baseline policy boundary before side effects.
-- Treats an existing same-node, same-name rule with the same policy shape as
-  idempotent. Reusing the name for a different policy fails before mutation.
-- Writes gateway firewall-rule intent with action `allow`.
-- Enacts the backend firewall rule through the gateway.
-- Reports intent and backend enactment as one command outcome.
-- If backend enactment fails after intent is written, Orbit keeps the rule as
-  expected gateway intent and reports doctor recovery.
+- Treats an existing same-node, same-name rule with the same policy shape as idempotent. Reusing the name for a different policy fails before mutation.
+- Writes gateway firewall-rule configuration with action `allow`.
+- Applies the backend firewall rule through the gateway.
+- Reports configuration and backend apply as one command outcome.
+- If the backend apply fails after configuration is written, Orbit keeps the rule as expected gateway configuration and reports doctor recovery.
 
 ### Scope Boundaries
 
-`firewall-allow` must not create nodes, change node bootstrap policy, infer app
-or proxy ownership from the port, mutate app/proxy/process/tool state, or adopt
-observed backend rules. Related drift belongs to the owning family doctor.
+`firewall-allow` must not create nodes, change node bootstrap policy, infer app or proxy ownership from the port, mutate app/proxy/process/tool state, or adopt observed backend rules. Related drift belongs to the owning family doctor.
 
 ## Renderer Contracts
 
@@ -72,8 +64,7 @@ observed backend rules. Related drift belongs to the owning family doctor.
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed
-intent writes.
+The gateway API endpoint emits an activity entry for successful and failed configuration writes.
 
 | Field | Value |
 | --- | --- |
@@ -92,13 +83,11 @@ intent writes.
 | Authorization failed | The caller is not authorized to manage firewall policy for the selected target. | `error.code=authorization_failed` |
 | Name collision | A different firewall rule already uses the selected name on the target node. | `error.code=firewall_rule.name_collision` |
 | Baseline conflict | The requested rule would mutate node bootstrap policy. | `error.code=firewall_rule.baseline_conflict` |
-| Enactment failed | Gateway intent was written, but backend firewall enactment failed. | `error.code=firewall_rule.enactment_failed` |
+| Apply failed | Gateway configuration was written, but the backend firewall apply failed. | `error.code=firewall_rule.enactment_failed` |
 
 ## Doctor Relationship
 
-`firewall-allow` changes gateway firewall-rule intent and performs command-owned
-enactment only. [`firewall-doctor.md`](../../firewall-doctor.md) owns the
-authoritative `firewall_rule` probe, issue codes, fix map, and adopt map.
+`firewall-allow` changes gateway firewall-rule configuration and performs command-owned apply only. [`firewall-doctor.md`](../../firewall-doctor.md) owns the authoritative `firewall_rule` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

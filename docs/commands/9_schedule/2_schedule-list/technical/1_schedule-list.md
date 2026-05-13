@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect schedules for the selected scope.
 
 ## Signature
@@ -27,33 +26,27 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may read visible schedules when authorized; `schedule:list`
-never grants write permission or local state authority.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible schedules when authorized; `schedule:list` never grants write permission.
 
 ## Input Mode Contracts
 
-No input-mode-specific contracts are required. The command does not prompt;
-invalid filters fail according to the shared invocation model.
+No input-mode-specific contracts are required. The command does not prompt; invalid filters fail according to the shared invocation model.
 
 ## Behavior Contract
 
-### Schedule Intent Visibility Rules
+### Schedule Configuration Visibility Rules
 
-- Reads gateway schedule intent visible to the caller.
+- Reads gateway schedule configuration visible to the caller.
 - Applies the optional app or node filter at the gateway.
-- Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is
-  supplied and the caller is authorized to see them.
+- Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is supplied and the caller is authorized to see them.
 - Includes latest durable run-history summary when available.
 - Does not inspect live Orbit Scheduler state.
 
 ### Scope Boundaries
 
-`schedule-list` must not create, update, remove, run, fix, adopt, or enact
-schedules. It must not read scheduler-side state directly. Drift belongs to
-[`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-list` must not create, update, remove, run, fix, adopt, or apply schedules. It must not read scheduler-side state directly. Drift belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -70,9 +63,7 @@ schedules. It must not read scheduler-side state directly. Drift belongs to
 
 ## Doctor Relationship
 
-`schedule-list` reads gateway schedule intent only.
-[`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative
-`schedule` probe, issue codes, fix map, and adopt map.
+`schedule-list` reads gateway schedule configuration only. [`schedule-doctor.md`](../../schedule-doctor.md) owns the authoritative `schedule` probe, issue codes, fix map, and adopt map.
 
 ## Activity Logging
 

@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to manage tools for the resolved node or app.
 
 ## Signature
@@ -24,14 +23,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
-| `node` | `--node` | `Required when no app or local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible node slug.` |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | `Expected lifecycle state: installed or running.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage tools only when their node identity has explicit tool-management authorization for the resolved target; management remains gateway-owned and enacted through gateway-to-node transport.
+All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage tools only when their node identity has explicit tool-management authorization for the resolved target; management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Mode Contracts
 
@@ -39,18 +38,18 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 ## Behavior Contract
 
-### Tool Intent And Enactment Rules
+### Tool Configuration And Apply Rules
 
 - Verifies the tool supports managed installation on the target node.
-- Writes or updates gateway tool intent.
+- Writes or updates gateway tool configuration.
 - Generates managed credential material when the tool definition owns
   credentials.
-- Creates or updates tool-owned service endpoint intent when the tool
+- Creates or updates tool-owned service endpoint configuration when the tool
   definition declares an endpoint.
-- Enacts install and configuration through the gateway.
+- Applies install and configuration through the gateway.
 - Starts the tool when expected status is running.
-- If remote installation, configuration, or start fails after gateway intent is
-  written, Orbit keeps the intended tool row and reports the node as not yet
+- If remote installation, configuration, or start fails after gateway configuration is
+  written, Orbit keeps the expected tool row and reports the node as not yet
   converged; `doctor --fix --family=tool --restore` owns later convergence when the tool
   definition declares a safe repair path.
 
@@ -58,7 +57,7 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 
 `tool-install` must not create apps, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
-Tool-owned endpoint intent is allowed only when declared by the selected tool
+Tool-owned endpoint configuration is allowed only when declared by the selected tool
 definition. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
@@ -75,11 +74,11 @@ definition. Related drift belongs to each owning family doctor contract.
 | Authorization failed | The caller is not authorized to manage the selected tool target. | `error.code=authorization_failed` |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Remote action failed | Gateway intent was readable, but node inspection or enactment failed. | `error.code=tool.remote_action_failed` |
+| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
 
-`tool-install` changes gateway tool intent and performs command-owned enactment only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-install` changes gateway tool configuration and performs command-owned apply only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

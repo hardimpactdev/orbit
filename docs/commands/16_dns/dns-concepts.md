@@ -11,7 +11,7 @@ the DNS command contracts; it does not override the
   not create a `dns` state family.
 - **Caller-local DNS administration:** Local-only DNS workflow allowed only for
   control-node callers. It mutates or reads the caller machine's resolver
-  configuration and never writes gateway intent or node reality.
+  configuration and never writes gateway configuration or node reality.
 - **Caller-local resolver override:** Orbit-managed local resolver
   configuration that maps wildcard hostnames under a development TLD to a local
   target IP address for browser and CLI use on the caller machine.
@@ -60,7 +60,7 @@ the DNS command contracts; it does not override the
   create an app-node write exception or repair app-node resolver state.
 - **Public DNS boundary:** Product boundary that keeps `dns:*` commands away
   from public DNS records and provider DNS/CDN state. Cloudflare provider DNS
-  belongs to `cf-dns:*`, and Orbit ingress intent belongs to app and proxy
+  belongs to `cf-dns:*`, and Orbit ingress configuration belongs to app and proxy
   domains.
 
 ## Boundaries
@@ -68,6 +68,6 @@ the DNS command contracts; it does not override the
 - **DNS-domain boundaries:** DNS commands own caller-local resolver override
   reads, writes, resets, backend refreshes, and local DNS reporting for `dns:*`.
   They do not own a state family, create `doctor --family=dns`, mutate gateway
-  intent or node reality, create gateway-owned development DNS mappings, create
+  configuration or node reality, create gateway-owned development DNS mappings, create
   app domains or proxy routes, query or mutate Cloudflare/public DNS, or create
   arbitrary per-host DNS mappings.

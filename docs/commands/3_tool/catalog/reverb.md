@@ -57,7 +57,7 @@ Example JSON shape:
 ## Orbit Notes
 
 Reverb is a managed realtime communication capability. App broadcasting
-configuration remains app intent.
+configuration remains app configuration.
 
 ## Doctor Relationship
 

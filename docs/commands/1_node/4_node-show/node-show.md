@@ -43,15 +43,15 @@ orbit node:show app-1 --json
 
 1. Resolves the target node name from input or local default development app
    node configuration.
-2. Reads the node record from gateway-owned node intent.
+2. Reads the node record from gateway-owned node configuration.
 3. Validates that the current caller is authorized to inspect the target node
    through gateway-owned access policy.
 4. Returns the registry-backed node details and durable grant metadata.
 
 `node:show` does not:
 
-- Mutate gateway intent or node state.
-- Fix drift or adopt node reality.
+- Mutate gateway configuration or node state.
+- Restore drift or adopt node reality.
 - SSH into the target node directly from the caller.
 - Run live readiness, platform, WireGuard, gateway API, or SSH probes.
 - Block on slow or unreachable node runtime checks.

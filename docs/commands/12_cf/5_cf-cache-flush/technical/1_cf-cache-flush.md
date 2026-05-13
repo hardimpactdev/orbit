@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized for Cloudflare provider administration.
 - The gateway has a Cloudflare API token configured.
 
@@ -27,14 +26,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Cloudflare zone ID, exact zone domain name, or Orbit app name with a configured Cloudflare zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-Control callers send the command request to the gateway. Gateway callers
-execute the provider request directly. App-node and unknown callers are denied
-before prompts or side effects because Cloudflare commands are provider
-administration, not app-local runtime work. Authorized control and gateway
-callers use the gateway-owned authorization policy for Cloudflare provider
-administration.
+The CLI forwards every Cloudflare command request to the gateway. The gateway
+authenticates the WireGuard peer, derives the caller role, and applies the
+gateway-owned authorization policy for Cloudflare provider administration.
+Control and gateway callers are authorized. App-node and unknown callers are
+denied before prompts or side effects because Cloudflare commands are provider
+administration, not app-local runtime work.
 
 ## Input Resolution
 

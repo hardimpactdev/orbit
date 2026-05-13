@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to read visible workspace registry intent.
+- The current node identity is authorized to read visible workspace registry configuration.
 
 ## Signature
 
@@ -35,11 +35,12 @@ of the initial contract. Operators who need to query multiple apps or nodes at
 once should run `workspace:list --json` without that filter and post-filter the
 result, or run separate scoped invocations.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace:list` behavior does not vary by caller role. All authenticated
-callers with visible registry access receive the same command contract.
-Visibility scoping is access-policy-driven, not role-driven.
+The CLI forwards `workspace:list` to the gateway, which authenticates the
+caller's WireGuard peer identity and applies authorization. Behavior does not
+vary by caller role: every authorized caller receives the same command
+contract. Visibility scoping is access-policy-driven on the gateway.
 
 ## Visibility Behavior
 
@@ -61,7 +62,7 @@ identity is authorized to see.
 2. Resolve `workspace_list.node` from `--node` when present. Validate
    immediately against the gateway node registry.
 3. Select the output renderer and query the gateway for visible workspace
-   registry intent.
+   registry configuration.
 
 ## Input Mode Contracts
 
@@ -70,7 +71,7 @@ arguments and does not prompt.
 
 ## Behavior Contract
 
-1. **Query gateway registry.** Read visible workspace registry intent scoped to
+1. **Query gateway registry.** Read visible workspace registry configuration scoped to
    the current consuming node's access policy. No host probing is performed.
 2. **Apply filters.** If `--app` is present, include only workspaces belonging
    to that app. If `--node` is present, include only workspaces residing on that
@@ -87,21 +88,21 @@ arguments and does not prompt.
 `workspace:list` must not:
 - SSH into nodes.
 - Probe host reachability or workspace artifact health.
-- Modify gateway intent or node artifacts.
+- Modify gateway configuration or node artifacts.
 - Touch downstream family state.
 
 ### Lifecycle Status Taxonomy
 
 | Lifecycle status | Description |
 | --- | --- |
-| `expected` | Gateway intent treats the workspace as the desired steady-state row; no setup or teardown action is pending. This does not certify node artifacts. |
+| `expected` | Gateway configuration treats the workspace as the desired steady-state row; no setup or teardown action is pending. This does not certify node artifacts. |
 | `setup-pending` | Workspace is registered on the gateway but `workspace:setup` has not run. |
 
-Workspace removal deletes gateway workspace intent before best-effort node
-cleanup starts. Removed workspaces disappear from registry-backed list output
-instead of moving through a retained removal lifecycle state.
+Workspace removal deletes gateway workspace configuration before best-effort
+node cleanup starts. Removed workspaces disappear from registry-backed list
+output instead of moving through a retained removal lifecycle state.
 
-Lifecycle status is registry intent only. It is rendered as
+Lifecycle status is registry configuration only. It is rendered as
 `lifecycle_status` in JSON to distinguish it from setup-run status and live
 HTTP probe results. Live workspace reality belongs to
 [`doctor --family=workspace`](../../workspace-doctor.md).
@@ -121,7 +122,7 @@ HTTP probe results. Live workspace reality belongs to
 
 ## Doctor Relationship
 
-- `workspace:list` reports intent. `doctor --family=workspace` verifies reality.
+- `workspace:list` reports configuration. `doctor --family=workspace` verifies reality.
 - `workspace:list` does not expose `--doctor`; live verification belongs to
   `doctor --family=workspace`.
 - See [`workspace-doctor.md`](../../workspace-doctor.md) for the authoritative

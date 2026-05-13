@@ -46,18 +46,18 @@ when stale workspace cleanup is wanted.
 
 `--dry-run` exists for `app:prune` because the command discovers its destructive
 target set from external adapter state before removing anything. The preview
-returns that computed stale-workspace set without deleting workspace intent or
+returns that computed stale-workspace set without deleting workspace configuration or
 node artifacts. Other destructive commands that act on an explicit named target
 do not inherit `--dry-run` from this command.
 
 When removing a stale workspace, Orbit applies the same removal semantics as
 [`workspace:remove`](../../6_workspace/5_workspace-remove/workspace-remove.md):
-gateway workspace intent is removed first, then node-side cleanup runs through
+gateway workspace configuration is removed first, then node-side cleanup runs through
 the normal workspace removal order, including teardown steps.
 
 **Current limitation: databases.** Database cleanup requires Orbit to explicitly
 track a database as workspace-owned. No such tracking mechanism exists in
-gateway intent today, so `app:prune` always reports databases as **skipped** for
+gateway configuration today, so `app:prune` always reports databases as **skipped** for
 manual cleanup. Orbit does not infer database ownership from names, environment
 files, or conventions. User-authored database removal can be expressed as a
 workspace teardown step.
@@ -74,7 +74,7 @@ workspace teardown step.
 - The app must have at least one agent IDE adapter configured (directly or inherited).
 - The gateway must be able to query the effective agent IDE adapter(s).
   App-node SSH cleanup reachability is not a pre-prune prerequisite; cleanup
-  failures after workspace intent removal are reported as warnings with repair
+  failures after workspace configuration removal are reported as warnings with repair
   commands.
 
 ## Related Commands

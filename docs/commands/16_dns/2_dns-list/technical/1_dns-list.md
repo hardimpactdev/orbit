@@ -7,7 +7,7 @@
 **Effects:** `read`, `local-only`.
 
 **Prerequisites:**
-- The local caller role can be resolved as `control`.
+- The caller is authorized as a `control` role peer.
 - The caller platform is Linux or macOS.
 
 ## Signature
@@ -25,28 +25,20 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`dns:list` resolves the caller role from the local node role setting before it
-reads local resolver state.
+The gateway authorizes the WireGuard peer's role for `dns:list`.
 
 | Caller role | Behavior |
 | --- | --- |
 | `control` | Allowed. Reads only caller-local resolver state. |
 | `gateway` | Invalid. Gateway development DNS mappings are gateway-owned node readiness, not local control-node resolver overrides. |
 | `app` | Invalid. App-node resolver state is gateway-managed runtime state, not a local control-node troubleshooting surface. |
-| `unknown` | Invalid local context. Fail before local resolver reads. |
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If the local role setting is unset or `null`, resolve caller role as
-     `control`.
-   - If caller role is `gateway` or `app`, fail before local resolver reads.
-   - If the local role setting contains an unsupported value or cannot be read,
-     fail before local resolver reads.
-2. Select the output renderer.
-3. Read Orbit-managed local resolver state.
+1. Select the output renderer.
+2. Read Orbit-managed local resolver state.
 
 No input-mode-specific contracts are required. The command has no prompts or
 required arguments.
@@ -68,7 +60,7 @@ required arguments.
 
 `dns:list` must not:
 - Mutate local resolver configuration.
-- Query or mutate gateway intent, node records, app routes, proxy routes,
+- Query or mutate gateway configuration, node records, app routes, proxy routes,
   Cloudflare records, or public DNS.
 - Inspect gateway-owned development DNS mappings.
 - Repair local resolver drift.
@@ -83,7 +75,6 @@ required arguments.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Caller role not allowed | Invoked from a gateway or app caller. | Failure before local resolver reads |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before local resolver reads |
 | Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 
@@ -116,7 +107,7 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: caller-role eligibility, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway intent reads, and no public DNS reads. |
+| `tests/Feature/Commands/Dns/DnsListCommandTest.php` | Command contract: caller-role eligibility, Linux and macOS local resolver read behavior, empty result success, unsupported-platform failure, resolver read failure, read-only guarantee, no gateway configuration reads, and no public DNS reads. |
 | `tests/Feature/Commands/Dns/DnsListJsonRendererTest.php` | JSON renderer selection, success envelope, empty result shape, resolver entry DTO shape, every `error.code` value, and `--json` forcing non-interactive mode. |
 | `tests/Feature/Commands/Dns/DnsListHumanRendererTest.php` | Human renderer local DNS summary, empty result prose, no-progress-tree behavior, caller-role denial prose, unsupported-platform prose, resolver read failure prose, and absence of JSON envelopes in human mode. |
 | `tests/E2E/DnsListTest.php` | Incus-backed Linux control-node feature gate: install the current checkout into a disposable control VM, seed an Orbit-managed local resolver override, and verify `php artisan dns:list --json` reports it. |

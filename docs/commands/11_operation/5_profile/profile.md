@@ -8,8 +8,7 @@
 route, reports network timing from Orbit's request profiler, and enriches the
 result with Laravel Toolbar data when the app exposes it for that request.
 
-`profile` is a development diagnostic command. It observes one request; it does
-not change app intent, proxy routes, process state, or deployment state.
+`profile` is a development diagnostic command. It observes one request; it does not change app configuration, proxy routes, process state, or deployment state.
 
 ## Usage
 
@@ -54,8 +53,8 @@ for the exact shape.
 
 ## Requirements
 
-- The caller role can be resolved.
-- The caller is authorized to read the resolved app.
+- The CLI caller can reach the Orbit gateway.
+- The gateway authorizes the calling WireGuard peer to read the resolved app.
 - The target app is an Orbit-managed app.
 - The resolved request URL is reachable from the selected request origin.
 - Authenticated profiles require app-side support for Orbit's Toolbar auth

@@ -14,7 +14,7 @@ supports the PHP command contracts; it does not override the
   scope: app runtime, workspace runtime override or inheritance, or node CLI
   default.
 - **Supported PHP version set:** Version set Orbit can manage through the PHP
-  runtime catalog. Unsupported versions fail validation before PHP intent or
+  runtime catalog. Unsupported versions fail validation before PHP configuration or
   node artifacts are changed.
 - **Installed PHP runtime:** PHP version available on a target node. PHP
   commands may require the requested version to already be installed, but
@@ -35,7 +35,7 @@ supports the PHP command contracts; it does not override the
 ## Runtime Scopes
 
 - **App PHP runtime selection:** App-scoped PHP version stored as gateway app
-  intent. Changing it re-renders app PHP-FPM artifacts and affected app-owned
+  configuration. Changing it re-renders app PHP-FPM artifacts and affected app-owned
   proxy backend artifacts on the owning app node.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
   workspace row. It overrides the parent app PHP version for that workspace.
@@ -46,24 +46,24 @@ supports the PHP command contracts; it does not override the
 - **Node CLI PHP default:** Node-level gateway-tracked configuration for the
   default `php` binary used by users, agents, shell scripts, and lifecycle steps
   when no command selects a version explicitly. It is separate from app and
-  workspace PHP-FPM runtime intent.
+  workspace PHP-FPM runtime configuration.
 
-## Enactment And Drift
+## Application And Drift
 
 - **PHP-FPM artifact:** Node-side PHP-FPM pool configuration, endpoint, socket,
-  or service state derived from app or workspace PHP runtime intent. App and
+  or service state derived from app or workspace PHP runtime configuration. App and
   workspace families own artifact convergence.
 - **PHP runtime target:** Resolved app, workspace, or node CLI scope that a PHP
   command reads or writes after target resolution and authorization.
-- **Partial PHP enactment warning:** Structured doctor handoff emitted when PHP
-  intent is written but app, workspace, proxy, or node enactment does not fully
+- **Partial PHP application warning:** Structured doctor handoff emitted when PHP
+  configuration is written but app, workspace, proxy, or node application does not fully
   converge. The warning keeps the owning state family and next doctor command
   visible.
 
 ## Boundaries
 
 - **PHP-domain boundaries:** PHP runtime commands own selection, inheritance,
-  target resolution, runtime reporting, and partial-enactment warnings for
+  target resolution, runtime reporting, and partial-application warnings for
   `php:*`. They do not install or remove PHP runtimes, own PHP-FPM tool
   lifecycle, invent `doctor --family=php`, read `.php-version`, mutate
   Composer files, change framework config, create app or workspace records, or

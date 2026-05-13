@@ -1,15 +1,19 @@
-# Technical Contract: `orbit app:register` (Control Node)
+# Technical Contract: `orbit app:register` From A Control Node
 
-This contract defines behavior when `app:register` is invoked from a **control node**.
+This contract defines gateway-side behavior when `app:register` is invoked from
+a peer the gateway identifies as a **control node**.
 
 [Back to the canonical contract.](1_app-register.md)
 
 ## Behavior
 
-- **Gateway Proxy**: The command acts as a client to the Orbit gateway over HTTPS.
-- **Identity**: Uses the control node's authorized identity to authenticate with the gateway.
-- **Visibility**: Can register any app on any app node authorized for the control node's identity.
-- **Enactment**: The gateway performs the actual SSH enactment to the target app node.
+- **Allowed:** The gateway authorizes the request based on the authenticated
+  WireGuard peer identity.
+- **Apply:** The gateway runs the full registration and apply pipeline. App
+  configuration is written to the gateway database, and app-node artifacts are
+  applied over SSH to the target app node via `RemoteShell`.
+- **No CLI shortcut:** The CLI forwards the request to the gateway API. There
+  is no client-side branch that performs SSH directly from the control peer.
 
 ## Test Mapping
 

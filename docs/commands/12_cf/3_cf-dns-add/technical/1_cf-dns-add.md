@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized for Cloudflare provider administration.
 - The gateway has a Cloudflare API token configured.
 
@@ -31,14 +30,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `proxied` | `--proxied` | `Optional.` | `Never.` | `false` | Boolean flag. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-Control callers send the command request to the gateway. Gateway callers
-execute the provider request directly. App-node and unknown callers are denied
-before prompts or side effects because Cloudflare commands are provider
-administration, not app-local runtime work. Authorized control and gateway
-callers use the gateway-owned authorization policy for Cloudflare provider
-administration.
+The CLI forwards every Cloudflare command request to the gateway. The gateway
+authenticates the WireGuard peer, derives the caller role, and applies the
+gateway-owned authorization policy for Cloudflare provider administration.
+Control and gateway callers are authorized. App-node and unknown callers are
+denied before prompts or side effects because Cloudflare commands are provider
+administration, not app-local runtime work.
 
 ## Input Resolution
 
@@ -66,12 +65,9 @@ missing or invalid required fields fail before side effects.
 - Refuses to create a second record for the same zone, name, and type with
   different content or proxy setting.
 
-### Orbit Intent Boundaries
+### Orbit Configuration Boundaries
 
-`cf-dns:add` writes Cloudflare provider state only. It must not create app
-domains, proxy routes, caller-local DNS resolver overrides, or gateway-owned DNS
-intent. Orbit-owned hostnames should normally be created through app and proxy
-flows that may call provider enactment internally.
+`cf-dns:add` writes Cloudflare provider state only. It must not create app domains, proxy routes, caller-local DNS resolver overrides, or gateway-owned DNS configuration. Orbit-owned hostnames should normally be created through app and proxy flows that may call provider DNS application internally.
 
 ## Renderer Contracts
 
@@ -90,14 +86,11 @@ flows that may call provider enactment internally.
 
 ## Doctor Relationship
 
-`cf-dns:add` may help enact provider DNS for a proxy or app hostname, but it does
-not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
-owns ingress route health and [`doctor --family=app`](../../../5_app/app-doctor.md)
-owns app-domain health.
+`cf-dns:add` may help apply provider DNS for a proxy or app hostname, but it does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns ingress route health and [`doctor --family=app`](../../../5_app/app-doctor.md) owns app-domain health.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php` | Command contract for caller-role denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and no Orbit intent writes. |
+| `tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php` | Command contract for caller-role denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and no Orbit configuration writes. |
 | `tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |

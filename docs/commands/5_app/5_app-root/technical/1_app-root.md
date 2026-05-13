@@ -10,7 +10,7 @@
 the destructive-consent prompt or require `--force`, including for production
 apps with active domains. Cross-cutting "production-write confirmation" is not
 an Orbit-wide concept; if it ever becomes one, it must be added to the
-blueprint and propagated across every app, workspace, proxy, and deployment
+architecture and propagated across every app, workspace, proxy, and deployment
 command that writes production runtime state.
 
 **Prerequisites:**
@@ -35,14 +35,17 @@ This command follows the shared
 | `root` | `[root]` | Always. | Never. | None. | Path relative to the app's base path. Must not resolve outside the app path; see [Validation](#validation). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-| Role | Behavior |
+`app:root` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call.
+
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Normal execution: calls gateway API. |
-| `gateway` | Normal execution: processes intent and orchestrates enactment. |
-| `app` | Denied before prompts or side effects. |
-| `unknown` | Denied before prompts or side effects. |
+| `control` | Allowed. The gateway processes configuration and applies app-node artifacts over SSH via `RemoteShell`. |
+| `gateway` | Allowed. Same gateway-side behavior as a control caller. The gateway opens SSH back to the target app node via `RemoteShell`. |
+| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
@@ -91,32 +94,32 @@ filesystem reality stays a doctor-owned convergence concern.
 
 ### App Root Resolution Rules
 
-`app:root` is convergent and idempotent. It always re-applies enactment so
-running it on an already-managed app refreshes node artifacts even when intent
+`app:root` is convergent and idempotent. It always re-applies application so
+running it on an already-managed app refreshes node artifacts even when configuration
 is unchanged.
 
-1.  **Write Intent:** Update the `document_root` field in the application's
-    gateway record. If the requested root equals the current intent, the
-    intent write is a no-op and `success.data.result.changed=false`; the command
-    still proceeds to artifact re-enactment.
+1.  **Write Configuration:** Update the `document_root` field in the application's
+    gateway record. If the requested root equals the current configuration, the
+    configuration write is a no-op and `success.data.result.changed=false`; the command
+    still proceeds to artifact re-application.
 2.  **Identify Artifacts:** Determine which PHP-FPM and proxy route artifacts
     are affected by the document root change.
-3.  **Re-enact Artifacts:**
-    - Re-render the affected artifacts using the current intent.
+3.  **Re-apply Artifacts:**
+    - Re-render the affected artifacts using the current configuration.
     - Upload and apply the artifacts to the app node over SSH via
       `RemoteShell::upload` / `run`.
     - The PHP-FPM pool reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
-      enactment plumbing for the FPM artifact, in line with ARCHITECTURE
+      apply plumbing for the FPM artifact, in line with ARCHITECTURE
       Product Principle 5 ("Backend names are not product names"). When an
       app-owned proxy route references the document root, `app:root` updates
-      the app intent and leaves proxy backend artifact convergence to the
+      the app configuration and leaves proxy backend artifact convergence to the
       `proxy` family.
-    - `success.meta.artifacts_reenacted` reports whether enactment found
+    - `success.meta.artifacts_reenacted` reports whether application found
       observable changes on the node (`true`) or completed as a clean
       idempotent no-op (`false`). Both are success.
-4.  **Convergence:** The command is convergent. If enactment fails after
-    intent has been written, the gateway intent remains updated, the node
+4.  **Convergence:** The command is convergent. If application fails after
+    configuration has been written, the gateway configuration remains updated, the node
     reality is drifted, and the failure surfaces as a non-fatal warning
     under `success.meta.warnings[]` with structured `code`, `family`,
     `message`, and `next_command` (see
@@ -125,13 +128,13 @@ is unchanged.
 ## Failure Semantics
 
 Hard errors that cannot be retried through convergence use the `error`
-envelope. Drift and retryable enactment hiccups during a successful run go
+envelope. Drift and retryable apply hiccups during a successful run go
 to `success.meta.warnings[]`.
 
 ### Errors
 
 - `app.not_found`: The specified application could not be resolved.
-- `caller_role_not_allowed`: The caller role is `app` or `unknown`.
+- `caller_role_not_allowed`: The gateway identifies the caller as an app-node peer.
 - `app.invalid_root`: `root` failed gateway-side string validation (resolves
   outside the app path, is empty, or is absolute).
   `error.meta.field=root`, `error.meta.root`, `error.meta.resolved_path`,
@@ -149,10 +152,10 @@ reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.
 
 | Code | Family | Meaning |
 | --- | --- | --- |
-| `app.fpm_config_mismatch` | `app` | The app's PHP-FPM configuration could not be re-applied to match gateway intent on the owning app node. |
-| `app.fpm_config_missing` | `app` | The app's PHP-FPM configuration could not be installed during enactment. |
-| `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway intent. |
-| `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed during enactment. |
+| `app.fpm_config_mismatch` | `app` | The app's PHP-FPM configuration could not be re-applied to match gateway configuration on the owning app node. |
+| `app.fpm_config_missing` | `app` | The app's PHP-FPM configuration could not be installed while applying. |
+| `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
+| `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |
 
 `next_command` for each warning is `doctor --fix --family=app --app=<app> --restore`.
 
@@ -162,10 +165,10 @@ runtime configuration drift.
 
 ## Doctor Relationship
 
-- This command updates gateway intent that is verified by `doctor --family=app`.
+- This command updates gateway configuration that is verified by `doctor --family=app`.
   See [`app-doctor.md`](../../app-doctor.md) for the app-family probe and
   issue-code contract.
-- If re-enactment fails, `doctor --family=app` reports the same
+- If re-application fails, `doctor --family=app` reports the same
   `app.fpm_config_*` / `app.runtime_config_*` drift surfaced as warnings
   here.
 - Repairing drift caused by a partial success of `app:root` belongs to
@@ -191,6 +194,6 @@ document-root updates.
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-enactment with `changed=false`, intent write with `changed=true`, authorization, and exhaustive error codes. |
-| `tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-enactment artifacts. |
-| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-enactment of PHP-FPM (including pool reload) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.fpm_config_mismatch` warning payload shape in `success.meta.warnings[]`. |
+| `tests/Feature/Commands/Apps/AppRootCommandTest.php` | Input resolution, gateway-side `app.invalid_root` validation (empty, absolute, lexical escape via `..`), no-op idempotent re-application with `changed=false`, configuration write with `changed=true`, authorization, and exhaustive error codes. |
+| `tests/Unit/Actions/Apps/UpdateAppRootActionTest.php` | Core logic for resolving `root` lexically against `app_path`, deciding `changed`, and selecting affected re-application artifacts. |
+| `tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php` | Real SSH re-application of PHP-FPM (including pool reload) and proxy artifacts on a test node, the converged-no-op path, and the drift-warning path with `app.fpm_config_mismatch` warning payload shape in `success.meta.warnings[]`. |

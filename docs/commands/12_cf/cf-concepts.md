@@ -10,9 +10,7 @@ supports the Cloudflare command contracts; it does not override the
   `cf-zone:*`, `cf-dns:*`, `cf-cache:*`, `cf-cache-rule:*`, and `cf-ssl:*`
   command prefixes. It manages provider-side DNS, cache, and SSL settings but
   does not create a `cf` state family.
-- **Cloudflare provider integration:** External DNS/CDN provider integration
-  used for real production domains. It supports app and proxy behavior but does
-  not replace gateway-owned Orbit app, proxy, TLS, or DNS intent.
+- **Cloudflare provider integration:** External DNS/CDN provider integration used for real production domains. It supports app and proxy behavior but does not replace gateway-owned Orbit app, proxy, TLS, or DNS configuration.
 - **Provider administration:** Gateway-admin workflow that reads or mutates
   Cloudflare provider state through the gateway. Control callers must go through
   the gateway; app-node callers are denied before prompts or side effects.
@@ -29,18 +27,12 @@ supports the Cloudflare command contracts; it does not override the
 - **Cloudflare zone:** Provider zone visible to the gateway's configured API
   token. Commands may resolve a zone by provider zone ID or exact zone domain
   name.
-- **Provider DNS record:** DNS record stored in Cloudflare provider state. CF
-  DNS list commands expose provider records for audit and do not treat them as
-  Orbit DNS intent.
+- **Provider DNS record:** DNS record stored in Cloudflare provider state. CF DNS list commands expose provider records for audit and do not treat them as Orbit DNS configuration.
 - **Address record:** Cloudflare `A` or `AAAA` record. CF DNS write commands
   are limited to address records; CNAME, TXT, MX, CAA, SRV, and broad DNS
   administration are outside the current Orbit CF scope.
-- **Proxied DNS record:** Provider DNS record whose Cloudflare proxy flag is
-  enabled. Orbit passes the requested proxied setting to Cloudflare but keeps
-  Orbit ingress intent in the proxy/app domains.
-- **Provider DNS enactment:** Cloudflare DNS state change that may support an
-  Orbit app or proxy hostname. It is provider-side enactment, not durable Orbit
-  route, app, or DNS intent.
+- **Proxied DNS record:** Provider DNS record whose Cloudflare proxy flag is enabled. Orbit passes the requested proxied setting to Cloudflare but keeps Orbit ingress configuration in the proxy/app domains.
+- **Provider DNS application:** Cloudflare DNS state change that may support an Orbit app or proxy hostname. It is provider-side application, not durable Orbit route, app, or DNS configuration.
 
 ## Cache
 
@@ -73,9 +65,4 @@ supports the Cloudflare command contracts; it does not override the
 
 ## Boundaries
 
-- **Cloudflare-domain boundaries:** Cloudflare commands own gateway-mediated
-  provider visibility and provider-side DNS, cache, and SSL mutations for real
-  Cloudflare-backed domains. They do not own a state family, create Orbit app
-  domains or proxy routes, replace `proxy` as the canonical ingress registry,
-  manage development TLDs, store provider records as Orbit intent, or create a
-  `doctor --family=cf` contract.
+- **Cloudflare-domain boundaries:** Cloudflare commands own gateway-mediated provider visibility and provider-side DNS, cache, and SSL mutations for real Cloudflare-backed domains. They do not own a state family, create Orbit app domains or proxy routes, replace `proxy` as the canonical ingress registry, manage development TLDs, store provider records as Orbit configuration, or create a `doctor --family=cf` contract.

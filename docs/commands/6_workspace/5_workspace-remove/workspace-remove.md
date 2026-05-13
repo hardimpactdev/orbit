@@ -52,9 +52,9 @@ orbit workspace:remove feature-api --force
   workspace directory.
 - `--app=<app>`: the parent app slug. Required only when the workspace name
   is ambiguous across multiple apps.
-- `--keep-files`: remove Orbit intent and runtime artifacts (proxy routes,
-  inherited processes, FPM pool) but leave the workspace worktree on the app
-  node.
+- `--keep-files`: remove Orbit configuration and runtime artifacts (proxy
+  routes, inherited processes, FPM pool) but leave the workspace worktree on
+  the app node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
   `--force`.
@@ -63,7 +63,7 @@ orbit workspace:remove feature-api --force
 ## Behavior Summary
 
 `workspace:remove` performs gateway-orchestrated removal of a workspace. The
-gateway owns the workspace registry record and enacts artifact cleanup on the
+gateway owns the workspace registry record and applies artifact cleanup on the
 app node over SSH. The execution sequence has two phases.
 
 1. **Pre-flight:** Resolve the target workspace from `name` or CWD; detect
@@ -71,10 +71,10 @@ app node over SSH. The execution sequence has two phases.
 2. **Confirmation:** Prompt for destructive consent unless `--force` is used.
    With `--keep-files`, the prompt body explicitly states the worktree will
    be preserved.
-3. **Phase A — Gateway intent (atomic, point of no return):** Delete
+3. **Phase A — Gateway configuration (atomic, point of no return):** Delete
    workspace-owned proxy route rows and the `workspace` row in one
    transaction.
-4. **Phase B — Node-side enactment (over SSH):** Stop traffic, stop
+4. **Phase B — Node-side application (over SSH):** Stop traffic, stop
    inherited processes, run teardown steps, remove the FPM pool, and remove
    the worktree (skipped with `--keep-files`). Each step reports `removed`,
    `already_absent`, or `failed`; failures become structured warnings.
@@ -100,12 +100,12 @@ workspace teardown step.
 ## Requirements
 
 - CLI caller must reach the Orbit gateway.
-- Must be run from a control or gateway caller. App-node callers are denied
-  before prompts or side effects.
+- Must be run from a control or gateway peer. The gateway denies app-node
+  peers before any side effects.
 - Authorized node identity for the target workspace or parent app.
 - Gateway SSH access to the app node is used for artifact cleanup when
-  available. If cleanup cannot finish after workspace intent removal, the
-  command still succeeds and reports warnings with repair commands.
+  available. If cleanup cannot finish after workspace configuration removal,
+  the command still succeeds and reports warnings with repair commands.
 - Destructive consent is required through the interactive confirmation prompt
   or `--force`. Non-interactive input mode requires `--force`.
 

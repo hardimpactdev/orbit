@@ -5,16 +5,17 @@
 This page describes caller-role behavior when `orbit gateway:add` is invoked from
 a gateway node.
 
-**Effects:** `none`. The command is rejected before prompts or side effects when
-the caller role is `gateway`.
+**Effects:** `none`. The gateway rejects the caller when its WireGuard peer
+identity resolves to a `gateway` node, before any local prompts or side effects.
 
 **Prerequisites:**
-- The caller role has resolved to `gateway` per the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
+- The gateway has identified the caller's WireGuard peer identity as a
+  `gateway` node and rejected the `gateway:add` request.
 
 ## Behavior
 
-Gateway callers are rejected before prompts or side effects.
+The gateway rejects gateway callers. The CLI surfaces the rejection before
+running any local prompts or side effects.
 
 The gateway is the control plane and the source of its own CA. It does not need
 to fetch, trust, or store its own CA through the `gateway:add` flow. Gateway

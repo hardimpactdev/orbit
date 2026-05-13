@@ -5,7 +5,7 @@
 Unregister and detach a node from the Orbit fleet.
 
 Use `node:remove` when decommissioning servers or moving a host to a different
-Orbit project. The command removes the node from gateway-owned node intent,
+Orbit project. The command removes the node from gateway-owned node configuration,
 deletes node access grants, and tears down the node's WireGuard peer identity.
 It does not clean up apps, workspaces, processes, schedules, tools, firewall
 rules, proxy routes, or deploy artifacts on the target server.
@@ -35,8 +35,8 @@ orbit node:remove app-1 --force --json
 
 ## Arguments And Options
 
-- `name`: node name to remove. Must exist in gateway node intent and must not
-  be a gateway node.
+- `name`: node name to remove. Must exist in gateway node configuration and must
+  not be a gateway node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
   `--force`.
@@ -48,7 +48,7 @@ orbit node:remove app-1 --force --json
 execute locally; configured control callers forward the request to the gateway
 over HTTPS through WireGuard. SSH to the gateway is not used for this command.
 
-1. Validates that the target node exists in gateway intent.
+1. Validates that the target node exists in gateway configuration.
 2. Refuses to remove any gateway node.
 3. Removes all node access grants where the node is the consumer or the
    serving node.
@@ -75,9 +75,9 @@ peer. Local settings and local WireGuard configuration are left untouched.
   configuration when the removed node is the local machine.
 
 Downstream family state on a removed node becomes orphaned node reality.
-Clean it up through family-specific commands or `doctor --fix --family=<family> --restore`.
-Stale WireGuard peers after intent removal are reported by
-`doctor --family=node`.
+Clean it up through family-specific commands or
+`doctor --family=<family> --restore`. Stale WireGuard peers after configuration
+removal are reported by `doctor --family=node`.
 
 Already-absent node removal is not idempotent because the node record is the
 primary fleet identity. A missing node name usually means the operator targeted
@@ -103,7 +103,7 @@ path under `success.meta.warnings`.
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before prompts or side effects.
-- The target node must exist in gateway intent.
+- The target node must exist in gateway configuration.
 - The target node must not be any gateway node.
 - Removing a non-existent node is a validation failure, not an idempotent
   success. Grant revocation is the node-family idempotent absent-edge command;

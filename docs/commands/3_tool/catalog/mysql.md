@@ -52,7 +52,7 @@ Example JSON shape:
 
 `mysql` exposes a WireGuard-only TCP service endpoint at
 `orbit.<node-tld>:3306` for development app nodes. This is DNS/service endpoint
-intent owned by the tool definition, not an HTTP proxy route.
+configuration owned by the tool definition, not an HTTP proxy route.
 
 ## Orbit Notes
 

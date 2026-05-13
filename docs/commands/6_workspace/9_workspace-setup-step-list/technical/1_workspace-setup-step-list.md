@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to read workspace setup-step
   policy for the resolved app.
-- The resolved app exists in gateway intent.
+- The resolved app exists in gateway configuration.
 
 ## Signature
 
@@ -28,12 +28,13 @@ This command follows the shared
 | `app` | `--app` | When no parent app can be inferred from the caller filesystem. | Never. | Cwd-inferred parent app. | App slug present in the gateway registry and authorized for this caller. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace-setup-step:list` behavior does not vary by caller role. All
-authenticated callers authorized to read the resolved app's setup-step
-policy receive the same command contract. Authorization scoping is
-gateway-owned and policy-driven, not role-driven.
+The CLI forwards `workspace-setup-step:list` to the gateway, which
+authenticates the caller's WireGuard peer identity and applies authorization.
+Behavior does not vary by caller role: every caller authorized to read the
+resolved app's setup-step policy receives the same command contract.
+Authorization scoping is gateway-owned and policy-driven on the gateway.
 
 ## Visibility Behavior
 
@@ -65,7 +66,7 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
      file content during parent-app inference. This matches the
      `workspace:new` and `workspace-setup-step:add` contracts and the
      `ARCHITECTURE.md` "Workspaces" project-file inspection prohibition.
-2. **Validate resolved app.** Confirm the app exists in gateway intent.
+2. **Validate resolved app.** Confirm the app exists in gateway configuration.
    Unknown apps fail with `error.code=workspace.app_not_found` before any
    read.
 3. **Select renderer.** Pick the JSON renderer if `--json` is present;
@@ -111,7 +112,7 @@ only mode-sensitive surface.
 `workspace-setup-step:list` must not:
 - SSH into nodes.
 - Probe host reachability or step artifact health.
-- Modify gateway intent or node artifacts.
+- Modify gateway configuration or node artifacts.
 - Execute setup steps or mutate workspace lifecycle state.
 - Touch downstream family state.
 
@@ -125,7 +126,7 @@ only mode-sensitive surface.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | The parent app cannot be resolved in non-interactive mode (`error.meta.field=app`). | Failure |
-| App not found | The resolved app slug does not exist in gateway intent (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
+| App not found | The resolved app slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
 | Unauthorized app | The caller is not authorized to read the resolved app's setup-step policy (`error.code=authorization_failed`). | Failure |
 | Gateway unavailable | The CLI cannot reach the gateway API (`error.code=gateway_unavailable`). | Failure |
 
@@ -138,8 +139,8 @@ command-specific numeric exit codes.
 
 ## Doctor Relationship
 
-- `workspace-setup-step:list` reports gateway-owned setup-step intent. It
-  does not verify whether previous setup runs succeeded on app nodes.
+- `workspace-setup-step:list` reports gateway-owned setup-step configuration.
+  It does not verify whether previous setup runs succeeded on app nodes.
 - [`doctor --family=workspace`](../../workspace-doctor.md) owns the
   workspace-family probe, drift, fix, and adopt contract. Workspace
   setup-run reality (worktrees, FPM pools, lifecycle artifacts) is reported
@@ -166,7 +167,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php` | Command contract: parent-app resolution (`--app`, `.orbit/config` marker, gateway path-ownership lookup, non-interactive failure), `order ASC` sort, full-dump (no pagination), step-record shape parity with `workspace-setup-step:add` (`{id, app, phase, order, command, timeout_seconds}`), empty-list behavior for valid apps with no steps, `workspace.app_not_found` for unknown apps, `authorization_failed` for unauthorized callers, and read-only guarantee (no SSH, no intent mutation, no step execution). |
+| `tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php` | Command contract: parent-app resolution (`--app`, `.orbit/config` marker, gateway path-ownership lookup, non-interactive failure), `order ASC` sort, full-dump (no pagination), step-record shape parity with `workspace-setup-step:add` (`{id, app, phase, order, command, timeout_seconds}`), empty-list behavior for valid apps with no steps, `workspace.app_not_found` for unknown apps, `authorization_failed` for unauthorized callers, and read-only guarantee (no SSH, no configuration mutation, no step execution). |
 | `tests/E2E/WorkspaceStepListTest.php` | Real read-only `workspace-setup-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
 
 Renderer-specific test mapping lives in:

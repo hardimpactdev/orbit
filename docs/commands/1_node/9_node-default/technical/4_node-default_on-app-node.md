@@ -1,19 +1,19 @@
-# Technical Contract: `node:default` On An App Node
+# Technical Contract: `node:default` Rejected For App Callers
 
 [Back to `node:default` technical contract.](1_node-default.md)
 
-This page describes caller-role behavior when `orbit node:default` is invoked
-from an app node.
+This page describes how the gateway rejects `node:default` for callers whose
+authenticated node record has role `app`.
 
 **Effects:** `none` (rejected before prompts or side effects).
 
 ## Behavior
 
-App-node callers are rejected before prompts or side effects.
+The gateway rejects app-role callers before prompts or side effects.
 
-`node:default` exists to store a control-node-local preference for development
-app-node targeting. App-node CLI commands typically infer local app or workspace
-context rather than targeting remote app nodes through a local default.
+`node:default` exists to store a CLI-local preference for development app-node
+targeting. App-host CLI commands typically infer local app or workspace context
+rather than targeting remote app nodes through a local default.
 
 ## Error Contract
 
@@ -33,4 +33,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | App-node caller rejection before prompts or side effects. |
+| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | App-role caller rejection before prompts or side effects. |

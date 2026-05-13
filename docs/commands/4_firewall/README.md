@@ -1,42 +1,26 @@
 # Firewall Commands
 
-Firewall commands manage Orbit-owned node network policy. The command family is
-`firewall:*`; the durable state family and doctor key is `firewall_rule`.
+Firewall commands manage Orbit-owned node network policy. The command family is `firewall:*`; the durable state family and doctor key is `firewall_rule`.
 
-UFW is the current backend for supported Ubuntu nodes. It is not the product
-model.
+UFW is the current backend for supported Ubuntu nodes. It is not the product model.
 
 ## Domain Rules
 
 - The firewall command family owns the `firewall:*` command prefix.
-- `firewall_rule` is a state family. The gateway is the source of truth for
-  firewall rule intent.
-- Firewall rules target registered active Ubuntu managed nodes with role
-  `gateway` or `app`.
-- Control nodes, unsupported platforms, inactive nodes, and unmanaged roles are
-  not firewall-rule targets.
-- Rules are expressed in Orbit terms: name, node, direction, action, source,
-  destination, protocol, port, and reason.
-- Rule names are unique on the target node. Reapplying the same named rule with
-  the same policy shape is idempotent; reusing the name for a different policy
-  fails before mutation.
-- Firewall commands resolve input locally, then the gateway writes intent and
-  enacts host policy through the current firewall backend.
-- Role bootstrap policy remains part of the node domain and is not edited
-  through firewall commands.
-- Bootstrap policy includes Orbit/WireGuard management access and role-specific
-  public ingress decisions. Firewall commands do not create public SSH policy
-  exceptions for app nodes.
-- Firewall reads use gateway intent by default. Live firewall reality belongs
-  to `doctor --family=firewall_rule`.
-- Node reality import is not part of the firewall command surface. Adoption of
-  observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt`
-  semantics.
+- `firewall_rule` is a state family. The gateway is the source of truth for firewall rule configuration.
+- Firewall rules target registered active Ubuntu managed nodes with role `gateway` or `app`.
+- Control nodes, unsupported platforms, inactive nodes, and unmanaged roles are not firewall-rule targets.
+- Rules are expressed in Orbit terms: name, node, direction, action, source, destination, protocol, port, and reason.
+- Rule names are unique on the target node. Reapplying the same named rule with the same policy shape is idempotent; reusing the name for a different policy fails before mutation.
+- Firewall commands resolve input locally, then the gateway writes configuration and applies host policy through the current firewall backend.
+- Role bootstrap policy remains part of the node domain and is not edited through firewall commands.
+- Bootstrap policy includes Orbit/WireGuard management access and role-specific public ingress decisions. Firewall commands do not create public SSH policy exceptions for app nodes.
+- Firewall reads use gateway configuration by default. Live firewall reality belongs to `doctor --family=firewall_rule`.
+- Node reality import is not part of the firewall command surface. Adoption of observed firewall reality must use explicit `doctor --fix --family=firewall_rule --adopt` semantics.
 
 ## Firewall Rule JSON Entity
 
-Firewall JSON renderers that return one rule entity embed this shape under
-`success.data.rule`, or directly under `success.data.rules[]` for list items.
+Firewall JSON renderers that return one rule entity embed this shape under `success.data.rule`, or directly under `success.data.rules[]` for list items.
 
 ```json
 {

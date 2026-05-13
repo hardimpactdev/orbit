@@ -7,14 +7,9 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract and the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
-- The CLI caller can reach the Orbit gateway, or the command is running on the
-  gateway.
-- The current node identity is authorized to read and communicate with the
-  resolved app or workspace.
+- The CLI can reach the Orbit gateway over WireGuard.
+- The gateway authorizes the calling WireGuard peer to read and communicate
+  with the resolved app or workspace.
 - The resolved app or workspace has an effective Agent IDE adapter configured.
 - The adapter is registered with the gateway-owned adapter registry.
 - The adapter can resolve an active session for the target context.
@@ -34,24 +29,26 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `message` | `[message]` or stdin | Always. | `[message]` is present and `--stdin` is true. | None. | Non-empty UTF-8 text. Positional message trims surrounding whitespace; stdin preserves the body except for one trailing newline added by common shells. |
 | `stdin` | `--stdin` | Never. | `[message]` is present. | `false`. | Reads message body from standard input. |
-| `app` | `--app` | Required when neither `--workspace` nor local app/workspace context resolves a target. | `--workspace` is present. | Local app/workspace context when available. | Existing app name or hostname visible to the caller. |
-| `workspace` | `--workspace` | Required when neither `--app` nor local app/workspace context resolves a target. | `--app` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside app scope when an app context is known. |
+| `app` | `--app` | Required when neither `--workspace` nor current-directory context resolves a target. | `--workspace` is present. | Current-directory app context when available. | Existing app name or hostname visible to the caller. |
+| `workspace` | `--workspace` | Required when neither `--app` nor current-directory context resolves a target. | `--app` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside app scope when an app context is known. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`agent-ide:message` resolves the caller role before prompts, target resolution,
-or adapter delivery.
+`agent-ide:message` authorization is owned by the gateway. The CLI does not
+branch on client-side role detection. On every call the gateway identifies the
+caller through its WireGuard peer identity, looks up the caller's role from its
+own `nodes` table, and applies access policy before target resolution,
+effective adapter resolution, or adapter delivery.
 
-| Caller role | Behavior |
+| Caller role on gateway | Behavior |
 | --- | --- |
-| `control` | Resolves input locally, then calls the gateway over HTTPS through WireGuard for authorization and adapter delivery. |
-| `gateway` | Executes gateway-owned target resolution, authorization, effective adapter resolution, and adapter delivery locally. |
-| `app` | May infer local app/workspace context, then calls the gateway over HTTPS through WireGuard. App-node context is target-resolution help only; the gateway still authorizes the message. |
-| `unknown` | Invalid local context. Fail before prompts, gateway requests, or adapter delivery. |
+| `control` | Allowed. The gateway resolves the target, authorizes the message, resolves the effective adapter, and delivers through the adapter. |
+| `gateway` | Allowed. Same gateway-owned authorization and adapter delivery as any other caller. |
+| `app` | Allowed when the WireGuard peer is authorized for the resolved app or workspace. Locally gathered current-directory context is target-resolution help only; the gateway still authorizes the message. |
 
-All valid caller roles use the same gateway-owned authorization and adapter
-registry. The CLI caller must not use a local adapter manifest or app-node local
+All authenticated caller roles use the same gateway-owned authorization and
+adapter registry. The CLI must not use a local adapter manifest or any local
 state as authority.
 
 ## Input Mode Contracts
@@ -61,26 +58,27 @@ state as authority.
 
 ## Input Resolution
 
-1. Resolve caller role before prompts or gateway requests.
-2. Select the output renderer.
-3. Validate mutually exclusive inputs:
+1. Select the output renderer.
+2. Validate mutually exclusive inputs:
    - `--app` and `--workspace` cannot be combined.
    - `[message]` and `--stdin` cannot be combined.
-4. Resolve `message` from `[message]` or stdin.
-5. Resolve target context:
+3. Resolve `message` from `[message]` or stdin.
+4. Resolve target context:
    - `--workspace=<workspace>` selects a workspace context.
    - `--app=<app>` selects the app main context.
    - omitted target resolves from current workspace path, then current app path.
-6. Authorize the current node identity for the resolved app or workspace.
-7. Resolve the effective Agent IDE adapter:
+5. Call the gateway. The gateway authorizes the WireGuard peer for the resolved
+   app or workspace.
+6. The gateway resolves the effective Agent IDE adapter:
    - future workspace-level override, when present;
    - app override;
    - owning node default;
    - no adapter.
-8. Validate that the resolved adapter is registered with the gateway-owned
-   adapter registry.
-9. Ask the adapter for the active session for the resolved context.
-10. Start the selected renderer and deliver the message through the adapter.
+7. The gateway validates that the resolved adapter is registered with the
+   gateway-owned adapter registry.
+8. The gateway asks the adapter for the active session for the resolved
+   context.
+9. Start the selected renderer and deliver the message through the adapter.
 
 ## Behavior Contract
 
@@ -98,7 +96,7 @@ state as authority.
 ### Effective Adapter Rules
 
 - Resolve the effective adapter through the shared inheritance chain documented
-  in [Agent IDE Integrations](../../../../ARCHITECTURE.md#agent-ide-integrations).
+  in [Agent IDE Integration](../../../../ARCHITECTURE.md#agent-ide-integration).
 - `none` at app scope means the app explicitly disables Agent IDE messaging;
   fail with `no_effective_adapter`.
 - A missing node/app default also fails with `no_effective_adapter`.
@@ -112,8 +110,8 @@ state as authority.
 - Stdin input is a first-class automation path for long prompts and generated
   context. It does not change target resolution, authorization, adapter
   selection, or renderer behavior.
-- Do not modify app source, workspace files, process definitions, node intent,
-  tool intent, or local settings.
+- Do not modify app source, workspace files, process definitions, node
+  configuration, tool configuration, or local settings.
 - Do not create a new Agent IDE session.
 - Do not retry indefinitely. A single adapter delivery failure is a command
   failure with adapter context.
@@ -144,8 +142,7 @@ state as authority.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | Required message/target input is missing, message is empty, `--app` and `--workspace` are combined, or `[message]` and `--stdin` are combined. | Failure before adapter delivery |
-| Local context invalid | The local node role setting is unreadable or unsupported. | Failure before prompts or gateway requests |
-| Gateway unavailable | A non-gateway caller cannot reach the configured gateway API. | Failure before adapter delivery |
+| Gateway unavailable | The CLI cannot reach the configured gateway API. | Failure before adapter delivery |
 | Authorization failed | The current node identity is not authorized for the resolved app/workspace. | Failure before adapter delivery |
 | Target not found | No visible app/workspace matches the resolved target. | Failure before adapter delivery |
 | No effective adapter | The target resolves to no configured Agent IDE adapter. | Failure before adapter delivery |

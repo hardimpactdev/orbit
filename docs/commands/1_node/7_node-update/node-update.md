@@ -33,7 +33,7 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 
 ## Arguments And Options
 
-- `name`: node name to update. Must exist in gateway node intent.
+- `name`: node name to update. Must exist in gateway node configuration.
 - `--host=<host>`: SSH/bootstrap endpoint. Valid for `gateway` and `app`
   nodes. Forbidden on `control` nodes. Updating this does not change the
   gateway endpoint used in WireGuard peer configs. `node:new --role=gateway
@@ -53,7 +53,7 @@ than silently last-wins.
 
 ## What Happens
 
-`node:update` updates gateway intent for supported node metadata. It does not
+`node:update` updates gateway configuration for supported node metadata. It does not
 update operating system packages, Orbit installations, tools, or general system
 services on the node; any node-side work is limited to Orbit-owned artifacts
 directly affected by the changed metadata.
@@ -63,12 +63,12 @@ directly affected by the changed metadata.
   SSH reachability, or egress checks.
 - Treats public IPv4/IPv6 values as operator-supplied metadata only. Updating
   them does not change the gateway endpoint used in WireGuard peer configs.
-- Re-enacts node-owned host artifacts when a changed setting has node-side
+- Re-applies node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
-  [`doctor --fix --family=node --restore`](../node-doctor.md), not `node:update`.
+  [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
 - Does not change a development app node's TLD after creation. Doctor may
-  repair drift back to the TLD already stored in gateway node intent, but
-  intentional TLD migration requires a future explicit command contract.
+  repair drift back to the TLD already stored in gateway node configuration,
+  but intentional TLD migration requires a future explicit command contract.
 - Does not change node role after creation. Role change is an identity
   migration outside `node:update` scope; a future explicit role-migration
   contract will own that flow.
@@ -78,17 +78,17 @@ directly affected by the changed metadata.
 No-op updates where the supplied value equals the current stored value are
 reported as successful with an empty `changed` array.
 
-When node-side artifact re-enactment fails after the gateway intent was
+When node-side artifact re-applying fails after the gateway configuration was
 written, the command still returns success and reports the remaining
 node-family drift as a warning that points at
-[`doctor --fix --family=node --restore`](../node-doctor.md).
+[`doctor --family=node --restore`](../node-doctor.md).
 
 ## Output
 
-Human output summarizes changed fields and any enacted artifacts.
+Human output summarizes changed fields and any applied artifacts.
 
 JSON output returns the updated node record, the `changed` array, and any
-enactment warnings. See the [JSON renderer contract](technical/6.2_node-update_output-render_json.md)
+apply warnings. See the [JSON renderer contract](technical/6.2_node-update_output-render_json.md)
 for the envelope shape.
 
 ## Requirements
@@ -96,7 +96,7 @@ for the envelope shape.
 - Must run on the gateway host or from a configured control node.
 - Control callers must be authorized to operate on the gateway node.
 - App-node callers are rejected before prompts or side effects.
-- The target node must exist in gateway intent.
+- The target node must exist in gateway configuration.
 - At least one supported field must be provided in non-interactive input mode.
 
 ## Related Commands

@@ -40,7 +40,7 @@ Target context is required when neither `--node`, `--app`, nor local
 1. Resolves the target node and registered tool.
 2. Verifies the tool definition declares reload support.
 3. Runs the tool definition's reload action through the gateway.
-4. Preserves gateway tool intent and intended version.
+4. Preserves gateway tool configuration and expected version.
 5. Reports the reload result.
 
 The command does not fall back to restart unless the tool definition explicitly

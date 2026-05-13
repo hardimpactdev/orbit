@@ -1,26 +1,25 @@
-# Technical Contract: `node:default` On A Control Node
+# Technical Contract: `node:default` Authorized For Control Callers
 
 [Back to `node:default` technical contract.](1_node-default.md)
 
-This page describes caller-role behavior when `orbit node:default` is invoked
-from a control node.
+This page describes what the gateway authorizes for callers whose
+authenticated node record has role `control`. The `show` and `clear`
+sub-actions are purely local CLI configuration and do not require gateway
+authentication.
 
 **Effects:** `read`, `write`, `local-only`.
 
-**Prerequisites:**
-- `general.local_node_role` is unset, `null`, or explicitly `control`.
-
 **Post-input path eligibility:**
-- For the interactive `choose` path and direct `set` sub-action: the control
-  node can reach the gateway API over HTTPS through WireGuard, and the target
-  node is a visible development app node.
+- For the interactive `choose` path and direct `set` sub-action: the CLI can
+  reach the gateway API over HTTPS through WireGuard, and the target node is a
+  visible development app node.
 
 ## Allowed Paths
 
 | Context | Behavior |
 | --- | --- |
-| Configured control node | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` query the gateway for node choices or validation. |
-| Unconfigured control node | `show` and `clear` work with local state if any. Interactive `choose` and direct `set` fail before side effects because gateway reachability is required. |
+| Configured CLI authenticated as a control caller | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` query the gateway for node choices or validation. |
+| Unconfigured CLI | `show` and `clear` work with local state if any. Interactive `choose` and direct `set` fail before side effects because gateway reachability is required. |
 
 ## Show Sub-action
 
@@ -99,5 +98,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Control caller choose, show, set, and clear behavior; configured vs unconfigured gateway for choose/set; stale default handling. |
-| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Control-caller local config read/write, gateway choices for choose, gateway validation for set, unconfigured control node choose/set failure, stale default behavior, and no gateway intent mutation. |
+| `tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Control-caller choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
+| `tests/Feature/Commands/Nodes/NodeDefaultOnControlNodeContractTest.php` | Control-caller local config read/write, gateway choices for choose, gateway validation for set, unconfigured CLI choose/set failure, stale default behavior, and no gateway configuration mutation. |

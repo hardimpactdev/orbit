@@ -33,9 +33,7 @@ orbit cf-dns:add docs.example.com 203.0.113.10 --json
 idempotent when the same zone, name, type, content, and proxy setting already
 exist.
 
-The command refuses general DNS administration. It does not create CNAME, TXT,
-MX, CAA, SRV, or other record types, and it does not create Orbit proxy route
-intent.
+The command refuses general DNS administration. It does not create CNAME, TXT, MX, CAA, SRV, or other record types, and it does not create Orbit proxy route configuration.
 
 ## Output
 

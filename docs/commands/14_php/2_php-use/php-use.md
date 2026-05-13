@@ -38,10 +38,10 @@ override, workspace inheritance, or node CLI default. It validates that the
 requested version is supported by Orbit and installed on the target node before
 side effects begin.
 
-For app and workspace targets, the command writes gateway intent and re-applies
+For app and workspace targets, the command writes gateway configuration and re-applies
 the derived PHP-FPM and affected proxy backend artifacts through the gateway.
 Proxy drift remains a `proxy` family concern. For node CLI targets, the command
-writes node-level gateway intent and updates the default `php` binary on the
+writes node-level gateway configuration and updates the default `php` binary on the
 target node.
 
 The command does not install PHP, edit project files, read `.php-version`, or
@@ -61,7 +61,7 @@ returns `success.data.php` plus `success.data.result`.
 - The requested PHP version is supported by Orbit and installed on the target
   node.
 - The gateway can reach the target node over SSH when node artifacts must be
-  enacted.
+  applied.
 
 ## Related Commands
 

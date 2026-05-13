@@ -7,10 +7,10 @@
 **Effects:** `destructive`, `write`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  `general.local_node_role` contract.
-- The caller role is not `app`.
-- Gateway callers can read and write gateway-owned node intent.
+- The gateway authenticates the CLI and authorizes `node:remove` only when the
+  caller's gateway-known role is `control` or `gateway`. App-role callers are
+  rejected.
+- Gateway callers can read and write gateway-owned node configuration.
 - Control callers have configured gateway access as defined in
   [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md).
 
@@ -38,61 +38,48 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:remove` resolves the caller role before command inputs are read. App-node
-callers are denied before prompts, forwarding, local writes, SSH, WireGuard
-changes, or other side effects. Configured control callers resolve input locally
-and forward the removal request to the gateway over HTTPS through WireGuard.
+The CLI sends a typed remove request to the gateway. The gateway authenticates
+the WireGuard peer identity, derives the caller's gateway-known role, and
+applies the rules below.
 
-| Caller role | Behavior |
+| Caller role | Gateway authorizes |
 | --- | --- |
-| `control` | With configured gateway access, forward to the gateway over HTTPS through WireGuard. Without configured gateway access, fail before prompts or side effects. See [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md). |
-| `gateway` | Executes locally on the gateway. See [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md). |
-| `app` | Not allowed. Fail before prompts or side effects with `This command may only be run from a control or gateway node.` See [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md). |
+| `control` | The remove write when the caller also has access to the gateway node. See [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md). |
+| `gateway` | The remove write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md). |
+| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md). |
 
-Role-specific behavior is defined in these companion contracts:
+Companion contracts describe behavior in detail:
 
 - [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md):
-  control caller gateway-forwarding behavior.
+  control-caller gateway-forwarding behavior.
 - [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md):
   gateway-local execution behavior.
-- [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md): app caller
-  behavior.
+- [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md): app-caller
+  rejection.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - If `general.local_node_role` is `app`, apply
-     [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md) and fail
-     before reading command arguments, rendering prompts, forwarding, local
-     writes, SSH, WireGuard changes, or other side effects.
-   - If `general.local_node_role` is unreadable or unsupported, fail before
-     prompts or side effects.
-2. Resolve execution context.
-   - If the caller role is `gateway`, execute locally on the gateway.
-   - If the caller role is `control`, require configured gateway access and
-     prepare a typed gateway request.
-3. Resolve `node_remove.name` from `[name]` or the selected input mode.
+1. Resolve `node_remove.name` from `[name]` or the selected input mode.
    - In interactive mode, prompt when `[name]` is missing.
    - In non-interactive mode, fail before side effects when `[name]` is absent.
-4. Validate `node_remove.name` immediately.
+2. Validate `node_remove.name` immediately.
    - Must match an existing active node record.
    - Must not be any gateway node.
-   - If the caller is a control node and the target node record matches the
-     authenticated caller identity, set `node_remove.removed_self=true`.
-5. Resolve `node_remove.force` from `--force`. Default `false`.
-6. Apply destructive consent.
+   - When the target node record matches the authenticated caller's identity,
+     set `node_remove.removed_self=true`.
+3. Resolve `node_remove.force` from `--force`. Default `false`.
+4. Apply destructive consent.
    - If `--force` is present, destructive consent is resolved and no
      confirmation prompt is rendered.
    - In interactive mode without `--force`, render a confirmation prompt after
      the target node is valid. If the operator cancels, fail before side
      effects.
    - In non-interactive mode without `--force`, fail before side effects.
-7. If running from a control node, forward the typed request to the gateway over
-   HTTPS through WireGuard. The gateway authenticates the control node identity
-   and authorizes the request through gateway-owned access policy before
-   gateway-owned side effects begin.
+5. Send the typed request to the gateway over HTTPS through WireGuard. The
+   gateway authenticates the caller's WireGuard identity and authorizes the
+   request through gateway-owned access policy before any side effects.
 
 ## Input Mode Contracts
 
@@ -114,13 +101,13 @@ Role-specific behavior is defined in these companion contracts:
   migration/removal flow.
 - Apply the destructive consent rules from the selected input mode.
 
-### Gateway Intent Cleanup Rules
+### Gateway Configuration Cleanup Rules
 
 - Delete all `node_access` records where the node is the consumer or the
   serving node.
 - When the removed node is a development app node with a stored TLD, remove the
   gateway-owned development DNS mapping for `*.{nodes.tld}` through the
-  internal node-family development DNS enactor before deleting the node row.
+  internal node-family development DNS applier before deleting the node row.
 - Delete the node record from the gateway registry.
 
 The development DNS cleanup target is derived from the node row being removed:
@@ -180,7 +167,6 @@ a future local cleanup command.
 | Caller role not allowed | The caller role is `app`. | Failure |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
 | Authorization failed | A forwarded control caller is not authorized to operate on the gateway node. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
 
 Partial WireGuard detach during removal is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale peer is
@@ -206,7 +192,7 @@ already-absent node remains a validation failure.
 - A stale WireGuard peer for a removed node is reported as `extra` node identity
   reality by the node-family probe. See
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --fix --family=node --restore` may clean stale WireGuard peers.
+- `doctor --family=node --restore` may clean stale WireGuard peers.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 

@@ -18,7 +18,7 @@ The gateway root CA is the trust anchor for Orbit-managed HTTPS inside the
 Orbit network. The gateway owns root CA private material and route certificate
 issuance. App, workspace, proxy, gateway, and tool route domains may receive
 gateway-issued leaf certificate material on their serving nodes, but route
-enactment and route doctor families own those artifacts. Gateway commands only
+applying and route doctor families own those artifacts. Gateway commands only
 install or repair caller-local trust for the public root.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns gateway API readiness,

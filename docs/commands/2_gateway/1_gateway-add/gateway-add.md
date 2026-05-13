@@ -34,7 +34,7 @@ orbit gateway:add 10.6.0.2 --json
 `gateway:add` performs local control-node onboarding for an already-issued
 gateway identity. It does not create gateway registry rows, local registry
 mirror rows, WireGuard peer material, identity, or access policy; those are
-owned by [`node:new`](../../1_node/1_node-new/node-new.md) and gateway intent.
+owned by [`node:new`](../../1_node/1_node-new/node-new.md) and gateway configuration.
 
 The command:
 
@@ -57,7 +57,7 @@ The trusted gateway root CA is the same root that Orbit-managed app,
 workspace, proxy, gateway, and future tool route certificates chain to.
 `gateway:add` installs local trust for that root during onboarding, but route
 certificate issuance and serving-node TLS files are owned by the commands and
-doctor families that enact those routes.
+doctor families that apply those routes.
 
 If the gateway is already configured and verified, `gateway:add` exits
 successfully as converged. Broader node drift is handled by

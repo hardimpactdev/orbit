@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to manage the resolved app, workspace, or node CLI target.
 
 ## Signature
@@ -31,14 +30,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | Required for `cli=true` when no local node target resolves. | Never. | Local `node:default` for CLI scope, or app/workspace owning node for runtime scope. | Visible node slug. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-| Role | Validity | Consequence |
-| --- | --- | --- |
-| `control` | Valid when authorized. | Calls the gateway over HTTPS through WireGuard. |
-| `gateway` | Valid when authorized. | Performs the gateway write and node enactment orchestration. |
-| `app` | Valid only when gateway authorization grants the resolved runtime write. | Uses cwd app/workspace context as input only; local CLI presence does not grant write authority. |
-| `unknown` | Invalid. | Denied before prompts or side effects with `error.code=caller_role_not_allowed`. |
+The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may change PHP runtime selection only when the gateway authorizes their identity to manage the resolved app, workspace, or node CLI target. Local cwd app or workspace context is used as input hint only and never grants write authority. Management remains gateway-owned and applied through gateway-to-node transport.
 
 ## Input Resolution
 
@@ -63,13 +57,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### App Runtime Selection
 
-- Writes the app PHP version in gateway app intent.
+- Writes the app PHP version in gateway app configuration.
 - Re-renders and applies app PHP-FPM artifacts through the gateway-to-node SSH
   path.
 - Re-renders affected app-owned proxy backend artifacts when the route target
   depends on the selected PHP runtime.
-- Reports app-family drift warnings when intent was written but app artifact
-  enactment did not converge.
+- Reports app-family drift warnings when configuration was written but app artifact
+  application did not converge.
 - Reports proxy-family drift warnings when app-owned proxy backend artifact
   convergence did not complete.
 
@@ -81,18 +75,18 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   gateway-to-node SSH path.
 - Re-renders affected workspace-owned proxy backend artifacts when the route
   target depends on the selected PHP runtime.
-- Reports workspace-family drift warnings when intent was written but workspace
-  artifact enactment did not converge.
+- Reports workspace-family drift warnings when configuration was written but workspace
+  artifact application did not converge.
 - Reports proxy-family drift warnings when workspace-owned proxy backend
   artifact convergence did not complete.
 
 ### Node CLI Selection
 
-- Writes node CLI PHP default intent.
+- Writes node CLI PHP default configuration.
 - Updates the target node's default `php` binary through the gateway-to-node SSH
   path.
-- Reports `node.cli_php_default_mismatch` when intent was written but node CLI
-  enactment did not converge.
+- Reports `node.cli_php_default_mismatch` when configuration was written but node CLI
+  application did not converge.
 
 ### Scope Boundaries
 
@@ -110,14 +104,12 @@ cache state, or create app/workspace records.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed | Required input is missing, mutually exclusive input is supplied, or a requested version is unsupported or not installed on the target node. | `error.code=validation_failed` |
-| Caller role not allowed | Caller role is `unknown`, or app-node caller attempts a path disallowed before target authorization. | `error.code=caller_role_not_allowed` |
 | Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
 | Authorization failed | The caller is not authorized to manage the resolved target. | `error.code=authorization_failed` |
-| Local context invalid | Cwd markers or path ownership resolve to stale app/workspace context. | `error.code=local_context_invalid` |
 
 ## Doctor Relationship
 
-`php:use` writes runtime intent owned by other state families. App runtime drift
+`php:use` writes runtime configuration owned by other state families. App runtime drift
 is verified and repaired by [`doctor --family=app`](../../../5_app/app-doctor.md).
 Workspace runtime drift is verified and repaired by
 [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md). Node
@@ -131,6 +123,6 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Php/PhpUseCommandTest.php` | Target-scope resolution, mutual exclusion validation, version support and installed-version validation, gateway intent writes, node and proxy enactment boundaries, and failure codes. |
-| `tests/Feature/Commands/Php/PhpUseCallerRoleTest.php` | Control, gateway, app-node, and unknown caller behavior including app-node authorization boundaries. |
-| `tests/Unit/Services/Php/PhpRuntimeSelectionTest.php` | Runtime selection DTO shape, app/workspace/node target modeling, inheritance behavior, and app/workspace/proxy/node partial-enactment warning mapping. |
+| `tests/Feature/Commands/Php/PhpUseCommandTest.php` | Target-scope resolution, mutual exclusion validation, version support and installed-version validation, gateway configuration writes, node and proxy application boundaries, and failure codes. |
+| `tests/Feature/Commands/Php/PhpUseCallerRoleTest.php` | Gateway-applied authorization for the resolved app, workspace, and node CLI target, including denial when the authenticated WireGuard identity is not authorized to manage the target. |
+| `tests/Unit/Services/Php/PhpRuntimeSelectionTest.php` | Runtime selection DTO shape, app/workspace/node target modeling, inheritance behavior, and app/workspace/proxy/node partial-application warning mapping. |

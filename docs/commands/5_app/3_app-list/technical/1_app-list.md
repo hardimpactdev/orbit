@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to read visible app registry intent.
+- The current node identity is authorized to read visible app registry configuration.
 
 ## Signature
 
@@ -33,11 +33,15 @@ options are optional.
 `--node` and `--environment` are scalar filters. Multi-value semantics are not
 part of the initial contract.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`app:list` behavior does not vary by caller role. All authenticated callers
-with visible registry access receive the same command contract. Visibility
-scoping is access-policy-driven, not role-driven.
+`app:list` authorization is owned by the gateway. The CLI does not branch on
+client-side role detection. The gateway identifies the caller through its
+WireGuard peer identity on every API call.
+
+Command behavior does not vary by caller role. All authenticated peers with
+visible registry access receive the same command contract. Visibility scoping
+is access-policy-driven, not role-driven.
 
 ## Visibility Behavior
 
@@ -58,7 +62,7 @@ authenticated identity is authorized to see.
 2. Resolve `app_list.environment` from `--environment` when present. Validate
    immediately.
 3. Select the output renderer and query the gateway for visible app registry
-   intent.
+   configuration.
 
 ## Input Mode Contracts
 
@@ -69,7 +73,7 @@ arguments and does not prompt.
 
 ### App Registry Listing Rules
 
-1. **Query gateway registry.** Read visible app registry intent scoped to the
+1. **Query gateway registry.** Read visible app registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
 2. **Apply filters.** If `--node` is present, include only apps on that node.
    If `--environment` is present, include only apps with that environment.
@@ -81,7 +85,7 @@ arguments and does not prompt.
    array of list-item objects under `success.data.apps`.
 4. **Attach workspaces.** Each app list item includes the app's registered
    workspaces sorted by workspace name (ascending, case-insensitive).
-   Workspaces are registry intent rows; no live workspace probing is performed.
+   Workspaces are registry configuration rows; no live workspace probing is performed.
 5. **Render output.** Return the filtered app list through the selected output
    renderer.
 
@@ -90,7 +94,7 @@ arguments and does not prompt.
 `app:list` must not:
 - SSH into nodes.
 - Probe host reachability or health.
-- Modify gateway intent or node artifacts.
+- Modify gateway configuration or node artifacts.
 - Touch downstream family state.
 
 ## Renderer Contracts
@@ -108,7 +112,7 @@ arguments and does not prompt.
 
 ## Doctor Relationship
 
-- `app:list` reports intent. `doctor --family=app` verifies reality.
+- `app:list` reports configuration. `doctor --family=app` verifies reality.
 - `app:list` does not expose `--doctor`; live verification belongs to
   `doctor --family=app`.
 - See [`app-doctor.md`](../../app-doctor.md) for the authoritative app-family

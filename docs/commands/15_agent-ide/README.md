@@ -25,7 +25,7 @@ There is no `doctor --family=agent-ide` contract.
 
 ## Domain Rules
 
-- Agent IDE defaults are gateway intent owned by nodes and apps.
+- Agent IDE defaults are gateway configuration owned by nodes and apps.
 - `node:agent-ide` defines the node default.
 - `app:agent-ide` defines the app override.
 - The effective adapter for an app or workspace resolves workspace setting
@@ -39,9 +39,10 @@ There is no `doctor --family=agent-ide` contract.
   behavior.
 - Messaging commands are best-effort communication. They do not create or
   repair app/workspace state and do not replace process crash-event history.
-- App-node callers may use Agent IDE commands as gateway clients when
-  authorized for the resolved app or workspace. Local app/workspace context can
-  resolve defaults, but it is not authorization.
+- All callers use Agent IDE commands as gateway clients. The gateway
+  authenticates the WireGuard peer and authorizes the resolved app or workspace.
+  Locally gathered context (current app, workspace, paths) can help resolve
+  defaults, but it is not authorization.
 
 ## Commands
 

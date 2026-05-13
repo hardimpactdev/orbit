@@ -58,9 +58,9 @@ for the exact shape.
 
 ## Requirements
 
-- The caller role can be resolved.
-- The caller can reach the Orbit gateway when not running on the gateway.
-- The current node identity is authorized for the resolved app or workspace.
+- The CLI can reach the Orbit gateway over WireGuard.
+- The gateway authorizes the calling WireGuard peer for the resolved app or
+  workspace.
 - The app or owning node has an effective Agent IDE adapter configured.
 - The adapter can resolve an active session for the target context.
 

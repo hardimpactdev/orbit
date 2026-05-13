@@ -6,7 +6,7 @@ Show or follow logs for a managed tool.
 
 `tool:logs` reads log output for a registered tool that declares a log source.
 It streams through the gateway from the target node and does not mutate tool
-intent.
+configuration.
 
 ## Usage
 

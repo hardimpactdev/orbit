@@ -35,9 +35,7 @@ orbit update --json
 4. Run Orbit database migrations for the local checkout.
 5. Report the local update result.
 
-The command affects only the current Orbit installation. On a gateway host,
-local migrations may change the gateway database schema as part of the normal
-Laravel migration path, but `update` does not create or modify fleet intent.
+The command affects only the current Orbit installation. On a gateway host, local migrations may change the gateway database schema as part of the normal Laravel migration path, but `update` does not create or modify fleet configuration.
 
 Use [`update:all`](../2_update-all/update-all.md) when the operator needs to
 roll out the same Orbit code update across the fleet.

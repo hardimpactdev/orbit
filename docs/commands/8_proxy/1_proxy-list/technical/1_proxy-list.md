@@ -7,9 +7,8 @@
 **Effects:** `read`.
 
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
-- The current node identity is authorized to inspect proxy routes for the selected route owners or serving nodes.
+- The CLI caller can reach the Orbit gateway.
+- The caller identity is authorized by the gateway to inspect proxy routes for the selected route owners or serving nodes.
 
 ## Signature
 
@@ -27,24 +26,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-All authenticated caller roles use the same gateway-owned access policy.
-App-node callers may list only proxy routes whose serving node or owner is
-visible to their node identity. App-node local context may help select a node
-filter in future commands, but this command does not infer a filter from local
-context by default.
+The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may list only proxy routes whose serving node or owner is visible to their authenticated identity. The CLI does not infer caller role locally and does not infer a node filter from any local context.
 
 ## Input Mode Contracts
 
-No input-mode-specific contracts are required. The command does not prompt;
-invalid filters or node filters fail according to the shared invocation model.
+No input-mode-specific contracts are required. The command does not prompt; invalid filters or node filters fail according to the shared invocation model.
 
 ## Behavior Contract
 
 ### Registry Visibility Rules
 
-- Reads gateway proxy route intent.
+- Reads gateway proxy route configuration.
 - Includes all visible route owners and route kinds by default.
 - Applies `--filter` after authorization-visible routes are resolved.
 - Applies `--node` as a serving-node filter.
@@ -61,8 +55,7 @@ invalid filters or node filters fail according to the shared invocation model.
 
 ### Scope Boundaries
 
-`proxy-list` must not create, update, remove, adopt, fix, or probe proxy route
-artifacts. Live backend drift belongs to `doctor --family=proxy`.
+`proxy-list` must not create, update, remove, adopt, fix, or probe proxy route artifacts. Live backend drift belongs to `doctor --family=proxy`.
 
 ## Renderer Contracts
 
@@ -79,8 +72,7 @@ artifacts. Live backend drift belongs to `doctor --family=proxy`.
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed
-registry reads.
+The gateway API endpoint emits an activity entry for successful and failed registry reads.
 
 | Field | Value |
 | --- | --- |
@@ -92,8 +84,7 @@ registry reads.
 
 ## Doctor Relationship
 
-`proxy-list` reports gateway proxy route intent only. [`proxy-doctor.md`](../../proxy-doctor.md)
-owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
+`proxy-list` reports gateway proxy route configuration only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

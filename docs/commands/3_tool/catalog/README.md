@@ -41,7 +41,7 @@ when it owns a distinct Orbit workflow.
 
 Admitted examples:
 
-- `php:*` owns PHP runtime selection across app intent, workspace overrides,
+- `php:*` owns PHP runtime selection across app configuration, workspace overrides,
   and node CLI defaults.
 - Future Redis data-plane operations may use `redis:*`, such as a
   Redis-specific flush command.

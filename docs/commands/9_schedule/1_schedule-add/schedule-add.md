@@ -4,9 +4,7 @@
 
 Create a recurring Orbit-managed schedule.
 
-Use `schedule:add` when an app or node needs recurring work managed by Orbit.
-The command records schedule intent on the gateway. The Orbit Scheduler on
-the target node picks up the new schedule on its next sync.
+Use `schedule:add` when an app or node needs recurring work managed by Orbit. The command records schedule configuration on the gateway. The Orbit Scheduler on the target node picks up the new schedule on its next sync.
 
 ## Usage
 
@@ -29,45 +27,32 @@ orbit schedule:add backups --node=app-1 --script=/opt/orbit/schedules/backup.sh 
 - `--node`: node target for a node-scoped schedule.
 - `--command`: inline command to run as the scheduled work.
 - `--script`: managed script path to run as the scheduled work.
-- `--interval`: portable Orbit interval expression, such as
-  `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or
-  `weekly on monday at 09:00`.
-- `--timezone`: timezone used to interpret the interval. Defaults to the target
-  app, node, or gateway timezone.
+- `--interval`: portable Orbit interval expression, such as `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or `weekly on monday at 09:00`.
+- `--timezone`: timezone used to interpret the interval. Defaults to the target app, node, or gateway timezone.
 - `--json`: Output JSON.
 
-Exactly one target selector is required after defaults are applied: `--app` or
-`--node`. Exactly one execution source is required: `--command` or `--script`.
+Exactly one target selector is required after defaults are applied: `--app` or `--node`. Exactly one execution source is required: `--command` or `--script`.
 
-Orbit-owned maintenance schedules may be created by lifecycle commands, but
-this public command only creates app-scoped or node-scoped schedules.
+Orbit-owned maintenance schedules may be created by lifecycle commands, but this public command only creates app-scoped or node-scoped schedules.
 
 ## What Happens
 
-`schedule:add` validates the target, validates the execution source and
-interval, writes gateway schedule intent, and confirms the target node's
-Orbit Scheduler is reachable. The scheduler picks up the new schedule on
-its next sync and begins evaluating it on each minute boundary.
+`schedule:add` validates the target, validates the execution source and interval, writes gateway schedule configuration, and confirms the target node's Orbit Scheduler is reachable. The scheduler picks up the new schedule on its next sync and begins evaluating it on each minute boundary.
 
-It does not create apps, nodes, app process definitions, proxy routes, firewall
-rules, or backend-only schedules outside gateway intent.
+It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or scheduler-only schedules outside gateway configuration.
 
 ## Output
 
-Human output renders a progress tree while the command validates input,
-writes gateway intent, and confirms the target node's Orbit Scheduler is
-reachable.
+Human output renders a progress tree while the command validates input, writes gateway configuration, and confirms the target node's Orbit Scheduler is reachable.
 
 JSON output returns the created schedule entity and scheduler-pickup result.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
+- The CLI caller can reach the Orbit gateway, or the command runs on the gateway.
 - The caller is authorized to manage schedules for the resolved app or node.
-- The target node's Orbit Scheduler is registered and the runtime backend is reachable.
-- Script sources must resolve to readable script files according to the
-  gateway-owned schedule policy.
+- The target node's Orbit Scheduler is registered and the process manager (Supervisor) is reachable.
+- Script sources must resolve to readable script files according to the gateway-owned schedule policy.
 
 ## Related
 

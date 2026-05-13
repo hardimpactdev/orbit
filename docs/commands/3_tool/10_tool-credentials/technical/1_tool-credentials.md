@@ -8,7 +8,6 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The local caller role can be resolved according to the foundation `general.local_node_role` contract.
 - The current node identity is authorized to inspect tool credentials for the resolved node or app.
 
 ## Signature
@@ -24,11 +23,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from credential-bearing tools` | `Registered credential-bearing tool name.` |
-| `node` | `--node` | `Required when no app or local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible node slug.` |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | `Visible node slug.` |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning app node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
 All authenticated caller roles use the same gateway-owned access policy. App-node callers may read tool credentials only when credential access is authorized for the resolved target; `tool:credentials` never grants write permission or local state authority.
 
@@ -39,10 +38,10 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 
 ## Behavior Contract
 
-### Tool Intent And Enactment Rules
+### Tool Configuration And Apply Rules
 
 - Resolves a credential-bearing tool on the target node.
-- Reads credential metadata from gateway intent or the managed secret store.
+- Reads credential metadata from gateway configuration or the managed secret store.
 - Returns generated Orbit-owned credentials for managed service tools, using
   the tool catalog's field names and endpoint shape.
 - Does not rotate credentials or reconfigure the tool.
@@ -67,11 +66,11 @@ or credentials. Related drift belongs to each owning family doctor contract.
 | Authorization failed | The caller is not authorized to inspect credentials for the selected tool target. | `error.code=authorization_failed` |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Remote action failed | Gateway intent was readable, but node inspection or enactment failed. | `error.code=tool.remote_action_failed` |
+| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
 
-`tool-credentials` reads gateway credential metadata or managed secret material without changing tool intent. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
+`tool-credentials` reads gateway credential metadata or managed secret material without changing tool configuration. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 

@@ -4,10 +4,10 @@
 
 Set up, adopt, or re-converge a workspace from explicit input.
 
-`workspace:setup` orchestrates workspace management by resolving workspace input
-and enacting necessary infrastructure. It ensures gateway intent exists,
-configures proxy routes, enacts runtime artifacts on the owning app node, and
-runs configured setup steps.
+`workspace:setup` orchestrates workspace management by resolving workspace
+input and applying necessary infrastructure. It ensures gateway configuration
+exists, configures proxy routes, applies runtime artifacts on the owning app
+node, and runs configured setup steps.
 
 ## Usage
 
@@ -44,10 +44,10 @@ orbit workspace:setup feature-a
   parent app's workspace policy. Adoption is based on the explicit `[name]`,
   `--app`, and `--path` inputs; `workspace:setup` does not inspect project
   files to discover workspace identity.
-- **Gateway Intent**: Ensures the gateway workspace record exists.
+- **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
-- **Artifact Enactment**: Enacts runtime and proxy backend artifacts on the
+- **Artifact Apply**: Applies runtime and proxy backend artifacts on the
   app node via SSH.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
@@ -55,9 +55,9 @@ orbit workspace:setup feature-a
   doctor issue code.
 
 This command is idempotent. Re-running on an already-managed workspace
-re-renders artifacts and verifies command-owned enactment. The result reports
-which path the run took (`set_up`, `adopted`, or `converged`) so operators
-and agents can see what changed.
+re-renders artifacts and verifies command-owned application. The result
+reports which path the run took (`set_up`, `adopted`, or `converged`) so
+operators and agents can see what changed.
 
 ## Requirements
 
@@ -68,7 +68,7 @@ and agents can see what changed.
 
 ## Output Summary
 
-- **Human**: A step tree showing progress of artifact enactment and setup
+- **Human**: A step tree showing progress of artifact application and setup
   steps, concluding with a `result.action`-keyed success line and the
   workspace URL.
 - **JSON**: A `success` envelope with `success.data.result.action`

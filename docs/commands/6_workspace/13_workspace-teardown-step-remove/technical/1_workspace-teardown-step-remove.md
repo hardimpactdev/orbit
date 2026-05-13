@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage workspace policy for the
   target app.
-- The target app exists in gateway intent.
+- The target app exists in gateway configuration.
 - The target step exists for the resolved `(app, phase=teardown)`.
 
 This is the canonical technical contract for
@@ -35,22 +35,22 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`workspace-teardown-step:remove` is a destructive policy edit on gateway-owned
-workspace intent. App-node callers are denied before prompts or side effects.
+`workspace-teardown-step:remove` is a destructive policy edit on
+gateway-owned workspace configuration. The CLI forwards the request to the
+gateway, which authenticates the caller's WireGuard peer identity and applies
+authorization; app-node peers are denied before any side effects.
 
-| Caller role | Behavior |
+| Caller peer | Behavior |
 | --- | --- |
-| `control` | Forwards the removal request to the gateway over HTTPS through WireGuard when configured and authorized. |
-| `gateway` | Executes the removal flow locally on the gateway when authorized. |
-| `app` | Denied before prompts or side effects with `error.code=caller_role_not_allowed`. App nodes do not own workspace policy. |
+| Control peer | The CLI forwards the removal request to the gateway over HTTPS through WireGuard. |
+| Gateway peer | The CLI invokes the local removal flow on the gateway when authorized. |
+| App-node peer | Denied by the gateway with `error.code=caller_role_not_allowed` before any side effects. App nodes do not own workspace policy. |
 
 ## Input Resolution
 
-1. **Caller Role.** Resolve the local caller role. Deny `app` and `unknown`
-   before prompts or side effects.
-2. **Resolve Parent App.** Mirror the resolved
+1. **Resolve Parent App.** Mirror the resolved
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md)
    precedence chain:
@@ -65,15 +65,15 @@ workspace intent. App-node callers are denied before prompts or side effects.
    - **Forbidden:** project-file inspection (`composer.json`, `package.json`,
      `.php-version`, `.env`, lockfiles, or framework manifests). This matches `ARCHITECTURE.md` "Workspaces"
      project-file inspection prohibition.
-3. **Resolve `step`.** Required from `--step` or interactive prompt.
+2. **Resolve `step`.** Required from `--step` or interactive prompt.
    - In interactive mode, prompt when `--step` is missing.
    - In non-interactive mode, fail before side effects when `--step` is absent
      (`error.code=validation_failed`, `error.meta.field=step`).
    - Must be a strict positive integer.
    - Must match an existing teardown-step record belonging to the resolved app
      and `phase=teardown`.
-4. **Resolve `force`.** From `--force`. Default `false`.
-5. **Apply Destructive Consent.**
+3. **Resolve `force`.** From `--force`. Default `false`.
+4. **Apply Destructive Consent.**
    - If `--force` is present, destructive consent is resolved and no
      confirmation prompt is rendered.
    - In interactive mode without `--force`, render a confirmation prompt after
@@ -94,7 +94,7 @@ workspace intent. App-node callers are denied before prompts or side effects.
 `workspace-teardown-step:remove` deletes a single gateway-owned teardown-step
 record from an app's workspace lifecycle policy and compacts the surviving
 steps' `order` to a continuous sequence. The command writes only to gateway
-intent. App nodes are not contacted.
+configuration. App nodes are not contacted.
 
 1. **Lookup.** Find the teardown-step record by
    `(step_id, app, phase=teardown)`. If not found, fail before side effects with
@@ -120,8 +120,8 @@ intent. App nodes are not contacted.
 `workspace-teardown-step:remove` must not:
 
 - Block on, wait for, or fail because of an active `workspace:remove` or
-  `app:prune` for the same app. The mutation is gateway-intent only and takes
-  effect for future runs. In-flight runs continue executing the ordered step
+  `app:prune` for the same app. The mutation is gateway-configuration only
+  and takes effect for future runs. In-flight runs continue executing the ordered step
   list they snapshotted at `phase=teardown_steps` entry. The snapshot
   obligation is owned by [`workspace:remove`](../../5_workspace-remove/workspace-remove.md)
   and app pruning, not by this command.
@@ -146,11 +146,11 @@ intent. App nodes are not contacted.
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
 | Step not found | No teardown-step record matches `(step_id, app, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
-| App not found | Resolved app slug does not exist in gateway intent. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
+| App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
 | App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Caller role not allowed | The caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
+| Caller role not allowed | The gateway authenticates the caller as an app-node peer (not authorized for workspace policy edits). | Failure (`error.code=caller_role_not_allowed`). |
 | Authorization failed | Caller is not authorized to manage workspace policy for the target app. | Failure (`error.code=authorization_failed`). |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
 
@@ -189,5 +189,5 @@ teardown-step removal attempts.
 | --- | --- |
 | `tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php` | Atomic delete and order-compaction within `(app, phase=teardown)`, refusal to remove a `phase=setup` step, and rejection of step records that do not belong to the resolved app. |
 | `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found as hard validation failure, destructive consent, `--json` never implying `--force`, no runtime lock against in-flight `workspace:remove`, and no history mutation. |
-| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCallerRoleTest.php` | Control and gateway acceptance plus app-node `caller_role_not_allowed` rejection before prompts or side effects. |
+| `tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCallerRoleTest.php` | Control and gateway peer acceptance plus app-node peer `caller_role_not_allowed` rejection before any side effects, asserted via gateway-applied authorization. |
 | `tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php` | Real gateway delete against a registered app with teardown steps, contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight teardown run continues using its start-of-phase snapshot. |

@@ -4,7 +4,7 @@
 
 List apps registered on the gateway.
 
-`app:list` provides a high-level summary of application intent, showing which
+`app:list` provides a high-level summary of application configuration, showing which
 apps are assigned to which nodes and their configured environments. For live
 app health and runtime verification, use
 [`doctor --family=app`](../app-doctor.md).
@@ -38,7 +38,7 @@ orbit app:list --json
 filters:
 
 1. Connects to the gateway API.
-2. Reads app registry intent scoped to what the caller is authorized to see.
+2. Reads app registry configuration scoped to what the caller is authorized to see.
 3. Filters by node or environment when options are supplied.
 4. Returns a list of apps with their names, nodes, environments, primary URLs,
    and any registered workspaces.
@@ -46,7 +46,7 @@ filters:
 `app:list` does not:
 - SSH into app nodes.
 - Probe app health or path existence (use [`doctor --family=app`](../app-doctor.md)).
-- Mutate gateway intent or node artifacts.
+- Mutate gateway configuration or node artifacts.
 
 ## Output
 

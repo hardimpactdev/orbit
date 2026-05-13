@@ -44,9 +44,9 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Runs the tool definition's setup/configuration action through the gateway.
 4. Updates generated secrets or backend config only when the tool definition
    says reconfiguration owns those values.
-5. Updates tool-owned service endpoint intent only when the tool definition
+5. Updates tool-owned service endpoint configuration only when the tool definition
    owns that endpoint.
-6. Preserves intended tool version.
+6. Preserves the expected tool version.
 7. Reports the reconfiguration result.
 
 The command does not create a tool row for an unmanaged observed tool. Use

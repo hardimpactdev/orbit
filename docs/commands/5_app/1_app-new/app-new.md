@@ -16,7 +16,7 @@ orbit app:new [name] --domain=example.com --json
 ## Description
 
 `app:new` creates or clones a new application on a target app node through the
-gateway over SSH. After creating the app source, it writes initial gateway intent
+gateway over SSH. After creating the app source, it writes initial gateway configuration
 and runs the standard app registration pipeline to converge app runtime artifacts,
 proxy routes, and process definitions.
 
@@ -31,20 +31,20 @@ service instance in Orbit.
   forward git credentials. `--repo` accepts full Git URLs for any host the node
   can access. The `owner/repo` shorthand is GitHub-only and expands to
   `git@github.com:owner/repo.git`.
-- **Registry Write:** Writes authoritative app intent to the gateway database.
+- **Registry Write:** Writes authoritative app configuration to the gateway database.
   App names are identity slugs and must be globally unique in the gateway app
   registry.
 - **Registration Pipeline:** Executes the same convergence logic as
   [`app:register`](../2_app-register/app-register.md) to set up PHP-FPM, proxy
   routes, and runtime configuration.
-- **Production Activation:** When `--domain` is provided, production intent is
+- **Production Activation:** When `--domain` is provided, production configuration is
   recorded. If DNS or TLS prerequisites are not yet met, the command still
   succeeds; the inactive domain is reported as a warning with a retry path
   through [`app:register [name] --domain=<host>`](../2_app-register/app-register.md),
   which is safe to call repeatedly.
-- **Retry Safety:** If source creation fails, no app intent is written; fix the
-  node-side source problem and rerun `app:new`. After gateway intent is written,
-  registration enactment failures preserve that intent. Subsequent runs of
+- **Retry Safety:** If source creation fails, no app configuration is written; fix the
+  node-side source problem and rerun `app:new`. After gateway configuration is written,
+  registration failures preserve that configuration. Subsequent runs of
   `app:register` or `doctor --fix --family=app --restore` will attempt to complete
   artifact convergence.
 
@@ -57,7 +57,7 @@ service instance in Orbit.
 ## Output
 
 - **Human:** A multi-step progress tree covering source creation, registry
-  write, setup, proxy route enactment, and enactment verification.
+  write, setup, proxy route application, and apply verification.
 - **JSON:** A `success` envelope containing the new app's registry data, or an
   `error` envelope with failure metadata.
 

@@ -5,16 +5,17 @@
 This page describes caller-role behavior when `orbit gateway:add` is invoked from
 an app node.
 
-**Effects:** `none`. The command is rejected before prompts or side effects when
-the caller role is `app`.
+**Effects:** `none`. The gateway rejects the caller when its WireGuard peer
+identity resolves to an `app` node, before any local prompts or side effects.
 
 **Prerequisites:**
-- The caller role has resolved to `app` per the node-family
-  [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
+- The gateway has identified the caller's WireGuard peer identity as an
+  `app` node and rejected the `gateway:add` request.
 
 ## Behavior
 
-App-node callers are rejected before prompts or side effects.
+The gateway rejects app-node callers. The CLI surfaces the rejection before
+running any local prompts or side effects.
 
 App nodes run the Orbit CLI as a stateless gateway client. Their gateway-client
 endpoint and trust artifacts are installed and repaired by the gateway through

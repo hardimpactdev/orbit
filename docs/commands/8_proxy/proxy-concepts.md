@@ -1,14 +1,12 @@
 # Proxy Concepts
 
-This document defines proxy-family vocabulary and invariants. It supports the
-proxy command contracts and the [proxy doctor](proxy-doctor.md); it does not
-override the [Architecture](../../ARCHITECTURE.md).
+This document defines proxy-family vocabulary and invariants. It supports the proxy command contracts and the [proxy doctor](proxy-doctor.md); it does not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Routes
 
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
-  target, and TLS intent.
+  target, and TLS configuration.
 - **Route owner:** The domain that owns route lifecycle. One of `app`,
   `workspace`, `gateway`, `tool`, or `custom`.
 - **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
@@ -31,7 +29,7 @@ override the [Architecture](../../ARCHITECTURE.md).
 ## TLS
 
 - **Orbit-managed TLS:** Gateway-issued route leaf certificate and key material
-  enacted on the serving node. Certificates chain to the gateway root CA
+  applied on the serving node. Certificates chain to the gateway root CA
   trusted through `gateway:add` and `gateway:trust`.
 - **Route leaf certificate:** A server certificate issued for one Orbit route
   host or IP. It can terminate HTTPS for that route, but it cannot sign other
@@ -44,7 +42,7 @@ override the [Architecture](../../ARCHITECTURE.md).
   App nodes receive route-scoped leaf certificates and private keys as serving
   artifacts only; they do not act as Orbit certificate authorities.
 - **Hostname compatibility material:** App-node files derived from route TLS
-  intent that let common Laravel Vite TLS detection paths find the route
+  configuration that let common Laravel Vite TLS detection paths find the route
   certificate. Owned by proxy convergence, not by the app or workspace family.
 
 ## Ingress Contracts
@@ -62,7 +60,7 @@ override the [Architecture](../../ARCHITECTURE.md).
 ## Boundaries
 
 - **Proxy-family boundaries:** Proxy commands own the unified ingress
-  registry, route TLS intent, ingress contracts, and convergence of derived
+  registry, route TLS configuration, ingress contracts, and convergence of derived
   proxy and TLS artifacts. They do not own app, workspace, gateway, or tool
   identity, do not create or remove owner-side records, and do not manage TCP
   tool service endpoints or firewall policy.

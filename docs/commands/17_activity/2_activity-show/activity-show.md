@@ -6,7 +6,7 @@ Show one gateway activity history entry.
 
 `activity:show` retrieves the full details for one activity entry and shows
 other visible entries that share its correlation id. Use it when an operator
-needs to understand what a previous command, API call, or gateway enactment
+needs to understand what a previous command, API call, or gateway apply
 changed.
 
 ## Usage

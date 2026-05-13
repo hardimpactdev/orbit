@@ -45,8 +45,8 @@ override the [Architecture](../../ARCHITECTURE.md).
 
 ## Boundaries
 
-- **Tool-family boundaries:** Tool commands own tool intent, tool lifecycle,
-  tool configuration, declared service endpoints, and tool catalog membership.
+- **Tool-family boundaries:** Tool commands own tool configuration, tool lifecycle,
+  declared service endpoints, and tool catalog membership.
   They do not own apps, workspaces, processes, schedules, custom proxy routes,
   or non-tool firewall policy. Tool-specific or capability-specific command
   families (such as `php:*`) are admitted only when the workflow is clearer as

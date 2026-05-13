@@ -26,7 +26,7 @@ adopt.
 
 The `php` tool owns PHP-FPM runtime installation and service lifecycle. PHP
 runtime selection is admitted as the separate `php:*` command family because it
-mutates app intent, workspace overrides, and node CLI defaults rather than only
+mutates app configuration, workspace overrides, and node CLI defaults rather than only
 tool lifecycle state.
 
 ## Doctor Relationship

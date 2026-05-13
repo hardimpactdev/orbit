@@ -7,13 +7,10 @@
 **Effects:** `write`.
 
 **Prerequisites:**
-- The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
-  contract and the node-family
-  [Local Caller Role](../../README.md#local-caller-role) contract.
-- `node:update` is invoked from a control or gateway caller. App-node callers are
-  rejected before prompts, forwarding, or side effects.
-- Gateway callers can read and write gateway-owned node intent.
+- The gateway authenticates the CLI and authorizes `node:update` only when the
+  caller's gateway-known role is `control` or `gateway`. App-role callers are
+  rejected.
+- Gateway callers can read and write gateway-owned node configuration.
 - Control callers have configured gateway access as defined in
   [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md).
 
@@ -78,65 +75,44 @@ Role-conditional validity is enforced after the target node is resolved.
 Incompatible fields fail with `node.field_role_incompatible` before any
 gateway-owned side effects.
 
-## Caller Role Behavior
+## Authorization By Caller Role
 
-`node:update` resolves the caller role from the local node role setting before it
-reads command arguments or renders prompts. See the node-family
-[Local Caller Role](../../README.md#local-caller-role) contract.
+The CLI sends a typed update request to the gateway. The gateway authenticates
+the WireGuard peer identity, derives the caller's gateway-known role, and
+applies the rules below.
 
-If `general.local_node_role` is unset or `null`, the caller role is `control`.
-Gateway and app callers must be explicit through `general.local_node_role`.
-
-| Caller role | Behavior |
+| Caller role | Gateway authorizes |
 | --- | --- |
-| `control` | With configured gateway access, forward to the gateway over HTTPS through WireGuard. Without configured gateway access, fail before prompts or side effects. See [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md). |
-| `gateway` | Executes locally on the gateway. See [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md). |
-| `app` | Not allowed. Fail before prompts or side effects with `This command may only be run from a control or gateway node.` See [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md). |
-| `unknown` | Invalid local context. Used only when `general.local_node_role` contains an unsupported value or cannot be read. Fail before prompts or side effects with a local context error. Missing `general.local_node_role` does not produce `unknown`; it defaults to `control`. |
+| `control` | The update write when the caller also has access to the gateway node. See [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md). |
+| `gateway` | The update write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md). |
+| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md). |
 
-Role-specific behavior is defined in these companion contracts:
+Companion contracts describe behavior in detail:
 
 - [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md):
-  control caller gateway-forwarding behavior.
+  control-caller gateway-forwarding behavior.
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md):
   gateway-local execution behavior.
-- [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md): app caller
-  behavior.
+- [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md): app-caller
+  rejection.
 
-The role-specific companion pages are authoritative for caller-role behavior.
-This canonical page owns shared inputs, shared behavior, output links, failure
-categories, doctor relationship, and test mapping.
+The role-specific companion pages are authoritative for how the gateway
+authorizes each role. This canonical page owns shared inputs, shared behavior,
+output links, failure categories, doctor relationship, and test mapping.
 
 ## Input Resolution
 
-1. Resolve caller role.
-   - Read `general.local_node_role` before reading command arguments,
-     rendering prompts, forwarding requests, or starting side effects.
-   - If `general.local_node_role` is unset or `null`, resolve caller role as
-     `control`.
-   - If `general.local_node_role` is `control`, `gateway`, or `app`, use that
-     value for local path selection.
-   - If the local role setting contains an unsupported value or cannot be read,
-     resolve caller role as `unknown` and fail before prompts, forwarding, or
-     side effects.
-   - If the caller is an app node, apply
-     [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md) and fail
-     before resolving `node_update.name` or any field flags.
-2. Resolve execution context.
-   - If the caller role is `gateway`, execute locally on the gateway.
-   - If the caller role is `control`, require configured gateway access and
-     prepare a typed gateway request.
-3. Resolve `node_update.name` from `[name]` or the selected input mode.
+1. Resolve `node_update.name` from `[name]` or the selected input mode.
    - In interactive mode, prompt when `[name]` is missing.
    - In non-interactive mode, fail before side effects when `[name]` is absent.
-4. Validate `node_update.name` immediately.
+2. Validate `node_update.name` immediately.
    - Must match an existing active node record.
-5. Resolve field flags.
+3. Resolve field flags.
    - Resolve `node_update.host` from `--host` when present.
    - Resolve `node_update.environment` from `--environment` when present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
-6. Validate role-conditional field eligibility.
+4. Validate role-conditional field eligibility.
    - If `--environment` is present and the target node role is not `app`, fail
      before side effects with `node.field_role_incompatible`.
    - If `--host`, `--public-ipv4`, or `--public-ipv6` is present and the target
@@ -145,15 +121,14 @@ categories, doctor relationship, and test mapping.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
-7. Validate that at least one supported field is provided.
+5. Validate that at least one supported field is provided.
    - In non-interactive input mode, fail before side effects when no supported
      field flags are provided.
    - In interactive input mode, prompt for which field to change when no field
      flags are provided.
-8. If running from a control node, forward the typed request to the gateway over
-   HTTPS through WireGuard. The gateway authenticates the control node identity
-   and authorizes the request through gateway-owned node access policy before
-   gateway-owned side effects begin.
+6. Send the typed request to the gateway over HTTPS through WireGuard. The
+   gateway authenticates the caller's WireGuard identity and authorizes the
+   request through gateway-owned node access policy before any side effects.
 
 ## Input Mode Contracts
 
@@ -175,29 +150,30 @@ Input mode behavior is split out of the canonical command contract:
   incompatible role, fail before side effects with
   `node.field_role_incompatible`.
 
-### Intent Delta Rules
+### Configuration Delta Rules
 
 - Compare each supplied field with the current stored value.
 - Fields that match the current value are no-ops and do not appear in
   `changed`.
 - Update the node record with the new values for changed fields.
 
-### Artifact Re-enactment Rules
+### Artifact Re-applying Rules
 
-- When a changed field has node-side effects, re-enact the node-owned host
+- When a changed field has node-side effects, re-apply the node-owned host
   artifacts associated with that changed field.
-- The set of fields that triggers node-side re-enactment is implementation
-  detail; the contract only promises that any drift after a successful intent
-  write surfaces under the warning channel.
+- The set of fields that triggers node-side re-applying is implementation
+  detail; the contract only promises that any drift after a successful
+  configuration write surfaces under the warning channel.
 
 ### Drift Warning Rules
 
-- If artifact enactment fails after intent was committed, the command result
-  remains a top-level `success` because gateway-owned intent was written.
+- If artifact applying fails after configuration was committed, the command
+  result remains a top-level `success` because gateway-owned configuration was
+  written.
 - The remaining node-side artifact drift is node-family drift owned by
   `doctor --family=node`.
 - The selected output renderer reports the warning with the recovery path
-  `doctor --fix --family=node --restore`.
+  `doctor --family=node --restore`.
 - Exit code stays at `0`. See the JSON renderer contract for the exact warning
   shape.
 - Return the updated node name, the `changed` array, and any drift warnings.
@@ -210,24 +186,24 @@ Input mode behavior is split out of the canonical command contract:
   migration command is named yet; a future explicit role-migration contract
   will own that flow.
 - Change a development app node's TLD after creation. Node doctor may repair
-  drift back to the TLD already stored in gateway node intent, but intentional
-  TLD migration requires a future explicit command contract.
+  drift back to the TLD already stored in gateway node configuration, but
+  intentional TLD migration requires a future explicit command contract.
 - Update operating system packages, Orbit installations, tools, or system
   services beyond node-owned artifacts directly affected by the changed field.
 - Update app runtime policy, tool state, firewall policy, proxy routes,
   processes, schedules, or deployment pipelines.
-- SSH into the target node unless re-enactment of a changed field requires it.
+- SSH into the target node unless re-applying a changed field requires it.
 - Mint identity, write peer material, or grant access.
 - Treat an unchanged-value update as a failure.
-- Re-enact node-owned artifacts when intent did not change. Re-applying
+- Re-apply node-owned artifacts when configuration did not change. Re-applying
   unchanged gateway-tracked configuration is owned by
-  `doctor --fix --family=node --restore`, not `node:update`.
+  `doctor --family=node --restore`, not `node:update`.
 
 No-op updates where all supplied values equal the current stored values return
 success with an empty `changed` array. The `changed` array represents the
-gateway intent delta only. There is no separate `re_enacted` array; artifact
-re-enactment is an implementation side effect of an intent change, not a
-separately reported delta.
+gateway configuration delta only. There is no separate `re_applied` array;
+artifact re-applying is an implementation side effect of a configuration
+change, not a separately reported delta.
 
 ## Renderer Contracts
 
@@ -239,7 +215,7 @@ Output renderer behavior is split out of the canonical command contract:
 - [`6.2_node-update_output-render_json.md`](6.2_node-update_output-render_json.md): JSON
   envelope, data shape, error codes, error messages, error metadata, validation
   errors, and the `success.meta.warnings[]` shape used for partial-success
-  artifact enactment drift.
+  artifact applying drift.
 
 ## Failure Semantics
 
@@ -252,18 +228,17 @@ Output renderer behavior is split out of the canonical command contract:
 | Caller role not allowed | The caller role is `app`. | Failure |
 | Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
 | Authorization failed | A forwarded control caller is not authorized to operate on the gateway node or the target node. | Failure |
-| Local context invalid | `general.local_node_role` is unreadable or unsupported. | Failure |
 
-Artifact enactment failure after a successful intent write is **not** a
+Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
 under `success.meta.warnings[]` and exit code `0`. See the
-[JSON renderer contract](6.2_node-update_output-render_json.md#success-with-artifact-enactment-warning).
+[JSON renderer contract](6.2_node-update_output-render_json.md#success-with-artifact-apply-warning).
 
 ## Doctor Relationship
 
 - `doctor --family=node` verifies role-owned host artifacts and may report
-  drift created by failed artifact re-enactment.
-- `node:update` does not probe, infer, validate, fix, adopt, or drift-check
+  drift created by failed artifact re-applying.
+- `node:update` does not probe, infer, validate, restore, adopt, or drift-check
   public IPv4/IPv6 metadata. See [`node-doctor.md`](../../node-doctor.md).
 - Broader drift in tools, firewall rules, apps, workspaces, processes,
   schedules, and proxy routes is verified by those family contracts.
@@ -287,7 +262,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating node fields, role-conditional field validation, no-op success with empty `changed`, node-not-found failure, control-caller gateway forwarding, app-node caller denial before prompts or side effects, artifact re-enactment reporting, and warning payload shape for partial-success drift. |
+| `tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating node fields, role-conditional field validation, no-op success with empty `changed`, node-not-found failure, control-caller gateway forwarding, app-node caller denial before prompts or side effects, artifact re-applying reporting, and warning payload shape for partial-success drift. |
 | `tests/Feature/Commands/Nodes/NodeUpdateOnControlNodeContractTest.php` | Primary owner for control-caller behavior: configured control callers forward over HTTPS through WireGuard, unconfigured control callers fail before prompts or side effects, forwarded requests require access to the gateway node, and no SSH-to-gateway path is used. |
 
 Input-mode-specific test mapping lives in:
