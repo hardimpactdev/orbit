@@ -6,12 +6,6 @@
 
 **Effects:** `write`
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 `app:root` is `Effects: write`, not `Effects: destructive`. It does not invoke
 the destructive-consent prompt or require `--force`, including for production
 apps with active domains. Cross-cutting "production-write confirmation" is not
@@ -23,6 +17,7 @@ command that writes production runtime state.
 - The application record must exist in the gateway database.
 - The owning app node must be reachable from the gateway via SSH.
 - The caller must be authorized to manage the target application and its node.
+- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 ## Signature
 
@@ -40,18 +35,6 @@ This command follows the shared
 | `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one app record visible to the caller. |
 | `root` | `[root]` | Always. | Never. | None. | Path relative to the app's base path. Must not resolve outside the app path; see [Validation](#validation). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
-
-## Authorization By Caller Role
-
-`app:root` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. The gateway processes configuration and applies app-node artifacts over SSH via `RemoteShell`. |
-| `gateway` | Allowed. Same gateway-side behavior as a control caller. The gateway opens SSH back to the target app node via `RemoteShell`. |
-| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 

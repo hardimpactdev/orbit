@@ -25,16 +25,6 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The gateway authorizes the WireGuard peer's role for `dns:list`.
-
-| Caller role | Behavior |
-| --- | --- |
-| `control` | Allowed. Reads only caller-local resolver state. |
-| `gateway` | Invalid. Gateway development DNS mappings are gateway-owned node readiness, not local control-node resolver overrides. |
-| `app` | Invalid. App-node resolver state is gateway-managed runtime state, not a local control-node troubleshooting surface. |
-
 ## Input Resolution
 
 1. Select the output renderer.
@@ -71,10 +61,10 @@ required arguments.
 - [JSON renderer](6.2_dns-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | Invoked from a gateway or app caller. | Failure before local resolver reads |
 | Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 

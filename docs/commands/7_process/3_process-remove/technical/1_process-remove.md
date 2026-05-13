@@ -30,17 +30,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 Destructive consent is required before side effects. In interactive input mode, consent is an explicit confirmation prompt unless `--force` is supplied. In non-interactive input mode, `--force` is required because prompts are unavailable.
 
-## Authorization By Caller Role
-
-`process:remove` follows the [process Authorization By Caller Role rule](../../README.md#authorization-by-caller-role). It mutates app-owned process configuration destructively, so only `control` and `gateway` callers are allowed by the gateway.
-
-| Role | Gateway decision | Consequence |
-| --- | --- | --- |
-| `control` | `allow` | Gateway accepts the request when the peer is authorized for the target app and cleans up runtime units on the owning app node. |
-| `gateway` | `allow` | Gateway accepts the request and cleans up runtime units on the owning app node. |
-| `app` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-| `unknown` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_process-remove_input-mode_interactive.md)
@@ -67,15 +56,12 @@ If process configuration is removed but runtime-unit cleanup fails, the command 
 - [JSON renderer](6.2_process-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway determines the authenticated peer's caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | Missing `name` or missing `app`. | Failure (`error.code=validation_failed`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Authorization failed | The caller cannot manage process configuration for the target app. | Failure (`error.code=authorization_failed`). |
 | Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
-| Gateway unavailable | The CLI cannot reach the gateway API before removal begins. | Failure (`error.code=gateway_unavailable`). |
 | Cancelled | The operator declines the interactive confirmation prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 
 ## Doctor Relationship

@@ -6,15 +6,10 @@
 
 **Effects:** `write`, `destructive` (during adapter switch).
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway. The gateway identifies the
-  WireGuard peer and rejects app-node peers before prompts or side effects.
+- The CLI caller can reach the Orbit gateway.
+- App-node callers are denied by the gateway with
+  `error.code=caller_role_not_allowed` before prompts or side effects.
 - The authenticated peer is authorized to manage the app.
 - The target app exists in gateway configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
@@ -42,23 +37,6 @@ This command follows the shared
 | `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `inherit`, `none`, or appear in the gateway-owned adapter registry. Core adapter names: `opencode`, `polyscope`. Adapters supplied by installed Orbit extensions are accepted only after the extension has registered them with the gateway. |
 | `force` | `--force` | Optional. | Never. | `false`. | Skips destructive consent prompt. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
-
-## Authorization By Caller Role
-
-`app:agent-ide` authorization is owned by the gateway. The CLI does not branch
-on client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call.
-
-`app:agent-ide` is an app-level preference write that may remove stale
-workspaces during adapter switches. It is not executable from app-node peers.
-App nodes remain restricted to read paths and explicitly documented local
-workflow exceptions such as `workspace:setup`.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed when authorized. The gateway performs the preference write and any workspace cleanup, applying app-node work over SSH via `RemoteShell`. |
-| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell` for workspace cleanup. |
-| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
@@ -170,14 +148,13 @@ at the next consumer-side resolution event.
 - [JSON renderer](6.2_app-agent-ide_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | Failure |
-| Caller role not allowed | The gateway identifies the caller as an app-node peer. | Failure |
 | Unsupported adapter | The requested adapter is not present in the gateway-owned adapter registry. | Failure |
 | Missing destructive consent | Workspaces would be removed but `--force` is missing in non-interactive mode or confirmation is denied in interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Gateway unavailable | The CLI cannot reach the gateway during validation or choices gathering. | Failure |
 | Cleanup failed after configuration write | App configuration was updated but workspace removal could not finish. | Success with structured `success.meta.warnings[]`. |
 
 No-op sets (already matching) are successful with `action: "converged"`, not

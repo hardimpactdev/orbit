@@ -31,22 +31,6 @@ This command follows the shared
 | `id` | `[id]` | Required. Interactive input mode may prompt when omitted. | Never. | None. | Positive integer activity id. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI always sends the request to the gateway over HTTPS through WireGuard.
-The gateway authenticates the WireGuard peer, resolves the caller's node
-identity, and authorizes the history read against that identity and the
-resolved activity id.
-
-| Caller role | Behavior |
-| --- | --- |
-| `control` | Gateway returns the entry when visible to the calling control node. |
-| `gateway` | Gateway returns the entry when visible to itself. |
-| `app` | Gateway returns the entry when visible to the calling app node. App-node context does not grant additional history visibility. |
-
-Caller role is gateway-resolved metadata, not a CLI-side branch. The CLI does
-not inspect or depend on caller role.
-
 ## Input Resolution
 
 1. Resolve `activity_show.id` from `[id]` or the selected input mode.
@@ -100,13 +84,11 @@ not inspect or depend on caller role.
 - [JSON renderer](6.2_activity-show_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | `id` is missing in non-interactive mode or is not a positive integer. | Failure before gateway history read |
 | Activity not found | No visible activity entry matches the resolved id. | Failure |
-| Gateway unavailable | The caller cannot reach the configured gateway API. | Failure |
-| Authorization failed | The gateway denies activity-history access for the caller. | Failure |
 
 ## Activity Logging
 

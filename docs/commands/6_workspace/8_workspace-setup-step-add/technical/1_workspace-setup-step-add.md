@@ -31,17 +31,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace-setup-step:add` to the gateway, which
-authenticates the caller's WireGuard peer identity and applies authorization.
-
-| Caller peer | Gateway authorization | Consequence |
-| --- | --- | --- |
-| Control peer | Allowed when authorized | The CLI forwards configuration to the gateway over HTTPS through WireGuard. |
-| Gateway peer | Allowed when authorized | The CLI invokes the local registry write on the gateway. |
-| App-node peer | Denied | The gateway returns `error.code=caller_role_not_allowed` before any side effects. App nodes do not own workspace policy. |
-
 ## Input Resolution
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
@@ -124,15 +113,8 @@ command; it is applied by `workspace:new` and `workspace:setup` at
 - [`technical/6.2_workspace-setup-step-add_output-render_json.md`](6.2_workspace-setup-step-add_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Validation Failures**: Missing or empty `--command`, non-positive
-  `--timeout` (including `0`), unresolved `--app`. Reported as
-  `error.code=validation_failed` with `error.meta.field` naming the
-  offending input. Fails before side effects.
-- **Caller Role Not Allowed**: The gateway denies an app-node peer with
-  `error.code=caller_role_not_allowed` before any side effects.
-- **Authorization Failed**: The caller is not authorized to manage workspace
-  policy for the target app (`error.code=authorization_failed`).
 - **App Not Found**: Resolved app slug does not exist in gateway configuration
   (`error.code=workspace.app_not_found`, `error.meta.app`).
 - **Invalid Position**: Both `--before` and `--after` supplied

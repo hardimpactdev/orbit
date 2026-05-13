@@ -29,14 +29,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `lines` | `--lines` | `Optional.` | `Never.` | `renderer default` | Positive integer line limit. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible schedule run history when authorized; `schedule:logs` never grants write permission.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; missing required input and invalid filters fail according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Run History Read Rules
@@ -57,12 +49,10 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 - [JSON renderer](6.2_schedule-logs_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | The name, filter, run id, or line limit is missing, malformed, unsupported, or mutually exclusive. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect schedule run history for the selected scope. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Run not found | No run-history record matches the selected schedule and run id. | `error.code=schedule.run_not_found` |
 | Log read failed | The gateway could not read stored run output. | `error.code=schedule.log_read_failed` |

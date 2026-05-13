@@ -28,18 +28,6 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-`gateway:trust` is a caller-local trust-store repair and does not call gateway
-endpoints that require gateway-side authorization beyond the bootstrap-safe
-trust path. Control, gateway, and app callers may all repair gateway CA trust
-on their own caller machine.
-
-For callers whose gateway-owned role is `app`, `gateway:trust` remains only a
-caller-local trust-store repair. It does not grant app-node write authority,
-create gateway configuration, or replace gateway-managed app-node bootstrap
-artifacts.
-
 ## Input Resolution
 
 1. Select the output renderer.
@@ -129,13 +117,13 @@ authority on app nodes or control nodes.
 - [JSON renderer](6.2_gateway-trust_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Gateway missing | No configured gateway exists. | Failure before network or trust-store side effects |
 | Local settings unreadable | Local gateway settings cannot be read. | Failure before network or trust-store side effects |
 | Gateway endpoint invalid | The configured gateway endpoint cannot be normalized to a gateway URL. | Failure before network or trust-store side effects |
-| Gateway unavailable | The root CA endpoint cannot be reached or returns a non-success response. | Failure before trust-store side effects |
 | Trust material invalid | The gateway response does not contain a valid PEM root CA certificate. | Failure before trust-store side effects |
 | Unsupported platform | The caller platform has no supported OS trust-store installer. | Failure before trust-store side effects |
 | Trust store failed | The OS trust store rejects the certificate or lacks required privileges. | Failure |

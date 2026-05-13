@@ -60,8 +60,9 @@ A caller can be:
 
 Caller role is a gateway-side property of the authenticated node record
 (`control`, `gateway`, or `app`). The gateway uses it to authorize what each
-caller may do. Per-command "Authorization By Caller Role" sections describe
-what the gateway allows for each role, not what the CLI checks locally.
+caller may do. The CLI does not check or branch on caller role locally.
+Commands that reject specific roles state that in their Prerequisites and
+Failure Semantics.
 
 ## Hub And Spoke Model
 

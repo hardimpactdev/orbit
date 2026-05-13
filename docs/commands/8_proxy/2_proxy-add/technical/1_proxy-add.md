@@ -30,10 +30,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode when replacing an existing custom route with different target configuration.` | `Never.` | `false` | Explicit replacement consent; does not permit overwriting non-custom routes. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may add custom proxy routes only when the gateway authorizes their identity to manage proxy routes for the resolved serving node. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_proxy-add_input-mode_interactive.md)
@@ -78,12 +74,10 @@ The gateway API endpoint emits an activity entry for successful and failed confi
 | Description | `derived` |
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing, invalid, mutually exclusive, or forbidden with another option. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage custom proxy routes for the selected serving node. | `error.code=authorization_failed` |
 | Domain conflict | The selected domain is owned by an app, workspace, gateway, or tool route. | `error.code=proxy.domain_conflict` |
 | Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy.replacement_consent_required` |
 | Apply failed | Gateway configuration was written, but proxy or TLS backend apply failed. | `error.code=proxy.enactment_failed` |

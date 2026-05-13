@@ -30,10 +30,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | Required for `cli=true` when no local node target resolves. | Never. | Local `node:default` for CLI scope, or app/workspace owning node for runtime scope. | Visible node slug. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may change PHP runtime selection only when the gateway authorizes their identity to manage the resolved app, workspace, or node CLI target. Local cwd app or workspace context is used as input hint only and never grants write authority. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Resolution
 
 1. Resolve target scope:
@@ -100,12 +96,7 @@ cache state, or create app/workspace records.
 - [JSON renderer](6.2_php-use_output-render_json.md)
 
 ## Failure Semantics
-
-| Failure | Condition | Outcome |
-| --- | --- | --- |
-| Validation failed | Required input is missing, mutually exclusive input is supplied, or a requested version is unsupported or not installed on the target node. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage the resolved target. | `error.code=authorization_failed` |
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 ## Doctor Relationship
 

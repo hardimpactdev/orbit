@@ -27,18 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The gateway authenticates the WireGuard peer and authorizes the request by
-caller role. The CLI does not resolve or assert caller role locally.
-
-| Role | Validity | Consequence |
-| --- | --- | --- |
-| `control` | `valid` | The gateway accepts the policy write when the caller is authorized. |
-| `gateway` | `valid` | The gateway executes the policy write when the caller is authorized. |
-| `app` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
-| `unknown` | `invalid` | The gateway rejects the request before side effects with `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_deploy-step-remove_input-mode_interactive.md)
@@ -67,13 +55,10 @@ caller role. The CLI does not resolve or assert caller role locally.
 - [JSON renderer](6.2_deploy-step-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing or malformed. | `error.code=validation_failed` |
-| Caller role not allowed | The caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage deployment policy for the app. | `error.code=authorization_failed` |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
 | Step not found | No step matches the supplied id or title. | `error.code=deploy.step_not_found` |

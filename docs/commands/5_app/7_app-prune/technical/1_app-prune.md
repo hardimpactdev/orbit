@@ -6,16 +6,10 @@
 
 **Effects:** `destructive`, `write`, `stream`.
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 **Prerequisites:**
-- The CLI caller can reach the Orbit gateway. The gateway identifies the
-  WireGuard peer and rejects app-node peers with
-  `error.code=caller_role_not_allowed`.
+- The CLI caller can reach the Orbit gateway.
+- App-node callers are denied by the gateway with
+  `error.code=caller_role_not_allowed` before prompts or side effects.
 - The target app name or hostname must resolve to exactly one gateway app record.
 - The caller is authorized to manage the target app.
 - At least one agent IDE adapter is configured for the app (directly, inherited from the node, or as an extension).
@@ -36,18 +30,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `dry_run` | `--dry-run` | Optional. | Never. | `false`. | Boolean flag. If `true`, side effects are skipped. |
 | `force` | `--force` | Non-interactive mode (without `--dry-run`). | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive mode. |
-
-## Authorization By Caller Role
-
-`app:prune` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed when authorized. The gateway runs the pruning logic, and any workspace removal applies app-node cleanup over SSH via `RemoteShell`. |
-| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell` for workspace removal cleanup. |
-| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
@@ -142,12 +124,11 @@ If `dry_run` is `false`:
 - [JSON renderer](6.2_app-prune_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | `app` does not match any record. | Failure (`error.code=app.not_found`). |
-| Caller role not allowed | The gateway identifies the caller as an app-node peer. | Failure (`error.code=caller_role_not_allowed`). |
-| Authorization failed | Caller is not authorized to manage the app. | Failure (`error.code=authorization_failed`). |
 | No adapters | No agent IDE adapters configured for the app. | Failure (`error.code=app.no_agent_ide_adapter`). |
 | Adapter query failed | Error communicating with a source-of-truth adapter. | Failure (`error.code=app.agent_ide_query_failed`). |
 | Destructive consent missing | Non-interactive mode, no `--dry-run`, and `--force` is missing. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

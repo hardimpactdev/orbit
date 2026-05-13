@@ -28,14 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | `Expected lifecycle state: installed or running.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage tools only when their node identity has explicit tool-management authorization for the resolved target; management remains gateway-owned and applied through gateway-to-node transport.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; missing required arguments or target context fail according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Tool Configuration And Apply Rules
@@ -66,12 +58,10 @@ definition. Related drift belongs to each owning family doctor contract.
 - [JSON renderer](6.2_tool-install_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing, invalid, or forbidden with another option. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage the selected tool target. | `error.code=authorization_failed` |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |

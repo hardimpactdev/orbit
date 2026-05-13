@@ -26,14 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may list only proxy routes whose serving node or owner is visible to their authenticated identity. The CLI does not infer caller role locally and does not infer a node filter from any local context.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; invalid filters or node filters fail according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Registry Visibility Rules
@@ -63,12 +55,7 @@ No input-mode-specific contracts are required. The command does not prompt; inva
 - [JSON renderer](6.2_proxy-list_output-render_json.md)
 
 ## Failure Semantics
-
-| Failure | Condition | Outcome |
-| --- | --- | --- |
-| Validation failed | `--filter` is invalid or `--node` cannot be resolved. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect the selected serving node or route owner. | `error.code=authorization_failed` |
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 ## Activity Logging
 

@@ -28,10 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may remove schedules only when their node identity has explicit schedule-management authorization for the selected scope. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_schedule-remove_input-mode_interactive.md)
@@ -64,12 +60,10 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - [JSON renderer](6.2_schedule-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing, invalid, or mutually exclusive. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage the selected schedule. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
 | Scheduler unreachable | Gateway removal was recorded, but the target node's Orbit Scheduler could not be confirmed reachable for prompt pickup. | `error.code=schedule.scheduler_unreachable` |

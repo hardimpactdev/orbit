@@ -28,17 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may operate. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-`process:start` follows the [process Authorization By Caller Role rule](../../README.md#authorization-by-caller-role). It is a runtime-lifecycle command, so `app` callers are allowed by the gateway when authorized for the resolved app or workspace context.
-
-| Role | Gateway decision | Consequence |
-| --- | --- | --- |
-| `control` | `allow` | Gateway accepts the runtime action when the peer is authorized for the target context. |
-| `gateway` | `allow` | Gateway accepts the runtime action when the peer is authorized and starts the derived runtime unit on the owning app node. |
-| `app` | `allow` | Gateway accepts the runtime action when the peer is authorized for the target context. The gateway performs the runtime action; the CLI does not operate the process manager directly. |
-| `unknown` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_process-start_input-mode_interactive.md)
@@ -66,12 +55,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [JSON renderer](6.2_process-start_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway determines the authenticated peer's caller role is `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | App or workspace context is missing, invalid, or ambiguous in non-interactive input mode. | Failure (`error.code=validation_failed`). |
-| Authorization failed | The caller cannot operate process runtime state for the target context. | Failure (`error.code=authorization_failed`). |
 | Process not found | `[name]` is supplied and the named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
 | No processes configured | `[name]` is omitted and the owning app has no process definitions. | Failure (`error.code=process.none_configured`). |
 | Runtime action failed | The gateway cannot start the runtime unit on the owning app node. | Failure (`error.code=process.runtime_action_failed`). |

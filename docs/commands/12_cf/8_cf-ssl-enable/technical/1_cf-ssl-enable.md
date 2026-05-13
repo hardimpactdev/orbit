@@ -27,20 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `mode` | `--mode` | `Optional.` | `Never.` | `strict` | `strict` or `full`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI forwards every Cloudflare command request to the gateway. The gateway
-authenticates the WireGuard peer, derives the caller role, and applies the
-gateway-owned authorization policy for Cloudflare provider administration.
-Control and gateway callers are authorized. App-node and unknown callers are
-denied before prompts or side effects because Cloudflare commands are provider
-administration, not app-local runtime work.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt;
-missing or invalid `zone` or `mode` fails before side effects.
-
 ## Behavior Contract
 
 ### SSL Mode Rules
@@ -63,13 +49,10 @@ changed; hostname and proxy TLS health remain app/proxy doctor concerns.
 - [JSON renderer](6.2_cf-ssl-enable_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | `zone` is missing, zone lookup fails, or `mode` is not `strict` or `full`. | `error.code=validation_failed` |
-| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
-| Gateway unavailable | A non-gateway caller cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized for Cloudflare provider administration. | `error.code=authorization_failed` |
 | Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
 
 ## Doctor Relationship

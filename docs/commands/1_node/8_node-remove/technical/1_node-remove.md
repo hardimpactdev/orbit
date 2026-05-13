@@ -38,27 +38,6 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Authorization By Caller Role
-
-The CLI sends a typed remove request to the gateway. The gateway authenticates
-the WireGuard peer identity, derives the caller's gateway-known role, and
-applies the rules below.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The remove write when the caller also has access to the gateway node. See [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md). |
-| `gateway` | The remove write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md). |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md). |
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-remove_on-control-node.md`](2_node-remove_on-control-node.md):
-  control-caller gateway-forwarding behavior.
-- [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md):
-  gateway-local execution behavior.
-- [`4_node-remove_on-app-node.md`](4_node-remove_on-app-node.md): app-caller
-  rejection.
-
 ## Input Resolution
 
 1. Resolve `node_remove.name` from `[name]` or the selected input mode.
@@ -157,6 +136,7 @@ a future local cleanup command.
 - [JSON renderer](6.2_node-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -164,9 +144,6 @@ a future local cleanup command.
 | Gateway node removal | The target node has role `gateway`, regardless of gateway count. | Failure |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
-| Caller role not allowed | The caller role is `app`. | Failure |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
-| Authorization failed | A forwarded control caller is not authorized to operate on the gateway node. | Failure |
 
 Partial WireGuard detach during removal is reported as success with a structured
 warning, not as a command failure. The node record is removed; the stale peer is

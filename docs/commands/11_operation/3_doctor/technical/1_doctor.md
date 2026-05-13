@@ -34,24 +34,6 @@ This command follows the shared
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. It does not classify its own role; it gathers input, calls the gateway, and renders the result. The gateway identifies the calling WireGuard peer, applies authorization, and answers. Every run targets exactly one node. The peer role the gateway identifies governs *who is allowed to ask*; the *target* node's role governs the rendered category set.
-
-| Peer role identified by gateway | Verify behavior | `--fix` / `--restore` / `--adopt` behavior |
-| --- | --- | --- |
-| `control` peer | The gateway authorizes the scope, dispatches family probes, and streams progress for the single-node target. | Allowed when the gateway authorizes the resolved scope and every attempted action is supported by the owning family. |
-| `gateway` peer | Authority path. The gateway inspects gateway-local facts and uses its node execution to read the target node's reality. | Allowed when every attempted action is supported by the owning family. |
-| `app` peer | Allowed for gateway-authorized verify-mode single-node scopes. Family contracts may define narrow local-default behavior for the app peer's working directory. | Denied by the gateway before side effects unless the owning family contract documents a narrow app-node write-mode exception. |
-
-Peer-specific contract details are documented in companion files:
-- [Control node](2_doctor_on-control-node.md)
-- [Gateway node](3_doctor_on-gateway-node.md)
-- [App node](4_doctor_on-app-node.md)
-
-The generic peer-role matrix is fully defined here; family contracts may only narrow
-app-node context behavior for the family they own.
-
 ## Target Role And Category Set
 
 The rendered category set is derived from the target node's role:
@@ -162,13 +144,10 @@ Family doctor contracts define the family-specific cases that produce these kind
 - [JSON renderer](6.2_doctor_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Mutually exclusive flags or invalid filter values are supplied. | Failure before forwarding |
-| Caller role not allowed | The gateway identifies the calling peer as an app-node peer and rejects `--fix`, `--restore`, or `--adopt` without a family-owned exception. | Failure before side effects |
-| Gateway unavailable | The CLI cannot reach the gateway. | Failure before probes |
-| Authorization failed | The gateway denies the calling peer authorization for the selected scope or mode. | Failure before probes |
 | Scope not found | A requested family, node, app, or workspace scope cannot be resolved. | Failure before probes |
 | Mode not supported | A selected family or issue does not support the requested `--restore` or `--adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
@@ -214,6 +193,12 @@ Required contract tests:
 
 Family-specific doctor test mapping lives in family doctor contracts, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).
+
+Peer-specific behavior and test mapping live in:
+
+- [`2_doctor_on-control-node.md`](2_doctor_on-control-node.md)
+- [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md)
+- [`4_doctor_on-app-node.md`](4_doctor_on-app-node.md)
 
 ## Activity Logging
 

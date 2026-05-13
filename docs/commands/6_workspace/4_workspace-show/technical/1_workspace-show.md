@@ -37,20 +37,6 @@ Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--app` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace:show` to the gateway, which authenticates the
-caller's WireGuard peer identity and applies authorization. Behavior is
-access-policy-driven on the gateway, not role-driven on the CLI. App-node
-peers may inspect workspaces they are authorized to see. No role-specific
-companion contracts are needed.
-
-| Caller peer | Behavior |
-| --- | --- |
-| Control peer | The CLI forwards the request to the gateway over HTTPS through WireGuard. |
-| Gateway peer | The CLI invokes the local read flow on the gateway. |
-| App-node peer | The CLI forwards the request to the gateway over HTTPS through WireGuard. May inspect workspaces visible through gateway-owned access policy. |
-
 ## Input Resolution
 
 1. **Resolve `name`** from `[name]` or current working directory.
@@ -115,13 +101,13 @@ Output renderer behavior is split out of the canonical command contract:
   JSON envelope, registry-only data shape, error codes, error metadata.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
 | Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
 | Not authorized | The caller is not allowed to inspect the target workspace. | Failure |
-| Gateway unavailable | The CLI has no configured gateway or cannot reach the gateway API. | Failure |
 
 `workspace:show` exits zero whenever the registry read succeeds. Runtime drift
 and unverifiable live checks are not part of this command's default read path.

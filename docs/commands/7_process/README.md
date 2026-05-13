@@ -39,7 +39,7 @@ The gateway is the source of truth for process configuration. When node-side wor
 
 Implementation-shape details for Supervisor and the Orbit Scheduler live in [BUILDING-BLOCKS.md#process-manager](../../BUILDING-BLOCKS.md#process-manager) and [BUILDING-BLOCKS.md#scheduler](../../BUILDING-BLOCKS.md#scheduler).
 
-## Authorization By Caller Role
+## Caller Role Rule
 
 Process commands describe gateway-side authorization, not local CLI behavior. The gateway identifies the caller from the authenticated WireGuard peer and applies the rules below; the CLI does not detect or branch on the caller's role.
 

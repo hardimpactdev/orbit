@@ -26,10 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may remove custom proxy routes only when the gateway authorizes their identity to manage proxy routes for the route's serving node. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_proxy-remove_input-mode_interactive.md)
@@ -73,12 +69,10 @@ The gateway API endpoint emits an activity entry for successful and failed destr
 | Description | `derived` |
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing or invalid. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage custom proxy routes for the serving node. | `error.code=authorization_failed` |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
 | Owned route denied | The selected route is owned by app, workspace, gateway, or tool. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |

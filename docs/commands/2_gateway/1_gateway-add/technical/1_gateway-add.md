@@ -14,6 +14,8 @@
   active Orbit WireGuard network.
 - The gateway can expose its root CA or trust bundle through the Orbit network
   before this machine has local OS-level trust installed.
+- Only `control` callers may run `gateway:add`. The gateway rejects `gateway`
+  and `app` callers with `This command may only be run from a control node.`
 
 ## Signature
 
@@ -30,32 +32,6 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `gateway_ip` | `[gateway_ip]` | Never; derived from network or fails. | Never. | Derived from active WireGuard network when unambiguous. | Valid IPv4 gateway WireGuard API address in Orbit's `10.6.0.0/16` range. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
-
-## Authorization By Caller Role
-
-`gateway:add` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call and rejects requests from peers whose
-gateway-owned node role is not allowed to drive `gateway:add` local onboarding.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. Normal operation. Derive or verify gateway address, fetch and trust CA, verify identity, store local config. See [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md). |
-| `gateway` | Rejected by the gateway. The gateway does not need to add itself. The CLI surfaces the rejection with `This command may only be run from a control node.` See [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md). |
-| `app` | Rejected by the gateway. App-node gateway-client endpoint and trust artifacts are gateway-managed node bootstrap artifacts, not `gateway:add` local onboarding state. The CLI surfaces the rejection with `This command may only be run from a control node.` See [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md). |
-
-Role-specific behavior is defined in these companion contracts:
-
-- [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md):
-  control caller local onboarding behavior.
-- [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md):
-  gateway caller denial.
-- [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md): app caller
-  denial.
-
-The role-specific companion pages are authoritative for caller-role behavior.
-This canonical page owns shared inputs, shared behavior, output links, failure
-categories, doctor relationship, and test mapping.
 
 ## Input Resolution
 
@@ -140,15 +116,14 @@ gateway, or tool route leaf certificates.
 - [JSON renderer](6.2_gateway-add_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Invalid gateway IP | Supplied or derived value is not a valid Orbit WireGuard IPv4 address in `10.6.0.0/16`. | Failure |
-| Gateway unavailable | Cannot fetch CA or cannot reach `/api/me` over HTTPS. | Failure |
 | Identity unknown | `/api/me` returns 403; the local peer is not registered. | Failure |
 | Gateway API error | `/api/me` returns a successful HTTP response with an invalid identity payload. | Failure |
 | Local config write failure | Gateway is reachable but local settings or CA file cannot be written. | Failure |
-| Caller role not allowed | The gateway rejects the caller's WireGuard peer identity because its gateway-owned role is `gateway` or `app`. | Failure |
 
 Already-configured convergence is success, not failure.
 
@@ -193,3 +168,9 @@ Required split contract tests:
 | `tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
 | `tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Authorization by caller role: gateway authorizes control callers and rejects `gateway` and `app` callers; CLI surfaces the gateway's rejection without client-side branching. |
 | `tests/E2E/GatewayAddTest.php` | Real-node end-to-end control-node join via `gateway:add`; covers omitted-argument gateway IP derivation, trust/config persistence, no local node mirror writes, and idempotent convergence without `--force`. |
+
+Role-specific behavior and test mapping live in:
+
+- [`2_gateway-add_on-control-node.md`](2_gateway-add_on-control-node.md)
+- [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)
+- [`4_gateway-add_on-app-node.md`](4_gateway-add_on-app-node.md)

@@ -83,22 +83,6 @@ for this default.
    stores `null`, which the gateway interprets as "inherit parent app PHP
    version."
 
-## Authorization By Caller Role
-
-`workspace:new` follows the
-[workspace authorization rule](../../README.md#authorization-by-caller-role).
-The CLI always gathers input and forwards to the gateway; the gateway
-authenticates the caller's WireGuard peer identity and applies authorization.
-The parent app is already pinned to a specific app node, so the gateway
-inherits that target node automatically when applying setup work over SSH via
-RemoteShell.
-
-| Caller peer | Gateway authorization | Consequence |
-| --- | --- | --- |
-| Control peer | Allowed when authorized | The CLI forwards over HTTPS through WireGuard. See [`2_workspace-new_on-control-node.md`](2_workspace-new_on-control-node.md). |
-| Gateway peer | Allowed when authorized | The CLI on the gateway invokes the local workspace creation flow; the gateway then applies app-node work via RemoteShell. See [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md). |
-| App-node peer | Denied | The gateway rejects `workspace:new` from an app-node peer before any side effects. See [`4_workspace-new_on-app-node.md`](4_workspace-new_on-app-node.md). |
-
 ## Input Mode Contracts
 
 - [`5.1_workspace-new_input-mode_interactive.md`](5.1_workspace-new_input-mode_interactive.md)
@@ -175,15 +159,8 @@ register an existing path use
 - [`6.2_workspace-new_output-render_json.md`](6.2_workspace-new_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Validation failure** — invalid slug, reserved name (`main`),
-  workspace-name collision under the parent app, unresolved parent app, or
-  unsupported `--php-version` (`error.code=validation_failed`,
-  `error.meta.field=<name|php_version|app>`). Fails before any side effects.
-- **Caller role not allowed** — the gateway denies an app-node peer before
-  any side effects (`error.code=caller_role_not_allowed`).
-- **Authorization failure** — caller is not authorized to manage the parent
-  app or its node (`error.code=authorization_failed`).
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
   (`error.code=workspace.parent_app_invalid`).
@@ -224,3 +201,9 @@ register an existing path use
 | --- | --- |
 | `tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway configuration write, generic worktree provisioning dispatch, OpenCode and Polyscope driver dispatch and adapter id capture, `success.meta.warnings[]` payload shape, human progress tree rendering, and shared exit-status behavior. |
 | `tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real app node: worktree creation, FPM artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as Supervisor programs. |
+
+Role-specific behavior and test mapping live in:
+
+- [`2_workspace-new_on-control-node.md`](2_workspace-new_on-control-node.md)
+- [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)
+- [`4_workspace-new_on-app-node.md`](4_workspace-new_on-app-node.md)

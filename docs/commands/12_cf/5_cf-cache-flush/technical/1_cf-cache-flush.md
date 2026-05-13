@@ -26,15 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Cloudflare zone ID, exact zone domain name, or Orbit app name with a configured Cloudflare zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI forwards every Cloudflare command request to the gateway. The gateway
-authenticates the WireGuard peer, derives the caller role, and applies the
-gateway-owned authorization policy for Cloudflare provider administration.
-Control and gateway callers are authorized. App-node and unknown callers are
-denied before prompts or side effects because Cloudflare commands are provider
-administration, not app-local runtime work.
-
 ## Input Resolution
 
 1. Resolve `zone` from `--zone`, or from prompt `cf_cache_flush_zone` in
@@ -70,13 +61,10 @@ restart services, mutate proxy routes, or mutate app deployment history.
 - [JSON renderer](6.2_cf-cache-flush_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | `zone` is missing, malformed, or not found in app or provider state. | `error.code=validation_failed` |
-| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
-| Gateway unavailable | A non-gateway caller cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized for Cloudflare provider administration. | `error.code=authorization_failed` |
 | Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
 
 ## Doctor Relationship

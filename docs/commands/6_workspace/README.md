@@ -143,7 +143,7 @@ workspace id.
 - **`phase=setup_steps`:** JSON enum value used when a setup step execution
   fails during the setup steps phase.
 
-## Authorization By Caller Role
+## Caller Role Rule
 
 The CLI is a thin gateway client that gathers input and forwards to the
 gateway. Authorization is enforced by the gateway, which authenticates the

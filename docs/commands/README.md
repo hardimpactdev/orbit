@@ -183,22 +183,21 @@ doctor handoff for any durable Orbit state or health it affects.
 
 When converting a command, state both the documentation domain that owns the user-facing command page and the state family or families whose configuration/reality the command reads, writes, verifies, restores, or adopts.
 
-### Authorization By Caller Role
+### Authorization
 
-Commands that vary by caller role describe gateway-side authorization, not
-local CLI behavior. The gateway identifies the caller from the authenticated
-WireGuard peer and decides what that role is allowed to do. The CLI does not
-detect or branch on the caller's role.
+Authorization is gateway-owned and applies generically to every API call. The
+gateway authenticates the caller's WireGuard peer identity, resolves the
+caller's node role (`control`, `gateway`, `app`, or `unknown`), and applies
+gateway-owned access policy. The CLI does not detect or branch on the caller's
+role.
 
-Authorization vocabulary uses the node caller-role values from
-[`1_node/README.md`](1_node/README.md): `control`, `gateway`, `app`, and
-`unknown`. The canonical contract may summarize the authorization matrix, but
-role-specific files own detailed behavior. Document only the gateway-side
-consequence the contract guarantees for each role (allow, deny, or scoped
-read/write).
-
-If an authoritative node command already establishes an authorization rule for
-a role, later commands inherit it unless they document a narrower exception.
+Technical contracts do not carry a dedicated Authorization section. When a
+command rejects or scopes specific roles, state that rejection in the
+command's Prerequisites bullets and in Failure Semantics (typically
+`error.code=caller_role_not_allowed`). Family READMEs may document
+family-wide role rules where they apply to multiple commands. Role-specific
+behavior beyond a rejection lives in the role companion contracts described
+below.
 
 ### Technical Slot Map
 
@@ -388,6 +387,23 @@ field.
 - Missing required input is input-mode behavior, not command-domain failure
   semantics.
 
+## Common Failures
+
+Every gateway-call command can produce these failures. Per-command Failure
+Semantics sections must not restate them; document only command-specific
+failures.
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Validation failed | A required input is missing, invalid, or forbidden alongside another option. | `error.code=validation_failed` |
+| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
+| Authorization failed | The authenticated peer is not authorized for the command's resource. | `error.code=authorization_failed` |
+| Caller role not allowed | The authenticated peer's gateway-known role is not allowed to invoke the command (typically `app` or `unknown`). | `error.code=caller_role_not_allowed` |
+
+Per-family failure codes (`cloudflare_unavailable`, `vpn_backend_unavailable`,
+`gateway_ssh_unavailable`, and similar) live in the family READMEs or in the
+canonical command contract that introduces them.
+
 ## Public Command Page Template
 
 Public command pages are operator documentation. They explain what the command
@@ -458,11 +474,6 @@ signature level when interactive input mode can prompt for them.
 Arguments and options with required conditions, forbidden conditions, defaults,
 and validation rules.
 
-## Authorization By Caller Role
-
-What the gateway authorizes a `control`, `gateway`, or `app` caller to do for
-this command, including denials. The CLI does not enforce these rules locally.
-
 ## Input Resolution
 
 Ordered, mode-neutral resolution of fields and validation. Reference prompt
@@ -479,8 +490,10 @@ flow.
 
 ## Input Mode Contracts
 
-Links to interactive and non-interactive input mode contracts, when they are split into
-separate files.
+Links to interactive and non-interactive input mode contracts, when they are
+split into separate files. Omit this section entirely when the command has no
+input-mode-specific contracts; the shared [Invocation Model](#invocation-model)
+applies.
 
 ## Behavior Contract
 
@@ -493,8 +506,10 @@ files.
 
 ## Failure Semantics
 
-Validation failures, remote execution failures, partial-success behavior, and
-exit codes.
+Command-specific failures only. Do not restate the [Common
+Failures](#common-failures) that apply to every gateway-call command. Document
+remote-execution failures, partial-success behavior, and exit codes that are
+not already covered there.
 
 ## Doctor Relationship
 

@@ -35,13 +35,6 @@ of the initial contract. Operators who need to query multiple apps or nodes at
 once should run `workspace:list --json` without that filter and post-filter the
 result, or run separate scoped invocations.
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace:list` to the gateway, which authenticates the
-caller's WireGuard peer identity and applies authorization. Behavior does not
-vary by caller role: every authorized caller receives the same command
-contract. Visibility scoping is access-policy-driven on the gateway.
-
 ## Visibility Behavior
 
 Visibility is filtered at the gateway as set membership against gateway-owned
@@ -63,11 +56,6 @@ identity is authorized to see.
    immediately against the gateway node registry.
 3. Select the output renderer and query the gateway for visible workspace
    registry configuration.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command takes no required
-arguments and does not prompt.
 
 ## Behavior Contract
 
@@ -113,12 +101,11 @@ HTTP probe results. Live workspace reality belongs to
 - [JSON renderer](6.2_workspace-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Invalid filter value | `--app` or `--node` references an unknown slug, or contains comma-separated input. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
-| Authorization failed | The caller identity is not authorized to read the workspace registry. | Failure |
 
 ## Doctor Relationship
 

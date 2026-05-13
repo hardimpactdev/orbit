@@ -25,14 +25,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | `Visible active Ubuntu node with role `gateway` or `app`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible firewall policy when authorized; `firewall:list` never grants write permission or local state authority.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; invalid filters fail according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Firewall Configuration Visibility Rules
@@ -52,12 +44,7 @@ No input-mode-specific contracts are required. The command does not prompt; inva
 - [JSON renderer](6.2_firewall-list_output-render_json.md)
 
 ## Failure Semantics
-
-| Failure | Condition | Outcome |
-| --- | --- | --- |
-| Validation failed | The node filter is malformed or resolves to an unsupported target. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect firewall policy for the selected scope. | `error.code=authorization_failed` |
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 ## Activity Logging
 

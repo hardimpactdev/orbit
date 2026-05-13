@@ -36,19 +36,6 @@ This command follows the shared
 | `agent_ide` | `[agent_ide]` | Always. | Never. | None. | Must be `none` or appear in the gateway-owned adapter registry. Core adapter names: `opencode`, `polyscope`. Adapters supplied by installed Orbit extensions are accepted only after the extension has registered them with the gateway. `none` is a reserved node-scope input token that clears the node default; it is not an adapter. `inherit` is invalid at node scope because nodes are the root of the agent IDE inheritance chain. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI sends a typed agent-IDE write request to the gateway. The gateway
-authenticates the WireGuard peer identity, derives the caller's gateway-known
-role, and applies the rules below. Write semantics are identical across valid
-roles; gating is access-policy-driven, not role-driven.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The agent-IDE write when the caller is authorized to update node registry configuration. |
-| `gateway` | The agent-IDE write directly. Gateway-local execution does not require WireGuard forwarding. |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` |
-
 ## Input Resolution
 
 1. Resolve `node_agent_ide.name` from `[name]`.
@@ -136,14 +123,12 @@ path in `app:agent-ide`.
 - [JSON renderer](6.2_node-agent-ide_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node not found | No active node record matches `name`. | Failure |
 | Unsupported adapter | The requested adapter is not supported. | Failure |
-| Caller role not allowed | The caller role is `app`. | Failure |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
-| Authorization failed | A forwarded control caller is not authorized to update node registry configuration. | Failure |
 
 No-op sets (already matching) are successful with `action: "converged"`, not
 failure.

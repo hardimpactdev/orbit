@@ -32,22 +32,6 @@ This command follows the shared
 | `limit` | `--limit` | Optional. | Never. | `25`. | Integer from `1` through `200`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI always sends the request to the gateway over HTTPS through WireGuard.
-The gateway authenticates the WireGuard peer, resolves the caller's node
-identity, and authorizes every history read against that identity and the
-requested filters.
-
-| Caller role | Behavior |
-| --- | --- |
-| `control` | Gateway returns history visible to the calling control node. |
-| `gateway` | Gateway returns history visible to itself. |
-| `app` | Gateway returns history visible to the calling app node. App-node context does not grant additional history visibility. |
-
-Caller role is gateway-resolved metadata, not a CLI-side branch. The CLI does
-not inspect or depend on caller role.
-
 ## Input Resolution
 
 1. Select the output renderer.
@@ -101,12 +85,10 @@ command does not prompt.
 - [JSON renderer](6.2_activity-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | A filter is malformed or `limit` is outside the allowed range. | Failure before gateway history read |
-| Gateway unavailable | The caller cannot reach the configured gateway API. | Failure |
-| Authorization failed | The gateway denies access to the requested history scope. | Failure |
 
 No matching activity is success with an empty result.
 

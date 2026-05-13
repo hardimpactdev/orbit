@@ -4,17 +4,12 @@
 
 **Effects:** `write`, `stream`.
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to create apps on the target app node.
 - The gateway can reach the target app node over SSH.
 - The resolved target node is an active `app` node.
+- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 [Back to public page](../app-new.md)
 
@@ -57,25 +52,6 @@ This command follows the shared
    effects with `error.code=validation_failed` and `error.meta.field=php_version`.
    Node-side availability of the requested PHP runtime is verified while
    applying, not during input resolution.
-
-## Authorization By Caller Role
-
-`app:new` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call and applies the app-domain
-[Caller Role Rule](../../README.md#caller-role-rule).
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. The gateway accepts the request, writes the app record, and applies app-node work over SSH via `RemoteShell`. See [`2_app-new_on-control-node.md`](2_app-new_on-control-node.md). |
-| `gateway` | Allowed. Same gateway-side behavior as a control caller. The CLI invocation still calls the gateway API; the gateway then opens SSH back to the target app node via `RemoteShell`. See [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md). |
-| `app` | Rejected by the gateway before prompts, side effects, or registry reads. The CLI surfaces the rejection with `error.code=caller_role_not_allowed`. See [`4_app-new_on-app-node.md`](4_app-new_on-app-node.md). |
-
-Role-specific behavior is defined in these companion contracts:
-
-- [`2_app-new_on-control-node.md`](2_app-new_on-control-node.md)
-- [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md)
-- [`4_app-new_on-app-node.md`](4_app-new_on-app-node.md)
 
 ## Input Mode Contracts
 
@@ -148,14 +124,13 @@ If `--domain` is supplied:
 - [`6.2_app-new_output-render_json.md`](6.2_app-new_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Collision:** Fails if the app name is already registered in the gateway
   app registry on any node (`error.code=app.collision`,
   `error.meta.name`, `error.meta.node`).
-- **Unsupported PHP Version:** Fails if `--php-version` is not in Orbit's supported
-  set (`error.code=validation_failed`, `error.meta.field=php_version`).
 - **Transport Error:** Fails if the gateway cannot reach the app node over SSH.
 - **Source Creation Failure:** Clone or directory creation failures occur before
   gateway app configuration is written. They use
@@ -205,3 +180,9 @@ slice.
 | `tests/E2E/Ephemeral/AppNewTest.php` | End-to-end creation of a development app with source directory creation. |
 | `tests/E2E/Ephemeral/AppNewProductionTest.php` | End-to-end creation of a production app with domain activation. |
 | `tests/E2E/Ephemeral/AppNewRepoTest.php` | End-to-end creation from a git repository. |
+
+Role-specific behavior and test mapping live in:
+
+- [`2_app-new_on-control-node.md`](2_app-new_on-control-node.md)
+- [`3_app-new_on-gateway-node.md`](3_app-new_on-gateway-node.md)
+- [`4_app-new_on-app-node.md`](4_app-new_on-app-node.md)

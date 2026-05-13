@@ -32,10 +32,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `reason` | `--reason` | `Optional.` | `Never.` | `None.` | Operator note. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may manage firewall rules only when their node identity has explicit firewall-management authorization for the resolved target. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_firewall-deny_input-mode_interactive.md)
@@ -75,12 +71,10 @@ The gateway API endpoint emits an activity entry for successful and failed confi
 | Description | `derived` |
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing, invalid, or forbidden with another option. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage firewall policy for the selected target. | `error.code=authorization_failed` |
 | Name collision | A different firewall rule already uses the selected name on the target node. | `error.code=firewall_rule.name_collision` |
 | Baseline conflict | The requested rule would mutate node bootstrap policy. | `error.code=firewall_rule.baseline_conflict` |
 | Apply failed | Gateway configuration was written, but the backend firewall apply failed. | `error.code=firewall_rule.enactment_failed` |

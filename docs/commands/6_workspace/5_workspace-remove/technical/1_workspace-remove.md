@@ -39,21 +39,6 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
-## Authorization By Caller Role
-
-`workspace:remove` is destructive cleanup. The CLI forwards the request to
-the gateway, which authenticates the caller's WireGuard peer identity and
-applies the workspace domain
-[authorization rule](../../README.md#authorization-by-caller-role): control
-and gateway peers may remove workspaces when authorized; app-node peers are
-denied before any side effects.
-
-| Caller peer | Behavior |
-| --- | --- |
-| Control peer | The CLI forwards the removal request to the gateway over HTTPS through WireGuard. |
-| Gateway peer | The CLI invokes the local removal flow on the gateway when authorized. |
-| App-node peer | Denied by the gateway. `error.code=caller_role_not_allowed` is returned before any side effects. |
-
 ## Input Resolution
 
 1. **Target Resolution:**
@@ -196,6 +181,7 @@ runs.
    are not warnings.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -204,9 +190,6 @@ runs.
 | `name` omitted and CWD not a workspace | CWD-based resolution found no registered workspace. | Failure (`error.code=workspace.unresolved_cwd`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Caller role not allowed | The gateway authenticates the caller as an app-node peer (not authorized for `workspace:remove`). | Failure (`error.code=caller_role_not_allowed`). |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
-| Authorization failed | A forwarded control caller is not authorized to operate on the resolved workspace. | Failure (`error.code=authorization_failed`). |
 | Phase A (gateway configuration) failure | Deleting workspace-owned proxy route rows or the `workspace` row itself fails. No node-side side effects have occurred. | Failure (`error.code=workspace.removal_failed`). |
 
 Partial cleanup is **not** a command failure. Once Phase A succeeds, the

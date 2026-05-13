@@ -26,17 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `workspace` | `--workspace` or workspace context | Optional. | Never. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace of the selected app that the caller may read. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-`process:list` follows the [process Authorization By Caller Role rule](../../README.md#authorization-by-caller-role). It is a read command, so `app` callers are allowed by the gateway when authorized for the resolved app or workspace context.
-
-| Role | Gateway decision | Consequence |
-| --- | --- | --- |
-| `control` | `allow` | Gateway returns process configuration when the peer is authorized for the target context. |
-| `gateway` | `allow` | Gateway returns process configuration when the peer is authorized for the target context. |
-| `app` | `allow` | Gateway returns process configuration when the peer is authorized for the target context. The CLI does not probe the process manager or read node-local runtime state. |
-| `unknown` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_process-list_input-mode_interactive.md)
@@ -61,13 +50,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [JSON renderer](6.2_process-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway determines the authenticated peer's caller role is `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | App or workspace context is missing, invalid, or ambiguous in non-interactive input mode. | Failure (`error.code=validation_failed`). |
-| Authorization failed | The caller cannot read process configuration for the target context. | Failure (`error.code=authorization_failed`). |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
 
 Owning app-node reachability is not part of the default list path and does not cause this command to fail.
 

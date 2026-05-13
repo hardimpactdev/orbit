@@ -33,24 +33,6 @@ This command follows the shared
 | `workspace` | `--workspace` | Required when neither `--app` nor current-directory context resolves a target. | `--app` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside app scope when an app context is known. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-`agent-ide:message` authorization is owned by the gateway. The CLI does not
-branch on client-side role detection. On every call the gateway identifies the
-caller through its WireGuard peer identity, looks up the caller's role from its
-own `nodes` table, and applies access policy before target resolution,
-effective adapter resolution, or adapter delivery.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. The gateway resolves the target, authorizes the message, resolves the effective adapter, and delivers through the adapter. |
-| `gateway` | Allowed. Same gateway-owned authorization and adapter delivery as any other caller. |
-| `app` | Allowed when the WireGuard peer is authorized for the resolved app or workspace. Locally gathered current-directory context is target-resolution help only; the gateway still authorizes the message. |
-
-All authenticated caller roles use the same gateway-owned authorization and
-adapter registry. The CLI must not use a local adapter manifest or any local
-state as authority.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_agent-ide-message_input-mode_interactive.md)
@@ -138,12 +120,10 @@ state as authority.
 - [JSON renderer](6.2_agent-ide-message_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required message/target input is missing, message is empty, `--app` and `--workspace` are combined, or `[message]` and `--stdin` are combined. | Failure before adapter delivery |
-| Gateway unavailable | The CLI cannot reach the configured gateway API. | Failure before adapter delivery |
-| Authorization failed | The current node identity is not authorized for the resolved app/workspace. | Failure before adapter delivery |
 | Target not found | No visible app/workspace matches the resolved target. | Failure before adapter delivery |
 | No effective adapter | The target resolves to no configured Agent IDE adapter. | Failure before adapter delivery |
 | No active session | The adapter is configured but cannot find an active session for the target. | Failure before delivery |

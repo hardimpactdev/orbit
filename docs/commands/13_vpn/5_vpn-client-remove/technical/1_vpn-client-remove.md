@@ -35,15 +35,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode; `--json` never grants destructive consent. |
 
-## Authorization By Caller Role
-
-Authorization is enforced by the gateway. Gateway callers delete the backend
-client locally after destructive consent. Control callers resolve destructive
-consent locally, open the gateway-local execution path over SSH through
-Orbit/WireGuard, then delete the client on the gateway. App-node and unknown
-callers are denied by the gateway before prompts, backend authentication, or
-side effects.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_vpn-client-remove_input-mode_interactive.md)
@@ -72,13 +63,11 @@ node peers after node removal belong to `doctor --fix --family=node --restore`.
 - [JSON renderer](6.2_vpn-client-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
-| Validation failed | `name` is missing, does not exist, resolves to an active Orbit node peer, destructive consent is missing, or interactive confirmation is declined. | `error.code=validation_failed` |
 | Gateway SSH unavailable | A control caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
-| Authorization failed | The caller is not authorized for gateway VPN administration. | `error.code=authorization_failed` |
 | VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 

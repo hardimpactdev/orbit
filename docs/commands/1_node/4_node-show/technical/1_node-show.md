@@ -33,20 +33,6 @@ This command follows the shared
 | `name` | `[name]` | When no default or local context can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_node-show_input-mode_interactive.md#default-resolution). | Must match an existing active node record visible to the caller. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Authorization By Caller Role
-
-The gateway authenticates the CLI's WireGuard identity and serves the
-requested node when the caller's gateway-owned access policy allows it. All
-roles (`control`, `gateway`, `app`) may read `node:show`; visibility is
-access-policy-driven, not role-gated. App-role callers are not rejected; they
-inspect nodes visible to their identity.
-
-Because no role rejects this command, there is no role-specific companion
-contract. The CLI forwards every request to the gateway (or executes locally
-on the gateway). The only role-aware behavior is the local default
-development app-node fallback used when `[name]` is omitted, and that
-fallback is local CLI configuration, not a role check.
-
 ## Input Resolution
 
 1. Resolve `node_show.name` from `[name]` or the selected input mode.
@@ -106,12 +92,12 @@ Output renderer behavior is split out of the canonical command contract:
   envelope, data shape, error codes, error messages, and error metadata.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node not found | No visible active node record matches the resolved name. | Failure |
 | Not authorized | The caller is not allowed to inspect the target node. | Failure |
-| Gateway unavailable | The CLI has no configured gateway or cannot reach the gateway API. | Failure |
 
 `node:show` exits zero whenever the registry read succeeds. Runtime drift and
 unverifiable live checks are not part of this command's default read path.

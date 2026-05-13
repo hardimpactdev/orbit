@@ -36,13 +36,6 @@ not part of the initial contract. Operators who need to query multiple roles or
 environments at once should run `node:list --json` without that filter and
 post-filter the result, or run separate scoped invocations.
 
-## Authorization By Caller Role
-
-The gateway authenticates the CLI's WireGuard identity and serves the list of
-nodes visible to that identity. All roles (`control`, `gateway`, `app`) may
-read `node:list`; the response is scoped by gateway-owned access policy, not
-gated by role. App-role callers are not rejected.
-
 ## Input Resolution
 
 1. Resolve `node_list.role` from `--role` when present. Validate immediately.
@@ -53,12 +46,6 @@ gated by role. App-role callers are not rejected.
 5. If `--doctor` is present, run node doctor checks as an explicit secondary
    operation after the list query succeeds. Attach doctor summaries to the
    output.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command takes no required
-arguments and does not prompt. `--json` and filters behave the same in both
-interactive and non-interactive modes.
 
 ## Behavior Contract
 
@@ -111,12 +98,11 @@ interactive and non-interactive modes.
 - [JSON renderer](6.2_node-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Invalid filter value | `--role` or `--environment` contains an unsupported value, including comma-separated input. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
-| Authorization failed | The caller identity is not authorized to read the node registry. | Failure |
 
 Doctor findings are not failures of `node:list`. When `--doctor` is present
 and the secondary doctor probe reports drift on one or more nodes, the

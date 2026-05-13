@@ -27,14 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may run schedules for. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may run visible schedules only when their node identity has explicit schedule-run authorization for the selected scope. Execution remains gateway-owned and uses gateway-to-node transport.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; missing required input and invalid filters fail according to the shared invocation model.
-
 ## Behavior Contract
 
 `schedule:run` performs one Orbit Scheduler tick on the resolved target node: fetch the node's schedule list from the gateway, evaluate which schedules are due in the current minute, and fire them. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
@@ -65,12 +57,10 @@ When called with a schedule name, `schedule:run [name]` force-runs that one sche
 - [JSON renderer](6.2_schedule-run_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | The name or filter is missing, malformed, unsupported, or mutually exclusive. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to run the selected schedule. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
 | Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |

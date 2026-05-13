@@ -28,15 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live installed-version inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. The gateway authenticates the caller's WireGuard peer identity and applies authorization. Callers may read only PHP runtime selections visible to their authenticated identity. Local cwd app or workspace context is used as input hint only and never grants read authority.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt;
-missing required target context fails according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Runtime Visibility Rules
@@ -64,12 +55,7 @@ is supplied.
 - [JSON renderer](6.2_php-list_output-render_json.md)
 
 ## Failure Semantics
-
-| Failure | Condition | Outcome |
-| --- | --- | --- |
-| Validation failed | Supplied input is missing, invalid, or ambiguous. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect the resolved target. | `error.code=authorization_failed` |
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 ## Doctor Relationship
 

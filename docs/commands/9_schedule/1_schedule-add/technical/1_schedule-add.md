@@ -31,10 +31,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `timezone` | `--timezone` | `Optional.` | `Never.` | `target default timezone` | Valid IANA timezone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may create schedules only when their node identity has explicit schedule-management authorization for the resolved app or node scope. Management remains gateway-owned and applied through gateway-to-node transport.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_schedule-add_input-mode_interactive.md)
@@ -72,12 +68,10 @@ All authenticated caller roles use the same gateway-owned access policy. App-nod
 - [JSON renderer](6.2_schedule-add_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Required input is missing, invalid, mutually exclusive, or forbidden with another option. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to manage schedules for the selected scope. | `error.code=authorization_failed` |
 | Name collision | A schedule with the same name already exists in the selected scope. | `error.code=schedule.name_collision` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |

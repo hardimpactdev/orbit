@@ -30,17 +30,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer count of historical log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
 
-## Authorization By Caller Role
-
-`process:logs` follows the [process Authorization By Caller Role rule](../../README.md#authorization-by-caller-role). It is a runtime log command, so `app` callers are allowed by the gateway when authorized for the resolved app or workspace context.
-
-| Role | Gateway decision | Consequence |
-| --- | --- | --- |
-| `control` | `allow` | Gateway returns log data when the peer is authorized for the target context. |
-| `gateway` | `allow` | Gateway returns log data from the owning app node when the peer is authorized for the target context. |
-| `app` | `allow` | Gateway returns log data when the peer is authorized for the target context. The gateway reads logs; the CLI does not read Supervisor logs directly. |
-| `unknown` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_process-logs_input-mode_interactive.md)
@@ -66,12 +55,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [JSON renderer](6.2_process-logs_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway determines the authenticated peer's caller role is `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | Process, app, or workspace context is missing, invalid, or ambiguous in non-interactive input mode; `--lines` is invalid; or `--json` is combined with `--follow`. | Failure (`error.code=validation_failed`). |
-| Authorization failed | The caller cannot read process logs for the target context. | Failure (`error.code=authorization_failed`). |
 | Process not found | The named process does not exist for the owning app. | Failure (`error.code=process.not_found`). |
 | Log read failed | The gateway cannot read logs from the owning app node process manager. | Failure (`error.code=process.log_read_failed`). |
 

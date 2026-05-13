@@ -34,21 +34,6 @@ This command follows the shared
 the gateway app registry, so the positional already addresses an app uniquely.
 Supplying an unknown option fails with `error.code=validation_failed`.
 
-## Authorization By Caller Role
-
-`app:show` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call and applies access policy.
-
-Command behavior is access-policy-driven, not role-driven. App-node peers may
-inspect apps they are authorized to see through gateway-owned access policy.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. May inspect apps visible through access policy. |
-| `gateway` | Allowed. Same gateway-side behavior as a control caller. |
-| `app` | Allowed. May inspect apps visible through access policy. |
-
 ## Input Resolution
 
 1. **Resolve `app_show.app`** from `[app]`, current working directory, or input
@@ -110,12 +95,12 @@ Output renderer behavior is split out of the canonical command contract:
   JSON envelope, registry-only data shape, error codes, error metadata.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No visible app record matches the resolved name or hostname. | Failure |
 | Not authorized | The caller is not allowed to inspect the target app. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
 
 `app:show` exits zero whenever the registry read succeeds. Runtime drift and
 unverifiable live checks are not part of this command's default read path.

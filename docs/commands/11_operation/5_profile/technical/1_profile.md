@@ -33,19 +33,6 @@ This command follows the shared
 | `user` | `--user` | Never. | `--as-first-user` is present. | `null`. | Non-empty user primary key string. Selects Toolbar auth mode `user`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client. It does not classify its own role; it gathers input, calls the gateway, and renders the result. The gateway identifies the calling WireGuard peer, applies authorization, and answers. The peer role the gateway identifies governs request-origin selection and which working-directory hints are forwarded.
-
-| Peer role identified by gateway | Behavior |
-| --- | --- |
-| `control` peer | The gateway resolves the target and authorization. The CLI uses caller-origin profiling when the resolved URL is reachable from the control machine; otherwise the gateway performs gateway-origin profiling when the route is reachable from the gateway. |
-| `gateway` peer | The gateway resolves the target and performs a gateway-origin HTTP profile request. |
-| `app` peer | The CLI may forward working-directory hints, then the gateway resolves the target and authorizes. The profile request is gateway-origin unless the command later adds an explicit local-origin mode. |
-
-Peer role does not grant app visibility. The gateway authorizes the resolved
-app read for every calling peer.
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_profile_input-mode_interactive.md)
@@ -139,12 +126,10 @@ app read for every calling peer.
 - [JSON renderer](6.2_profile_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Mutually exclusive inputs are combined, `uri` is invalid, `user` is empty, `node` is invalid, or required target input is unavailable in non-interactive mode. | Failure before HTTP request |
-| Gateway unavailable | Target resolution, authorization, or gateway-origin profiling requires the gateway and it cannot be reached. | Failure before HTTP request when possible |
-| Authorization failed | The gateway denies the calling peer authorization to read the resolved app. | Failure before HTTP request |
 | Target not found | No visible Orbit app or workspace matches the resolved target. | Failure before HTTP request |
 | Profile request failed | The timed HTTP request could not complete. | Failure with request/timing diagnostics |
 

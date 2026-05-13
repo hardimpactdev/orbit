@@ -30,10 +30,6 @@ options are optional.
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-`update` is local-only. It does not call the gateway and does not consult the gateway for authorization. Any machine with a writable Orbit checkout may run it; the gateway plays no role in this command. When invoked on the gateway host, local migrations may update the gateway database schema. That is still local application update behavior, not a fleet configuration write.
-
 ## Input Resolution
 
 1. Select the output renderer.

@@ -33,16 +33,6 @@ options are optional.
 `--node` and `--environment` are scalar filters. Multi-value semantics are not
 part of the initial contract.
 
-## Authorization By Caller Role
-
-`app:list` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call.
-
-Command behavior does not vary by caller role. All authenticated peers with
-visible registry access receive the same command contract. Visibility scoping
-is access-policy-driven, not role-driven.
-
 ## Visibility Behavior
 
 Visibility is filtered at the gateway as set membership against
@@ -63,11 +53,6 @@ authenticated identity is authorized to see.
    immediately.
 3. Select the output renderer and query the gateway for visible app registry
    configuration.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command takes no required
-arguments and does not prompt.
 
 ## Behavior Contract
 
@@ -103,12 +88,11 @@ arguments and does not prompt.
 - [JSON renderer](6.2_app-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Invalid filter value | `--node` or `--environment` contains an unsupported value. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
-| Authorization failed | The caller identity is not authorized to read the app registry. | Failure |
 
 ## Doctor Relationship
 

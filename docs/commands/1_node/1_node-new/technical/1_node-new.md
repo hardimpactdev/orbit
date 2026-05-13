@@ -37,35 +37,6 @@ This command follows the shared
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap SSH user. The gateway stores it as the steady-state `nodes.user` after provisioning sets up the gateway-managed SSH user. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI sends the request to the gateway. The gateway authenticates the
-presented WireGuard peer identity, derives the caller's gateway-known role from
-that identity, and authorizes accordingly. The CLI does not check or store the
-caller role locally.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | Enrolling control nodes, provisioning or adopting app nodes, and converging gateway configuration when the caller has access to the gateway node. See [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md). |
-| `gateway` | The same write paths as `control`. Gateway-local execution does not require WireGuard forwarding. See [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md). |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md). |
-
-First-gateway bootstrap is the no-authorization path: there is no gateway to
-authenticate against yet, so the CLI runs the SSH bootstrap directly.
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-new_on-control-node.md`](2_node-new_on-control-node.md): first-gateway
-  bootstrap and gateway-forwarded operation from control callers.
-- [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md): gateway-owned
-  enrollment, provisioning, adoption, and convergence rules.
-- [`4_node-new_on-app-node.md`](4_node-new_on-app-node.md): app-role rejection
-  and exact error contract.
-
-The role-specific companion pages are authoritative for how the gateway
-authorizes each role. This canonical page owns shared inputs, shared behavior,
-output links, failure categories, doctor relationship, and test mapping.
-
 ## Input Resolution
 
 1. Resolve `node_new.name` from `[name]`. Validate it immediately.

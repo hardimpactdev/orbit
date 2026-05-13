@@ -28,20 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `lines` | `--lines` | `Optional.` | `Never.` | `500`. | Positive integer output line limit per stream. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The gateway authenticates the WireGuard peer and authorizes the request by
-caller role. The CLI does not resolve or assert caller role locally. All
-authenticated caller roles use the same gateway-owned access policy. App-node
-callers may read deployment logs when the gateway authorizes them for the
-resolved production app; `deploy:log` never grants write permission.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt;
-missing required input and invalid app or run selectors fail according to the
-shared invocation model.
-
 ## Behavior Contract
 
 ### Deployment Log Visibility Rules
@@ -67,12 +53,10 @@ deployments.
 - [JSON renderer](6.2_deploy-log_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | App, run, step, or lines input is missing or malformed. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect deployment logs for the app. | `error.code=authorization_failed` |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
 | Run not found | No visible deployment run matches the run id for the selected app. | `error.code=deploy.run_not_found` |

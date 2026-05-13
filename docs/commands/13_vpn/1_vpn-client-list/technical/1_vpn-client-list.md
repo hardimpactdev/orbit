@@ -28,19 +28,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `totp` | `--totp=<code>` | Optional. | Never. | Backend configured default when available. | Numeric one-time code accepted by the gateway VPN backend. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-Authorization is enforced by the gateway. Gateway callers execute the backend
-read locally. Control callers open the gateway-local execution path over SSH
-through Orbit/WireGuard, then run the backend read on the gateway. App-node and
-unknown callers are denied by the gateway before backend authentication or side
-effects.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command has no required
-inputs and does not prompt.
-
 ## Behavior Contract
 
 ### Backend Inventory Rules
@@ -72,12 +59,11 @@ inputs and does not prompt.
 - [JSON renderer](6.2_vpn-client-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
 | Gateway SSH unavailable | A control caller cannot execute the gateway-local operation over Orbit/WireGuard SSH. | `error.code=gateway_ssh_unavailable` |
-| Authorization failed | The caller is not authorized for gateway VPN administration. | `error.code=authorization_failed` |
 | VPN backend unavailable | The gateway VPN backend is missing, stopped, or unreachable on the gateway host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 

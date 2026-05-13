@@ -38,27 +38,6 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Authorization By Caller Role
-
-The CLI sends a typed revoke request to the gateway. The gateway authenticates
-the WireGuard peer identity, derives the caller's gateway-known role, and
-applies the rules below.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The revoke write when the caller also has access to manage node access grants. See [`2_node-revoke_on-control-node.md`](2_node-revoke_on-control-node.md). |
-| `gateway` | The revoke write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md). |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-revoke_on-app-node.md`](4_node-revoke_on-app-node.md). |
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-revoke_on-control-node.md`](2_node-revoke_on-control-node.md):
-control-caller gateway-forwarding behavior.
-- [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md):
-gateway-local execution behavior.
-- [`4_node-revoke_on-app-node.md`](4_node-revoke_on-app-node.md): app-caller
-rejection.
-
 ## Input Resolution
 
 1. Resolve `node_revoke.consuming_node` from `[consuming_node]` or the selected
@@ -138,15 +117,13 @@ rejection.
 - [JSON renderer](6.2_node-revoke_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node not found | No active node record matches `consuming_node` or `serving_node`. | Failure |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
-| Caller role not allowed | The caller role is `app`. | Failure |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
-| Authorization failed | A forwarded control caller is not authorized to manage node access grants. | Failure |
 
 Grant already absent is a successful idempotent result, not a failure. This is
 intentionally narrower than `node:remove` absent-target behavior: `node:remove`

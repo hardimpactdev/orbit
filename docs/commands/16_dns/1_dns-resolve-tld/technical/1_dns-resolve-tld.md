@@ -35,16 +35,6 @@ This command follows the shared
 | `force` | `--force` | Required for `--reset` in non-interactive input mode. | `--reset` is absent. | `false`. | Destructive consent for reset. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The gateway authorizes the WireGuard peer's role for `dns:resolve-tld`.
-
-| Caller role | Behavior |
-| --- | --- |
-| `control` | Allowed. Mutates only caller-local resolver state. |
-| `gateway` | Invalid. Gateway development DNS mappings are gateway-owned node readiness, not local control-node resolver overrides. |
-| `app` | Invalid. App nodes receive gateway-managed runtime and DNS artifacts; this command does not create an app-node write exception. |
-
 ## Input Resolution
 
 1. Resolve `dns_resolve_tld.tld` from `[tld]` or the selected input mode.
@@ -112,11 +102,10 @@ The gateway authorizes the WireGuard peer's role for `dns:resolve-tld`.
 - [JSON renderer](6.2_dns-resolve-tld_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | Invoked from a gateway or app caller. | Failure before prompts or side effects |
-| Validation failed | Required input is missing, forbidden input is supplied, or a field value is malformed. | Failure before side effects |
 | Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | Failure before side effects |
 | Unsupported platform | The caller platform has no supported local resolver backend. | Failure before resolver writes |
 | Resolver write failed | Orbit-managed resolver configuration cannot be written or removed. | Failure |

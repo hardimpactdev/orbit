@@ -146,13 +146,13 @@ final class InputModeContractRule implements CommandDocsLintRule
 
         $lowerSection = strtolower($section);
 
-        if (str_contains($lowerSection, 'no input-mode-specific contracts are required') && str_contains($lowerSection, 'does not prompt')) {
-            return [];
+        if (str_contains($lowerSection, 'no input-mode-specific contracts are required')) {
+            return [
+                $this->finding($context, $file, 'Omit the Input Mode Contracts section entirely when no split input-mode files exist; the shared Invocation Model applies.'),
+            ];
         }
 
-        return [
-            $this->finding($context, $file, 'Canonical Input Mode Contracts sections without split files must state that no input-mode-specific contracts are required and explain why no prompt contract is needed.'),
-        ];
+        return [];
     }
 
     /**

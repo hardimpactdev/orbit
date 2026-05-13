@@ -39,27 +39,6 @@ This command follows the shared
 | `serving_node` | `[serving_node]` | Always. | Never. | None. | Must match an existing active node record in gateway configuration. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-## Authorization By Caller Role
-
-The CLI sends a typed grant request to the gateway. The gateway authenticates
-the WireGuard peer identity, derives the caller's gateway-known role, and
-applies the rules below.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The grant write when the caller also has access to the gateway node. See [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md). |
-| `gateway` | The grant write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md). |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md). |
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-grant_on-control-node.md`](2_node-grant_on-control-node.md):
-  control-caller gateway-forwarding behavior.
-- [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md):
-  gateway-local execution behavior.
-- [`4_node-grant_on-app-node.md`](4_node-grant_on-app-node.md): app-caller
-  rejection.
-
 ## Input Resolution
 
 1. Resolve `node_grant.consuming_node` from `[consuming_node]`.
@@ -122,15 +101,13 @@ Companion contracts describe behavior in detail:
 - [JSON renderer](6.2_node-grant_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Consuming node not found | No active node record matches `consuming_node` (records with `node.status = provisioning` are treated as not found). | Failure |
 | Serving node not found | No active node record matches `serving_node` (records with `node.status = provisioning` are treated as not found). | Failure |
 | Grant policy violation | The requested relationship violates node access policy. Self-grant is reported with `error.meta.reason = self_grant`. | Failure |
-| Caller role not allowed | The caller role is `app`. | Failure |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
-| Authorization failed | A forwarded control caller is not authorized to operate on the gateway node. | Failure |
 
 ## Doctor Relationship
 

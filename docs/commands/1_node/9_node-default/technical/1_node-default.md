@@ -40,27 +40,6 @@ input:
 | `clear` | `--clear` | Optional. | When `name` is present. | `false`. | Boolean flag. Mutually exclusive with `name`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Authorization By Caller Role
-
-`node:default` is local CLI configuration: it stores or clears a preferred
-development app-node target on the calling machine. The gateway is consulted
-only when the `choose` or `set` sub-action validates a target.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The primary use case. The gateway returns visible development app nodes for `choose` and validates the selected node for `set`. See [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md). |
-| `gateway` | Rejected. The local CLI default has no meaning on a gateway host. See [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md). |
-| `app` | Rejected. App-node CLIs infer local app or workspace context rather than targeting remote app nodes through a local default. See [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md). |
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-default_on-control-node.md`](2_node-default_on-control-node.md):
-  control-caller behavior.
-- [`3_node-default_on-gateway-node.md`](3_node-default_on-gateway-node.md):
-  gateway-caller rejection.
-- [`4_node-default_on-app-node.md`](4_node-default_on-app-node.md): app-caller
-  rejection.
-
 ## Input Resolution
 
 1. Resolve sub-action from input.
@@ -137,6 +116,7 @@ interactively, that behavior belongs to the interactive input mode contract.
 - [JSON renderer](6.2_node-default_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -144,8 +124,6 @@ interactively, that behavior belongs to the interactive input mode contract.
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
 | Not a development app node | `set` sub-action and the selected node matches a node that is not a development app node. | Failure |
 | Not authorized | `set` or `choose` sub-action and the caller is not authorized to see or operate on the selected node. | Failure |
-| Gateway unavailable | `set` or `choose` sub-action and the CLI cannot reach the gateway API. | Failure |
-| Caller role not allowed | The caller role is `app` or `gateway`. | Failure |
 
 The `show` and `clear` sub-actions do not fail when no default is set. The
 `show` sub-action reports the empty state; the `clear` sub-action reports

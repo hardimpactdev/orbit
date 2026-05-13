@@ -26,21 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `zone` | Argument `zone` | `Always.` | `Never.` | `None.` | Cloudflare zone ID or exact zone domain name. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The CLI forwards every Cloudflare command request to the gateway. The gateway
-authenticates the WireGuard peer, derives the caller role, and applies the
-gateway-owned authorization policy for Cloudflare provider administration.
-Control and gateway callers are authorized. App-node and unknown callers are
-denied before prompts or side effects because Cloudflare commands are provider
-administration, not app-local runtime work.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt;
-missing `zone` is invalid CLI usage or a shared validation failure before side
-effects depending on where the console runtime detects it.
-
 ## Behavior Contract
 
 ### Zone Resolution Rules
@@ -68,13 +53,10 @@ effects depending on where the console runtime detects it.
 - [JSON renderer](6.2_cf-dns-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | `zone` is missing, malformed, or not found in the provider account. | `error.code=validation_failed` |
-| Caller role not allowed | Caller role is `app` or `unknown`. | `error.code=caller_role_not_allowed` |
-| Gateway unavailable | A non-gateway caller cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized for Cloudflare provider administration. | `error.code=authorization_failed` |
 | Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
 
 ## Doctor Relationship

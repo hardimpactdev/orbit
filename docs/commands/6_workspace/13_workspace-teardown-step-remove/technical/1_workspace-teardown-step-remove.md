@@ -35,19 +35,6 @@ This command follows the shared
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
-## Authorization By Caller Role
-
-`workspace-teardown-step:remove` is a destructive policy edit on
-gateway-owned workspace configuration. The CLI forwards the request to the
-gateway, which authenticates the caller's WireGuard peer identity and applies
-authorization; app-node peers are denied before any side effects.
-
-| Caller peer | Behavior |
-| --- | --- |
-| Control peer | The CLI forwards the removal request to the gateway over HTTPS through WireGuard. |
-| Gateway peer | The CLI invokes the local removal flow on the gateway when authorized. |
-| App-node peer | Denied by the gateway with `error.code=caller_role_not_allowed` before any side effects. App nodes do not own workspace policy. |
-
 ## Input Resolution
 
 1. **Resolve Parent App.** Mirror the resolved
@@ -140,6 +127,7 @@ configuration. App nodes are not contacted.
 - [JSON renderer](6.2_workspace-teardown-step-remove_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -150,9 +138,6 @@ configuration. App nodes are not contacted.
 | App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
-| Caller role not allowed | The gateway authenticates the caller as an app-node peer (not authorized for workspace policy edits). | Failure (`error.code=caller_role_not_allowed`). |
-| Authorization failed | Caller is not authorized to manage workspace policy for the target app. | Failure (`error.code=authorization_failed`). |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
 
 ### Exit Status
 

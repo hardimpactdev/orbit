@@ -4,16 +4,11 @@
 
 **Effects:** `write`, `stream`.
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to inspect or manage the target app or app node.
 - The gateway can reach the target app node over SSH.
+- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 [Back to the public command page.](../app-register.md)
 
@@ -44,24 +39,6 @@ This command follows the shared
 | `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app PHP-FPM version. This is app runtime configuration, not the owning node's CLI PHP default. |
 | `--domain`| `text` | Optional | n/a | Valid hostname. |
 | `--json` | `flag` | Optional | `false` | n/a |
-
-## Authorization By Caller Role
-
-`app:register` authorization is owned by the gateway. The CLI does not branch
-on client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call and applies the app-domain
-[Caller Role Rule](../../README.md#caller-role-rule).
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed. The gateway runs the full registration and apply pipeline, applying app-node artifacts over SSH via `RemoteShell`. |
-| `gateway` | Allowed. Same gateway-side behavior as a control caller. The CLI invocation still calls the gateway API; the gateway then opens SSH back to the target app node via `RemoteShell`. |
-| `app` | Rejected by the gateway before prompts, side effects, or registry reads, with `error.code=caller_role_not_allowed`. |
-
-See also:
-- [`technical/2_app-register_on-control-node.md`](2_app-register_on-control-node.md)
-- [`technical/3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)
-- [`technical/4_app-register_on-app-node.md`](4_app-register_on-app-node.md)
 
 ## Input Resolution
 
@@ -147,13 +124,8 @@ See also:
 - [`technical/6.2_app-register_output-render_json.md`](6.2_app-register_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Validation Failures**: Invalid names, missing paths, or malformed input
-  (`error.code=validation_failed`, `error.meta.field=<name>`).
-- **Caller Role Not Allowed**: The caller role is not permitted to invoke
-  `app:register` (`error.code=caller_role_not_allowed`).
-- **Authorization Failed**: The caller is not authorized to inspect or manage
-  the target app or app node (`error.code=authorization_failed`).
 - **Path Collision**: Provided `--path` is already owned by a different
   registered app on the resolved node
   (`error.code=app.path_collision`, `error.meta.path`,
@@ -205,3 +177,9 @@ registration attempts.
 | `tests/Unit/Services/Apps/AppEnactmentServiceTest.php` | SSH-based artifact convergence for PHP-FPM, runtime configuration, and proxy route handoff behavior using mocked node execution. |
 | `tests/E2E/Ephemeral/AppRegistrationTest.php` | Real-node registration, adoption, and idempotent re-apply refresh. |
 | `tests/E2E/Ephemeral/AppProductionActivationTest.php` | DNS/TLS activation retry behavior, including the success-with-`proxy.domain_inactive`-warning path and the hard-error path for malformed domain or registry conflicts. |
+
+Role-specific behavior and test mapping live in:
+
+- [`2_app-register_on-control-node.md`](2_app-register_on-control-node.md)
+- [`3_app-register_on-gateway-node.md`](3_app-register_on-gateway-node.md)
+- [`4_app-register_on-app-node.md`](4_app-register_on-app-node.md)

@@ -56,11 +56,10 @@ Every stream frame is one JSON object with a `type` discriminator:
 This internal command does not mutate process configuration or runtime state.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | Supplied scope input is invalid or cannot be resolved. | Failure (`error.code=validation_failed`). |
-| Authorization failed | The caller cannot inspect the requested process event scope. | Failure (`error.code=authorization_failed`). |
 | Stream failed | The event stream cannot be opened or resumed. | Failure (`error.code=process.event_stream_failed`). |
 
 If the live snapshot cannot probe one runtime unit, the stream emits an unverifiable snapshot item for that unit when possible instead of dropping the whole stream.

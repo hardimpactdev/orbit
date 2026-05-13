@@ -41,14 +41,6 @@ coordinate of the `(app, workspace)` identity rather than a redundant flag.
 `--limit`, `--since`, and `--until` are scalar filters. Multi-value semantics
 are not part of the initial contract.
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace:history` to the gateway, which authenticates the
-caller's WireGuard peer identity and applies authorization. Behavior is
-access-policy-driven on the gateway, not role-driven on the CLI. App-node
-peers may inspect history for workspaces they are authorized to see through
-gateway-owned access policy.
-
 ## Input Resolution
 
 1. **Resolve `name`** from `[name]` or current working directory.
@@ -138,14 +130,12 @@ Output renderer behavior is split out of the canonical command contract:
   JSON envelope, run shape, pagination metadata, error codes.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
 | Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
-| Authorization failed | The caller is not authorized to read history for this workspace. | Failure |
-| Validation failed | `--limit`, `--since`, or `--until` contains an invalid value. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
 
 `workspace:history` exits zero whenever the gateway history read succeeds,
 including when the result set is empty.

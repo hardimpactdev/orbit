@@ -25,20 +25,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-The gateway authenticates the WireGuard peer and authorizes the request by
-caller role. The CLI does not resolve or assert caller role locally. All
-authenticated caller roles use the same gateway-owned access policy. App-node
-callers may read deployment policy when the gateway authorizes them for the
-resolved production app; `deploy:step-list` never grants write permission.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt;
-missing required input and invalid app selectors fail according to the shared
-invocation model.
-
 ## Behavior Contract
 
 ### Deployment Policy Visibility Rules
@@ -62,12 +48,10 @@ steps. It must not inspect live node state. Deployment health belongs to
 - [JSON renderer](6.2_deploy-step-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | The app selector is missing or malformed. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect deployment policy for the app. | `error.code=authorization_failed` |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
 

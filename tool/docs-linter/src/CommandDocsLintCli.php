@@ -12,6 +12,7 @@ use OrbitDocsLinter\Rules\BehaviorContractStructureRule;
 use OrbitDocsLinter\Rules\CanonicalTechnicalContractRule;
 use OrbitDocsLinter\Rules\CommandContractComplexityRule;
 use OrbitDocsLinter\Rules\CommandDirectoryStructureRule;
+use OrbitDocsLinter\Rules\CommonFailureNotRestatedRule;
 use OrbitDocsLinter\Rules\CompoundCommandPrefixRule;
 use OrbitDocsLinter\Rules\ConceptIndexRule;
 use OrbitDocsLinter\Rules\ConvertedFamilyStructureRule;
@@ -32,6 +33,7 @@ use OrbitDocsLinter\Rules\JsonWarningShapeRule;
 use OrbitDocsLinter\Rules\MarkdownLinkIntegrityRule;
 use OrbitDocsLinter\Rules\NextActionContractRule;
 use OrbitDocsLinter\Rules\NoCommandAmbiguityFilesRule;
+use OrbitDocsLinter\Rules\NoPerCommandAuthorizationSectionRule;
 use OrbitDocsLinter\Rules\NonStateDomainHandoffRule;
 use OrbitDocsLinter\Rules\ProductCodeNamespaceRule;
 use OrbitDocsLinter\Rules\PublicJsonOptionContractRule;
@@ -273,6 +275,8 @@ final class CommandDocsLintCli
             new ErrorCodeRegistryRule,
             new RoleCompanionCoverageRule,
             new AppNodeWriteDenialRule,
+            new NoPerCommandAuthorizationSectionRule,
+            new CommonFailureNotRestatedRule,
             new InputModeContractRule,
             new PublicJsonOptionContractRule,
             new HumanRendererProgressTreeRule,

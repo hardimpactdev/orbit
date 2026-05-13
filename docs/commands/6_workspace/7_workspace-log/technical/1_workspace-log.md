@@ -37,14 +37,6 @@ missing input and does not resolve `<run>` from the current working directory.
 or from the `latest_setup_run.run_id` field returned by
 [`orbit workspace:show`](../../4_workspace-show/workspace-show.md).
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace:log` to the gateway, which authenticates the
-caller's WireGuard peer identity and applies authorization. Behavior is
-access-policy-driven on the gateway, not role-driven on the CLI. App-node
-peers may inspect captured output for runs whose owning workspace is visible
-to them through gateway-owned access policy.
-
 ## Input Resolution
 
 1. **Validate `run`.** `<run>` must be supplied and must be a positive integer.
@@ -143,14 +135,12 @@ Output renderer behavior is split out of the canonical command contract:
   flags, error codes.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | `<run>` is missing, non-numeric, or non-positive. | Failure |
 | Run not found | The provided run ID does not exist or is not visible to the caller. | Failure |
 | Log not found | The run record exists but its captured output has been pruned. | Failure |
-| Authorization failed | The caller is not authorized to read logs for the owning workspace. | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API. | Failure |
 
 `workspace:log` exits zero whenever the gateway read succeeds, including
 when a run completed without producing any captured output (empty steps array

@@ -4,12 +4,6 @@
 
 **Effects:** `destructive`, `write`, `stream`.
 
-## App-Node Denial
-
-App-node callers are denied by the gateway with
-`error.code=caller_role_not_allowed` before prompts or side effects. The CLI
-does not perform client-side role detection.
-
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target app exists in the gateway app registry.
@@ -18,6 +12,7 @@ does not perform client-side role detection.
   available. SSH reachability is not a pre-configuration prerequisite; if cleanup
   cannot finish after app configuration removal, the command succeeds with structured
   warnings.
+- App-node callers are denied by the gateway with `error.code=caller_role_not_allowed` before prompts or side effects.
 
 This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
 
@@ -35,21 +30,6 @@ This command follows the shared
 | `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one gateway app record. |
 | `force` | `--force` | Optional. | Never. | `false`. | Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
-
-## Authorization By Caller Role
-
-`app:remove` authorization is owned by the gateway. The CLI does not branch on
-client-side role detection. The gateway identifies the caller through its
-WireGuard peer identity on every API call. `app:remove` is destructive cleanup,
-not an app-context workflow: app-node peers are rejected before prompts or side
-effects. Control and gateway peers may remove an app only when authorized by
-gateway-owned access policy.
-
-| Caller role on gateway | Behavior |
-| --- | --- |
-| `control` | Allowed when authorized. The gateway runs the removal flow and applies app-node cleanup over SSH via `RemoteShell`. |
-| `gateway` | Allowed when authorized. Same gateway-side behavior as a control caller; the gateway opens SSH back to the target app node via `RemoteShell`. |
-| `app` | Rejected by the gateway with `error.code=caller_role_not_allowed`. |
 
 ## Input Resolution
 
@@ -99,13 +79,11 @@ gateway-owned access policy.
 - Artifacts belonging to other families (e.g. leftover workspace files) are reported as drift by their respective family doctors.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | `app` does not match an existing app record. Already-absent removal is not idempotent. | Failure (`error.code=app.not_found`). |
-| Caller role not allowed | The caller role is not permitted to invoke `app:remove`. | Failure (`error.code=caller_role_not_allowed`). |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure (`error.code=gateway_unavailable`). |
-| Authorization failed | The authenticated peer is not authorized to operate on the resolved app. | Failure (`error.code=authorization_failed`). |
 | Step 1 (gateway configuration) failure | Deleting the gateway app record itself fails. No dependent or node-side side effects have occurred. | Failure (`error.code=app.removal_failed`). |
 
 Partial cleanup is **not** a command failure. Once Step 1 (gateway app configuration

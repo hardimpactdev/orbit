@@ -28,14 +28,6 @@ This command follows the shared
 | `app` | `--app` | When no parent app can be inferred from the caller filesystem. | Never. | Cwd-inferred parent app. | App slug present in the gateway registry and authorized for this caller. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
-## Authorization By Caller Role
-
-The CLI forwards `workspace-teardown-step:list` to the gateway, which
-authenticates the caller's WireGuard peer identity and applies authorization.
-Behavior does not vary by caller role: every caller authorized to read the
-resolved app's teardown-step policy receives the same command contract.
-Authorization scoping is gateway-owned and policy-driven on the gateway.
-
 ## Visibility Behavior
 
 The command returns the full ordered set of teardown steps for the resolved
@@ -75,17 +67,6 @@ read.
 4. **Issue the registry read.** Query gateway-owned teardown-step policy
    for the resolved `(app, phase=teardown)` and pass the result to the
    renderer.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command takes no required
-interactive inputs and does not prompt: parent-app resolution succeeds from
-`--app`, `.orbit/config`, or the gateway path-ownership lookup, and falls
-through to a non-interactive `validation_failed` when none of those produce
-a slug. `--json` and parent-app resolution behave the same in both
-interactive and non-interactive modes; the renderer-selection rule in
-[`docs/commands/README.md`](../../../README.md#invocation-model) governs the
-only mode-sensitive surface.
 
 ## Behavior Contract
 
@@ -128,13 +109,12 @@ only mode-sensitive surface.
 - [JSON renderer](6.2_workspace-teardown-step-list_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | The parent app cannot be resolved in non-interactive mode (`error.meta.field=app`). | Failure |
 | App not found | The resolved app slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
 | Unauthorized app | The caller is not authorized to read the resolved app's teardown-step policy (`error.code=authorization_failed`). | Failure |
-| Gateway unavailable | The CLI cannot reach the gateway API (`error.code=gateway_unavailable`). | Failure |
 
 ### Exit Status
 

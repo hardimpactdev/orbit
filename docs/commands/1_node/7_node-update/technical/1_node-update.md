@@ -75,31 +75,6 @@ Role-conditional validity is enforced after the target node is resolved.
 Incompatible fields fail with `node.field_role_incompatible` before any
 gateway-owned side effects.
 
-## Authorization By Caller Role
-
-The CLI sends a typed update request to the gateway. The gateway authenticates
-the WireGuard peer identity, derives the caller's gateway-known role, and
-applies the rules below.
-
-| Caller role | Gateway authorizes |
-| --- | --- |
-| `control` | The update write when the caller also has access to the gateway node. See [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md). |
-| `gateway` | The update write directly. Gateway-local execution does not require WireGuard forwarding. See [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md). |
-| `app` | Rejected. The gateway returns `caller_role_not_allowed` with message `This command may only be run from a control or gateway node.` See [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md). |
-
-Companion contracts describe behavior in detail:
-
-- [`2_node-update_on-control-node.md`](2_node-update_on-control-node.md):
-  control-caller gateway-forwarding behavior.
-- [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md):
-  gateway-local execution behavior.
-- [`4_node-update_on-app-node.md`](4_node-update_on-app-node.md): app-caller
-  rejection.
-
-The role-specific companion pages are authoritative for how the gateway
-authorizes each role. This canonical page owns shared inputs, shared behavior,
-output links, failure categories, doctor relationship, and test mapping.
-
 ## Input Resolution
 
 1. Resolve `node_update.name` from `[name]` or the selected input mode.
@@ -218,6 +193,7 @@ Output renderer behavior is split out of the canonical command contract:
   artifact applying drift.
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
@@ -225,9 +201,6 @@ Output renderer behavior is split out of the canonical command contract:
 | Duplicate field flag | The same field flag is supplied more than once in a single invocation. | Failure |
 | Node not found | No active node record matches `name`. | Failure |
 | Field role-incompatible | A field is supplied for a node role that does not support it (e.g. `--environment` for a non-app node, or `--host`/`--public-ipv4`/`--public-ipv6` for a control node). | Failure |
-| Caller role not allowed | The caller role is `app`. | Failure |
-| Gateway unavailable | A control caller has no configured gateway or cannot reach the gateway API. | Failure |
-| Authorization failed | A forwarded control caller is not authorized to operate on the gateway node or the target node. | Failure |
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning

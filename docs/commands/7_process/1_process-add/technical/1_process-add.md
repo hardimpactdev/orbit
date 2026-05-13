@@ -33,17 +33,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `command` is positional here because it is required to create a process definition. The sibling `process:edit` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
 
-## Authorization By Caller Role
-
-`process:add` follows the [process Authorization By Caller Role rule](../../README.md#authorization-by-caller-role). It mutates app-owned process configuration, so only `control` and `gateway` callers are allowed by the gateway.
-
-| Role | Gateway decision | Consequence |
-| --- | --- | --- |
-| `control` | `allow` | Gateway accepts the request when the peer is authorized for the target app and applies runtime units on the owning app node. |
-| `gateway` | `allow` | Gateway accepts the request and applies runtime units on the owning app node. |
-| `app` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-| `unknown` | `deny` | Gateway returns `error.code=caller_role_not_allowed`. |
-
 ## Input Mode Contracts
 
 - [Interactive input mode](5.1_process-add_input-mode_interactive.md)
@@ -77,14 +66,11 @@ If process configuration is written but runtime-unit apply or optional start fai
 - [JSON renderer](6.2_process-add_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Caller role not allowed | The gateway determines the authenticated peer's caller role is `app` or `unknown`. | Failure (`error.code=caller_role_not_allowed`). |
-| Validation failed | Missing or invalid `name`, `command`, `app`, `restart_policy`, or `crash_notification`. | Failure (`error.code=validation_failed`). |
-| Authorization failed | The caller cannot manage process configuration for the target app. | Failure (`error.code=authorization_failed`). |
 | Duplicate process | The owning app already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
-| Gateway unavailable | The CLI cannot reach the gateway API before configuration is written. | Failure (`error.code=gateway_unavailable`). |
 
 ## Doctor Relationship
 

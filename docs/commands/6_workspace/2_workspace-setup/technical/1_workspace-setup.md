@@ -29,30 +29,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning app node. | **Absolute path on the owning app node.** A relative or non-absolute value fails before side effects with `error.code=validation_failed`, `error.meta.field=path`. The path must exist on the app node and satisfy the parent app's workspace source policy. Generic worktree paths must live under `<app path>/.worktrees/`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
-## Authorization By Caller Role
-
-The CLI is a thin gateway client in every case: it gathers input and forwards
-to the gateway, which authenticates the caller's WireGuard peer identity and
-applies authorization. The gateway then applies artifacts on the owning app
-node by opening an SSH connection through RemoteShell — even when the caller
-is on that same app node.
-
-| Caller peer | Gateway authorization | Consequence |
-| --- | --- | --- |
-| Control peer | Allowed when authorized | The CLI forwards over HTTPS through WireGuard. The gateway writes registry state and applies artifacts on the app node via RemoteShell. |
-| Gateway peer | Allowed when authorized | The CLI on the gateway invokes the local setup flow; the gateway writes registry state and applies artifacts on the owning app node via RemoteShell. |
-| App-node peer | Allowed when authorized | Documented local workflow exception so developers and agents working inside a workspace can re-converge it without switching nodes. The CLI forwards configuration to the gateway over HTTPS; the gateway applies artifacts on the same app node via RemoteShell. |
-
-The gateway authorizes app-node peers for `workspace:setup` as the current
-local workflow write exception. The CLI on the app node is a stateless
-gateway client; it does not own durable workspace state and never applies
-workspace artifacts directly.
-
-See also:
-- [`technical/2_workspace-setup_on-control-node.md`](2_workspace-setup_on-control-node.md)
-- [`technical/3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)
-- [`technical/4_workspace-setup_on-app-node.md`](4_workspace-setup_on-app-node.md)
-
 ## Input Resolution
 
 1. **Resolve Workspace Identity**: Resolve `[name]` from the positional
@@ -143,17 +119,12 @@ letting `result.action` describe what this run did, mirroring the
 - [`technical/6.2_workspace-setup_output-render_json.md`](6.2_workspace-setup_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Validation Failures**: Invalid workspace name or non-absolute `--path`.
-  Reported as `error.code=validation_failed` with `error.meta.field` naming
-  the offending input. Fails before side effects.
 - **Path Outside Policy**: The resolved generic workspace path is outside the
   parent app's `.worktrees/` policy
   (`error.code=workspace.path_outside_policy`).
   Fails before side effects.
-- **Authorization Failed**: The caller is not authorized to manage the
-  target workspace or parent app
-  (`error.code=authorization_failed`).
 - **Remote Failures**: SSH timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
@@ -209,3 +180,9 @@ all documented command failures exit with the standard command failure status
 | `tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
 | `tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
 | `tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
+
+Role-specific behavior and test mapping live in:
+
+- [`2_workspace-setup_on-control-node.md`](2_workspace-setup_on-control-node.md)
+- [`3_workspace-setup_on-gateway-node.md`](3_workspace-setup_on-gateway-node.md)
+- [`4_workspace-setup_on-app-node.md`](4_workspace-setup_on-app-node.md)

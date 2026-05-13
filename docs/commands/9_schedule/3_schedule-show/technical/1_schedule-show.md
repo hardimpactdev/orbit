@@ -27,14 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
-## Authorization By Caller Role
-
-All authenticated caller roles use the same gateway-owned access policy. App-node callers may read visible schedules when authorized; `schedule:show` never grants write permission.
-
-## Input Mode Contracts
-
-No input-mode-specific contracts are required. The command does not prompt; missing required input and invalid filters fail according to the shared invocation model.
-
 ## Behavior Contract
 
 ### Schedule Detail Rules
@@ -55,12 +47,10 @@ No input-mode-specific contracts are required. The command does not prompt; miss
 - [JSON renderer](6.2_schedule-show_output-render_json.md)
 
 ## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed | The name or filter is malformed, unsupported, or mutually exclusive. | `error.code=validation_failed` |
-| Gateway unavailable | The CLI cannot reach the gateway API. | `error.code=gateway_unavailable` |
-| Authorization failed | The caller is not authorized to inspect the selected schedule. | `error.code=authorization_failed` |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 
 ## Doctor Relationship
