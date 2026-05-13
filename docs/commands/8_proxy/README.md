@@ -34,6 +34,12 @@ Caddy is the current proxy backend. It is not the product model.
 - Orbit-managed TLS means gateway-issued route leaf certificate and key
   material on the serving node. Those certificates chain to the gateway root
   CA trusted by `gateway:add` and `gateway:trust`.
+- Orbit intentionally issues route leaf certificates directly from the gateway
+  root CA. It must not issue app nodes intermediate CA certificates for
+  routine route serving, because an app node with intermediate signing
+  authority could mint trusted certificates for arbitrary hosts if compromised.
+- App nodes serve TLS material only. They do not become certificate authorities
+  and do not sign certificates for apps, workspaces, or tools.
 - For DNS hostname routes, Orbit-managed TLS also includes app-node
   compatibility material that lets common Laravel Vite TLS detection paths find
   the route certificate. This belongs to proxy convergence because it is
@@ -72,6 +78,21 @@ framework config, storage, dependencies, source metadata, and local entrypoints.
 Custom, redirect, and tool routes are separate route kinds. They may share TLS,
 DNS, and inventory behavior with app/workspace routes, but they do not inherit
 the PHP document-root contract unless their own command docs say so.
+
+## TLS Authority Model
+
+The gateway is the only Orbit certificate authority. For each managed route, it
+issues a leaf certificate whose SAN matches that route host or IP, then enacts
+the certificate and private key on the serving node as route-scoped TLS
+material. The serving node configures Caddy with that explicit certificate and
+key; it does not use Caddy's local CA for Orbit-managed routes.
+
+Orbit does not delegate intermediate CA authority to app nodes. That delegation
+would make disconnected node-local certificate minting easier, but it would
+also expand the blast radius of a compromised app node: the node could sign
+trusted certificates for hosts it should not control. Per-route gateway-issued
+leaf certificates keep signing authority centralized on the gateway while still
+letting every node terminate HTTPS locally.
 
 ## Gateway Internal Ingress
 

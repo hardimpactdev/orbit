@@ -2,7 +2,7 @@
 
 This document defines DNS-command-domain vocabulary and invariants. It supports
 the DNS command contracts; it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Scope
 

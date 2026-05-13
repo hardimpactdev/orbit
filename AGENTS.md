@@ -14,7 +14,7 @@ preserved at `../orbit-old-may` and is reference material only.
 
 Orbit's current product contract lives in this repo:
 
-- `docs/BLUEPRINT.md`
+- `docs/ARCHITECTURE.md`
 - `docs/MISSION.md`
 - `docs/CONCEPTS.md`
 - `docs/BUILDING-BLOCKS.md`

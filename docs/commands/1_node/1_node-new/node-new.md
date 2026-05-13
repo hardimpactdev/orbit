@@ -21,7 +21,7 @@ orbit node:new
 `node:new` determines the local caller role from `general.local_node_role`.
 Unset or `null` means `control`; gateway and app nodes must set the value
 explicitly to `gateway` or `app`. See the foundation
-[local node role setting](../../../BLUEPRINT.md#local-node-role-setting)
+[local node role setting](../../../ARCHITECTURE.md#local-node-role-setting)
 contract.
 
 ## Examples

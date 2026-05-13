@@ -51,7 +51,7 @@ Add `docs/abstractions/` as a small implementation-pattern index that:
   starts.
 
 These docs are not product authority. Product behavior remains in
-`docs/commands/**`, `docs/BLUEPRINT.md`, `docs/MISSION.md`,
+`docs/commands/**`, `docs/ARCHITECTURE.md`, `docs/MISSION.md`,
 `docs/CONCEPTS.md`, and `docs/BUILDING-BLOCKS.md`.
 
 ## Approaches Considered
@@ -183,7 +183,7 @@ Invariants:
 Pointers:
 
 - `docs/MISSION.md`
-- `docs/BLUEPRINT.md`
+- `docs/ARCHITECTURE.md`
 - `docs/BUILDING-BLOCKS.md`
 - `docs/commands/1_node/README.md`
 - `docs/porting/PORTING.md`
@@ -194,7 +194,7 @@ Decision matrix:
   define the bootstrap path.
 - Steady-state CLI-to-gateway work: use the gateway API shape documented by the
   command and implemented through the Gateway API transport pattern.
-- Gateway-to-node work: follow the product topology in `MISSION`, `BLUEPRINT`,
+- Gateway-to-node work: follow the product topology in `MISSION`, `ARCHITECTURE`,
   `BUILDING-BLOCKS`, and the relevant command docs.
 - Do not use this abstractions entry as topology authority. It is a pointer that
   prevents workers from missing the product docs before adding transport edges.

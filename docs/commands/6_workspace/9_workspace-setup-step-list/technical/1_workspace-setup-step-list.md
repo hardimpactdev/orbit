@@ -64,7 +64,7 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
      `composer.json`, `package.json`, `.php-version`, or any other project
      file content during parent-app inference. This matches the
      `workspace:new` and `workspace-setup-step:add` contracts and the
-     `BLUEPRINT.md` "Workspaces" project-file inspection prohibition.
+     `ARCHITECTURE.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway intent.
    Unknown apps fail with `error.code=workspace.app_not_found` before any
    read.

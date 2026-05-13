@@ -54,7 +54,7 @@ Every worker todo must state:
 
 ### Product Authority
 
-- <docs/BLUEPRINT.md, docs/BUILDING-BLOCKS.md, docs/commands/**, or other current docs>
+- <docs/ARCHITECTURE.md, docs/BUILDING-BLOCKS.md, docs/commands/**, or other current docs>
 
 ### Legacy Evidence
 

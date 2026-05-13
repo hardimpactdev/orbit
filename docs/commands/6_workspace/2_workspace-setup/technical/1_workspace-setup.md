@@ -38,7 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `valid` | Documented local workflow exception. The CLI on the app node resolves local context, forwards intent to the gateway, and the gateway enacts artifacts on the app node via `RemoteShell`. |
 
 App-node callers are explicitly permitted by
-[BLUEPRINT.md#app-node](../../../../BLUEPRINT.md#app-node) as the current local
+[ARCHITECTURE.md#app-node](../../../../ARCHITECTURE.md#app-node) as the current local
 workflow write exception. The CLI on the app node is a stateless gateway
 client; it does not own durable workspace state.
 

@@ -2,7 +2,7 @@
 
 This document defines PHP-runtime-command-domain vocabulary and invariants. It
 supports the PHP command contracts; it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Runtime Selection
 

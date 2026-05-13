@@ -40,7 +40,7 @@ changes over SSH.
 App-node CLI availability is not general write permission. The current
 app-node write exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [BLUEPRINT.md#app-node](../../BLUEPRINT.md#app-node); it remains a
+defined by [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node); it remains a
 gateway-mediated local workflow, not local app-node ownership of intent.
 
 ## Local Caller Role
@@ -48,7 +48,7 @@ gateway-mediated local workflow, not local app-node ownership of intent.
 Commands determine the local caller role from the local Orbit settings, not from
 host heuristics, installed services, or the presence of a gateway configuration.
 The foundation contract lives in
-[BLUEPRINT.md#local-node-role-setting](../../BLUEPRINT.md#local-node-role-setting).
+[ARCHITECTURE.md#local-node-role-setting](../../ARCHITECTURE.md#local-node-role-setting).
 
 The setting is `general.local_node_role` with allowed values `control`,
 `gateway`, and `app`. When the setting is unset or `null`, the caller role is
@@ -75,7 +75,7 @@ identity and applies gateway-owned access policy before accepting the request.
 ## Hub And Spoke Model
 
 Orbit uses the
-[hub-and-spoke node topology](../../BLUEPRINT.md#node-roles) defined by the
+[hub-and-spoke node topology](../../ARCHITECTURE.md#node-roles) defined by the
 blueprint. The gateway is the hub. Control nodes and app nodes are spokes
 connected to the gateway; they do not coordinate Orbit work with each other
 directly.

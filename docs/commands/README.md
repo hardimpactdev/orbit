@@ -8,7 +8,7 @@ the command surface inside that world.
 
 Before adding or changing a command:
 
-1. Update `docs/BLUEPRINT.md` if the change affects Orbit's architecture or
+1. Update `docs/ARCHITECTURE.md` if the change affects Orbit's architecture or
    domain model.
 2. Update `docs/BUILDING-BLOCKS.md` if the change affects implementation
    shape, backend boundaries, runtime backends, transport edges, or scheduler
@@ -574,3 +574,4 @@ build on top of that foundation.
 14. [PHP Runtime](14_php/README.md)
 15. [Agent IDE](15_agent-ide/README.md)
 16. [DNS](16_dns/README.md)
+17. [Activity](17_activity/README.md)

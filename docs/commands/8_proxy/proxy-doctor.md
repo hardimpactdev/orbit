@@ -46,7 +46,9 @@ The proxy probe reads gateway proxy route intent and checks these layers:
 7. **TLS material:** expected Orbit-managed TLS material exists and matches the
    route's policy. For DNS hostname routes, this includes the app-node
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
-   routes skip hostname compatibility checks.
+   routes skip hostname compatibility checks. Expected TLS material is a
+   gateway-issued route leaf certificate and key, not node-local Caddy CA
+   material and not an app-node intermediate CA.
 8. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway intent are reported as extra route drift.
 9. **Adoption scope:** during `doctor --fix --adopt`, explicitly selected observed backend
@@ -77,7 +79,7 @@ an explicit adoption scope.
 | `proxy.route_missing` | Recreate the backend route from gateway intent when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-intended route when the route can be identified safely. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
-| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway intent. |
+| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway intent. If the node is serving Caddy-local certificates or any intermediate-CA-issued material outside Orbit policy, repair must converge back to gateway-issued route leaf certificates. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
 `doctor --fix --restore` does not handle `proxy.record_incomplete`,

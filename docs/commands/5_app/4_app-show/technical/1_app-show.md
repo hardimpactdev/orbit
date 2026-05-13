@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../BLUEPRINT.md#local-node-role-setting)
+  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
   contract.
 - The target app is visible to the current node identity through gateway-owned
   access policy.

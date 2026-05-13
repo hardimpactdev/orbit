@@ -26,7 +26,7 @@ switching to a control or gateway node.
   progress back to the app-node TTY.
 
 This exception is explicitly named by
-[BLUEPRINT.md#app-node](../../../../BLUEPRINT.md#app-node) as the current
+[ARCHITECTURE.md#app-node](../../../../ARCHITECTURE.md#app-node) as the current
 app-node local workflow write exception.
 
 ## Allowed Paths

@@ -2,7 +2,7 @@
 
 This document defines operation-command-domain vocabulary and invariants. It
 supports the operation command contracts; it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Scope
 

@@ -63,7 +63,7 @@ workspace intent. App-node callers are denied before prompts or side effects.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=app`.
    - **Forbidden:** project-file inspection (`composer.json`, `package.json`,
-     `.php-version`, `.env`, lockfiles, or framework manifests). This matches `BLUEPRINT.md` "Workspaces"
+     `.php-version`, `.env`, lockfiles, or framework manifests). This matches `ARCHITECTURE.md` "Workspaces"
      project-file inspection prohibition.
 3. **Resolve `step`.** Required from `--step` or interactive prompt.
    - In interactive mode, prompt when `--step` is missing.

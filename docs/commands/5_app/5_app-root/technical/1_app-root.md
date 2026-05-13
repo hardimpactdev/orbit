@@ -107,7 +107,7 @@ is unchanged.
       `RemoteShell::upload` / `run`.
     - The PHP-FPM pool reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
-      enactment plumbing for the FPM artifact, in line with BLUEPRINT
+      enactment plumbing for the FPM artifact, in line with ARCHITECTURE
       Product Principle 5 ("Backend names are not product names"). When an
       app-owned proxy route references the document root, `app:root` updates
       the app intent and leaves proxy backend artifact convergence to the

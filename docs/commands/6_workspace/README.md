@@ -149,7 +149,7 @@ workspace id.
 - App-node callers may run workspace read commands when authorized.
 - `workspace:setup` is the only workspace write command currently allowed from
   an app-node caller, as defined by
-  [BLUEPRINT.md#app-node](../../BLUEPRINT.md#app-node). It is a local workflow
+  [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node). It is a local workflow
   exception for preparing the workspace the caller is already working inside.
 - App-node callers may not run `workspace:new`, `workspace:remove`, setup-step
   mutation, teardown-step mutation, or other gateway-owned workspace policy

@@ -3,7 +3,7 @@
 This document defines firewall-family vocabulary and invariants. It supports
 the firewall command contracts and the
 [firewall doctor](firewall-doctor.md); it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Identity
 

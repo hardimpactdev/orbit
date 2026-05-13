@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../BLUEPRINT.md#local-node-role-setting)
+  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
   contract and the node-family
   [Local Caller Role](../../../1_node/README.md#local-caller-role) contract.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
@@ -98,7 +98,7 @@ state as authority.
 ### Effective Adapter Rules
 
 - Resolve the effective adapter through the shared inheritance chain documented
-  in [Agent IDE Integrations](../../../../BLUEPRINT.md#agent-ide-integrations).
+  in [Agent IDE Integrations](../../../../ARCHITECTURE.md#agent-ide-integrations).
 - `none` at app scope means the app explicitly disables Agent IDE messaging;
   fail with `no_effective_adapter`.
 - A missing node/app default also fails with `no_effective_adapter`.

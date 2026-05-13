@@ -3,7 +3,7 @@
 This document defines schedule-family vocabulary and invariants. It supports
 the schedule command contracts and the
 [schedule doctor](schedule-doctor.md); it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Identity
 

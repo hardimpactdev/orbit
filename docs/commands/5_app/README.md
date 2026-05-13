@@ -107,7 +107,7 @@ registration/adoption, destructive cleanup, source-of-truth pruning, or
 preference changes unless a command explicitly documents a narrow exception.
 The current local workflow exception is
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md), as
-defined by [BLUEPRINT.md#app-node](../../BLUEPRINT.md#app-node) and owned by the
+defined by [ARCHITECTURE.md#app-node](../../ARCHITECTURE.md#app-node) and owned by the
 workspace command contract.
 
 ## Commands

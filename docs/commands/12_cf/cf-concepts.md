@@ -2,7 +2,7 @@
 
 This document defines Cloudflare-command-domain vocabulary and invariants. It
 supports the Cloudflare command contracts; it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Provider Authority
 

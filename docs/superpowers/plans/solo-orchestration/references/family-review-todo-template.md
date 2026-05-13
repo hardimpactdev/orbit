@@ -61,7 +61,7 @@ family-local notes, and identify bounded refactors or follow-up todos.
 
 - `docs/commands/<n>_<family>/**`
 - `<family README>`
-- `docs/BLUEPRINT.md`
+- `docs/ARCHITECTURE.md`
 - `docs/MISSION.md`
 - `docs/CONCEPTS.md`
 - `docs/BUILDING-BLOCKS.md`

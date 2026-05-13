@@ -2,7 +2,7 @@
 
 This document defines process-family vocabulary and invariants. It supports the
 process command contracts and the [process doctor](process-doctor.md); it does
-not override the [Blueprint](../../BLUEPRINT.md).
+not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Identity
 

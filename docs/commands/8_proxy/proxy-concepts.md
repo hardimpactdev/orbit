@@ -2,7 +2,7 @@
 
 This document defines proxy-family vocabulary and invariants. It supports the
 proxy command contracts and the [proxy doctor](proxy-doctor.md); it does not
-override the [Blueprint](../../BLUEPRINT.md).
+override the [Architecture](../../ARCHITECTURE.md).
 
 ## Routes
 
@@ -33,6 +33,16 @@ override the [Blueprint](../../BLUEPRINT.md).
 - **Orbit-managed TLS:** Gateway-issued route leaf certificate and key material
   enacted on the serving node. Certificates chain to the gateway root CA
   trusted through `gateway:add` and `gateway:trust`.
+- **Route leaf certificate:** A server certificate issued for one Orbit route
+  host or IP. It can terminate HTTPS for that route, but it cannot sign other
+  certificates.
+- **Intermediate CA certificate:** A certificate with signing authority below
+  the gateway root CA. Orbit does not issue intermediate CA certificates to app
+  nodes for routine proxy serving because that would let a compromised app node
+  mint trusted certificates outside its route ownership.
+- **TLS authority boundary:** The gateway owns certificate signing authority.
+  App nodes receive route-scoped leaf certificates and private keys as serving
+  artifacts only; they do not act as Orbit certificate authorities.
 - **Hostname compatibility material:** App-node files derived from route TLS
   intent that let common Laravel Vite TLS detection paths find the route
   certificate. Owned by proxy convergence, not by the app or workspace family.

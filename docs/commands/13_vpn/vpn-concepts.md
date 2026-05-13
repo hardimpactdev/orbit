@@ -2,7 +2,7 @@
 
 This document defines VPN-command-domain vocabulary and invariants. It supports
 the VPN command contracts; it does not override the
-[Blueprint](../../BLUEPRINT.md).
+[Architecture](../../ARCHITECTURE.md).
 
 ## Domain And Execution
 

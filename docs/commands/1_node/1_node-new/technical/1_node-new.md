@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../BLUEPRINT.md#local-node-role-setting)
+  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
   contract and the node-family
   [Local Caller Role](../../README.md#local-caller-role) contract.
 - `node:new` is invoked from a control or gateway caller. App-node callers are
@@ -30,10 +30,10 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Caller role = `control` or `gateway`. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../BLUEPRINT.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
+| `name` | `[name]` | Caller role = `control` or `gateway`. | Never. | None. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must be unique among active node records unless the existing record is compatible and the selected path is convergence or adoption. |
 | `role` | `--role` | Caller role = `control` or `gateway`. | Never. | None. | One of `gateway`, `app`, `control`. |
 | `host` | `--host` | Requested role = `app` or `gateway`. | Requested role = `control`. | None. | SSH/bootstrap endpoint, never the canonical node address. |
-| `control_name` | `--control-name` | Caller role = `control`, requested role = `gateway`, and no gateway is configured locally. | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid gateway-registry node name following the [identity slug](../../../../BLUEPRINT.md#identity-names) contract. Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
+| `control_name` | `--control-name` | Caller role = `control`, requested role = `gateway`, and no gateway is configured locally. | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid gateway-registry node name following the [identity slug](../../../../ARCHITECTURE.md#identity-names) contract. Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating control node for first-gateway convergence. |
 | `environment` | `--environment` | Requested role = `app`. | Requested role = `gateway` or `control`. | None. | One of `development`, `production`. |
 | `tld` | `--tld` | Requested role = `app` and `environment=development`. | Requested role = `gateway`, requested role = `control`, or requested role = `app` and `environment=production`. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `ssh_user` | `--ssh-user` | Never required from the operator; resolved when SSH provisioning is used. | Requested role = `control`. | `root`. | Bootstrap-only SSH user. It is not the steady-state `RemoteShell` user. |
@@ -45,7 +45,7 @@ This command follows the shared
 reads command inputs, renders prompts, forwards requests, or starts side
 effects. See the node-family [Local Caller Role](../../README.md#local-caller-role)
 contract and the foundation
-[local node role setting](../../../../BLUEPRINT.md#local-node-role-setting)
+[local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
 contract.
 
 If `general.local_node_role` is unset or `null`, the caller role is `control`.

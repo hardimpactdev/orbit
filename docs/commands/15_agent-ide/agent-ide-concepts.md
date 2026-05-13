@@ -2,7 +2,7 @@
 
 This document defines agent-IDE-domain vocabulary and invariants. It supports
 the agent IDE command contracts and related node/app Agent IDE commands; it does
-not override the [Blueprint](../../BLUEPRINT.md).
+not override the [Architecture](../../ARCHITECTURE.md).
 
 ## Adapter Model
 

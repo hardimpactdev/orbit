@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The local caller role can be resolved according to the foundation
-  [local node role setting](../../../../BLUEPRINT.md#local-node-role-setting)
+  [local node role setting](../../../../ARCHITECTURE.md#local-node-role-setting)
   contract and the node-family
   [Local Caller Role](../../../1_node/README.md#local-caller-role)
   contract.
