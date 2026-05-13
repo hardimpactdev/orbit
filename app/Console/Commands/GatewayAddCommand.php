@@ -155,7 +155,7 @@ class GatewayAddCommand extends Command implements Loggable
         if ($isConverged) {
             $pemPath = (string) LocalGatewaySettings::current()->ca_pem_path;
 
-            if (! File::exists($pemPath)) {
+            if (! File::isFile($pemPath)) {
                 // CA file missing despite converged state; re-run full flow
                 $isConverged = false;
             } else {
@@ -364,7 +364,7 @@ class GatewayAddCommand extends Command implements Loggable
 
         $pemPath = $settings->ca_pem_path;
 
-        if (! File::exists($pemPath)) {
+        if (! File::isFile($pemPath)) {
             return false;
         }
 

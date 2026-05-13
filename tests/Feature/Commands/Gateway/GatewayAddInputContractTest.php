@@ -233,6 +233,34 @@ it('is idempotent when gateway is already configured', function (): void {
     expect($this->fakeInstaller->trustCalls)->toHaveCount(0);
 });
 
+it('re-runs onboarding when stored ca path is not a readable file', function (): void {
+    LocalGatewaySettings::current()->fill([
+        'gateway_url' => 'https://10.6.0.2',
+        'gateway_wg_ip' => '10.6.0.2',
+        'ca_sha256' => hash('sha256', 'stale'),
+        'ca_pem_path' => '/dev/null',
+    ])->save();
+
+    Http::fake([
+        'http://10.6.0.2/api/ca/root' => Http::response([
+            'success' => ['data' => ['root_ca' => "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----"]],
+        ]),
+        'https://10.6.0.2/api/me' => Http::response([
+            'data' => [
+                'gateway' => ['name' => 'gateway-1', 'role' => 'gateway', 'status' => 'active'],
+                'self' => ['name' => 'control-1', 'role' => 'control', 'status' => 'active', 'wg_ip' => '10.6.0.8'],
+            ],
+        ]),
+    ]);
+
+    $this->artisan('gateway:add', ['gateway_ip' => '10.6.0.2', '--json' => true])
+        ->assertSuccessful();
+
+    $settings = LocalGatewaySettings::current();
+    expect($settings->ca_pem_path)->toBe(storage_path('app/orbit/gateway-ca/orbit.crt'))
+        ->and($this->fakeInstaller->trustCalls)->toHaveCount(1);
+});
+
 it('does not create local node registry mirror rows', function (): void {
     Http::fake([
         'http://10.6.0.2/api/ca/root' => Http::response([
