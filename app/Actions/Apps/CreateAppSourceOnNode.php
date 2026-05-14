@@ -7,6 +7,7 @@ namespace App\Actions\Apps;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Support\GitRepositoryReference;
 
 final readonly class CreateAppSourceOnNode
 {
@@ -22,7 +23,7 @@ final readonly class CreateAppSourceOnNode
         $path = $this->appPath($node, $name, $domain);
         $script = $repository === null
             ? sprintf('mkdir -p %s', escapeshellarg($path))
-            : sprintf('git clone %s %s', escapeshellarg($repository), escapeshellarg($path));
+            : GitRepositoryReference::cloneCommand($repository, $path);
 
         return [
             'path' => $path,

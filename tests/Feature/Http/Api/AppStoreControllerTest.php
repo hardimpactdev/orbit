@@ -124,6 +124,38 @@ describe('AppStoreController', function (): void {
         expect(App::query()->count())->toBe(0)
             ->and($remoteShell->runs)->toBe([]);
     });
+
+    it('reports github transport when github source creation fails', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'role' => 'app',
+            'status' => 'active',
+        ]);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell(new RemoteShellResult(
+            exitCode: 128,
+            stdout: '',
+            stderr: "permission denied\n",
+            durationMs: 5,
+        ));
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps', [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'repository' => 'hardimpact/docs',
+        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+
+        $response->assertServerError()
+            ->assertJsonPath('error.code', 'app.source_creation_failed')
+            ->assertJsonPath('error.meta.reason', 'permission denied')
+            ->assertJsonPath('error.meta.transport', 'github');
+
+        expect(App::query()->where('name', 'docs')->exists())->toBeFalse()
+            ->and($remoteShell->runs[0]['script'])->toContain("gh repo clone 'hardimpact/docs'");
+    });
 });
 
 final class AppStoreRecordingRemoteShell implements RemoteShell
@@ -133,6 +165,10 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
      */
     public array $runs = [];
 
+    public function __construct(
+        private readonly ?RemoteShellResult $result = null,
+    ) {}
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->runs[] = [
@@ -141,7 +177,7 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
             'options' => $options,
         ];
 
-        return new RemoteShellResult(
+        return $this->result ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',
             stderr: '',

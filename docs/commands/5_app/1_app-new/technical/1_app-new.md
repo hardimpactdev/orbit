@@ -32,7 +32,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | string | Always; can be prompted in interactive input mode. | n/a | slug: `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`, max 40 chars. Must be globally unique in the gateway app registry. |
 | `--node` | string | No | (resolved) | Must be an active `app` node. |
-| `--repo` | string | No | null | Full Git repository URL, or GitHub-only `owner/repo` shorthand. No credential discovery, prompting, or forwarding. |
+| `--repo` | string | No | null | Full Git repository URL, or GitHub-only `owner/repo` shorthand. GitHub inputs use the target node's `gh` authentication. No credential discovery, prompting, or forwarding. |
 | `--root` | string | No | `public` | App document root relative to app path. |
 | `--php-version` | string | No | `8.5` | Must match Orbit's supported PHP version set (gateway-side static check). Node-side availability is verified while applying. |
 | `--domain` | string | No | null | Valid production domain; implies production activation. |
@@ -66,15 +66,18 @@ node. Otherwise, create an empty directory at the app path.
 - App path is derived from the app name and the target node's app root.
 - All remote work is applied through the gateway over SSH via `RemoteShell`.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
-  Shorthand expands to `git@github.com:owner/repo.git`. Full Git URLs are used
-  as supplied after validation and may point at any Git host the target app node
+  GitHub shorthand and GitHub URLs are cloned with `gh repo clone` on the
+  target app node. Full Git URLs for other hosts are cloned with `git clone` as
+  supplied after validation and may point at any Git host the target app node
   can access.
 - Cloning is non-interactive on the target app node and uses whatever
-  credentials that node already has provisioned (host SSH keys, machine git
-  config, deploy tokens). `app:new` does not prompt for, store, or forward
-  git credentials, and does not perform any auth-method discovery flow. A
-  clone failure surfaces as a structured source-creation error with a
-  `transport=ssh|https` indicator so the operator can address node-side
+  credentials that node already has provisioned. GitHub activity uses the
+  node's GitHub CLI authentication; non-GitHub activity uses host SSH keys,
+  machine git config, deploy tokens, or other git credentials already present
+  on the node. `app:new` does not prompt for, store, or forward git
+  credentials, and does not perform any auth-method discovery flow. A clone
+  failure surfaces as a structured source-creation error with a
+  `transport=github|ssh|https` indicator so the operator can address node-side
   credentials directly.
 - Source creation happens before the gateway app record is written. If source
   creation fails, `app:new` fails with `app.source_creation_failed`, does not
@@ -135,7 +138,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Source Creation Failure:** Clone or directory creation failures occur before
   gateway app configuration is written. They use
   `error.code=app.source_creation_failed` with `error.meta.reason` and
-  `error.meta.transport=ssh|https` for clone failures so operators can address
+  `error.meta.transport=github|ssh|https` for clone failures so operators can address
   node-side credentials directly. No app row is preserved for this failure.
 - **Apply Drift:** If configuration is written but registration (FPM,
   runtime configuration, or proxy handoff) encounters retryable conditions, the

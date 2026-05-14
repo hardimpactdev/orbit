@@ -30,9 +30,10 @@ The steps below describe what the command does during a successful run.
 - **Source Creation:** Creates an empty directory or clones a repository onto
   the target node. Cloning runs non-interactively on the target node using the
   credentials that node already has in place; `app:new` does not prompt for or
-  forward git credentials. `--repo` accepts full Git URLs for any host the node
-  can access. The `owner/repo` shorthand is GitHub-only and expands to
-  `git@github.com:owner/repo.git`.
+  forward git credentials. GitHub repositories, including `owner/repo`
+  shorthand and `github.com` URLs, are cloned with `gh repo clone` using the
+  target node's GitHub CLI authentication. Full Git URLs for other hosts are
+  cloned with `git clone`.
 - **Registry Write:** Writes authoritative app configuration to the gateway database.
   App names are identity slugs and must be globally unique in the gateway app
   registry.

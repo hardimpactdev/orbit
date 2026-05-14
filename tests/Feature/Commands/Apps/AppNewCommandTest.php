@@ -70,7 +70,7 @@ it('creates source on the target app node before writing gateway app intent', fu
         ->and($payload['success']['meta']['warnings'])->toBe([]);
 });
 
-it('canonicalizes github shorthand repositories before source creation and registry write', function (): void {
+it('uses gh cli for github shorthand source creation and registry write', function (): void {
     Node::factory()->create([
         'name' => 'gateway-1',
         'role' => 'gateway',
@@ -97,10 +97,69 @@ it('canonicalizes github shorthand repositories before source creation and regis
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exitCode)->toBe(0)
-        ->and($remoteShell->runs[0]['script'])->toContain("git clone 'git@github.com:acme/api.git' '/home/deploy/apps/api'")
+        ->and($remoteShell->runs[0]['script'])->toContain("gh repo clone 'acme/api' '/home/deploy/apps/api'")
+        ->and($remoteShell->runs[0]['script'])->not->toContain('git clone')
         ->and(App::query()->where('name', 'api')->value('repository'))->toBe('git@github.com:acme/api.git')
         ->and($payload['success']['data']['app']['repository'])->toBe('git@github.com:acme/api.git')
         ->and($payload['success']['data']['app']['root'])->toBe('web');
+});
+
+it('uses gh cli for github urls', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'user' => 'deploy',
+        'status' => 'active',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'api',
+        '--node' => 'app-1',
+        '--repo' => 'https://github.com/acme/api.git',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0)
+        ->and($remoteShell->runs[0]['script'])->toContain("gh repo clone 'acme/api' '/home/deploy/apps/api'")
+        ->and($remoteShell->runs[0]['script'])->not->toContain('git clone')
+        ->and(App::query()->where('name', 'api')->value('repository'))->toBe('https://github.com/acme/api.git');
+});
+
+it('uses git clone for non-github repositories', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'user' => 'deploy',
+        'status' => 'active',
+    ]);
+
+    $remoteShell = new RecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $exitCode = Artisan::call('app:new', [
+        'name' => 'api',
+        '--node' => 'app-1',
+        '--repo' => 'https://gitlab.com/acme/api.git',
+        '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(0)
+        ->and($remoteShell->runs[0]['script'])->toContain("git clone 'https://gitlab.com/acme/api.git' '/home/deploy/apps/api'")
+        ->and($remoteShell->runs[0]['script'])->not->toContain('gh repo clone')
+        ->and(App::query()->where('name', 'api')->value('repository'))->toBe('https://gitlab.com/acme/api.git');
 });
 
 it('does not write gateway app intent when source creation fails', function (): void {
@@ -137,7 +196,7 @@ it('does not write gateway app intent when source creation fails', function (): 
         ->and($payload['error']['code'])->toBe('app.source_creation_failed')
         ->and($payload['error']['meta'])->toMatchArray([
             'reason' => 'permission denied',
-            'transport' => 'ssh',
+            'transport' => 'github',
         ]);
 });
 

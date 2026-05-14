@@ -60,7 +60,7 @@ it('prompts for an optional repository and canonicalizes github shorthand', func
         ->assertExitCode(0);
 
     expect(App::query()->where('name', 'docs')->value('repository'))->toBe('git@github.com:acme/docs.git')
-        ->and($remoteShell->scripts[0])->toContain("git clone 'git@github.com:acme/docs.git'");
+        ->and($remoteShell->scripts[0])->toContain("gh repo clone 'acme/docs'");
 });
 
 final class AppNewInteractiveRecordingRemoteShell implements RemoteShell

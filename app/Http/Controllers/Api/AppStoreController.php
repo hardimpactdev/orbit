@@ -11,6 +11,7 @@ use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Support\GitRepositoryReference;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -78,7 +79,7 @@ final class AppStoreController implements Loggable
         if (! $source['result']->successful()) {
             return $this->error('app.source_creation_failed', "Source creation for app '{$input['name']}' failed on node '{$node->name}'.", [
                 'reason' => trim($source['result']->output()) ?: 'source creation failed',
-                ...($input['repository'] !== null ? ['transport' => $this->repositoryTransport($input['repository'])] : []),
+                ...($input['repository'] !== null ? ['transport' => GitRepositoryReference::transport($input['repository'])] : []),
             ], 500);
         }
 
@@ -116,7 +117,7 @@ final class AppStoreController implements Loggable
     {
         $name = $this->stringInput($request, 'name');
         $node = $this->stringInput($request, 'node');
-        $repository = $this->canonicalRepository($this->stringInput($request, 'repository'));
+        $repository = GitRepositoryReference::canonicalize($this->stringInput($request, 'repository'));
         $root = $this->stringInput($request, 'root') ?? 'public';
         $phpVersion = $this->stringInput($request, 'php_version') ?? '8.5';
         $domain = $this->stringInput($request, 'domain');
@@ -217,28 +218,6 @@ final class AppStoreController implements Loggable
         }
 
         return trim($value);
-    }
-
-    private function canonicalRepository(?string $repository): string|false|null
-    {
-        if ($repository === null) {
-            return null;
-        }
-
-        if (preg_match('/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/', $repository)) {
-            return "git@github.com:{$repository}.git";
-        }
-
-        if (preg_match('/^(git@|https:\/\/|ssh:\/\/).+/', $repository)) {
-            return $repository;
-        }
-
-        return false;
-    }
-
-    private function repositoryTransport(string $repository): string
-    {
-        return str_starts_with($repository, 'https://') ? 'https' : 'ssh';
     }
 
     /**

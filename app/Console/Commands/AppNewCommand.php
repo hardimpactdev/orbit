@@ -17,6 +17,7 @@ use App\Http\Gateway\Responses\Apps\AppCreateResponse;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Support\GitRepositoryReference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -107,7 +108,7 @@ class AppNewCommand extends Command
                 message: "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
                 meta: [
                     'reason' => trim((string) $source['result']->output()) ?: 'source creation failed',
-                    ...($input['repository'] !== null ? ['transport' => $this->repositoryTransport($input['repository'])] : []),
+                    ...($input['repository'] !== null ? ['transport' => GitRepositoryReference::transport($input['repository'])] : []),
                 ],
             );
         }
@@ -260,7 +261,7 @@ class AppNewCommand extends Command
             return $reason;
         }
 
-        return $reason.' ('.$this->repositoryTransport($input['repository']).')';
+        return $reason.' ('.GitRepositoryReference::transport($input['repository']).')';
     }
 
     /**
@@ -345,7 +346,7 @@ class AppNewCommand extends Command
             $repository = trim(text(label: 'Repository URL (or GitHub owner/repo)', required: true));
         }
 
-        $repository = $this->canonicalRepository($repository);
+        $repository = GitRepositoryReference::canonicalize($repository);
         $root = $this->stringOption('root') ?? 'public';
         $phpVersion = $this->stringOption('php-version') ?? '8.5';
         $domain = $this->stringOption('domain');
@@ -455,28 +456,6 @@ class AppNewCommand extends Command
         }
 
         return trim($value);
-    }
-
-    private function canonicalRepository(?string $repository): string|false|null
-    {
-        if ($repository === null) {
-            return null;
-        }
-
-        if (preg_match('/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/', $repository)) {
-            return "git@github.com:{$repository}.git";
-        }
-
-        if (preg_match('/^(git@|https:\/\/|ssh:\/\/).+/', $repository)) {
-            return $repository;
-        }
-
-        return false;
-    }
-
-    private function repositoryTransport(string $repository): string
-    {
-        return str_starts_with($repository, 'https://') ? 'https' : 'ssh';
     }
 
     private function wantsJson(): bool
