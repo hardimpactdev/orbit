@@ -46,6 +46,8 @@ final class SetupWorkspaceProgressPlan
 
     private readonly bool $wasAlreadyActive;
 
+    private ?ProgressReporter $reporter = null;
+
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
@@ -116,7 +118,12 @@ final class SetupWorkspaceProgressPlan
                 'label' => 'Run workspace setup steps',
                 'doneLabel' => 'Ran workspace setup steps',
                 'run' => function (): string {
-                    $this->setupResult = $this->setupWorkspace->runSetupSteps($this->workspace, $this->app, $this->node);
+                    $this->setupResult = $this->setupWorkspace->runSetupSteps(
+                        $this->workspace,
+                        $this->app,
+                        $this->node,
+                        $this->reportSetupStepProgress(...),
+                    );
 
                     if ($this->setupResult['status'] === 'failed') {
                         $this->failure = [
@@ -192,6 +199,7 @@ final class SetupWorkspaceProgressPlan
 
     public function runForReporter(ProgressReporter $reporter): int
     {
+        $this->reporter = $reporter;
         $steps = $this->steps();
 
         $reporter->tree($this->title(), array_map(static fn (array $step): array => [
@@ -215,6 +223,8 @@ final class SetupWorkspaceProgressPlan
                     ],
                 ];
                 $reporter->stepFail($step['key'], $e->getMessage());
+
+                $this->reporter = null;
 
                 return 1;
             }
@@ -242,7 +252,25 @@ final class SetupWorkspaceProgressPlan
             $reporter->stepDone($step['key'], $message === '' ? null : $message);
         }
 
+        $this->reporter = null;
+
         return 0;
+    }
+
+    private function reportSetupStepProgress(string $event, WorkspaceStep $step, int $index, int $count): void
+    {
+        if ($this->reporter === null) {
+            return;
+        }
+
+        $command = str($step->command)->squish()->limit(80)->toString();
+        $message = match ($event) {
+            'completed' => "Completed setup step {$index}/{$count}: {$command}",
+            'failed' => "Failed setup step {$index}/{$count}: {$command}",
+            default => "Running setup step {$index}/{$count}: {$command}",
+        };
+
+        $this->reporter->stepProgress('run_workspace_setup_steps', 'progress', $message);
     }
 
     public function doneFooter(): string

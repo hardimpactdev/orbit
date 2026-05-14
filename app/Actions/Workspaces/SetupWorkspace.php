@@ -183,9 +183,10 @@ SH,
     }
 
     /**
+     * @param  (callable(string, WorkspaceStep, int, int): void)|null  $onStepProgress
      * @return array{status: string, message: string, count: int}
      */
-    public function runSetupSteps(Workspace $workspace, App $app, Node $node): array
+    public function runSetupSteps(Workspace $workspace, App $app, Node $node, ?callable $onStepProgress = null): array
     {
         $steps = WorkspaceStep::query()
             ->where('app_id', $app->id)
@@ -229,7 +230,7 @@ SH,
         $env = $this->workspaceEnv($app, $workspace, $node);
         $renderedSteps = $this->renderSteps($steps->all(), $workspace->name);
 
-        $success = $this->stepRunner->run($run, $renderedSteps, $workspace->path, $env, $node);
+        $success = $this->stepRunner->run($run, $renderedSteps, $workspace->path, $env, $node, $onStepProgress);
 
         if (! $success) {
             $failedStep = $run->runSteps()

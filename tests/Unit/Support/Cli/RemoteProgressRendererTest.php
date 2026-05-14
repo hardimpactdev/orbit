@@ -27,3 +27,23 @@ it('uses the canonical spinner frame order for active remote progress steps', fu
         '◉  Run workspace setup steps',
     ]);
 });
+
+it('renders progress messages for active remote progress steps', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new RemoteProgressRenderer($output);
+
+    $renderer->tree('Setting Up Workspace', [
+        [
+            'key' => 'setup',
+            'label' => 'Run workspace setup steps',
+            'doneLabel' => 'Ran workspace setup steps',
+        ],
+    ]);
+
+    $renderer->step('setup', 'start');
+    $renderer->step('setup', 'progress', 'Running setup step 1/2: composer install --no-interaction');
+
+    expect($output->fetch())
+        ->toContain('Run workspace setup steps')
+        ->toContain('Running setup step 1/2: composer install --no-interaction');
+});

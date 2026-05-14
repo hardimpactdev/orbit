@@ -97,9 +97,13 @@ final readonly class LifecycleSummaryRenderer
     /**
      * Format a spinner animation line with a padded label.
      */
-    public function spinnerLine(string $frame, string $label, int $labelWidth): string
+    public function spinnerLine(string $frame, string $label, int $labelWidth, string $message = ''): string
     {
         $line = "  {$frame}  ".SpinnerTreeRenderer::ACCENT.str_pad($label, $labelWidth).SpinnerTreeRenderer::RESET;
+
+        if ($message !== '') {
+            $line .= '  '.SpinnerTreeRenderer::DIM.$message.SpinnerTreeRenderer::RESET;
+        }
 
         if ($this->styled) {
             return $line;

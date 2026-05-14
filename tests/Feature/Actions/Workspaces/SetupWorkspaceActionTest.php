@@ -256,6 +256,51 @@ it('runs setup steps when configured', function (): void {
     expect($run->status)->toBe('completed');
 });
 
+it('reports progress while setup steps are running', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install --no-interaction',
+        'timeout_seconds' => 1200,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 2,
+        'command' => 'npm ci',
+        'timeout_seconds' => 900,
+    ]);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+    $events = [];
+
+    app(SetupWorkspace::class)->runSetupSteps(
+        $workspace,
+        $app,
+        $node,
+        function (string $event, WorkspaceStep $step, int $index, int $count) use (&$events): void {
+            $events[] = [$event, $step->command, $index, $count];
+        },
+    );
+
+    expect($events)->toBe([
+        ['running', 'composer install --no-interaction', 1, 2],
+        ['completed', 'composer install --no-interaction', 1, 2],
+        ['running', 'npm ci', 2, 2],
+        ['completed', 'npm ci', 2, 2],
+    ]);
+});
+
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,

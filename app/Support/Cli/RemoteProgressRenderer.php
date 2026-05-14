@@ -80,7 +80,7 @@ final class RemoteProgressRenderer
             'done' => $this->completeStep($index, $key, $this->summary->success($doneLabel, $this->labelWidth, (string) ($message ?? ''))),
             'fail' => $this->completeStep($index, $key, $this->summary->failure($doneLabel, $this->labelWidth, (string) ($message ?? 'failed'))),
             'skip' => $this->completeStep($index, $key, $this->summary->skipped($doneLabel, $this->labelWidth, (string) ($message ?? 'skipped'))),
-            default => null,
+            default => $this->progressStep($index, $key, (string) ($message ?? $status)),
         };
     }
 
@@ -101,6 +101,24 @@ final class RemoteProgressRenderer
         $this->writeLine(
             $index,
             $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth),
+        );
+        $this->frame++;
+    }
+
+    private function progressStep(int $index, string $key, string $message): void
+    {
+        if ($this->activeKey !== $key) {
+            $this->stopSpinnerProcess();
+            $this->activeKey = $key;
+            $this->frame = 0;
+            $this->startSpinnerProcess();
+        }
+
+        $step = $this->steps[$index];
+        $frames = SpinnerTreeRenderer::spinnerFrames();
+        $this->writeLine(
+            $index,
+            $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $message),
         );
         $this->frame++;
     }

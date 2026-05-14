@@ -19,18 +19,24 @@ final readonly class WorkspaceSetupStepRunner
     /**
      * @param  list<WorkspaceStep>  $steps
      * @param  array<string, string>  $env
+     * @param  (callable(string, WorkspaceStep, int, int): void)|null  $onProgress
      */
-    public function run(WorkspaceRun $run, array $steps, string $path, array $env, Node $node): bool
+    public function run(WorkspaceRun $run, array $steps, string $path, array $env, Node $node, ?callable $onProgress = null): bool
     {
         $run->update(['status' => 'running']);
+        $stepCount = count($steps);
 
-        foreach ($steps as $step) {
+        foreach (array_values($steps) as $index => $step) {
             $runStep = WorkspaceRunStep::create([
                 'workspace_run_id' => $run->id,
                 'workspace_step_id' => $step->id,
                 'command' => $step->command,
                 'started_at' => now(),
             ]);
+
+            if ($onProgress !== null) {
+                $onProgress('running', $step, $index + 1, $stepCount);
+            }
 
             $result = $this->remoteShell->run($node, $step->command, [
                 'cwd' => $path,
@@ -45,9 +51,17 @@ final readonly class WorkspaceSetupStepRunner
             ]);
 
             if (! $result->successful()) {
+                if ($onProgress !== null) {
+                    $onProgress('failed', $step, $index + 1, $stepCount);
+                }
+
                 $run->update(['status' => 'failed', 'completed_at' => now()]);
 
                 return false;
+            }
+
+            if ($onProgress !== null) {
+                $onProgress('completed', $step, $index + 1, $stepCount);
             }
         }
 
