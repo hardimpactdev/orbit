@@ -13,6 +13,7 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceRemoveResponse;
+use App\Models\App;
 use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -223,7 +224,8 @@ class WorkspaceRemoveCommand extends Command
                 $result = [];
 
                 foreach ($workspaces as $workspace) {
-                    $appName = $workspace->app?->name ?? 'unknown';
+                    $app = $workspace->app;
+                    $appName = $app instanceof App ? $app->name : 'unknown';
                     $result[$workspace->name] = "{$workspace->name} ({$appName})";
                 }
 

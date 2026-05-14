@@ -95,7 +95,7 @@ class PhpUseCommand extends Command
             return (string) $this->promptSelect(
                 label: 'PHP version',
                 options: PhpRuntimeCatalog::SUPPORTED,
-                default: PhpRuntimeCatalog::SUPPORTED[0] ?? null,
+                default: PhpRuntimeCatalog::DEFAULT,
             );
         } catch (PromptAborted) {
             return $this->failCommand(new PhpRuntimeFailure(
