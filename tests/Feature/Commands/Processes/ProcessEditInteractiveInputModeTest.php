@@ -7,6 +7,8 @@ use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -26,9 +28,9 @@ it('prompts for app and name when both are absent', function (): void {
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
+    DataTablePrompt::fake([Key::ENTER, Key::ENTER]);
+
     $this->artisan('process:edit --command="php artisan serve"')
-        ->expectsChoice('App', 'docs', ['docs'])
-        ->expectsChoice('Process name', 'web', ['web'])
         ->assertSuccessful();
 });
 
@@ -38,9 +40,10 @@ it('skips app prompt when --app is supplied', function (): void {
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/home/orbit/apps/docs']);
     Process::factory()->create(['app_id' => $app->id, 'name' => 'web']);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('process:edit --app=docs --command="php artisan serve"')
         ->doesntExpectOutput('App')
-        ->expectsChoice('Process name', 'web', ['web'])
         ->assertSuccessful();
 });
 

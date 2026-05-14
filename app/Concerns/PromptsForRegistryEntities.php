@@ -1,0 +1,577 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Concerns;
+
+use App\Exceptions\PromptAborted;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\ListAppsRequest;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
+use App\Http\Gateway\Requests\Schedules\ListSchedulesRequest;
+use App\Http\Gateway\Requests\Workspaces\ListWorkspacesRequest;
+use App\Http\Gateway\Responses\Apps\AppListResponse;
+use App\Http\Gateway\Responses\Nodes\NodeListResponse;
+use App\Http\Gateway\Responses\Schedules\ScheduleListResponse;
+use App\Http\Gateway\Responses\Workspaces\WorkspaceListResponse;
+use App\Models\App;
+use App\Models\Node;
+use App\Models\Schedule;
+use App\Models\Workspace;
+use Illuminate\Database\Eloquent\Builder;
+use Throwable;
+
+trait PromptsForRegistryEntities
+{
+    use HandlesPromptCancellation;
+
+    private const string WORKSPACE_SELECTION_SEPARATOR = "\t";
+
+    private const string SCHEDULE_SELECTION_SEPARATOR = "\t";
+
+    /**
+     * @throws PromptAborted
+     */
+    protected function promptForVisibleApp(string $label = 'Select an app', ?string $node = null, ?string $environment = null): string|GatewayApiException
+    {
+        $apps = $this->visibleAppPromptPayloads($node, $environment);
+
+        if ($apps instanceof GatewayApiException) {
+            return $apps;
+        }
+
+        if ($apps === []) {
+            return new GatewayApiException('No apps found.', 'app.not_found', [
+                'field' => 'app',
+            ]);
+        }
+
+        return (string) $this->promptDataTable(
+            label: $label,
+            headers: ['App', 'Host', 'Node', 'Repository'],
+            rows: $this->appPromptRows($apps),
+        );
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    protected function promptForVisibleNode(
+        string $label = 'Select a node',
+        ?string $role = null,
+        ?string $environment = null,
+        bool $activeOnly = true,
+    ): string|GatewayApiException {
+        $nodes = $this->visibleNodePromptPayloads($role, $environment, $activeOnly);
+
+        if ($nodes instanceof GatewayApiException) {
+            return $nodes;
+        }
+
+        if ($nodes === []) {
+            return new GatewayApiException('No nodes found.', 'node.not_found', [
+                'field' => 'name',
+            ]);
+        }
+
+        return (string) $this->promptDataTable(
+            label: $label,
+            headers: ['Node', 'Role', 'Environment', 'Host', 'Status'],
+            rows: $this->nodePromptRows($nodes),
+        );
+    }
+
+    /**
+     * @return array{name: string, app: string|null}|GatewayApiException
+     *
+     * @throws PromptAborted
+     */
+    protected function promptForVisibleWorkspace(string $label = 'Select a workspace', ?string $app = null, ?string $node = null): array|GatewayApiException
+    {
+        $workspaces = $this->visibleWorkspacePromptPayloads($app, $node);
+
+        if ($workspaces instanceof GatewayApiException) {
+            return $workspaces;
+        }
+
+        if ($workspaces === []) {
+            return new GatewayApiException('No workspaces found.', 'workspace.not_found', [
+                'field' => 'name',
+            ]);
+        }
+
+        return $this->promptForWorkspacePayloads($label, $workspaces);
+    }
+
+    /**
+     * @return array{name: string, app: string|null, node: string|null}|GatewayApiException
+     *
+     * @throws PromptAborted
+     */
+    protected function promptForVisibleSchedule(string $label = 'Select a schedule', ?string $app = null, ?string $node = null): array|GatewayApiException
+    {
+        $schedules = $this->visibleSchedulePromptPayloads($app, $node);
+
+        if ($schedules instanceof GatewayApiException) {
+            return $schedules;
+        }
+
+        if ($schedules === []) {
+            return new GatewayApiException('No schedules found.', 'schedule.not_found', [
+                'field' => 'name',
+                'app' => $app,
+                'node' => $node,
+            ]);
+        }
+
+        $selected = (string) $this->promptDataTable(
+            label: $label,
+            headers: ['Schedule', 'Scope', 'Target', 'Node', 'Interval', 'Execution', 'Status'],
+            rows: $this->schedulePromptRows($schedules),
+        );
+
+        return $this->decodeScheduleSelection($selected);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $workspaces
+     * @return array{name: string, app: string|null}
+     *
+     * @throws PromptAborted
+     */
+    protected function promptForWorkspacePayloads(string $label, array $workspaces): array
+    {
+        $selected = (string) $this->promptDataTable(
+            label: $label,
+            headers: ['Workspace', 'App', 'Node', 'URL', 'Status'],
+            rows: $this->workspacePromptRows($workspaces),
+        );
+
+        return $this->decodeWorkspaceSelection($selected);
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    protected function visibleAppPromptPayloads(?string $node = null, ?string $environment = null): array|GatewayApiException
+    {
+        if ((bool) config('orbit.is_gateway', false)) {
+            return App::query()
+                ->with('node')
+                ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+                ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
+                ->orderBy('name')
+                ->get()
+                ->map(fn (App $app): array => $this->appPromptPayload($app))
+                ->values()
+                ->all();
+        }
+
+        try {
+            /** @var AppListResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new ListAppsRequest(node: $node, environment: $environment))
+                ->dto();
+
+            return $dto->apps;
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException('Gateway connection is required to list apps.', 'gateway_unavailable', []);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    protected function visibleNodePromptPayloads(?string $role = null, ?string $environment = null, bool $activeOnly = true): array|GatewayApiException
+    {
+        if ((bool) config('orbit.is_gateway', false)) {
+            return Node::query()
+                ->when($role !== null, fn (Builder $query): Builder => $query->where('role', $role))
+                ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
+                ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', 'active'))
+                ->orderBy('role')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Node $node): array => $this->nodePromptPayload($node))
+                ->values()
+                ->all();
+        }
+
+        try {
+            /** @var NodeListResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new ListNodesRequest(role: $role, environment: $environment))
+                ->dto();
+
+            return collect($dto->nodes)
+                ->filter(fn (array $node): bool => ! $activeOnly || ($node['status'] ?? null) === 'active')
+                ->values()
+                ->all();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException('Gateway connection is required to list nodes.', 'gateway_unavailable', []);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    protected function visibleWorkspacePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
+    {
+        if ((bool) config('orbit.is_gateway', false)) {
+            return Workspace::query()
+                ->with('app.node')
+                ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+                ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
+                ->get()
+                ->sort(fn (Workspace $first, Workspace $second): int => [
+                    mb_strtolower((string) $first->app?->node?->name),
+                    mb_strtolower((string) $first->app?->name),
+                    mb_strtolower($first->name),
+                ] <=> [
+                    mb_strtolower((string) $second->app?->node?->name),
+                    mb_strtolower((string) $second->app?->name),
+                    mb_strtolower($second->name),
+                ])
+                ->map(fn (Workspace $workspace): array => $this->workspacePromptPayload($workspace))
+                ->values()
+                ->all();
+        }
+
+        try {
+            /** @var WorkspaceListResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new ListWorkspacesRequest(app: $app, node: $node))
+                ->dto();
+
+            return $dto->workspaces;
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException('Gateway connection is required to list workspaces.', 'gateway_unavailable', []);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    protected function visibleSchedulePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
+    {
+        if ((bool) config('orbit.is_gateway', false)) {
+            return Schedule::query()
+                ->with(['app.node', 'node'])
+                ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+                ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+                ->orderBy('scope')
+                ->orderBy('target_name')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Schedule $schedule): array => $this->schedulePromptPayload($schedule))
+                ->values()
+                ->all();
+        }
+
+        try {
+            /** @var ScheduleListResponse $dto */
+            $dto = app(GatewayConnector::class)
+                ->send(new ListSchedulesRequest(app: $app, node: $node))
+                ->dto();
+
+            return $dto->schedules;
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException('Gateway connection is required to list schedules.', 'gateway_unavailable', []);
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $apps
+     * @return array<string, array<int, string>>
+     */
+    protected function appPromptRows(array $apps): array
+    {
+        $rows = [];
+
+        foreach ($apps as $app) {
+            $name = $this->promptString($app['name'] ?? null);
+
+            if ($name === '') {
+                continue;
+            }
+
+            $rows[$name] = [
+                $name,
+                $this->appHostFromPromptPayload($app),
+                $this->promptString($app['node'] ?? null, '-'),
+                $this->promptString($app['repository'] ?? null, '-'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $nodes
+     * @return array<string, array<int, string>>
+     */
+    protected function nodePromptRows(array $nodes): array
+    {
+        $rows = [];
+
+        foreach ($nodes as $node) {
+            $name = $this->promptString($node['name'] ?? null);
+
+            if ($name === '') {
+                continue;
+            }
+
+            $rows[$name] = [
+                $name,
+                $this->promptString($node['role'] ?? null, '-'),
+                $this->promptString($node['environment'] ?? null, '-'),
+                $this->promptString($node['host'] ?? $node['wireguard_address'] ?? null, '-'),
+                $this->promptString($node['status'] ?? null, '-'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $workspaces
+     * @return array<string, array<int, string>>
+     */
+    protected function workspacePromptRows(array $workspaces): array
+    {
+        $rows = [];
+
+        foreach ($workspaces as $workspace) {
+            $name = $this->promptString($workspace['name'] ?? null);
+
+            if ($name === '') {
+                continue;
+            }
+
+            $app = $this->promptString($workspace['app'] ?? null);
+            $rows[$this->workspaceSelectionKey($name, $app)] = [
+                $name,
+                $app !== '' ? $app : '-',
+                $this->promptString($workspace['node'] ?? null, '-'),
+                $this->promptString($workspace['url'] ?? null, '-'),
+                $this->promptString($workspace['lifecycle_status'] ?? $workspace['status'] ?? null, '-'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $schedules
+     * @return array<string, array<int, string>>
+     */
+    protected function schedulePromptRows(array $schedules): array
+    {
+        $rows = [];
+
+        foreach ($schedules as $schedule) {
+            $name = $this->promptString($schedule['name'] ?? null);
+            $scope = $this->promptString($schedule['scope'] ?? null);
+            $target = $this->scheduleTargetName($schedule);
+
+            if ($name === '' || $scope === '' || $target === '') {
+                continue;
+            }
+
+            $rows[$this->scheduleSelectionKey($scope, $target, $name)] = [
+                $name,
+                $scope,
+                $target,
+                $this->scheduleTargetNode($schedule),
+                $this->promptString($schedule['interval'] ?? null, '-'),
+                $this->scheduleExecutionLabel($schedule),
+                $this->promptString($schedule['status'] ?? null, '-'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function appPromptPayload(App $app): array
+    {
+        return [
+            'name' => $app->name,
+            'node' => $app->node?->name,
+            'environment' => $app->environment,
+            'url' => $app->url(),
+            'repository' => $app->repository,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function nodePromptPayload(Node $node): array
+    {
+        return [
+            'name' => $node->name,
+            'role' => $node->role,
+            'environment' => $node->environment,
+            'host' => $node->host,
+            'wireguard_address' => $node->wireguard_address,
+            'status' => $node->status,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function workspacePromptPayload(Workspace $workspace): array
+    {
+        return [
+            'name' => $workspace->name,
+            'app' => $workspace->app?->name,
+            'node' => $workspace->app?->node?->name,
+            'url' => $workspace->url(),
+            'lifecycle_status' => $workspace->lifecycle_status->value,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function schedulePromptPayload(Schedule $schedule): array
+    {
+        $targetNode = $schedule->scope === 'app'
+            ? $schedule->app?->node
+            : $schedule->node;
+
+        return [
+            'name' => $schedule->name,
+            'scope' => $schedule->scope,
+            'target' => [
+                'type' => $schedule->scope,
+                'name' => $schedule->target_name,
+                'node' => $targetNode?->name,
+            ],
+            'interval' => $schedule->interval,
+            'execution' => [
+                'type' => $schedule->execution_type,
+                'value' => $schedule->execution_value,
+            ],
+            'status' => $schedule->status,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $app
+     */
+    private function appHostFromPromptPayload(array $app): string
+    {
+        $host = $this->promptString($app['domain'] ?? null);
+
+        if ($host !== '') {
+            return $host;
+        }
+
+        $url = $this->promptString($app['url'] ?? null);
+
+        if ($url === '') {
+            return $this->promptString($app['host'] ?? null, '-');
+        }
+
+        $parsed = parse_url((string) $url, PHP_URL_HOST);
+
+        return is_string($parsed) && $parsed !== '' ? $parsed : $url;
+    }
+
+    private function workspaceSelectionKey(string $name, string $app): string
+    {
+        return $app.self::WORKSPACE_SELECTION_SEPARATOR.$name;
+    }
+
+    /**
+     * @return array{name: string, app: string|null}
+     */
+    private function decodeWorkspaceSelection(string $selected): array
+    {
+        [$app, $name] = array_pad(explode(self::WORKSPACE_SELECTION_SEPARATOR, $selected, 2), 2, '');
+
+        return [
+            'name' => $name,
+            'app' => $app !== '' ? $app : null,
+        ];
+    }
+
+    private function scheduleSelectionKey(string $scope, string $target, string $name): string
+    {
+        return $scope.self::SCHEDULE_SELECTION_SEPARATOR.$target.self::SCHEDULE_SELECTION_SEPARATOR.$name;
+    }
+
+    /**
+     * @return array{name: string, app: string|null, node: string|null}
+     */
+    private function decodeScheduleSelection(string $selected): array
+    {
+        [$scope, $target, $name] = array_pad(explode(self::SCHEDULE_SELECTION_SEPARATOR, $selected, 3), 3, '');
+
+        return [
+            'name' => $name,
+            'app' => $scope === 'app' && $target !== '' ? $target : null,
+            'node' => $scope === 'node' && $target !== '' ? $target : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $schedule
+     */
+    private function scheduleTargetName(array $schedule): string
+    {
+        $target = $schedule['target'] ?? [];
+
+        return is_array($target) ? $this->promptString($target['name'] ?? null) : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $schedule
+     */
+    private function scheduleTargetNode(array $schedule): string
+    {
+        $target = $schedule['target'] ?? [];
+
+        return is_array($target) ? $this->promptString($target['node'] ?? null, '-') : '-';
+    }
+
+    /**
+     * @param  array<string, mixed>  $schedule
+     */
+    private function scheduleExecutionLabel(array $schedule): string
+    {
+        $execution = $schedule['execution'] ?? [];
+
+        if (! is_array($execution)) {
+            return '-';
+        }
+
+        $type = $this->promptString($execution['type'] ?? null);
+        $value = $this->promptString($execution['value'] ?? null);
+
+        if ($type === '') {
+            return $value !== '' ? $value : '-';
+        }
+
+        return $value !== '' ? "{$type}: {$value}" : $type;
+    }
+
+    private function promptString(mixed $value, string $fallback = ''): string
+    {
+        return is_string($value) && $value !== '' ? $value : $fallback;
+    }
+}

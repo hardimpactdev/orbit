@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\AddProcess;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
@@ -22,7 +22,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
 #[Signature('process:add
@@ -36,7 +35,7 @@ use function Laravel\Prompts\text;
 #[Description('Add an app process definition')]
 class ProcessAddCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -169,10 +168,17 @@ class ProcessAddCommand extends Command
             }
 
             try {
-                $appNames = App::query()->orderBy('name')->pluck('name')->all();
-                $app = (string) ($appNames !== []
-                    ? select(label: 'App', options: $appNames, required: true)
-                    : $this->promptText(label: 'App', required: true));
+                $selected = $this->promptForVisibleApp(label: 'Select app');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $app = $selected;
             } catch (PromptAborted) {
                 return $this->promptAborted();
             }

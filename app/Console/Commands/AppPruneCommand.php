@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\PruneAppWorkspaces;
+use App\Concerns\PromptsForRegistryEntities;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\PruneAppRequest;
@@ -16,8 +18,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\text;
-
 #[Signature('app:prune
     {app? : App name or hostname}
     {--dry-run : Preview stale workspaces without removing}
@@ -26,6 +26,8 @@ use function Laravel\Prompts\text;
 #[Description('Remove stale workspaces for an app')]
 class AppPruneCommand extends Command
 {
+    use PromptsForRegistryEntities;
+
     public function handle(PruneAppWorkspaces $prune, AppAgentIdeDefaults $defaults): int
     {
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
@@ -33,7 +35,15 @@ class AppPruneCommand extends Command
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim(text(label: 'App name or hostname', required: true));
+            $selector = $this->promptAppSelector();
+
+            if ($selector instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selector->errorCode() ?? 'gateway_unavailable',
+                    message: $selector->getMessage(),
+                    meta: $selector->errorMeta(),
+                );
+            }
         }
 
         if ($selector === null) {
@@ -81,6 +91,15 @@ class AppPruneCommand extends Command
         }
 
         return $this->successCommand($result);
+    }
+
+    private function promptAppSelector(): string|GatewayApiException
+    {
+        try {
+            return $this->promptForVisibleApp(label: 'Select an app');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
+        }
     }
 
     private function forwardPrune(string $selector, bool $dryRun): int

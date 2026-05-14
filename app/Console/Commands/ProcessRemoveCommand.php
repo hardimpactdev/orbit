@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\RemoveProcess;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Processes\RemoveProcessRequest;
 use App\Http\Gateway\Responses\Processes\ProcessRemoveResponse;
 use App\Models\App;
+use App\Models\Process;
 use App\Services\Nodes\CallerRoleResolver;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -28,6 +31,7 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove an app process definition')]
 class ProcessRemoveCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -145,21 +149,95 @@ class ProcessRemoveCommand extends Command
      */
     private function validatedInput(): array|int
     {
+        $isInteractive = ! $this->wantsJson() && $this->input->isInteractive();
+
         $app = $this->stringOption('app');
         $name = $this->stringArgument('name');
 
         if ($app === null) {
-            return $this->failValidation('app', 'An app context is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('app', 'An app context is required.');
+            }
+
+            try {
+                $selected = $this->promptForVisibleApp(label: 'Select app');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $app = $selected;
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
         }
 
         if ($name === null) {
-            return $this->failValidation('name', 'The process name is required.');
+            if (! $isInteractive) {
+                return $this->failValidation('name', 'The process name is required.');
+            }
+
+            try {
+                $selectedProcess = $this->promptForProcessName($app);
+
+                if ($selectedProcess instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selectedProcess->errorCode() ?? 'gateway_unavailable',
+                        message: $selectedProcess->getMessage(),
+                        meta: $selectedProcess->errorMeta(),
+                    );
+                }
+
+                $name = (string) $selectedProcess;
+            } catch (PromptAborted) {
+                return $this->failCommand(
+                    code: 'validation_failed',
+                    message: 'Operation cancelled.',
+                    meta: [],
+                );
+            }
         }
 
         return [
             'app' => $app,
             'name' => $name,
         ];
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    private function promptForProcessName(string $app): string|int|GatewayApiException
+    {
+        $processes = Process::query()
+            ->whereHas('app', fn ($query) => $query->where('name', $app))
+            ->orderBy('name')
+            ->get();
+
+        if ($processes->isEmpty()) {
+            return new GatewayApiException('No processes found.', 'process.not_found', [
+                'field' => 'name',
+                'app' => $app,
+            ]);
+        }
+
+        return $this->promptDataTable(
+            label: 'Select a process',
+            headers: ['Process', 'Command'],
+            rows: $processes
+                ->mapWithKeys(fn (Process $process): array => [
+                    $process->name => [$process->name, $process->command],
+                ])
+                ->all(),
+        );
     }
 
     private function confirmRemoval(string $name): ?int

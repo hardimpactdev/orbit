@@ -11,6 +11,8 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -424,9 +426,10 @@ it('prompts for missing interactive input before adopting an app path', function
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]));
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:register')
         ->expectsQuestion('App name', 'docs')
-        ->expectsChoice('Target app node', 'app-1', ['app-1'])
         ->expectsQuestion('App path on node', '/home/orbit/apps/docs')
         ->expectsConfirmation('Adopt existing app path?', 'yes')
         ->expectsOutputToContain("App 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.")

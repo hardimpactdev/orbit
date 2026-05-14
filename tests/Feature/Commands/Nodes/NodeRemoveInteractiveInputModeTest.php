@@ -27,13 +27,13 @@ class TestableNodeRemoveCommand extends NodeRemoveCommand
         return true;
     }
 
-    protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
+    protected function promptDataTable(string $label, array $headers, array $rows, string $hint = 'Press / to search'): string|int
     {
         if (self::$abortPrompt === $label) {
             throw new PromptAborted;
         }
 
-        return parent::promptText($label, $required, $validate);
+        return parent::promptDataTable($label, $headers, $rows, $hint);
     }
 
     protected function promptConfirm(string $label, bool $default = true): bool
@@ -216,7 +216,7 @@ describe('node:remove interactive input mode contract', function (): void {
         setupNodeRemoveGatewayCallerInteractive();
         DB::table('nodes')->insert(nodeRemoveInteractiveRow());
 
-        TestableNodeRemoveCommand::$abortPrompt = 'Node name';
+        TestableNodeRemoveCommand::$abortPrompt = 'Select a node to remove';
 
         [$exitCode, $output] = runTestableNodeRemoveInteractive([
             '--force' => true,

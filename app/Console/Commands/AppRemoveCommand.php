@@ -9,7 +9,9 @@ use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
+use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Http\Gateway\Requests\Apps\RemoveAppRequest;
+use App\Http\Gateway\Responses\Apps\AppListResponse;
 use App\Http\Gateway\Responses\Apps\AppRemoveResponse;
 use App\Models\App;
 use Illuminate\Console\Attributes\Description;
@@ -18,7 +20,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\text;
+use function Laravel\Prompts\datatable;
 
 #[Signature('app:remove
     {app? : App name or hostname}
@@ -37,7 +39,11 @@ class AppRemoveCommand extends Command
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim(text(label: 'App name or hostname', required: true));
+            $selector = $this->promptForApp($callerRole);
+
+            if (is_int($selector)) {
+                return $selector;
+            }
         }
 
         if ($selector === null) {
@@ -145,6 +151,131 @@ class AppRemoveCommand extends Command
             'cleanup' => is_array($dto->data['cleanup'] ?? null) ? $dto->data['cleanup'] : [],
             'warnings' => $dto->warnings,
         ]);
+    }
+
+    private function promptForApp(string $callerRole): string|int
+    {
+        $apps = $this->fetchPromptApps($callerRole);
+
+        if ($apps instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $apps->errorCode() ?? 'gateway_unavailable',
+                message: $apps->getMessage() !== ''
+                    ? $apps->getMessage()
+                    : 'Gateway connection is required to list removable apps.',
+                meta: $apps->errorMeta(),
+            );
+        }
+
+        $rows = $this->appPromptRows($apps);
+
+        if ($rows === []) {
+            return $this->failCommand(
+                code: 'app.not_found',
+                message: 'No removable apps are registered.',
+                meta: [],
+            );
+        }
+
+        $selected = datatable(
+            headers: ['Host', 'Node', 'Repository'],
+            rows: $rows,
+            label: 'Select an app to remove',
+            hint: 'Press / to search',
+        );
+
+        return is_string($selected) && $selected !== ''
+            ? $selected
+            : $this->failValidation('app', 'App is required.');
+    }
+
+    /**
+     * @return list<array<string, mixed>>|GatewayApiException
+     */
+    private function fetchPromptApps(string $callerRole): array|GatewayApiException
+    {
+        if ($callerRole === 'gateway') {
+            return App::query()
+                ->with('node')
+                ->get()
+                ->sort(fn (App $first, App $second): int => [
+                    mb_strtolower((string) $first->node?->name),
+                    mb_strtolower($first->name),
+                ] <=> [
+                    mb_strtolower((string) $second->node?->name),
+                    mb_strtolower($second->name),
+                ])
+                ->values()
+                ->map(fn (App $app): array => [
+                    'name' => $app->name,
+                    'node' => $app->node?->name,
+                    'url' => $app->url(),
+                    'repository' => $app->repository,
+                ])
+                ->all();
+        }
+
+        try {
+            $dto = app(GatewayConnector::class)
+                ->send(new ListAppsRequest)
+                ->dto();
+        } catch (GatewayApiException $e) {
+            return $e;
+        } catch (Throwable) {
+            return new GatewayApiException(
+                message: 'Gateway connection is required to list removable apps.',
+                errorCode: 'gateway_unavailable',
+                errorMeta: [],
+            );
+        }
+
+        /** @var AppListResponse $dto */
+        return $dto->apps;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $apps
+     * @return array<string, array<int, string>>
+     */
+    private function appPromptRows(array $apps): array
+    {
+        $rows = [];
+
+        foreach ($apps as $app) {
+            $name = is_string($app['name'] ?? null) && $app['name'] !== '' ? $app['name'] : null;
+
+            if ($name === null) {
+                continue;
+            }
+
+            $rows[$name] = [
+                $this->hostFromAppPayload($app, $name),
+                is_string($app['node'] ?? null) && $app['node'] !== '' ? $app['node'] : '-',
+                is_string($app['repository'] ?? null) && $app['repository'] !== '' ? $app['repository'] : '-',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, mixed>  $app
+     */
+    private function hostFromAppPayload(array $app, string $fallback): string
+    {
+        $url = is_string($app['url'] ?? null) ? $app['url'] : null;
+
+        if ($url !== null) {
+            $host = parse_url($url, PHP_URL_HOST);
+
+            if (is_string($host) && $host !== '') {
+                return $host;
+            }
+        }
+
+        $domain = is_string($app['domain'] ?? null) ? $app['domain'] : null;
+
+        return $domain !== null && $domain !== '' ? $domain : $fallback;
     }
 
     private function resolveApp(string $selector): ?App

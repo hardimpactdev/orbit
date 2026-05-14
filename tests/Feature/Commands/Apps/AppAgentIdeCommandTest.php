@@ -6,6 +6,7 @@ use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
+use App\Http\Gateway\Requests\Apps\ListAppsRequest;
 use App\Http\Gateway\Requests\Apps\SetAppAgentIdeRequest;
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
@@ -13,6 +14,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -391,6 +394,25 @@ it('queries gateway adapter choices before prompting configured control callers'
     ])->save();
 
     $mockClient = MockClient::global([
+        ListAppsRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'apps' => [
+                        [
+                            'name' => 'docs',
+                            'node' => 'app-1',
+                            'environment' => 'development',
+                            'url' => 'https://docs.test',
+                            'path' => '/home/orbit/apps/docs',
+                            'root' => 'public',
+                            'repository' => null,
+                            'php_version' => '8.5',
+                            'adopted' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
         ListAgentIdeAdaptersRequest::class => MockResponse::make([
             'success' => [
                 'data' => [
@@ -435,8 +457,9 @@ it('queries gateway adapter choices before prompting configured control callers'
         ], 200),
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:agent-ide')
-        ->expectsQuestion('App name or hostname', 'docs')
         ->expectsChoice('Select agent IDE adapter', 'custom-agent', [
             'inherit' => 'Inherit node default',
             'none' => 'None',
@@ -445,6 +468,7 @@ it('queries gateway adapter choices before prompting configured control callers'
         ->expectsOutputToContain('App `docs` agent IDE set to `custom-agent` (effective: `custom-agent`)')
         ->assertExitCode(0);
 
+    $mockClient->assertSent(ListAppsRequest::class);
     $mockClient->assertSent(ListAgentIdeAdaptersRequest::class);
     $mockClient->assertSent(SetAppAgentIdeRequest::class);
 });
@@ -463,6 +487,25 @@ it('fails before adapter prompt when configured control callers cannot fetch ada
     ])->save();
 
     MockClient::global([
+        ListAppsRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'apps' => [
+                        [
+                            'name' => 'docs',
+                            'node' => 'app-1',
+                            'environment' => 'development',
+                            'url' => 'https://docs.test',
+                            'path' => '/home/orbit/apps/docs',
+                            'root' => 'public',
+                            'repository' => null,
+                            'php_version' => '8.5',
+                            'adopted' => false,
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
         ListAgentIdeAdaptersRequest::class => MockResponse::make([
             'error' => [
                 'code' => 'gateway_unavailable',
@@ -472,8 +515,9 @@ it('fails before adapter prompt when configured control callers cannot fetch ada
         ], 503),
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:agent-ide')
-        ->expectsQuestion('App name or hostname', 'docs')
         ->expectsOutputToContain('Gateway connection is required to read agent IDE adapters.')
         ->assertExitCode(1);
 });
@@ -488,8 +532,9 @@ it('prompts for missing human input and renders the progress tree', function ():
         'name' => 'docs',
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:agent-ide')
-        ->expectsQuestion('App name or hostname', 'docs')
         ->expectsChoice('Select agent IDE adapter', 'opencode', [
             'inherit' => 'Inherit node default',
             'none' => 'None',

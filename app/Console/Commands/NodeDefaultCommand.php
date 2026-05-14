@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Models\LocalGatewaySettings;
@@ -17,8 +19,6 @@ use Illuminate\Console\Command;
 use RuntimeException;
 use Throwable;
 
-use function Laravel\Prompts\select;
-
 #[Signature('node:default
     {name? : Visible development app node name}
     {--clear : Clear the local default node}
@@ -26,6 +26,7 @@ use function Laravel\Prompts\select;
 #[Description('Choose, show, set, or clear the local default development app node')]
 class NodeDefaultCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -170,18 +171,19 @@ class NodeDefaultCommand extends Command
             );
         }
 
-        $choices = collect($nodes)->mapWithKeys(fn (array $n): array => [
-            $n['name'] => "{$n['name']} ({$n['environment']})",
-        ])->all();
-
-        $currentDefault = $this->readDefaultNode();
-        $defaultChoice = in_array($currentDefault, array_keys($choices), true) ? $currentDefault : null;
-
-        $selected = select(
-            label: 'Default development app node',
-            options: $choices,
-            default: $defaultChoice,
-        );
+        try {
+            $selected = (string) $this->promptDataTable(
+                label: 'Select the default development app node',
+                headers: ['Node', 'Role', 'Environment', 'Host', 'Status'],
+                rows: $this->nodePromptRows($nodes),
+            );
+        } catch (PromptAborted) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'Operation cancelled.',
+                meta: [],
+            );
+        }
 
         return $this->setDefault($selected);
     }

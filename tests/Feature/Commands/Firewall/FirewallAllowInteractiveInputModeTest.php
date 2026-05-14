@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -20,9 +22,10 @@ beforeEach(function (): void {
 });
 
 it('prompts for rule name, node, and port in interactive mode when all are missing', function (): void {
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('firewall:allow')
         ->expectsQuestion('Rule name', 'my-rule')
-        ->expectsQuestion('Target node', 'app-1')
         ->expectsQuestion('Port', '8080')
         ->assertSuccessful();
 });

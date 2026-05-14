@@ -10,6 +10,8 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -290,8 +292,9 @@ it('prompts for missing human input and renders the progress tree', function ():
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]));
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:root')
-        ->expectsQuestion('App name or hostname', 'docs')
         ->expectsQuestion('Document root', 'web')
         ->expectsOutputToContain('┌  Updating App Root')
         ->expectsOutputToContain('○  Apply and verify root change')

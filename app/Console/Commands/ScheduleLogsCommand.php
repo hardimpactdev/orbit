@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -27,7 +27,11 @@ use Throwable;
 #[Description('Show captured output for a schedule run')]
 class ScheduleLogsCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
+
+    private ?string $resolvedScheduleApp = null;
+
+    private ?string $resolvedScheduleNode = null;
 
     public function handle(ScheduleLogsPayload $payload, CallerRoleResolver $callerRoleResolver): int
     {
@@ -57,8 +61,8 @@ class ScheduleLogsCommand extends Command
 
             $result = $payload->forSchedule(
                 name: $name,
-                app: $this->stringOption('app'),
-                node: $this->stringOption('node'),
+                app: $this->resolvedScheduleApp(),
+                node: $this->resolvedScheduleNode(),
                 runId: $run,
                 lines: $lines,
             );
@@ -77,8 +81,8 @@ class ScheduleLogsCommand extends Command
         $dto = app(GatewayConnector::class)
             ->send(new ShowScheduleLogsRequest(
                 name: $name,
-                app: $this->stringOption('app'),
-                node: $this->stringOption('node'),
+                app: $this->resolvedScheduleApp(),
+                node: $this->resolvedScheduleNode(),
                 run: $run,
                 lines: $lines,
             ))
@@ -168,10 +172,36 @@ class ScheduleLogsCommand extends Command
         }
 
         try {
-            return $this->promptText(label: 'Schedule name', required: true);
+            $selection = $this->promptForVisibleSchedule(
+                app: $this->stringOption('app'),
+                node: $this->stringOption('node'),
+            );
+
+            if ($selection instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selection->errorCode() ?? 'gateway_unavailable',
+                    message: $selection->getMessage(),
+                    meta: $selection->errorMeta(),
+                );
+            }
+
+            $this->resolvedScheduleApp = $selection['app'];
+            $this->resolvedScheduleNode = $selection['node'];
+
+            return $selection['name'];
         } catch (PromptAborted) {
             return $this->failCommand('validation_failed', 'Operation cancelled.', []);
         }
+    }
+
+    private function resolvedScheduleApp(): ?string
+    {
+        return $this->resolvedScheduleApp ?? $this->stringOption('app');
+    }
+
+    private function resolvedScheduleNode(): ?string
+    {
+        return $this->resolvedScheduleNode ?? $this->stringOption('node');
     }
 
     private function stringArgument(string $key): ?string

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\UpdateNodeRequest;
@@ -33,6 +35,7 @@ use function Laravel\Prompts\text;
 #[Description('Update node registry metadata and role-owned settings')]
 class NodeUpdateCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -49,6 +52,14 @@ class NodeUpdateCommand extends Command
         }
 
         $name = $this->resolveName($callerRole);
+
+        if ($name instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $name->errorCode() ?? 'gateway_unavailable',
+                message: $name->getMessage(),
+                meta: $name->errorMeta(),
+            );
+        }
 
         $duplicateField = $this->detectDuplicateFieldFlag();
 
@@ -185,7 +196,7 @@ class NodeUpdateCommand extends Command
         return $this->respondSuccess($name, array_keys($changes), $warnings);
     }
 
-    private function resolveName(string $callerRole): ?string
+    private function resolveName(string $callerRole): string|GatewayApiException|null
     {
         $name = $this->stringArgument('name');
 
@@ -194,34 +205,19 @@ class NodeUpdateCommand extends Command
         }
 
         if ($this->isInteractiveInput()) {
-            return trim(text(
-                label: 'Node name',
-                required: true,
-                validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
-            ));
+            return $this->promptNodeName();
         }
 
         return null;
     }
 
-    private function validatePromptNodeName(string $value, string $callerRole): ?string
+    private function promptNodeName(): string|GatewayApiException
     {
-        $name = trim($value);
-
-        if ($name === '') {
-            return 'Node name is required.';
+        try {
+            return $this->promptForVisibleNode(label: 'Select a node to update');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
         }
-
-        if ($callerRole !== 'gateway') {
-            return null;
-        }
-
-        $exists = Node::query()
-            ->where('name', $name)
-            ->where('status', 'active')
-            ->exists();
-
-        return $exists ? null : "Node '{$name}' not found.";
     }
 
     /**

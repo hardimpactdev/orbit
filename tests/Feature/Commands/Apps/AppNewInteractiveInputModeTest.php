@@ -7,6 +7,8 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -25,9 +27,10 @@ it('prompts for missing name and target app node', function (): void {
 
     app()->instance(RemoteShell::class, new AppNewInteractiveRecordingRemoteShell);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:new')
         ->expectsQuestion('App name (slug)', 'docs')
-        ->expectsQuestion('Select target app node', 'app-1')
         ->expectsConfirmation('Clone from a git repository?', 'no')
         ->expectsOutputToContain("App 'docs' created successfully on node 'app-1'.")
         ->assertExitCode(0);

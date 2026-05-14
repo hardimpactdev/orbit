@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -27,7 +27,7 @@ use Throwable;
 #[Description('Revoke one node\'s access to another')]
 class NodeRevokeCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -48,7 +48,17 @@ class NodeRevokeCommand extends Command
         if ($consumerName === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $consumerName = $this->promptText('Consuming node', required: true);
+                    $selected = $this->promptNodeSelection('Select the consuming node');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $consumerName = $selected;
                 } catch (PromptAborted) {
                     return $this->promptAborted();
                 }
@@ -65,7 +75,17 @@ class NodeRevokeCommand extends Command
         if ($servingName === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $servingName = $this->promptText('Serving node', required: true);
+                    $selected = $this->promptNodeSelection('Select the serving node');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $servingName = $selected;
                 } catch (PromptAborted) {
                     return $this->promptAborted();
                 }
@@ -182,7 +202,17 @@ class NodeRevokeCommand extends Command
         if ($consumerName === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $consumerName = $this->promptText('Consuming node', required: true);
+                    $selected = $this->promptNodeSelection('Select the consuming node');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $consumerName = $selected;
                 } catch (PromptAborted) {
                     return $this->promptAborted();
                 }
@@ -199,7 +229,17 @@ class NodeRevokeCommand extends Command
         if ($servingName === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $servingName = $this->promptText('Serving node', required: true);
+                    $selected = $this->promptNodeSelection('Select the serving node');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $servingName = $selected;
                 } catch (PromptAborted) {
                     return $this->promptAborted();
                 }
@@ -277,6 +317,14 @@ class NodeRevokeCommand extends Command
         }
 
         return $this->respondSuccess($consumerName, $servingName, $alreadyAbsent, $isSelfLockout);
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    private function promptNodeSelection(string $label): string|GatewayApiException
+    {
+        return $this->promptForVisibleNode(label: $label);
     }
 
     private function resolveNode(string $name, string $field): Node|int

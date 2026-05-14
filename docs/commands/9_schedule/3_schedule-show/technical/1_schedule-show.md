@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:show <name> [--app=<app>] [--node=<node>] [--json]`
+# Technical Contract: `orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `schedule-show` documentation.](../schedule-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:show <name> [--app=<app>] [--node=<node>] [--json]
+orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `argument` | `Required.` | `Never.` | `None.` | Schedule slug visible to the caller. |
+| `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug visible to the caller. |
 | `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may inspect. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |

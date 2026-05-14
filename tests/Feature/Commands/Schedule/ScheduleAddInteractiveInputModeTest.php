@@ -7,6 +7,8 @@ use App\Models\Node;
 use App\Models\SchedulerState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -26,10 +28,11 @@ it('prompts for name, scope, execution source, and interval when all are absent'
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('schedule:add')
         ->expectsQuestion('Schedule name', 'my-schedule')
         ->expectsChoice('Scope', 'app', ['App', 'Node', 'app', 'node'])
-        ->expectsQuestion('App name', 'docs')
         ->expectsChoice('Source', 'command', ['Inline command', 'Repo script', 'command', 'script'])
         ->expectsQuestion('Command', 'php artisan schedule:run')
         ->expectsQuestion('Interval (cron expression)', 'every minute')
@@ -43,10 +46,11 @@ it('skips name prompt when name argument is supplied', function (): void {
     SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
     App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('schedule:add my-schedule')
         ->doesntExpectOutput('Schedule name')
         ->expectsChoice('Scope', 'app', ['App', 'Node', 'app', 'node'])
-        ->expectsQuestion('App name', 'docs')
         ->expectsChoice('Source', 'command', ['Inline command', 'Repo script', 'command', 'script'])
         ->expectsQuestion('Command', 'php artisan schedule:run')
         ->expectsQuestion('Interval (cron expression)', 'every minute')

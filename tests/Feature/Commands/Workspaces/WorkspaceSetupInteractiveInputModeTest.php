@@ -9,6 +9,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -58,8 +60,9 @@ it('prompts for missing --app in interactive mode when name and app are both abs
 
     try {
         // App option missing and name missing → prompt fires; CWD resolves workspace anyway → success
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('workspace:setup')
-            ->expectsQuestion('Parent app', 'docs')
             ->assertSuccessful();
     } finally {
         chdir((string) $previous);

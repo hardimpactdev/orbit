@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\PruneAppWorkspaces;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
@@ -22,7 +24,6 @@ use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\select;
-use function Laravel\Prompts\text;
 
 #[Signature('app:agent-ide
     {app? : App name or hostname}
@@ -32,6 +33,7 @@ use function Laravel\Prompts\text;
 #[Description('Set the default agent IDE for an app')]
 class AppAgentIdeCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -42,7 +44,15 @@ class AppAgentIdeCommand extends Command
         $selector = $this->stringArgument('app');
 
         if ($selector === null && $this->isInteractiveInput()) {
-            $selector = trim(text(label: 'App name or hostname', required: true));
+            $selector = $this->promptAppSelector();
+
+            if ($selector instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selector->errorCode() ?? 'gateway_unavailable',
+                    message: $selector->getMessage(),
+                    meta: $selector->errorMeta(),
+                );
+            }
         }
 
         if ($selector === null) {
@@ -111,6 +121,15 @@ class AppAgentIdeCommand extends Command
         }
 
         return $this->successCommand($data);
+    }
+
+    private function promptAppSelector(): string|GatewayApiException
+    {
+        try {
+            return $this->promptForVisibleApp(label: 'Select an app');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
+        }
     }
 
     private function setAgentIdeForHuman(

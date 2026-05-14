@@ -7,8 +7,8 @@ string fields.
 
 Use `text` in the following situations.
 
-- The field accepts arbitrary string input that is not a fixed enum
-  (`name`, `host`, `path`, `repository`, IP addresses).
+- The field accepts arbitrary string input that is not a fixed enum or existing
+  registry entity (`new name`, `host`, `path`, `repository`, IP addresses).
 - A regex or domain rule validates the value, with re-prompt on failure.
 
 ## Avoid When
@@ -21,6 +21,9 @@ Choose a different primitive in the following situations.
 - A binary yes/no decision. Use [`confirm`](confirm-prompt.md).
 - A list of recent or suggested values can speed up input. Use
   [`suggest`](suggest-prompt.md).
+- The value is an existing Orbit family instance such as an app, node,
+  workspace, process, schedule, or tool. Use
+  [`data-table-prompt`](../lists/data-table-prompt.md).
 
 ## Contract
 
@@ -47,11 +50,11 @@ exit cleanly.
 use function Laravel\Prompts\text;
 
 $name = text(
-    label: 'Node name',
+    label: 'New node name',
     required: true,
     validate: fn (string $value): ?string => preg_match('/^[a-z0-9-]+$/', $value)
         ? null
-        : 'Node name must be lowercase alphanumeric with hyphens.',
+        : 'New node name must be lowercase alphanumeric with hyphens.',
 );
 ```
 

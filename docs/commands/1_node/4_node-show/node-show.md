@@ -14,9 +14,9 @@ belong to `doctor --family=node`.
 orbit node:show [name] [--json]
 ```
 
-Run without arguments to let the command resolve the target node from local
-configuration. The name defaults to the local default development app node when
-one is configured; otherwise it defaults to the calling node.
+Run without arguments in an interactive terminal to choose the target from a
+node data table. Non-interactive calls use the documented local default
+resolution chain.
 
 ## Examples
 
@@ -28,10 +28,12 @@ orbit node:show app-1 --json
 
 ## Arguments and options
 
-- `name`: node name to inspect. Optional. Defaults to the local default
-  development app node when configured; otherwise defaults to the calling node.
+- `name`: node name to inspect. Optional. Interactive calls prompt with a data
+  table when omitted. Non-interactive calls default to the local default
+  development app node when configured; otherwise they default to the calling
+  node.
   See
-  [Default resolution](technical/5.1_node-show_input-mode_interactive.md#default-resolution)
+  [interactive missing-name resolution](technical/5.1_node-show_input-mode_interactive.md#missing-name-resolution)
   for interactive behavior and
   [Non-interactive default resolution](technical/5.2_node-show_input-mode_non-interactive.md#default-resolution)
   for non-interactive behavior.
@@ -43,8 +45,8 @@ Run `node:show` to inspect a single node's registry record without triggering an
 
 `node:show` performs a read-only registry inspection of a single node:
 
-1. Resolves the target node name from input or local default development app
-   node configuration.
+1. Resolves the target node name from input, an interactive data-table
+   selection, or non-interactive local defaults.
 2. Reads the node record from gateway-owned node configuration.
 3. Validates that the current caller is authorized to inspect the target node
    through gateway-owned access policy.

@@ -9,6 +9,7 @@ use Closure;
 use Laravel\Prompts\Prompt;
 
 use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\datatable;
 use function Laravel\Prompts\search;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
@@ -41,6 +42,27 @@ trait HandlesPromptCancellation
     protected function promptSelect(string $label, array $options, string|int|null $default = null): string|int
     {
         return $this->withPromptCancellation(fn (): string|int => select(label: $label, options: $options, default: $default));
+    }
+
+    /**
+     * @param  array<int, string|array<int, string>>  $headers
+     * @param  array<int|string, array<int, string>>  $rows
+     *
+     * @throws PromptAborted
+     */
+    protected function promptDataTable(string $label, array $headers, array $rows, string $hint = 'Press / to search'): string|int
+    {
+        return $this->withPromptCancellation(function () use ($headers, $rows, $label, $hint): string|int {
+            $selected = datatable(
+                headers: $headers,
+                rows: $rows,
+                label: $label,
+                hint: $hint,
+                required: true,
+            );
+
+            return is_string($selected) || is_int($selected) ? $selected : '';
+        });
     }
 
     /**

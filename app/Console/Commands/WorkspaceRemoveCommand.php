@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Workspaces\RemoveWorkspace;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -13,7 +13,6 @@ use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\RemoveWorkspaceRequest;
 use App\Http\Gateway\Responses\Workspaces\WorkspaceRemoveResponse;
-use App\Models\App;
 use App\Models\Workspace;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -21,8 +20,6 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
-
-use function Laravel\Prompts\search;
 
 #[Signature('workspace:remove
     {name? : Workspace name}
@@ -33,7 +30,7 @@ use function Laravel\Prompts\search;
 #[Description('Remove a workspace and its owned artifacts')]
 class WorkspaceRemoveCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -53,7 +50,21 @@ class WorkspaceRemoveCommand extends Command
 
         if ($name === null && $this->isInteractiveInput()) {
             try {
-                $name = $this->promptWorkspaceName();
+                $selection = $this->promptForVisibleWorkspace(
+                    label: 'Select a workspace to remove',
+                    app: $app,
+                );
+
+                if ($selection instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selection->errorCode() ?? 'gateway_unavailable',
+                        message: $selection->getMessage(),
+                        meta: $selection->errorMeta(),
+                    );
+                }
+
+                $name = $selection['name'];
+                $app ??= $selection['app'];
             } catch (PromptAborted) {
                 return $this->failCommand(
                     code: 'validation_failed',
@@ -205,34 +216,6 @@ class WorkspaceRemoveCommand extends Command
     private function isInteractiveInput(): bool
     {
         return ! $this->wantsJson() && $this->input->isInteractive();
-    }
-
-    /**
-     * @throws PromptAborted
-     */
-    private function promptWorkspaceName(): string
-    {
-        return (string) search(
-            label: 'Workspace name',
-            options: function (string $query): array {
-                $workspaces = Workspace::query()
-                    ->with('app')
-                    ->when($query !== '', fn (Builder $q): Builder => $q->where('name', 'like', "%{$query}%"))
-                    ->orderBy('name')
-                    ->get();
-
-                $result = [];
-
-                foreach ($workspaces as $workspace) {
-                    $app = $workspace->app;
-                    $appName = $app instanceof App ? $app->name : 'unknown';
-                    $result[$workspace->name] = "{$workspace->name} ({$appName})";
-                }
-
-                return $result;
-            },
-            required: true,
-        );
     }
 
     private function stringArgument(string $key): ?string

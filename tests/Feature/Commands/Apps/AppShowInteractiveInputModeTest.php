@@ -6,6 +6,8 @@ use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -36,8 +38,9 @@ it('prompts for missing app in interactive mode when cwd cannot resolve it', fun
         'environment' => 'development',
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:show')
-        ->expectsQuestion('App name or hostname', 'docs')
         ->expectsOutputToContain('docs')
         ->assertSuccessful();
 });

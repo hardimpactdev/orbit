@@ -12,6 +12,8 @@ use App\Models\ScheduleRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Spatie\Activitylog\Models\Activity;
@@ -75,6 +77,24 @@ it('requires destructive consent before removing schedules', function (): void {
     expect($exitCode)->toBe(1)
         ->and($payload['error']['code'])->toBe('destructive_consent_required')
         ->and(Schedule::query()->count())->toBe(0);
+});
+
+it('prompts with a schedule data table when the name is missing', function (): void {
+    createScheduleRemoveLocalNode('gateway');
+    $node = Node::factory()->create(['name' => 'app-1', 'role' => 'app']);
+    SchedulerState::factory()->create(['node_id' => $node->id, 'heartbeat_at' => now()]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    Schedule::factory()->forApp($app)->create([
+        'name' => 'laravel-scheduler',
+        'schedule_key' => 'app:docs:laravel-scheduler',
+    ]);
+
+    DataTablePrompt::fake([Key::ENTER]);
+
+    $this->artisan('schedule:remove', ['--force' => true])
+        ->assertSuccessful();
+
+    expect(Schedule::query()->where('schedule_key', 'app:docs:laravel-scheduler')->exists())->toBeFalse();
 });
 
 it('returns not found before side effects', function (): void {

@@ -11,6 +11,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -76,8 +78,9 @@ describe('workspace:show base contract', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
+        DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
+
         $this->artisan('workspace:show')
-            ->expectsQuestion('Workspace name', 'feature-docs')
             ->expectsOutputToContain('Workspace: feature-docs')
             ->assertSuccessful();
     });
@@ -104,9 +107,10 @@ describe('workspace:show base contract', function (): void {
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('workspace:show feature-docs')
-            ->expectsChoice('Parent app', 'api', ['docs', 'api'])
-            ->expectsOutputToContain('App:       api')
+            ->expectsOutputToContain('App:       docs')
             ->assertSuccessful();
     });
 

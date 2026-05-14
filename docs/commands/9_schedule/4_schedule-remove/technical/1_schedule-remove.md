@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:remove <name> [--app=<app>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]`
 
 [Back to public `schedule-remove` documentation.](../schedule-remove.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:remove <name> [--app=<app>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
+| `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
 | `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may manage. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may manage. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |

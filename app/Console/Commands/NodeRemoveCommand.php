@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -28,7 +28,7 @@ use Throwable;
 #[Description('Remove a node from the registry')]
 class NodeRemoveCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -40,7 +40,17 @@ class NodeRemoveCommand extends Command
         if ($name === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $name = $this->promptText('Node name', required: true);
+                    $selected = $this->promptForVisibleNode(label: 'Select a node to remove');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $name = $selected;
                 } catch (PromptAborted) {
                     return $this->promptAborted();
                 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\AddSchedule;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -35,7 +35,7 @@ use function Laravel\Prompts\select;
 #[Description('Add a recurring schedule')]
 class ScheduleAddCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -205,9 +205,29 @@ class ScheduleAddCommand extends Command
                 );
 
                 if ($targetType === 'app') {
-                    $app = $this->promptText(label: 'App name', required: true);
+                    $selected = $this->promptForVisibleApp(label: 'Select the target app');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $app = $selected;
                 } else {
-                    $node = $this->promptText(label: 'Node name', required: true);
+                    $selected = $this->promptForVisibleNode(label: 'Select the target node');
+
+                    if ($selected instanceof GatewayApiException) {
+                        return $this->failCommand(
+                            code: $selected->errorCode() ?? 'gateway_unavailable',
+                            message: $selected->getMessage(),
+                            meta: $selected->errorMeta(),
+                        );
+                    }
+
+                    $node = $selected;
                 }
             } catch (PromptAborted) {
                 return $this->promptAbortedExit();

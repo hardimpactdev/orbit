@@ -1,4 +1,4 @@
-# `orbit schedule:logs <name>`
+# `orbit schedule:logs [name]`
 
 [Back to Schedule commands.](../README.md)
 
@@ -9,7 +9,7 @@ Use `schedule:logs` to inspect durable schedule run history captured by the gate
 ## Usage
 
 ```bash
-orbit schedule:logs <name> [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
+orbit schedule:logs [name] [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
 ```
 
 ## Examples
@@ -22,7 +22,8 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 ## Arguments and options
 
-- `name`: schedule slug.
+- `name`: schedule slug. When omitted in interactive mode, Orbit shows a
+  schedule data table.
 - `--app`: disambiguate an app-scoped schedule.
 - `--node`: disambiguate a node-scoped schedule.
 - `--run`: specific run id. Defaults to the latest run.

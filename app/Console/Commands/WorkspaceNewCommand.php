@@ -6,8 +6,10 @@ namespace App\Console\Commands;
 
 use App\Actions\Workspaces\CreateWorkspace;
 use App\Actions\Workspaces\CreateWorkspaceProgress;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -22,7 +24,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
 #[Signature('workspace:new
@@ -34,6 +35,7 @@ use function Laravel\Prompts\text;
 #[Description('Create a new workspace intent')]
 class WorkspaceNewCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -401,31 +403,17 @@ class WorkspaceNewCommand extends Command
             return $app;
         }
 
-        if ($callerRole !== 'gateway') {
-            return null;
-        }
-
         if (! $this->isInteractiveInput()) {
             return null;
         }
 
-        $apps = App::query()
-            ->with('node')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->get();
-
-        if ($apps->isEmpty()) {
+        try {
+            $selected = $this->promptForVisibleApp(label: 'Select parent app');
+        } catch (PromptAborted) {
             return null;
         }
 
-        return select(
-            label: 'Which app owns this workspace?',
-            options: $apps->mapWithKeys(fn (App $app): array => [
-                $app->name => "{$app->name} (".($app->node->name ?? 'unknown').')',
-            ])->all(),
-            required: true,
-        );
+        return $selected instanceof GatewayApiException ? null : $selected;
     }
 
     private function isInteractiveInput(): bool

@@ -9,6 +9,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -50,8 +52,9 @@ it('prompts for missing workspace name in interactive mode', function (): void {
         'path' => '/srv/docs/.worktrees/feature-api',
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('workspace:remove --force')
-        ->expectsSearch('Workspace name', 'feature-api', 'feature-api', ['feature-api' => 'feature-api (docs)'])
         ->expectsOutputToContain('feature-api')
         ->assertSuccessful();
 });

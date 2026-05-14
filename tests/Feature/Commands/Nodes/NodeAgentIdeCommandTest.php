@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Http\Gateway\Requests\Nodes\SetNodeAgentIdeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -323,6 +326,21 @@ describe('node:agent-ide command', function (): void {
         setupNodeAgentIdeControlCaller();
 
         $mockClient = MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'nodes' => [
+                            [
+                                'name' => 'app-1',
+                                'role' => 'app',
+                                'status' => 'active',
+                                'environment' => 'development',
+                                'host' => '10.6.0.7',
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
             ListAgentIdeAdaptersRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
@@ -353,12 +371,14 @@ describe('node:agent-ide command', function (): void {
             ], 200),
         ]);
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('node:agent-ide')
-            ->expectsQuestion('Node name', 'app-1')
             ->expectsChoice('Agent IDE adapter', 'custom-agent', ['none', 'custom-agent'])
             ->expectsOutputToContain("Node 'app-1' agent IDE set to 'custom-agent'")
             ->assertExitCode(0);
 
+        $mockClient->assertSent(ListNodesRequest::class);
         $mockClient->assertSent(ListAgentIdeAdaptersRequest::class);
         $mockClient->assertSent(SetNodeAgentIdeRequest::class);
     });
@@ -369,6 +389,21 @@ describe('node:agent-ide command', function (): void {
         setupNodeAgentIdeControlCaller();
 
         MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'nodes' => [
+                            [
+                                'name' => 'app-1',
+                                'role' => 'app',
+                                'status' => 'active',
+                                'environment' => 'development',
+                                'host' => '10.6.0.7',
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
             ListAgentIdeAdaptersRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'gateway_unavailable',
@@ -378,8 +413,9 @@ describe('node:agent-ide command', function (): void {
             ], 503),
         ]);
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('node:agent-ide')
-            ->expectsQuestion('Node name', 'app-1')
             ->expectsOutputToContain('Gateway connection is required to read agent IDE adapters.')
             ->assertExitCode(1);
     });

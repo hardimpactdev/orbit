@@ -1,4 +1,4 @@
-# `orbit schedule:remove <name>`
+# `orbit schedule:remove [name]`
 
 [Back to Schedule commands.](../README.md)
 
@@ -9,7 +9,7 @@ Use `schedule:remove` when a recurring task is no longer managed by Orbit. The c
 ## Usage
 
 ```bash
-orbit schedule:remove <name> [--app=<app>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples
@@ -21,7 +21,8 @@ orbit schedule:remove backups --node=app-1 --force
 
 ## Arguments and options
 
-- `name`: schedule slug.
+- `name`: schedule slug. When omitted in interactive mode, Orbit shows a
+  schedule data table.
 - `--app`: disambiguate an app-scoped schedule.
 - `--node`: disambiguate a node-scoped schedule.
 - `--force`: Skip destructive confirmation.

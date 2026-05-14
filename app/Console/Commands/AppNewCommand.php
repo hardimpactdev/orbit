@@ -6,8 +6,10 @@ namespace App\Console\Commands;
 
 use App\Actions\Apps\CreateAppSourceOnNode;
 use App\Actions\Apps\EnactAppRuntime;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\CreateAppRequest;
@@ -21,7 +23,6 @@ use Illuminate\Console\Command;
 use Throwable;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
 #[Signature('app:new
@@ -35,6 +36,7 @@ use function Laravel\Prompts\text;
 #[Description('Create a new app on an app node')]
 class AppNewCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -386,22 +388,24 @@ class AppNewCommand extends Command
             return $this->failValidation('node', 'The --node option is required in non-interactive mode.');
         }
 
-        $nodes = Node::query()
-            ->where('role', 'app')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->pluck('name')
-            ->all();
+        try {
+            $node = $this->promptForVisibleNode(
+                label: 'Select target app node',
+                role: 'app',
+            );
+        } catch (PromptAborted) {
+            return $this->failValidation('node', 'Operation cancelled.');
+        }
 
-        if ($nodes === []) {
+        if ($node instanceof GatewayApiException) {
             return $this->failCommand(
-                code: 'validation_failed',
-                message: 'No active app nodes are registered.',
-                meta: ['field' => 'node'],
+                code: $node->errorCode() ?? 'gateway_unavailable',
+                message: $node->getMessage(),
+                meta: $node->errorMeta(),
             );
         }
 
-        return (string) select('Select target app node', $nodes);
+        return $node;
     }
 
     private function resolveTargetNode(string $nodeName): Node|int

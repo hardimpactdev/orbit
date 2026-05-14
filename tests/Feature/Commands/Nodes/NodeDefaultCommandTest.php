@@ -7,6 +7,8 @@ use App\Models\LocalGatewaySettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -261,15 +263,9 @@ describe('node:default command contract', function (): void {
             ]), 200),
         ]);
 
+        DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
+
         $this->artisan('node:default')
-            ->expectsChoice(
-                'Default development app node',
-                'remote-app-2',
-                [
-                    'remote-app-1' => 'remote-app-1 (development)',
-                    'remote-app-2' => 'remote-app-2 (development)',
-                ],
-            )
             ->assertExitCode(0);
 
         expect(DB::table('local_node_defaults')->value('default_node_name'))->toBe('remote-app-2')

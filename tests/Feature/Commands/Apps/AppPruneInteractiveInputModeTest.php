@@ -10,6 +10,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -53,8 +55,9 @@ it('prompts for missing app name in interactive mode', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('app:prune')
-        ->expectsQuestion('App name or hostname', 'demo')
         ->expectsOutputToContain("Removed 1 stale workspace for app 'demo':")
         ->assertExitCode(0);
 

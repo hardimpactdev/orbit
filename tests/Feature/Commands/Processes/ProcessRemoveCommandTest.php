@@ -12,6 +12,8 @@ use App\Models\Process;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -104,6 +106,23 @@ describe('process:remove base contract', function (): void {
             ->and($payload['error']['code'])->toBe('validation_failed')
             ->and($payload['error']['meta']['field'])->toBe('force')
             ->and(Process::query()->where('name', 'vite')->exists())->toBeTrue();
+    });
+
+    it('prompts with app and process data tables when required input is missing', function (): void {
+        createProcessRemoveLocalNode('gateway');
+        $node = Node::factory()->create(['role' => 'app']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Process::factory()->create(['app_id' => $app->id, 'name' => 'vite']);
+        app()->instance(RemoteShell::class, new ProcessRemoveRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        DataTablePrompt::fake([Key::ENTER, Key::ENTER]);
+
+        $this->artisan('process:remove', ['--force' => true])
+            ->assertSuccessful();
+
+        expect(Process::query()->where('name', 'vite')->exists())->toBeFalse();
     });
 
     it('rejects validation and not found failures before cleanup', function (array $arguments, string $field, string $code): void {

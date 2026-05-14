@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\PromptsForRegistryEntities;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\ShowAppRequest;
@@ -15,19 +17,27 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\text;
-
 #[Signature('app:show
     {app? : App name or hostname to inspect}
     {--json : Output JSON}')]
 #[Description('Show one app from the gateway registry')]
 class AppShowCommand extends Command
 {
+    use PromptsForRegistryEntities;
+
     public function handle(): int
     {
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
 
         $app = $this->resolveAppSelector($callerRole);
+
+        if ($app instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $app->errorCode() ?? 'gateway_unavailable',
+                message: $app->getMessage() !== '' ? $app->getMessage() : 'Gateway connection is required to list apps.',
+                meta: $app->errorMeta(),
+            );
+        }
 
         if ($app === null) {
             return $this->failCommand(
@@ -68,7 +78,7 @@ class AppShowCommand extends Command
         return self::SUCCESS;
     }
 
-    private function resolveAppSelector(string $callerRole): ?string
+    private function resolveAppSelector(string $callerRole): string|GatewayApiException|null
     {
         $app = $this->argument('app');
 
@@ -116,30 +126,13 @@ class AppShowCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    protected function promptApp(string $callerRole): string
+    protected function promptApp(string $callerRole): string|GatewayApiException
     {
-        return trim(text(
-            label: 'App name or hostname',
-            required: true,
-            validate: fn (string $value): ?string => $this->validatePromptApp($value, $callerRole),
-        ));
-    }
-
-    private function validatePromptApp(string $value, string $callerRole): ?string
-    {
-        $app = trim($value);
-
-        if ($app === '') {
-            return 'App name is required.';
+        try {
+            return $this->promptForVisibleApp(label: 'Select an app');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
         }
-
-        if ($callerRole !== 'gateway') {
-            return null;
-        }
-
-        return $this->resolveVisibleLocalApp($app) instanceof App
-            ? null
-            : "App '{$app}' not found or not visible.";
     }
 
     /**

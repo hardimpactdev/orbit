@@ -1,4 +1,4 @@
-# `orbit schedule:run <name>`
+# `orbit schedule:run [name]`
 
 [Back to Schedule commands.](../README.md)
 
@@ -9,7 +9,7 @@ Use `schedule:run` to test a recurring schedule, run a missed task, or execute a
 ## Usage
 
 ```bash
-orbit schedule:run <name> [--app=<app>] [--node=<node>] [--json]
+orbit schedule:run [name] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples
@@ -21,7 +21,8 @@ orbit schedule:run backups --node=app-1
 
 ## Arguments and options
 
-- `name`: schedule slug.
+- `name`: schedule slug. When omitted in interactive mode, Orbit shows a
+  schedule data table.
 - `--app`: disambiguate an app-scoped schedule.
 - `--node`: disambiguate a node-scoped schedule.
 - `--json`: Output JSON.

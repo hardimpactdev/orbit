@@ -9,6 +9,9 @@ Use `datatable` in the following situations.
 
 - The command needs to select a single entity from a list and immediately
   act on it (`orbit profile` selecting an app to profile).
+- The command asks for an existing Orbit family instance such as an app, node,
+  workspace, process, schedule, or tool, and the candidates are finite registry
+  rows available at prompt time.
 - The list may grow beyond a handful of rows, so a flat `select` would be
   awkward and a search/filter is valuable.
 
@@ -20,6 +23,8 @@ Choose a different primitive in the following situations.
   [`table`](table.md).
 - The choice is one of a small fixed set of scalar values (e.g. node role).
   Use [`select`](../inputs/select-prompt.md).
+- The command creates a new identity value rather than selecting an existing
+  row. Use [`text`](../inputs/text-prompt.md).
 - Multiple rows must be picked. There is no Orbit-supported multi-select
   variant of `datatable` today; use [`multi-search`](../inputs/multi-search-prompt.md)
   with the same row data flattened to labels.
@@ -64,6 +69,9 @@ This command uses `datatable` and is the canonical model to follow.
 - `orbit profile` — selects the target app when no positional argument is
   given. See `app/Console/Commands/ProfileCommand.php` and
   `docs/commands/11_operation/5_profile/technical/5.1_profile_input-mode_interactive.md`.
+- `orbit app:remove`, `orbit node:show`, `orbit workspace:show`,
+  `orbit process:edit`, and `orbit schedule:run` — select existing registry
+  rows before acting on them.
 
 ## Cross References
 

@@ -6,7 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Actions\Workspaces\SetupWorkspaceProgress;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Exceptions\PromptAborted;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Http\Gateway\GatewayApiException;
@@ -34,7 +34,7 @@ use Throwable;
 #[Description('Converge a workspace to a ready-to-develop-in state')]
 class WorkspaceSetupCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
 
     public function handle(
         SetupWorkspace $setupWorkspace,
@@ -55,10 +55,15 @@ class WorkspaceSetupCommand extends Command
 
         if ($this->stringOption('app') === null && $this->stringArgument('name') === null && $this->isInteractiveInput()) {
             try {
-                $promptedApp = trim($this->promptText(
-                    label: 'Parent app',
-                    required: true,
-                ));
+                $promptedApp = $this->promptForVisibleApp(label: 'Select parent app');
+
+                if ($promptedApp instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $promptedApp->errorCode() ?? 'gateway_unavailable',
+                        message: $promptedApp->getMessage(),
+                        meta: $promptedApp->errorMeta(),
+                    );
+                }
             } catch (PromptAborted) {
                 return $this->failCommand(
                     code: 'validation_failed',

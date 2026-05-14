@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -19,9 +21,10 @@ beforeEach(function (): void {
 });
 
 it('prompts for domain, node, route type, and upstream in interactive mode when all are missing', function (): void {
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('proxy:add')
         ->expectsQuestion('Domain', 'vite.docs.test')
-        ->expectsQuestion('Serving node', 'app-1')
         ->expectsChoice('Route type', 'upstream', ['Upstream', 'Redirect', 'upstream', 'redirect'])
         ->expectsQuestion('Upstream URL', 'http://127.0.0.1:5173')
         ->assertSuccessful();

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\PromptsForRegistryEntities;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\AgentIde\ListAgentIdeAdaptersRequest;
@@ -19,7 +21,6 @@ use Illuminate\Console\Command;
 use Throwable;
 
 use function Laravel\Prompts\select;
-use function Laravel\Prompts\text;
 
 #[Signature('node:agent-ide
     {name? : Node name}
@@ -28,6 +29,8 @@ use function Laravel\Prompts\text;
 #[Description('Set the default agent IDE for a node')]
 class NodeAgentIdeCommand extends Command
 {
+    use PromptsForRegistryEntities;
+
     public function handle(NodeAgentIdeDefaults $defaults): int
     {
         $callerRole = (bool) config('orbit.is_gateway', false) ? 'gateway' : 'control';
@@ -41,6 +44,14 @@ class NodeAgentIdeCommand extends Command
         }
 
         $name = $this->resolveName($callerRole);
+
+        if ($name instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $name->errorCode() ?? 'gateway_unavailable',
+                message: $name->getMessage(),
+                meta: $name->errorMeta(),
+            );
+        }
 
         if ($name === null) {
             return $this->failCommand(
@@ -104,7 +115,7 @@ class NodeAgentIdeCommand extends Command
         return $this->respondSuccess($defaults->set($node, $agentIde));
     }
 
-    private function resolveName(string $callerRole): ?string
+    private function resolveName(string $callerRole): string|GatewayApiException|null
     {
         $name = $this->stringArgument('name');
 
@@ -113,34 +124,19 @@ class NodeAgentIdeCommand extends Command
         }
 
         if ($this->isInteractiveInput()) {
-            return trim(text(
-                label: 'Node name',
-                required: true,
-                validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
-            ));
+            return $this->promptNodeName();
         }
 
         return null;
     }
 
-    private function validatePromptNodeName(string $value, string $callerRole): ?string
+    private function promptNodeName(): string|GatewayApiException
     {
-        $name = trim($value);
-
-        if ($name === '') {
-            return 'Node name is required.';
+        try {
+            return $this->promptForVisibleNode(label: 'Select a node');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
         }
-
-        if ($callerRole !== 'gateway') {
-            return null;
-        }
-
-        $exists = Node::query()
-            ->where('name', $name)
-            ->where('status', 'active')
-            ->exists();
-
-        return $exists ? null : "Node '{$name}' not found.";
     }
 
     private function resolveAgentIde(string $callerRole, NodeAgentIdeDefaults $defaults): ?string

@@ -1,4 +1,4 @@
-# `orbit schedule:show <name>`
+# `orbit schedule:show [name]`
 
 [Back to Schedule commands.](../README.md)
 
@@ -9,7 +9,7 @@ Use `schedule:show` when inspecting the durable configuration of a specific recu
 ## Usage
 
 ```bash
-orbit schedule:show <name> [--app=<app>] [--node=<node>] [--json]
+orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Examples
@@ -21,7 +21,8 @@ orbit schedule:show backups --node=app-1
 
 ## Arguments and options
 
-- `name`: schedule slug.
+- `name`: schedule slug. When omitted in interactive mode, Orbit shows a
+  schedule data table.
 - `--app`: disambiguate an app-scoped schedule.
 - `--node`: disambiguate a node-scoped schedule.
 - `--json`: Output JSON.

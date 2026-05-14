@@ -16,6 +16,8 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -116,6 +118,48 @@ it('removes app intent and owned artifacts from a gateway caller', function (): 
             'fpm_config_removed' => true,
             'runtime_config_removed' => true,
         ]);
+});
+
+it('prompts for a missing app argument with a data table before removing it', function (): void {
+    Node::factory()->create([
+        'name' => 'gateway-1',
+        'role' => 'gateway',
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'role' => 'app',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+
+    $alpha = App::factory()->create([
+        'name' => 'alpha',
+        'node_id' => $node->id,
+        'domain' => 'alpha.test',
+        'path' => '/home/orbit/apps/alpha',
+    ]);
+
+    $docs = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'domain' => 'docs.test',
+        'path' => '/home/orbit/apps/docs',
+    ]);
+
+    app()->instance(RemoteShell::class, new AppRemoveSequencedRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]));
+
+    DataTablePrompt::fake([Key::DOWN, Key::ENTER]);
+
+    $this->artisan('app:remove --force')
+        ->expectsOutputToContain("App 'docs' removed")
+        ->assertExitCode(0);
+
+    expect(App::query()->whereKey($alpha->id)->exists())->toBeTrue()
+        ->and(App::query()->whereKey($docs->id)->exists())->toBeFalse();
 });
 
 it('requires destructive consent in non-interactive mode', function (): void {

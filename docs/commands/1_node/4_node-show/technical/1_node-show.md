@@ -30,14 +30,14 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When no default or local context can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_node-show_input-mode_interactive.md#default-resolution). | Must match an existing active node record visible to the caller. |
+| `name` | `[name]` | When no default or local context can resolve a target in non-interactive input mode; interactive input mode prompts when missing. | Never. | Interactive: none. Non-interactive: see [Default resolution](5.2_node-show_input-mode_non-interactive.md#default-resolution). | Must match an existing active node record visible to the caller. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/commands/README.md`](../../../README.md#invocation-model). |
 
 ## Input Resolution
 
 1. Resolve `node_show.name` from `[name]` or the selected input mode.
-   - Interactive mode applies the default resolution chain and prompts when
-     needed. See
+   - Interactive mode prompts with a finite node data table when `[name]` is
+     missing. See
      [`5.1_node-show_input-mode_interactive.md`](5.1_node-show_input-mode_interactive.md).
    - Non-interactive mode applies the default resolution chain and fails when
      no target can be resolved. See

@@ -9,6 +9,8 @@ use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -37,8 +39,9 @@ it('prompts for process name when name is absent', function (): void {
     };
     app()->instance(RemoteShell::class, $remoteShell);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('process:logs --app=docs')
-        ->expectsChoice('Process name', 'web', ['web'])
         ->assertSuccessful();
 });
 

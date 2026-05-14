@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:logs <name> [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]`
+# Technical Contract: `orbit schedule:logs [name] [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]`
 
 [Back to public `schedule-logs` documentation.](../schedule-logs.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:logs <name> [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
+orbit schedule:logs [name] [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `argument` | `Required.` | `Never.` | `None.` | Existing visible schedule slug. |
+| `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
 | `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may inspect. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or app node the caller may inspect. |
 | `run` | `--run` | `Optional.` | `Never.` | `latest run` | Positive integer run id for the selected schedule. |

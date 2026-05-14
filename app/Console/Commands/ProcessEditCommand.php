@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\EditProcess;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Enums\ProcessCrashNotification;
@@ -23,8 +23,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\select;
-
 #[Signature('process:edit
     {name? : Existing process name}
     {--app= : Parent app slug}
@@ -36,7 +34,7 @@ use function Laravel\Prompts\select;
 #[Description('Edit an app process definition')]
 class ProcessEditCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -174,10 +172,17 @@ class ProcessEditCommand extends Command
             }
 
             try {
-                $appNames = App::query()->orderBy('name')->pluck('name')->all();
-                $app = (string) ($appNames !== []
-                    ? select(label: 'App', options: $appNames, required: true)
-                    : $this->promptText(label: 'App', required: true));
+                $selected = $this->promptForVisibleApp(label: 'Select app');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $app = $selected;
             } catch (PromptAborted) {
                 return $this->promptAborted();
             }
@@ -189,14 +194,17 @@ class ProcessEditCommand extends Command
             }
 
             try {
-                $processNames = Process::query()
-                    ->whereHas('app', fn ($q) => $q->where('name', $app))
-                    ->orderBy('name')
-                    ->pluck('name')
-                    ->all();
-                $name = (string) ($processNames !== []
-                    ? select(label: 'Process name', options: $processNames, required: true)
-                    : $this->promptText(label: 'Process name', required: true));
+                $selectedProcess = $this->promptForProcessName($app);
+
+                if ($selectedProcess instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selectedProcess->errorCode() ?? 'gateway_unavailable',
+                        message: $selectedProcess->getMessage(),
+                        meta: $selectedProcess->errorMeta(),
+                    );
+                }
+
+                $name = (string) $selectedProcess;
             } catch (PromptAborted) {
                 return $this->promptAborted();
             }
@@ -244,6 +252,34 @@ class ProcessEditCommand extends Command
             'changes' => $changes,
             'restart' => $this->option('restart') === true,
         ];
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    private function promptForProcessName(string $app): string|int|GatewayApiException
+    {
+        $processes = Process::query()
+            ->whereHas('app', fn ($query) => $query->where('name', $app))
+            ->orderBy('name')
+            ->get();
+
+        if ($processes->isEmpty()) {
+            return new GatewayApiException('No processes found.', 'process.not_found', [
+                'field' => 'name',
+                'app' => $app,
+            ]);
+        }
+
+        return $this->promptDataTable(
+            label: 'Select a process',
+            headers: ['Process', 'Command'],
+            rows: $processes
+                ->mapWithKeys(fn (Process $process): array => [
+                    $process->name => [$process->name, $process->command],
+                ])
+                ->all(),
+        );
     }
 
     /**

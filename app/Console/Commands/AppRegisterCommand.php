@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Apps\EnactAppRuntime;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Contracts\RemoteShell;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Apps\RegisterAppRequest;
@@ -21,7 +23,6 @@ use Illuminate\Console\Command;
 use Throwable;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
 #[Signature('app:register
@@ -35,6 +36,7 @@ use function Laravel\Prompts\text;
 #[Description('Register or re-apply Orbit management for an app')]
 class AppRegisterCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -359,22 +361,41 @@ class AppRegisterCommand extends Command
         }
 
         if ($nodeName === null) {
-            $nodeNames = Node::query()
-                ->where('role', 'app')
-                ->where('status', 'active')
-                ->orderBy('name')
-                ->pluck('name')
-                ->all();
+            if ($this->isInteractiveInput()) {
+                try {
+                    $selectedNode = $this->promptForVisibleNode(
+                        label: 'Select target app node',
+                        role: 'app',
+                    );
+                } catch (PromptAborted) {
+                    return $this->failValidation('node', 'Operation cancelled.');
+                }
 
-            if ($this->isInteractiveInput() && $nodeNames !== []) {
-                $nodeName = (string) select('Target app node', $nodeNames);
+                if ($selectedNode instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selectedNode->errorCode() ?? 'gateway_unavailable',
+                        message: $selectedNode->getMessage(),
+                        meta: $selectedNode->errorMeta(),
+                    );
+                }
+
+                $nodeName = $selectedNode;
             }
 
-            if ($nodeName === null && count($nodeNames) !== 1) {
-                return $this->failValidation('node', 'The --node option is required when the target app node cannot be inferred.');
-            }
+            if ($nodeName === null) {
+                $nodeNames = Node::query()
+                    ->where('role', 'app')
+                    ->where('status', 'active')
+                    ->orderBy('name')
+                    ->pluck('name')
+                    ->all();
 
-            $nodeName ??= (string) $nodeNames[0];
+                if (count($nodeNames) !== 1) {
+                    return $this->failValidation('node', 'The --node option is required when the target app node cannot be inferred.');
+                }
+
+                $nodeName = (string) $nodeNames[0];
+            }
         }
 
         $node = Node::query()->where('name', $nodeName)->first();

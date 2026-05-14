@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\PromptsForRegistryEntities;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
@@ -16,19 +18,27 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-use function Laravel\Prompts\text;
-
 #[Signature('node:show
     {name? : Node name to inspect}
     {--json : Output JSON}')]
 #[Description('Show node details from the gateway registry')]
 class NodeShowCommand extends Command
 {
+    use PromptsForRegistryEntities;
+
     public function handle(): int
     {
         $isGateway = (bool) config('orbit.is_gateway', false);
 
         $name = $this->resolveName($isGateway);
+
+        if ($name instanceof GatewayApiException) {
+            return $this->failCommand(
+                code: $name->errorCode() ?? 'gateway_unavailable',
+                message: $name->getMessage() !== '' ? $name->getMessage() : 'Gateway connection is required to list nodes.',
+                meta: $name->errorMeta(),
+            );
+        }
 
         if ($name === null) {
             return $this->failCommand(
@@ -95,12 +105,16 @@ class NodeShowCommand extends Command
         return self::SUCCESS;
     }
 
-    private function resolveName(bool $isGateway): ?string
+    private function resolveName(bool $isGateway): string|GatewayApiException|null
     {
         $name = $this->argument('name');
 
         if (is_string($name) && $name !== '') {
             return $name;
+        }
+
+        if ($this->isInteractiveInput()) {
+            return $this->promptNodeName();
         }
 
         $defaultRecord = DB::table('local_node_defaults')->first();
@@ -117,10 +131,6 @@ class NodeShowCommand extends Command
             return $localName;
         }
 
-        if ($this->isInteractiveInput()) {
-            return $this->promptNodeName($isGateway ? 'gateway' : 'control');
-        }
-
         return null;
     }
 
@@ -129,33 +139,13 @@ class NodeShowCommand extends Command
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    protected function promptNodeName(string $callerRole): string
+    protected function promptNodeName(): string|GatewayApiException
     {
-        return trim(text(
-            label: 'Node name',
-            required: true,
-            validate: fn (string $value): ?string => $this->validatePromptNodeName($value, $callerRole),
-        ));
-    }
-
-    private function validatePromptNodeName(string $value, string $callerRole): ?string
-    {
-        $name = trim($value);
-
-        if ($name === '') {
-            return 'Node name is required.';
+        try {
+            return $this->promptForVisibleNode(label: 'Select a node');
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
         }
-
-        if ($callerRole !== 'gateway') {
-            return null;
-        }
-
-        $exists = Node::query()
-            ->where('name', $name)
-            ->where('status', 'active')
-            ->exists();
-
-        return $exists ? null : "Node '{$name}' not found or not visible.";
     }
 
     /**

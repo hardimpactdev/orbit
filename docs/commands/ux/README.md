@@ -14,9 +14,14 @@ primitives are explicitly called out below.
 
 These rules apply to all renderer and input-mode docs in this tree.
 
-- Lists default to read-only [`table`](lists/table.md). Switch to
-  [`datatable`](lists/data-table-prompt.md) only when row selection triggers
-  a follow-up command action, as in `orbit profile`.
+- Lists default to read-only [`table`](lists/table.md). Use
+  [`datatable`](lists/data-table-prompt.md) whenever the operator must choose an
+  existing Orbit entity from finite registry state before a command action, such
+  as an app, node, workspace, process, schedule, or tool target.
+- Open `text` and `number` prompts are only for values that are not knowable as
+  a finite option set at prompt time, such as new names, paths, hosts, domains,
+  commands, or counts.
+- Closed scalar enums use [`select`](inputs/select-prompt.md), not `datatable`.
 - Inputs use Laravel Prompts primitives. Symfony Console
   `$this->ask`, `$this->confirm`, `$this->choice`, `$this->secret`, and
   `$this->table` are banned in renderer and input-mode docs.

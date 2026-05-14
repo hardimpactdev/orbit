@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -31,7 +31,7 @@ use Throwable;
 #[Description('Create or update custom proxy route intent')]
 class ProxyAddCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -225,7 +225,17 @@ class ProxyAddCommand extends Command
             }
 
             try {
-                $node = $this->promptText(label: 'Serving node', required: true);
+                $selected = $this->promptForVisibleNode(label: 'Select the serving node');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $node = $selected;
             } catch (PromptAborted) {
                 return $this->failCommand('validation_failed', 'Operation cancelled.', []);
             }

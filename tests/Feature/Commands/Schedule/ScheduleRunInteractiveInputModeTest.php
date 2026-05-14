@@ -9,6 +9,8 @@ use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -39,8 +41,9 @@ it('prompts for name in interactive mode when name is missing', function (): voi
         }
     });
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('schedule:run')
-        ->expectsQuestion('Schedule name', 'my-schedule')
         ->assertSuccessful();
 });
 

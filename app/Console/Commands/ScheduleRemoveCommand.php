@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Schedules\RemoveSchedule;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Schedules\RemoveScheduleRequest;
@@ -21,7 +23,7 @@ use Throwable;
 use function Laravel\Prompts\confirm;
 
 #[Signature('schedule:remove
-    {name : Schedule name}
+    {name? : Schedule name}
     {--app= : Filter by app scope}
     {--node= : Filter by node scope}
     {--force : Confirm destructive operation without prompting}
@@ -29,14 +31,24 @@ use function Laravel\Prompts\confirm;
 #[Description('Remove a recurring schedule')]
 class ScheduleRemoveCommand extends Command
 {
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
+
+    private ?string $resolvedScheduleApp = null;
+
+    private ?string $resolvedScheduleNode = null;
 
     public function handle(SchedulePayload $payload, RemoveSchedule $removeSchedule, CallerRoleResolver $callerRoleResolver): int
     {
         $callerRole = $callerRoleResolver->resolve();
+        $name = $this->resolveNameInput();
 
-        $consent = $this->confirmRemoval((string) $this->argument('name'));
+        if (is_int($name)) {
+            return $name;
+        }
+
+        $consent = $this->confirmRemoval($name);
 
         if (is_int($consent)) {
             return $consent;
@@ -44,15 +56,15 @@ class ScheduleRemoveCommand extends Command
 
         $result = null;
         $failure = null;
-        $operation = function () use ($callerRole, $payload, $removeSchedule, &$result, &$failure): string {
+        $operation = function () use ($callerRole, $payload, $removeSchedule, $name, &$result, &$failure): string {
             try {
                 if ($callerRole !== 'gateway') {
-                    $result = $this->forwardRemoveResult();
+                    $result = $this->forwardRemoveResult($name);
 
                     return 'gateway accepted';
                 }
 
-                $schedule = $payload->find((string) $this->argument('name'), $this->stringOption('app'), $this->stringOption('node'));
+                $schedule = $payload->find($name, $this->resolvedScheduleApp(), $this->resolvedScheduleNode());
                 $result = $removeSchedule->handle($schedule);
 
                 return 'scheduler pickup confirmed';
@@ -115,18 +127,57 @@ class ScheduleRemoveCommand extends Command
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    private function forwardRemoveResult(): array
+    private function forwardRemoveResult(string $name): array
     {
         /** @var ScheduleRemoveResponse $dto */
         $dto = app(GatewayConnector::class)
             ->send(new RemoveScheduleRequest(
-                name: (string) $this->argument('name'),
-                app: $this->stringOption('app'),
-                node: $this->stringOption('node'),
+                name: $name,
+                app: $this->resolvedScheduleApp(),
+                node: $this->resolvedScheduleNode(),
             ))
             ->dto();
 
         return ['data' => $dto->data, 'meta' => $dto->meta];
+    }
+
+    private function resolveNameInput(): string|int
+    {
+        $name = $this->stringArgument('name');
+
+        if ($name !== null) {
+            return $name;
+        }
+
+        if (! $this->isInteractiveInput()) {
+            return $this->failCommand(
+                'validation_failed',
+                'The schedule name is required.',
+                ['field' => 'name', 'reason' => 'missing'],
+            );
+        }
+
+        try {
+            $selection = $this->promptForVisibleSchedule(
+                app: $this->stringOption('app'),
+                node: $this->stringOption('node'),
+            );
+
+            if ($selection instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selection->errorCode() ?? 'gateway_unavailable',
+                    message: $selection->getMessage(),
+                    meta: $selection->errorMeta(),
+                );
+            }
+
+            $this->resolvedScheduleApp = $selection['app'];
+            $this->resolvedScheduleNode = $selection['node'];
+
+            return $selection['name'];
+        } catch (PromptAborted) {
+            return $this->failCommand('validation_failed', 'Operation cancelled.', []);
+        }
     }
 
     private function confirmRemoval(string $name): ?int
@@ -206,6 +257,23 @@ class ScheduleRemoveCommand extends Command
         $value = $this->option($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function stringArgument(string $key): ?string
+    {
+        $value = $this->argument($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function resolvedScheduleApp(): ?string
+    {
+        return $this->resolvedScheduleApp ?? $this->stringOption('app');
+    }
+
+    private function resolvedScheduleNode(): ?string
+    {
+        return $this->resolvedScheduleNode ?? $this->stringOption('node');
     }
 
     private function wantsJson(): bool

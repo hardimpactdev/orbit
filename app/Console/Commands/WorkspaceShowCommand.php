@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Concerns\PromptsForRegistryEntities;
+use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
 use App\Http\Gateway\Requests\Workspaces\ShowWorkspaceRequest;
@@ -17,9 +19,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
-use function Laravel\Prompts\select;
-use function Laravel\Prompts\text;
-
 #[Signature('workspace:show
     {name? : Workspace name}
     {--app= : Parent app slug}
@@ -27,6 +26,8 @@ use function Laravel\Prompts\text;
 #[Description('Show workspace registry details')]
 class WorkspaceShowCommand extends Command
 {
+    use PromptsForRegistryEntities;
+
     public function handle(WorkspaceShowPayload $payload): int
     {
         $name = $this->stringArgument('name');
@@ -43,7 +44,18 @@ class WorkspaceShowCommand extends Command
         }
 
         if ($name === null && $this->isInteractiveInput()) {
-            $name = $this->promptForName();
+            $selection = $this->promptForWorkspaceSelection($app);
+
+            if ($selection instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selection->errorCode() ?? 'gateway_unavailable',
+                    message: $selection->getMessage(),
+                    meta: $selection->errorMeta(),
+                );
+            }
+
+            $name = $selection['name'];
+            $app ??= $selection['app'];
             $path = null;
         }
 
@@ -59,7 +71,7 @@ class WorkspaceShowCommand extends Command
             $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
         } catch (GatewayApiException $e) {
             if ($this->shouldPromptForAmbiguousApp($e, $app)) {
-                $app = $this->promptForApp($e->errorMeta());
+                $app = $this->promptForApp($e->errorMeta(), (string) $name);
                 try {
                     $workspace = $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
                 } catch (GatewayApiException $retryException) {
@@ -123,10 +135,8 @@ class WorkspaceShowCommand extends Command
 
         if ($app === null && $matches->count() > 1) {
             if ($this->isInteractiveInput()) {
-                $app = (string) select(
-                    'Parent app',
-                    $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
-                );
+                $selection = $this->promptForLocalWorkspaceMatches($matches);
+                $app = $selection['app'];
 
                 return $this->fetchWorkspace($name, $app, $path, $payload, $callerRole);
             }
@@ -174,19 +184,22 @@ class WorkspaceShowCommand extends Command
             })?->name;
     }
 
-    private function promptForName(): ?string
+    /**
+     * @return array{name: string, app: string|null}|GatewayApiException
+     */
+    private function promptForWorkspaceSelection(?string $app): array|GatewayApiException
     {
-        $name = text(label: 'Workspace name', required: true);
-
-        $name = trim($name);
-
-        return $name !== '' ? $name : null;
+        try {
+            return $this->promptForVisibleWorkspace(label: 'Select a workspace', app: $app);
+        } catch (PromptAborted) {
+            return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
+        }
     }
 
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function promptForApp(array $meta): string
+    private function promptForApp(array $meta, string $name): string
     {
         $apps = $meta['apps'] ?? [];
 
@@ -197,7 +210,43 @@ class WorkspaceShowCommand extends Command
         /** @var list<string> $choices */
         $choices = array_values(array_filter($apps, is_string(...)));
 
-        return (string) select('Parent app', $choices);
+        $workspaces = array_map(fn (string $app): array => [
+            'name' => $name,
+            'app' => $app,
+            'node' => '-',
+            'url' => '-',
+            'lifecycle_status' => '-',
+        ], $choices);
+
+        try {
+            return (string) $this->promptForWorkspacePayloads('Select a workspace', $workspaces)['app'];
+        } catch (PromptAborted) {
+            throw new GatewayApiException('Operation cancelled.', 'validation_failed', []);
+        }
+    }
+
+    /**
+     * @param  Collection<int, Workspace>  $matches
+     * @return array{name: string, app: string|null}
+     */
+    private function promptForLocalWorkspaceMatches(Collection $matches): array
+    {
+        $workspaces = $matches
+            ->map(fn (Workspace $workspace): array => [
+                'name' => $workspace->name,
+                'app' => $workspace->app?->name,
+                'node' => $workspace->app?->node?->name,
+                'url' => $workspace->url(),
+                'lifecycle_status' => $workspace->lifecycle_status->value,
+            ])
+            ->values()
+            ->all();
+
+        try {
+            return $this->promptForWorkspacePayloads('Select a workspace', $workspaces);
+        } catch (PromptAborted) {
+            throw new GatewayApiException('Operation cancelled.', 'validation_failed', []);
+        }
     }
 
     private function shouldPromptForAmbiguousApp(GatewayApiException $exception, ?string $app): bool

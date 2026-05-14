@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Console\Commands\NodeShowCommand;
+use App\Http\Gateway\GatewayApiException;
+use App\Http\Gateway\Requests\Nodes\ListNodesRequest;
 use App\Http\Gateway\Requests\Nodes\ShowNodeRequest;
 use App\Models\LocalGatewaySettings;
 use Illuminate\Console\Attributes\Description;
@@ -11,6 +13,8 @@ use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -31,7 +35,7 @@ class TestableNodeShowCommand extends NodeShowCommand
         return ! $this->option('json');
     }
 
-    protected function promptNodeName(string $callerRole): string
+    protected function promptNodeName(): string|GatewayApiException
     {
         self::$promptCalls++;
 
@@ -164,8 +168,9 @@ describe('node:show interactive input mode', function (): void {
         expect($payload['success'])->toHaveKey('data');
     });
 
-    it('resolves local default node when set and name is missing', function (): void {
+    it('prompts for a finite node selection instead of using the local default when name is missing', function (): void {
         DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'default-app']));
+        DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'prompted-node']));
 
         DB::table('local_node_defaults')->insert([
             'default_node_name' => 'default-app',
@@ -173,27 +178,25 @@ describe('node:show interactive input mode', function (): void {
             'updated_at' => now(),
         ]);
 
-        $exitCode = Artisan::call('node:show', [
-            '--no-interaction' => false,
-        ]);
+        $result = runTestableNodeShowCommand();
 
-        expect($exitCode)->toBe(0);
+        expect(TestableNodeShowCommand::$promptCalls)->toBe(1)
+            ->and($result['exit_code'])->toBe(0)
+            ->and($result['output'])->toContain('prompted-node');
     });
 
-    it('resolves calling node when no default is set and name is missing', function (): void {
-        DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'other-gateway', 'role' => 'gateway']));
+    it('prompts for a finite node selection instead of using the calling node when name is missing', function (): void {
+        DB::table('nodes')->insert(nodeShowInteractiveRow(['name' => 'prompted-node']));
 
-        $exitCode = Artisan::call('node:show', [
-            '--no-interaction' => false,
-        ]);
+        $result = runTestableNodeShowCommand();
 
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0);
-        expect($output)->toContain('test-gateway');
+        expect(TestableNodeShowCommand::$promptCalls)->toBe(1)
+            ->and($result['exit_code'])->toBe(0)
+            ->and($result['output'])->toContain('prompted-node')
+            ->and($result['output'])->not->toContain('test-gateway');
     });
 
-    it('prompts for name when neither default nor calling node can be resolved', function (): void {
+    it('surfaces an unavailable prompted node without falling back to open input', function (): void {
         DB::table('nodes')->delete();
         DB::table('local_node_defaults')->delete();
 
@@ -218,6 +221,22 @@ describe('node:show interactive input mode', function (): void {
         ])->save();
 
         $mock = MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'success' => [
+                    'data' => [
+                        'nodes' => [
+                            [
+                                'name' => 'visible-app',
+                                'role' => 'app',
+                                'status' => 'active',
+                                'environment' => 'development',
+                                'platform' => 'ubuntu_24-04',
+                                'host' => '10.6.0.7',
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
             ShowNodeRequest::class => MockResponse::make([
                 'success' => [
                     'data' => [
@@ -237,8 +256,9 @@ describe('node:show interactive input mode', function (): void {
             ], 200),
         ]);
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('node:show')
-            ->expectsQuestion('Node name', 'visible-app')
             ->expectsOutputToContain('Node: visible-app')
             ->assertSuccessful();
 
@@ -258,8 +278,8 @@ describe('node:show interactive input mode', function (): void {
             ->and($payload['error']['meta']['field'])->toBe('name');
     });
 
-    it('does not prompt when the calling node default resolves the target', function (): void {
-        $result = runTestableNodeShowCommand();
+    it('does not prompt when name is supplied', function (): void {
+        $result = runTestableNodeShowCommand(['name' => 'test-gateway']);
 
         expect(TestableNodeShowCommand::$promptCalls)->toBe(0)
             ->and($result['exit_code'])->toBe(0)

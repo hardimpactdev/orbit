@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -46,8 +48,9 @@ describe('node:update interactive input mode', function (): void {
         setupNodeUpdateInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeUpdateInteractiveRow());
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('node:update')
-            ->expectsQuestion('Node name', 'app-1')
             ->expectsChoice('Which field would you like to update?', 'host', [
                 'host',
                 'environment',

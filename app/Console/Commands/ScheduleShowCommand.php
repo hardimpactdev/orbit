@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Exceptions\PromptAborted;
 use App\Http\Gateway\GatewayApiException;
 use App\Http\Gateway\GatewayConnector;
@@ -25,7 +25,11 @@ use Throwable;
 #[Description('Show one configured schedule')]
 class ScheduleShowCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
+
+    private ?string $resolvedScheduleApp = null;
+
+    private ?string $resolvedScheduleNode = null;
 
     public function handle(SchedulePayload $payload, CallerRoleResolver $callerRoleResolver): int
     {
@@ -71,7 +75,23 @@ class ScheduleShowCommand extends Command
         }
 
         try {
-            return $this->promptText(label: 'Schedule name', required: true);
+            $selection = $this->promptForVisibleSchedule(
+                app: $this->stringOption('app'),
+                node: $this->stringOption('node'),
+            );
+
+            if ($selection instanceof GatewayApiException) {
+                return $this->failCommand(
+                    code: $selection->errorCode() ?? 'gateway_unavailable',
+                    message: $selection->getMessage(),
+                    meta: $selection->errorMeta(),
+                );
+            }
+
+            $this->resolvedScheduleApp = $selection['app'];
+            $this->resolvedScheduleNode = $selection['node'];
+
+            return $selection['name'];
         } catch (PromptAborted) {
             return $this->failCommand('validation_failed', 'Operation cancelled.', []);
         }
@@ -82,8 +102,8 @@ class ScheduleShowCommand extends Command
      */
     private function fetchSchedule(SchedulePayload $payload, string $callerRole, string $name): array
     {
-        $app = $this->stringOption('app');
-        $node = $this->stringOption('node');
+        $app = $this->resolvedScheduleApp ?? $this->stringOption('app');
+        $node = $this->resolvedScheduleNode ?? $this->stringOption('node');
 
         if ($callerRole === 'gateway') {
             return $payload->show($name, $app, $node);

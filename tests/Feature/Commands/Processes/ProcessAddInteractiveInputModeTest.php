@@ -9,6 +9,8 @@ use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
@@ -41,8 +43,9 @@ it('prompts for app, name, and command when all are absent', function (): void {
     };
     app()->instance(RemoteShell::class, $remoteShell);
 
+    DataTablePrompt::fake([Key::ENTER]);
+
     $this->artisan('process:add')
-        ->expectsChoice('App', 'docs', ['docs'])
         ->expectsQuestion('Process name', 'web')
         ->expectsQuestion('Command', 'php artisan serve')
         ->assertSuccessful();

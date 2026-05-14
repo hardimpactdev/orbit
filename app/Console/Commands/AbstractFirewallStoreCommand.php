@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -20,7 +20,7 @@ use Throwable;
 
 abstract class AbstractFirewallStoreCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -198,7 +198,17 @@ abstract class AbstractFirewallStoreCommand extends Command
             }
 
             try {
-                $node = $this->promptText(label: 'Target node', required: true);
+                $selected = $this->promptForVisibleNode(label: 'Select the target node');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $node = $selected;
             } catch (PromptAborted) {
                 return $this->failCommand('validation_failed', 'Operation cancelled.', []);
             }

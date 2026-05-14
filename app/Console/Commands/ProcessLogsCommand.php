@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\ShowProcessLogs;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -22,8 +22,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\select;
-
 #[Signature('process:logs
     {name? : Existing process name}
     {--app= : Parent app slug}
@@ -34,9 +32,11 @@ use function Laravel\Prompts\select;
 #[Description('Read app process runtime logs')]
 class ProcessLogsCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
+
+    private const string PROCESS_SELECTION_SEPARATOR = "\t";
 
     public function handle(ShowProcessLogs $showProcessLogs, CallerRoleResolver $callerRoleResolver): int
     {
@@ -136,14 +136,20 @@ class ProcessLogsCommand extends Command
             }
 
             try {
-                $processQuery = Process::query()->orderBy('name');
-                if ($appOption !== null) {
-                    $processQuery->whereHas('app', fn ($q) => $q->where('name', $appOption));
+                $selectedProcess = $this->promptForProcessName($appOption);
+
+                if ($selectedProcess instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selectedProcess->errorCode() ?? 'gateway_unavailable',
+                        message: $selectedProcess->getMessage(),
+                        meta: $selectedProcess->errorMeta(),
+                    );
                 }
-                $processNames = $processQuery->pluck('name')->all();
-                $name = (string) ($processNames !== []
-                    ? select(label: 'Process name', options: $processNames, required: true)
-                    : $this->promptText(label: 'Process name', required: true));
+
+                $selection = $this->decodeProcessSelection((string) $selectedProcess);
+
+                $name = $selection['name'];
+                $appOption ??= $selection['app'];
             } catch (PromptAborted) {
                 return $this->promptAborted();
             }
@@ -165,6 +171,57 @@ class ProcessLogsCommand extends Command
             'workspace' => $this->stringOption('workspace'),
             'lines' => $lines,
             'follow' => $this->option('follow') === true,
+        ];
+    }
+
+    /**
+     * @throws PromptAborted
+     */
+    private function promptForProcessName(?string $app): string|int|GatewayApiException
+    {
+        $processes = Process::query()
+            ->with('app')
+            ->when($app !== null, fn ($query) => $query->whereHas('app', fn ($query) => $query->where('name', $app)))
+            ->orderBy('name')
+            ->get();
+
+        if ($processes->isEmpty()) {
+            return new GatewayApiException('No processes found.', 'process.not_found', [
+                'field' => 'name',
+                'app' => $app,
+            ]);
+        }
+
+        return $this->promptDataTable(
+            label: 'Select a process',
+            headers: ['Process', 'App', 'Command'],
+            rows: $processes
+                ->mapWithKeys(fn (Process $process): array => [
+                    $this->processSelectionKey($process) => [
+                        $process->name,
+                        $process->app->name,
+                        $process->command,
+                    ],
+                ])
+                ->all(),
+        );
+    }
+
+    private function processSelectionKey(Process $process): string
+    {
+        return $process->app->name.self::PROCESS_SELECTION_SEPARATOR.$process->name;
+    }
+
+    /**
+     * @return array{name: string, app: string}
+     */
+    private function decodeProcessSelection(string $selection): array
+    {
+        [$app, $name] = array_pad(explode(self::PROCESS_SELECTION_SEPARATOR, $selection, 2), 2, '');
+
+        return [
+            'name' => $name,
+            'app' => $app,
         ];
     }
 

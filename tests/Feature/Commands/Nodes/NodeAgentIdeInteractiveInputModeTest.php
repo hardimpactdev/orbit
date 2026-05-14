@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Prompts\DataTablePrompt;
+use Laravel\Prompts\Key;
 
 uses(RefreshDatabase::class);
 
@@ -45,8 +47,9 @@ describe('node:agent-ide interactive input mode', function (): void {
         setupNodeAgentIdeInteractiveGatewayCaller();
         DB::table('nodes')->insert(nodeAgentIdeInteractiveRow());
 
+        DataTablePrompt::fake([Key::ENTER]);
+
         $this->artisan('node:agent-ide')
-            ->expectsQuestion('Node name', 'app-1')
             ->expectsChoice('Agent IDE adapter', 'opencode', ['none', 'opencode', 'polyscope'])
             ->expectsOutputToContain("Node 'app-1' agent IDE set to 'opencode'")
             ->assertSuccessful();

@@ -28,13 +28,13 @@ class TestableNodeRevokeCommand extends NodeRevokeCommand
         return true;
     }
 
-    protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
+    protected function promptDataTable(string $label, array $headers, array $rows, string $hint = 'Press / to search'): string|int
     {
         if (self::$abortPrompt === $label) {
             throw new PromptAborted;
         }
 
-        return parent::promptText($label, $required, $validate);
+        return parent::promptDataTable($label, $headers, $rows, $hint);
     }
 
     protected function promptConfirm(string $label, bool $default = true): bool
@@ -280,7 +280,7 @@ describe('node:revoke interactive input mode contract', function (): void {
             'serving_node_id' => 3,
         ]);
 
-        TestableNodeRevokeCommand::$abortPrompt = 'Consuming node';
+        TestableNodeRevokeCommand::$abortPrompt = 'Select the consuming node';
 
         [$exitCode, $output] = runTestableNodeRevokeInteractive([
             'serving_node' => 'app-1',
@@ -305,7 +305,7 @@ describe('node:revoke interactive input mode contract', function (): void {
             'serving_node_id' => 3,
         ]);
 
-        TestableNodeRevokeCommand::$abortPrompt = 'Serving node';
+        TestableNodeRevokeCommand::$abortPrompt = 'Select the serving node';
 
         [$exitCode, $output] = runTestableNodeRevokeInteractive([
             'consuming_node' => 'control-1',

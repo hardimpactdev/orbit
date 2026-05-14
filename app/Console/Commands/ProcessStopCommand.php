@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Processes\StopProcesses;
-use App\Concerns\HandlesPromptCancellation;
+use App\Concerns\PromptsForRegistryEntities;
 use App\Concerns\WithSpinner;
 use App\Concerns\WithStepTree;
 use App\Exceptions\PromptAborted;
@@ -21,8 +21,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-use function Laravel\Prompts\select;
-
 #[Signature('process:stop
     {name? : Existing process name}
     {--app= : Parent app slug}
@@ -31,7 +29,7 @@ use function Laravel\Prompts\select;
 #[Description('Stop app process runtime units')]
 class ProcessStopCommand extends Command
 {
-    use HandlesPromptCancellation;
+    use PromptsForRegistryEntities;
     use WithSpinner;
     use WithStepTree;
 
@@ -160,10 +158,17 @@ class ProcessStopCommand extends Command
             }
 
             try {
-                $appNames = App::query()->orderBy('name')->pluck('name')->all();
-                $appName = (string) ($appNames !== []
-                    ? select(label: 'App', options: $appNames, required: true)
-                    : $this->promptText(label: 'App', required: true));
+                $selected = $this->promptForVisibleApp(label: 'Select app');
+
+                if ($selected instanceof GatewayApiException) {
+                    return $this->failCommand(
+                        code: $selected->errorCode() ?? 'gateway_unavailable',
+                        message: $selected->getMessage(),
+                        meta: $selected->errorMeta(),
+                    );
+                }
+
+                $appName = $selected;
             } catch (PromptAborted) {
                 return $this->promptAborted();
             }
