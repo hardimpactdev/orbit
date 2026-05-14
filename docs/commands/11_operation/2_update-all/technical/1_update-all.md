@@ -34,7 +34,9 @@ options are optional.
 1. Select the output renderer.
 2. Update the caller's local Orbit checkout.
 3. Call the gateway to authorize the fleet update and resolve selected non-local managed Orbit installations from active gateway node configuration.
-4. Start the fleet update sequence that the gateway drives.
+4. Start the fleet update sequence that the gateway drives. Remote app-node
+   installations are updated with bounded parallelism, up to four targets at a
+   time, after the gateway-local update succeeds.
 
 No input-mode-specific contracts are required. The command has no required
 fields and does not prompt.
@@ -68,8 +70,13 @@ The expected target shape per calling peer role:
   Control nodes do not SSH directly to the gateway, app nodes, or other control
   nodes as part of the command contract. The gateway does not SSH to control
   nodes as part of the command contract.
+- After the gateway-local update succeeds, selected remote app-node
+  installations are updated in parallel, up to four targets at a time. Each
+  individual target still runs `Pulling source`, `Installing dependencies`, and
+  `Running migrations` in that order.
 - Continue updating remaining installations after a target fails.
-- Preserve every target result for the selected output renderer.
+- Preserve every target result for the selected output renderer in selected
+  target order, regardless of the order in which parallel workers finish.
 
 ### Partial Failure Rules
 
@@ -78,7 +85,7 @@ The expected target shape per calling peer role:
   report both successful and failed target results.
 - A local checkout failure stops the command before remote update execution.
 - A remote target failure must not hide successful updates on earlier or later
-  targets.
+  targets, and must not cancel unrelated in-flight remote updates.
 
 ### Scope Boundaries
 

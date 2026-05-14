@@ -77,20 +77,96 @@ it('includes app nodes in updates and uses RemoteShell', function (): void {
     ]);
     Process::preventStrayProcesses();
 
-    $shell = new UpdateAllControllerRemoteShell;
-    app()->instance(RemoteShell::class, $shell);
+    $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-shell-');
 
-    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    if ($logPath === false) {
+        $this->fail('Could not create update shell log.');
+    }
 
-    $response->assertOk();
-    $response->assertJsonPath('success.data.updates.1.target', 'beast');
-    $response->assertJsonPath('success.data.updates.1.status', 'completed');
+    try {
+        app()->instance(RemoteShell::class, new UpdateAllControllerTimedRemoteShell($logPath, pullDelayMicroseconds: 0));
 
-    expect(array_map(fn (Node $node): string => $node->name, $shell->nodes))->toBe([
-        'beast',
-        'beast',
-        'beast',
+        $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+
+        $response->assertOk();
+        $response->assertJsonPath('success.data.updates.1.target', 'beast');
+        $response->assertJsonPath('success.data.updates.1.status', 'completed');
+
+        $lines = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect($lines)->toBeArray();
+
+        $events = array_map(
+            fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+            $lines,
+        );
+
+        expect(array_column($events, 'node'))->toBe([
+            'beast',
+            'beast',
+            'beast',
+        ]);
+    } finally {
+        @unlink($logPath);
+    }
+});
+
+it('updates app nodes in parallel after gateway checkout succeeds', function (): void {
+    Node::factory()->create([
+        'name' => 'beast',
+        'role' => 'app',
+        'host' => 'beast',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
     ]);
+    Node::factory()->create([
+        'name' => 'sidecar',
+        'role' => 'app',
+        'host' => 'sidecar',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-parallel-');
+
+    if ($logPath === false) {
+        $this->fail('Could not create update timing log.');
+    }
+
+    try {
+        app()->instance(RemoteShell::class, new UpdateAllControllerTimedRemoteShell($logPath));
+
+        $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+
+        $response->assertOk();
+        $response->assertJsonPath('success.data.updates.1.target', 'beast');
+        $response->assertJsonPath('success.data.updates.2.target', 'sidecar');
+
+        $lines = file($logPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect($lines)->toBeArray();
+
+        $events = array_map(
+            fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+            $lines,
+        );
+        $pullEvents = array_values(array_filter(
+            $events,
+            fn (array $event): bool => ($event['script'] ?? null) === 'git pull --ff-only',
+        ));
+
+        expect($pullEvents)->toHaveCount(2);
+
+        $latestStart = max(array_column($pullEvents, 'started_at'));
+        $earliestEnd = min(array_column($pullEvents, 'ended_at'));
+
+        expect($latestStart)->toBeLessThan($earliestEnd);
+    } finally {
+        @unlink($logPath);
+    }
 });
 
 it('excludes control nodes from remote updates', function (): void {
@@ -213,6 +289,43 @@ final class UpdateAllControllerRemoteShell implements RemoteShell
             stdout: '',
             stderr: $this->stderr,
             durationMs: 1,
+        );
+    }
+}
+
+final readonly class UpdateAllControllerTimedRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private string $logPath,
+        private int $pullDelayMicroseconds = 500_000,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $startedAt = hrtime(true);
+
+        if ($script === 'git pull --ff-only') {
+            usleep($this->pullDelayMicroseconds);
+        }
+
+        $endedAt = hrtime(true);
+
+        file_put_contents(
+            $this->logPath,
+            json_encode([
+                'node' => $node->name,
+                'script' => $script,
+                'started_at' => $startedAt,
+                'ended_at' => $endedAt,
+            ], JSON_THROW_ON_ERROR).PHP_EOL,
+            FILE_APPEND | LOCK_EX,
+        );
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            durationMs: (int) (($endedAt - $startedAt) / 1_000_000),
         );
     }
 }

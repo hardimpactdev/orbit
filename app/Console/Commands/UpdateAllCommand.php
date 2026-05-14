@@ -29,6 +29,8 @@ class UpdateAllCommand extends Command implements Loggable
 {
     use LogsCommandActivity;
 
+    private const int REMOTE_UPDATE_CONCURRENCY = 4;
+
     /**
      * @var list<array{target: string, node: string|null, role: string|null}>
      */
@@ -456,16 +458,8 @@ class UpdateAllCommand extends Command implements Loggable
             );
         }
 
-        foreach ($nodes as $node) {
-            $result = $updater->updateRemote($node);
-            $updates[] = [
-                'target' => $node->name,
-                'node' => $node->name,
-                'role' => $node->role,
-                'status' => $result->successful() ? 'completed' : 'failed',
-                ...($result->successful() ? [] : ['output' => trim($result->errorOutput() ?: $result->output())]),
-            ];
-        }
+        [$remoteUpdates] = $this->runRemoteTargets($updater, $nodes, null);
+        $updates = array_merge($updates, $remoteUpdates);
 
         $completed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'completed'));
         $failed = count(array_filter($updates, fn (array $u): bool => $u['status'] === 'failed'));
@@ -527,113 +521,177 @@ class UpdateAllCommand extends Command implements Loggable
      */
     private function runTargetsWithProgress(OrbitUpdater $updater, $nodes, UpdateAllProgress $progress): array
     {
-        if (! function_exists('pcntl_fork') || ! function_exists('stream_socket_pair')) {
+        if (! $this->canRunTargetWorkers()) {
             return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
         }
 
-        $targets = [
-            [
-                'key' => 'local',
-                'node' => null,
-                'role' => null,
-                'run' => function (mixed $pipe, int $index) use ($updater): void {
-                    $this->runLocalTargetWorker($updater, $pipe, $index);
-                },
-            ],
+        $localResult = $this->updateLocalWithProgress($updater, $progress);
+        $localUpdate = [
+            'target' => 'local',
+            'node' => null,
+            'role' => null,
+            'status' => $localResult->successful() ? 'completed' : 'failed',
         ];
 
-        foreach ($nodes as $node) {
-            $targets[] = [
-                'key' => $node->name,
-                'node' => $node->name,
-                'role' => $node->role,
-                'run' => function (mixed $pipe, int $index) use ($updater, $node): void {
-                    $this->runRemoteTargetWorker($updater, $node, $pipe, $index);
-                },
-            ];
+        if (! $localResult->successful()) {
+            return [[$localUpdate], [[
+                'headline' => 'Failed to update local Orbit checkout.',
+                'output' => $localResult->errorOutput() ?: $localResult->output(),
+            ]]];
         }
 
-        $pipes = [];
-        $pids = [];
-        $buffers = [];
-        $completed = [];
+        [$remoteUpdates, $failures] = $this->runRemoteTargets($updater, $nodes, $progress);
 
-        foreach ($targets as $index => $target) {
-            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        return [array_merge([$localUpdate], $remoteUpdates), $failures];
+    }
 
-            if ($pair === false) {
-                return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
-            }
+    private function canRunTargetWorkers(): bool
+    {
+        return function_exists('pcntl_fork')
+            && function_exists('stream_socket_pair');
+    }
 
-            $pid = pcntl_fork();
-
-            if ($pid === -1) {
-                fclose($pair[0]);
-                fclose($pair[1]);
-
-                return $this->runTargetsSequentiallyWithProgress($updater, $nodes, $progress);
-            }
-
-            if ($pid === 0) {
-                fclose($pair[0]);
-                ($target['run'])($pair[1], $index);
-                fclose($pair[1]);
-                posix_kill(getmypid(), SIGKILL);
-            }
-
-            fclose($pair[1]);
-            stream_set_blocking($pair[0], false);
-            $pipes[$index] = $pair[0];
-            $pids[$index] = $pid;
-            $buffers[$index] = '';
-            $completed[$index] = false;
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return array{
+     *     0: list<array<string, mixed>>,
+     *     1: list<array{headline: string, output: string}>,
+     * }
+     */
+    private function runRemoteTargets(OrbitUpdater $updater, $nodes, ?UpdateAllProgress $progress): array
+    {
+        if ($nodes->isEmpty()) {
+            return [[], []];
         }
 
+        if (! $this->canRunTargetWorkers()) {
+            return $this->runRemoteTargetsSequentially($updater, $nodes, $progress);
+        }
+
+        $nodeList = array_values($nodes->all());
+        $workers = [];
         $updatesByIndex = [];
         $failures = [];
+        $nextIndex = 0;
 
-        while (in_array(false, $completed, true)) {
-            foreach ($pipes as $index => $pipe) {
-                if ($completed[$index]) {
+        while ($nextIndex < count($nodeList) || $workers !== []) {
+            while (count($workers) < self::REMOTE_UPDATE_CONCURRENCY && $nextIndex < count($nodeList)) {
+                $node = $nodeList[$nextIndex];
+                $worker = $this->startRemoteTargetWorker($updater, $node, $nextIndex);
+
+                if ($worker === null) {
+                    $result = $progress instanceof UpdateAllProgress
+                        ? $this->updateRemoteWithProgress($updater, $node, $progress)
+                        : $updater->updateRemote($node);
+
+                    $updatesByIndex[$nextIndex] = $this->remoteTargetUpdate($node, $result);
+
+                    if (! $result->successful()) {
+                        $failures[] = [
+                            'headline' => "Failed to update node {$node->name}.",
+                            'output' => $result->errorOutput() ?: $result->output(),
+                        ];
+                    }
+
+                    $nextIndex++;
+
                     continue;
                 }
 
-                $this->drainTargetEvents($pipe, $buffers[$index], $progress, $updatesByIndex, $failures);
+                $workers[$nextIndex] = [
+                    'node' => $node,
+                    'pipe' => $worker['pipe'],
+                    'pid' => $worker['pid'],
+                    'buffer' => '',
+                ];
+                $nextIndex++;
+            }
 
-                $wait = pcntl_waitpid($pids[$index], $status, WNOHANG);
+            foreach (array_keys($workers) as $index) {
+                $this->drainTargetEvents(
+                    $workers[$index]['pipe'],
+                    $workers[$index]['buffer'],
+                    $progress,
+                    $updatesByIndex,
+                    $failures,
+                );
+
+                $wait = pcntl_waitpid($workers[$index]['pid'], $status, WNOHANG);
 
                 if ($wait <= 0) {
                     continue;
                 }
 
-                $this->drainTargetEvents($pipe, $buffers[$index], $progress, $updatesByIndex, $failures);
-                fclose($pipe);
-                $completed[$index] = true;
+                $this->drainTargetEvents(
+                    $workers[$index]['pipe'],
+                    $workers[$index]['buffer'],
+                    $progress,
+                    $updatesByIndex,
+                    $failures,
+                );
+                fclose($workers[$index]['pipe']);
 
                 if (! isset($updatesByIndex[$index])) {
-                    $target = $targets[$index];
-                    $key = (string) $target['key'];
-                    $progress->fail($key, 'failed');
+                    /** @var Node $node */
+                    $node = $workers[$index]['node'];
+                    $output = 'Worker exited without reporting a result.';
+                    $progress?->fail($node->name, $output);
                     $updatesByIndex[$index] = [
-                        'target' => $key,
-                        'node' => $target['node'],
-                        'role' => $target['role'],
+                        'target' => $node->name,
+                        'node' => $node->name,
+                        'role' => $node->role,
                         'status' => 'failed',
+                        'output' => $output,
                     ];
                     $failures[] = [
-                        'headline' => $key === 'local' ? 'Failed to update local Orbit checkout.' : "Failed to update node {$key}.",
-                        'output' => 'Worker exited without reporting a result.',
+                        'headline' => "Failed to update node {$node->name}.",
+                        'output' => $output,
                     ];
                 }
+
+                unset($workers[$index]);
             }
 
-            $progress->tick();
-            usleep(50_000);
+            $progress?->tick();
+
+            if ($workers !== []) {
+                usleep(50_000);
+            }
         }
 
         ksort($updatesByIndex);
 
         return [array_values($updatesByIndex), $failures];
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return array{
+     *     0: list<array<string, mixed>>,
+     *     1: list<array{headline: string, output: string}>,
+     * }
+     */
+    private function runRemoteTargetsSequentially(OrbitUpdater $updater, $nodes, ?UpdateAllProgress $progress): array
+    {
+        $updates = [];
+        $failures = [];
+
+        foreach ($nodes as $node) {
+            $result = $progress instanceof UpdateAllProgress
+                ? $this->updateRemoteWithProgress($updater, $node, $progress)
+                : $updater->updateRemote($node);
+
+            $updates[] = $this->remoteTargetUpdate($node, $result);
+
+            if (! $result->successful()) {
+                $failures[] = [
+                    'headline' => "Failed to update node {$node->name}.",
+                    'output' => $result->errorOutput() ?: $result->output(),
+                ];
+            }
+        }
+
+        return [$updates, $failures];
     }
 
     /**
@@ -720,6 +778,44 @@ class UpdateAllCommand extends Command implements Loggable
             'node' => null,
             'role' => null,
         ]);
+    }
+
+    /**
+     * @return array{pipe: resource, pid: int}|null
+     */
+    private function startRemoteTargetWorker(OrbitUpdater $updater, Node $node, int $index): ?array
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+        if ($pair === false) {
+            return null;
+        }
+
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            fclose($pair[0]);
+            fclose($pair[1]);
+
+            return null;
+        }
+
+        if ($pid === 0) {
+            fclose($pair[0]);
+            $this->runRemoteTargetWorker($updater, $node, $pair[1], $index);
+            fclose($pair[1]);
+
+            if (function_exists('posix_kill')) {
+                posix_kill(getmypid(), SIGKILL);
+            }
+
+            exit(0);
+        }
+
+        fclose($pair[1]);
+        stream_set_blocking($pair[0], false);
+
+        return ['pipe' => $pair[0], 'pid' => $pid];
     }
 
     /**
@@ -993,7 +1089,7 @@ class UpdateAllCommand extends Command implements Loggable
     private function drainTargetEvents(
         mixed $pipe,
         string &$buffer,
-        UpdateAllProgress $progress,
+        ?UpdateAllProgress $progress,
         array &$updatesByIndex,
         array &$failures,
     ): void {
@@ -1029,7 +1125,7 @@ class UpdateAllCommand extends Command implements Loggable
      */
     private function applyTargetEvent(
         array $event,
-        UpdateAllProgress $progress,
+        ?UpdateAllProgress $progress,
         array &$updatesByIndex,
         array &$failures,
     ): void {
@@ -1045,7 +1141,7 @@ class UpdateAllCommand extends Command implements Loggable
             $stage = is_string($event['stage'] ?? null) ? $event['stage'] : null;
 
             if ($stage !== null) {
-                $progress->stage($key, $stage);
+                $progress?->stage($key, $stage);
             }
 
             return;
@@ -1055,7 +1151,7 @@ class UpdateAllCommand extends Command implements Loggable
         $role = is_string($event['role'] ?? null) ? $event['role'] : null;
 
         if ($type === 'done') {
-            $progress->done($key);
+            $progress?->done($key);
             $updatesByIndex[$index] = [
                 'target' => $key,
                 'node' => $node,
@@ -1068,18 +1164,33 @@ class UpdateAllCommand extends Command implements Loggable
 
         if ($type === 'fail') {
             $output = is_string($event['output'] ?? null) ? $event['output'] : 'failed';
-            $progress->fail($key, $output);
+            $progress?->fail($key, $output);
             $updatesByIndex[$index] = [
                 'target' => $key,
                 'node' => $node,
                 'role' => $role,
                 'status' => 'failed',
+                'output' => $output,
             ];
             $failures[] = [
                 'headline' => $key === 'local' ? 'Failed to update local Orbit checkout.' : "Failed to update node {$key}.",
                 'output' => $output,
             ];
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function remoteTargetUpdate(Node $node, RemoteShellResult $result): array
+    {
+        return [
+            'target' => $node->name,
+            'node' => $node->name,
+            'role' => $node->role,
+            'status' => $result->successful() ? 'completed' : 'failed',
+            ...($result->successful() ? [] : ['output' => trim($result->errorOutput() ?: $result->output())]),
+        ];
     }
 
     private function updateLocalWithProgress(OrbitUpdater $updater, UpdateAllProgress $progress): ProcessResult
