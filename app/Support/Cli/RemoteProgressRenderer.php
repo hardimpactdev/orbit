@@ -22,6 +22,8 @@ final class RemoteProgressRenderer
 
     private ?string $activeKey = null;
 
+    private string $activeMessage = '';
+
     private int $frame = 0;
 
     private ?int $spinnerPid = null;
@@ -100,13 +102,15 @@ final class RemoteProgressRenderer
         $frames = SpinnerTreeRenderer::spinnerFrames();
         $this->writeLine(
             $index,
-            $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth),
+            $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $this->activeMessage),
         );
         $this->frame++;
     }
 
     private function progressStep(int $index, string $key, string $message): void
     {
+        $this->activeMessage = $message;
+
         if ($this->activeKey !== $key) {
             $this->stopSpinnerProcess();
             $this->activeKey = $key;
@@ -146,6 +150,7 @@ final class RemoteProgressRenderer
         $this->stopSpinnerProcess();
 
         $this->activeKey = $key;
+        $this->activeMessage = '';
         $this->frame = 0;
         $this->tick();
         $this->startSpinnerProcess();
@@ -155,6 +160,7 @@ final class RemoteProgressRenderer
     {
         if ($this->activeKey === $key) {
             $this->activeKey = null;
+            $this->activeMessage = '';
             $this->stopSpinnerProcess();
         }
 

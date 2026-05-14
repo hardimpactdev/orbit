@@ -47,3 +47,24 @@ it('renders progress messages for active remote progress steps', function (): vo
         ->toContain('Run workspace setup steps')
         ->toContain('Running setup step 1/2: composer install --no-interaction');
 });
+
+it('keeps progress messages visible across spinner ticks', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new RemoteProgressRenderer($output);
+
+    $renderer->tree('Setting Up Workspace', [
+        [
+            'key' => 'setup',
+            'label' => 'Run workspace setup steps',
+            'doneLabel' => 'Ran workspace setup steps',
+        ],
+    ]);
+
+    $renderer->step('setup', 'start');
+    $renderer->step('setup', 'progress', 'Running setup step 1/2: composer install');
+    $renderer->tick();
+
+    $lines = array_values(array_filter(explode("\n", $output->fetch())));
+
+    expect(end($lines))->toContain('Running setup step 1/2: composer install');
+});
