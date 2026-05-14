@@ -227,11 +227,10 @@ SH,
             'started_at' => now(),
         ]);
 
-        $linkedDependencies = $this->prepareAdapterDependencyLinks($workspace, $app, $node);
         $env = $this->workspaceEnv($app, $workspace, $node);
         $renderedSteps = $this->renderSteps($steps->all(), $workspace->name);
 
-        $success = $this->stepRunner->run($run, $renderedSteps, $workspace->path, $env, $node, $onStepProgress, $linkedDependencies);
+        $success = $this->stepRunner->run($run, $renderedSteps, $workspace->path, $env, $node, $onStepProgress);
 
         if (! $success) {
             $failedStep = $run->runSteps()
@@ -356,54 +355,6 @@ SH,
     public function markActive(Workspace $workspace): void
     {
         $workspace->update(['lifecycle_status' => WorkspaceLifecycleStatus::Active]);
-    }
-
-    /**
-     * @return array{vendor: bool, node_modules: bool}
-     */
-    private function prepareAdapterDependencyLinks(Workspace $workspace, App $app, Node $node): array
-    {
-        if (! in_array($workspace->agent_ide, ['opencode', 'polyscope'], true)) {
-            return ['vendor' => false, 'node_modules' => false];
-        }
-
-        $script = sprintf(
-            <<<'SH'
-set -e
-cd %s
-echo ORBIT_WORKSPACE_DEPENDENCY_LINKS
-if [ ! -e vendor ] && [ -d %s ]; then
-    ln -s %s vendor
-    echo vendor=linked
-elif [ -e vendor ]; then
-    echo vendor=present
-fi
-if [ ! -e node_modules ] && [ -d %s ]; then
-    ln -s %s node_modules
-    echo node_modules=linked
-elif [ -e node_modules ]; then
-    echo node_modules=present
-fi
-SH,
-            escapeshellarg($workspace->path),
-            escapeshellarg($app->path.'/vendor'),
-            escapeshellarg($app->path.'/vendor'),
-            escapeshellarg($app->path.'/node_modules'),
-            escapeshellarg($app->path.'/node_modules'),
-        );
-
-        $result = $this->remoteShell->run($node, $script);
-
-        if (! $result->successful()) {
-            return ['vendor' => false, 'node_modules' => false];
-        }
-
-        $output = $result->output();
-
-        return [
-            'vendor' => str_contains($output, 'vendor=linked') || str_contains($output, 'vendor=present'),
-            'node_modules' => str_contains($output, 'node_modules=linked') || str_contains($output, 'node_modules=present'),
-        ];
     }
 
     /**
