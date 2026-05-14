@@ -49,7 +49,9 @@ The steps below describe what the command does during a successful run.
   node-side source problem and rerun `app:new`. After gateway configuration is written,
   registration failures preserve that configuration. Subsequent runs of
   `app:register` or `doctor --fix --family=app --restore` will attempt to complete
-  artifact convergence.
+  artifact convergence. If a previous `app:new` run already cloned the requested
+  repository but failed before writing app configuration, rerunning `app:new`
+  reuses that matching checkout instead of cloning again.
 
 ## Requirements
 

@@ -79,6 +79,11 @@ node. Otherwise, create an empty directory at the app path.
   failure surfaces as a structured source-creation error with a
   `transport=github|ssh|https` indicator so the operator can address node-side
   credentials directly.
+- If the target app path already exists, contains files, and is a git checkout
+  whose `origin` matches the requested repository, source creation treats that
+  checkout as already complete and proceeds to gateway app configuration. If
+  the path exists but is not a matching checkout, source creation fails before
+  gateway app configuration is written.
 - Source creation happens before the gateway app record is written. If source
   creation fails, `app:new` fails with `app.source_creation_failed`, does not
   create app configuration, and the retry path is to fix the node-side source problem
