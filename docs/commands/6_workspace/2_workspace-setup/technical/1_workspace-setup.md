@@ -143,6 +143,12 @@ phase boundaries.
    - Executes steps sequentially in the workspace directory on the app node.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
+   - For adapter-managed worktrees (`opencode` and `polyscope`), Orbit may
+     link existing app-root dependency directories into the workspace before
+     running setup steps. When `vendor` or `node_modules` is linked this way,
+     matching dependency install steps (`composer install`, `npm ci`, and
+     equivalent package-manager install commands) are recorded as successful
+     skips instead of re-installing the same dependency tree.
 5. **Processes** (`phase=processes`):
    - Starts inherited app processes if they are configured to start on setup.
 6. **HTTP Probe** (`phase=http_probe`):

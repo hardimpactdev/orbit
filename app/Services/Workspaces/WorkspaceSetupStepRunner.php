@@ -20,9 +20,17 @@ final readonly class WorkspaceSetupStepRunner
      * @param  list<WorkspaceStep>  $steps
      * @param  array<string, string>  $env
      * @param  (callable(string, WorkspaceStep, int, int): void)|null  $onProgress
+     * @param  array{vendor?: bool, node_modules?: bool}  $linkedDependencies
      */
-    public function run(WorkspaceRun $run, array $steps, string $path, array $env, Node $node, ?callable $onProgress = null): bool
-    {
+    public function run(
+        WorkspaceRun $run,
+        array $steps,
+        string $path,
+        array $env,
+        Node $node,
+        ?callable $onProgress = null,
+        array $linkedDependencies = [],
+    ): bool {
         $run->update(['status' => 'running']);
         $stepCount = count($steps);
 
@@ -36,6 +44,22 @@ final readonly class WorkspaceSetupStepRunner
 
             if ($onProgress !== null) {
                 $onProgress('running', $step, $index + 1, $stepCount);
+            }
+
+            $skipMessage = $this->dependencyInstallSkipMessage($step, $linkedDependencies);
+
+            if ($skipMessage !== null) {
+                $runStep->update([
+                    'exit_code' => 0,
+                    'output' => $skipMessage,
+                    'completed_at' => now(),
+                ]);
+
+                if ($onProgress !== null) {
+                    $onProgress('completed', $step, $index + 1, $stepCount);
+                }
+
+                continue;
             }
 
             $result = $this->remoteShell->run($node, $step->command, [
@@ -68,5 +92,26 @@ final readonly class WorkspaceSetupStepRunner
         $run->update(['status' => 'completed', 'completed_at' => now()]);
 
         return true;
+    }
+
+    /**
+     * @param  array{vendor?: bool, node_modules?: bool}  $linkedDependencies
+     */
+    private function dependencyInstallSkipMessage(WorkspaceStep $step, array $linkedDependencies): ?string
+    {
+        $command = trim($step->command);
+
+        if (($linkedDependencies['vendor'] ?? false) && preg_match('/^(?:composer|php\s+composer(?:\.phar)?)\s+install(?:\s|$)/', $command) === 1) {
+            return 'Skipped because the workspace uses the app vendor directory.';
+        }
+
+        if (
+            ($linkedDependencies['node_modules'] ?? false)
+            && preg_match('/^(?:(?:npm|pnpm|yarn|bun)\s+(?:ci|install|i|add))(?:\s|$)/', $command) === 1
+        ) {
+            return 'Skipped because the workspace uses the app node_modules directory.';
+        }
+
+        return null;
     }
 }

@@ -301,6 +301,57 @@ it('reports progress while setup steps are running', function (): void {
     ]);
 });
 
+it('reuses app dependencies for adapter-managed workspace setup steps', function (): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/.polyscope/clones/demo/feature-a',
+        'agent_ide' => 'polyscope',
+        'agent_ide_workspace_id' => 'adapter-workspace-id',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install --no-interaction',
+        'timeout_seconds' => 1200,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => 1,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 2,
+        'command' => 'npm ci',
+        'timeout_seconds' => 900,
+    ]);
+
+    $shell = new SetupWorkspaceActionDependencyLinkShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $app = App::query()->with('node')->first();
+    $node = $app->node;
+
+    $result = app(SetupWorkspace::class)->runSetupSteps($workspace, $app, $node);
+
+    expect($result['status'])->toBe('completed')
+        ->and($shell->scripts)->toHaveCount(1)
+        ->and($shell->scripts[0])->toContain('ORBIT_WORKSPACE_DEPENDENCY_LINKS');
+
+    $runSteps = WorkspaceRun::query()
+        ->where('workspace_id', $workspace->id)
+        ->first()
+        ?->runSteps()
+        ->orderBy('id')
+        ->get();
+
+    expect($runSteps)->not->toBeNull()
+        ->and($runSteps)->toHaveCount(2)
+        ->and($runSteps[0]->output)->toBe('Skipped because the workspace uses the app vendor directory.')
+        ->and($runSteps[1]->output)->toBe('Skipped because the workspace uses the app node_modules directory.');
+});
+
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
@@ -386,6 +437,25 @@ final class SetupWorkspaceActionFailingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'step failed', durationMs: 1);
+    }
+}
+
+final class SetupWorkspaceActionDependencyLinkShell implements RemoteShell
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if (str_contains($script, 'ORBIT_WORKSPACE_DEPENDENCY_LINKS')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "ORBIT_WORKSPACE_DEPENDENCY_LINKS\nvendor=linked\nnode_modules=linked\n", stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
 
